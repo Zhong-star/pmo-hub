@@ -63,4 +63,49 @@ describe('Hub entry', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Local profile' })).toBeInTheDocument());
   });
+
+  it('keeps entry blocked and allows retry when profile validation fails', async () => {
+    let validationAttempts = 0;
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/status')) return { data: { status: 'available' } };
+      if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
+      if (path.endsWith('/dev-1')) {
+        validationAttempts += 1;
+        if (validationAttempts === 1) throw new Error('Connection failed');
+        return { data: { id: 'dev-1', displayName: 'Avery Chen' } };
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+
+    renderApp();
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The selected profile could not be validated.');
+    expect(screen.queryByRole('heading', { name: 'Welcome, Avery Chen' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+  });
+
+  it('locks the selected profile while validation is pending', async () => {
+    let resolveValidation!: (response: { data: { id: string; displayName: string } }) => void;
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/status')) return { data: { status: 'available' } };
+      if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
+      if (path.endsWith('/dev-1')) {
+        return new Promise((resolve) => { resolveValidation = resolve; });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+
+    renderApp();
+    const profileSelect = await screen.findByRole('combobox', { name: 'Local profile' });
+    await userEvent.selectOptions(profileSelect, 'dev-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(profileSelect).toBeDisabled();
+    resolveValidation({ data: { id: 'dev-1', displayName: 'Avery Chen' } });
+    expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+  });
 });

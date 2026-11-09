@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "npm run build --workspace @pmo-hub/hub-api && playwright test",
     "test:watch": "vitest"
@@ -14,9 +15,11 @@
     "@tanstack/react-query": "^5.90.0",
     "axios": "^1.13.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-hook-form": "^7.66.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.65.0",
     "@testing-library/jest-dom": "^6.9.0",
     "@testing-library/react": "^16.3.0",
@@ -24,8 +27,12 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.1.0",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
     "jsdom": "^27.0.0",
     "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.2",
     "vite": "^7.1.0",
     "vitest": "^3.2.4"
   }

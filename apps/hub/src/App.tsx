@@ -1,9 +1,13 @@
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { useForm, useWatch } from 'react-hook-form';
 import { getHubStatus, getLocalUser, getLocalUsers, type LocalUser } from './api';
 
 export function App() {
-  const [selectedId, setSelectedId] = useState('');
+  const { register, handleSubmit, control } = useForm<{ localUserId: string }>({
+    defaultValues: { localUserId: '' },
+  });
+  const selectedId = useWatch({ control, name: 'localUserId' });
   const [activeUser, setActiveUser] = useState<LocalUser | null>(null);
 
   const statusQuery = useQuery({
@@ -30,11 +34,6 @@ export function App() {
       return;
     }
     selectUserMutation.reset();
-    if (selectedId) selectUserMutation.mutate(selectedId);
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
     if (selectedId) selectUserMutation.mutate(selectedId);
   }
 
@@ -77,16 +76,12 @@ export function App() {
             )}
 
             {statusQuery.isSuccess && usersQuery.isSuccess && usersQuery.data.length > 0 && (
-              <form onSubmit={handleSubmit}>
+              <form onSubmit={handleSubmit(({ localUserId }) => selectUserMutation.mutate(localUserId))}>
                 <label htmlFor="local-profile">Local profile</label>
                 <select
                   id="local-profile"
-                  value={selectedId}
-                  onChange={(event) => {
-                    setSelectedId(event.target.value);
-                    selectUserMutation.reset();
-                  }}
-                  required
+                  disabled={selectUserMutation.isPending}
+                  {...register('localUserId', { required: true, onChange: () => selectUserMutation.reset() })}
                 >
                   <option value="" disabled>Select a profile</option>
                   {usersQuery.data.map((user) => (
