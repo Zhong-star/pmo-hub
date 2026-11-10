@@ -81,6 +81,7 @@ select:focus-visible, button:focus-visible { outline: 3px solid #315cbb; outline
 .module-card p { margin: 11px 0 22px; color: #64748b; font-size: 14px; line-height: 1.6; }
 .module-action { align-self: flex-start; margin-top: auto; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .module-action:focus-visible { outline: 3px solid #315cbb; outline-offset: 2px; }
+.module-status { color: #52627b; font-size: 14px; font-weight: 650; }
 footer { margin-top: 24px; color: #8795aa; font-size: 12px; }
 
 @media (max-width: 520px) {

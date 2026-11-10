@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from '../src/App';
 import { HUB_API_TIMEOUT_MS } from '../src/api';
+import { hubCatalogConfig } from '../src/catalog.config';
 
 const { mockedGet } = vi.hoisted(() => {
   const mockedGet = vi.fn();
@@ -29,6 +30,7 @@ function renderApp() {
 afterEach(() => {
   cleanup();
   mockedGet.mockReset();
+  hubCatalogConfig.forEach((module) => { module.enabled = false; });
   try { window.localStorage.clear(); } catch { /* Storage may be disabled in the current test. */ }
   if (localStorageDescriptor) Object.defineProperty(window, 'localStorage', localStorageDescriptor);
 });
@@ -62,6 +64,32 @@ describe('Hub entry', () => {
     expect(screen.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
     expect(screen.queryByRole('link', { name: /Lessons Learned|Tech Resource Allocation/ })).not.toBeInTheDocument();
     expect(mockedGet).toHaveBeenCalledWith('/api/hub/v1/local-users/dev-1', { timeout: HUB_API_TIMEOUT_MS });
+  });
+
+  it('shows module readiness from a mixed Hub configuration without making enabled modules interactive', async () => {
+    const enabledModule = hubCatalogConfig.find((module) => module.code === 'resource-allocation');
+    if (!enabledModule) throw new Error('Resource Allocation module configuration is missing.');
+    enabledModule.enabled = true;
+
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/status')) return { data: { status: 'available' } };
+      if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
+      if (path.endsWith('/dev-1')) return { data: { id: 'dev-1', displayName: 'Avery Chen' } };
+      throw new Error(`Unexpected request: ${path}`);
+    });
+
+    renderApp();
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByRole('heading', { name: 'Tech Resource Allocation' })).toBeInTheDocument();
+    const enabledModuleCard = screen.getByRole('heading', { name: 'Tech Resource Allocation' }).closest('article');
+    expect(enabledModuleCard).not.toBeNull();
+    expect(within(enabledModuleCard!).getByRole('status')).toHaveTextContent('Ready to open');
+    expect(screen.getByRole('button', { name: 'Lessons Learned: Coming soon' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Tech Resource Allocation: Ready to open' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Tech Resource Allocation: Ready to open' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Lessons Learned|Tech Resource Allocation/ })).not.toBeInTheDocument();
   });
 
   it('keeps entry blocked and offers retry when local profiles cannot be loaded', async () => {

@@ -189,14 +189,18 @@ export function App() {
                     <article aria-labelledby={`catalog-${module.code}-title`}>
                       <h3 id={`catalog-${module.code}-title`}>{module.name}</h3>
                       <p>{module.description}</p>
-                      <button
-                        className="button button-secondary module-action"
-                        type="button"
-                        disabled
-                        aria-label={`${module.name}: Coming soon`}
-                      >
-                        Coming soon
-                      </button>
+                      {module.enabled ? (
+                        <span className="module-action module-status" role="status">Ready to open</span>
+                      ) : (
+                        <button
+                          className="button button-secondary module-action"
+                          type="button"
+                          disabled
+                          aria-label={`${module.name}: Coming soon`}
+                        >
+                          Coming soon
+                        </button>
+                      )}
                     </article>
                   </li>
                 ))}

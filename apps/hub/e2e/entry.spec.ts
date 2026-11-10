@@ -37,9 +37,15 @@ test('selecting a configured local profile opens the module catalog', async ({ p
   const changeProfileButton = page.getByRole('button', { name: 'Change profile' });
   await expect(changeProfileButton).toBeFocused();
   await expect(changeProfileButton).toHaveCSS('outline-style', 'solid');
-  const focusOutlineColor = await changeProfileButton.evaluate((button) => getComputedStyle(button).outlineColor);
-  expect(focusOutlineColor).toBe('rgb(49, 92, 187)');
-  expect(contrastRatio(focusOutlineColor, 'rgb(255, 255, 255)')).toBeGreaterThanOrEqual(3);
+  const focusColors = await changeProfileButton.evaluate((button) => {
+    const card = button.closest('.welcome-card');
+    if (!card) throw new Error('The profile control is not inside the welcome card.');
+    return {
+      outline: getComputedStyle(button).outlineColor,
+      background: getComputedStyle(card).backgroundColor,
+    };
+  });
+  expect(contrastRatio(focusColors.outline, focusColors.background)).toBeGreaterThanOrEqual(3);
   await page.keyboard.press('Enter');
   await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
 });
