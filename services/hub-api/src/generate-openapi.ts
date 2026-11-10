@@ -1,14 +1,20 @@
 import 'reflect-metadata';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { NestFactory } from '@nestjs/core';
+import { Test } from '@nestjs/testing';
 import { AppModule } from './app.module';
 import { createOpenApiDocument } from './openapi-document';
+import { LocalUsersService } from './local-users.service';
 
 async function generateOpenApi(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { logger: false });
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(LocalUsersService)
+    .useValue({ list: () => [], findById: () => undefined })
+    .compile();
+  const app = moduleRef.createNestApplication({ logger: false });
   try {
     app.setGlobalPrefix('api/hub/v1');
+    await app.init();
     const document = createOpenApiDocument(app);
     const outputPath = resolve(process.cwd(), 'openapi/hub-v1.json');
     mkdirSync(dirname(outputPath), { recursive: true });
