@@ -55,3 +55,36 @@ test('a profile-list timeout offers retry without a page reload', async ({ page 
   await page.getByRole('button', { name: 'Try again' }).click();
   await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
 });
+
+test('resumes a saved profile after reopening the browser page', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
+});
+
+test('switches profiles only after selecting and validating a different profile', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Change profile' }).click();
+  await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
+});
+
+test('a saved-profile validation failure can be retried without reloading', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('pmo-hub.local-user-id', 'local-developer'));
+  let attempts = 0;
+  await page.route('**/api/hub/v1/local-users/local-developer', async (route) => {
+    attempts += 1;
+    if (attempts === 1) { await route.fulfill({ status: 503, body: 'Unavailable' }); return; }
+    await route.continue();
+  });
+  await page.goto('/');
+  await expect(page.getByRole('alert')).toContainText('saved profile could not be validated');
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
+});

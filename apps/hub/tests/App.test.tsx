@@ -28,6 +28,7 @@ function renderApp() {
 afterEach(() => {
   cleanup();
   mockedGet.mockReset();
+  window.localStorage.clear();
 });
 
 describe('Hub entry', () => {
@@ -113,6 +114,82 @@ describe('Hub entry', () => {
 
     expect(profileSelect).toBeDisabled();
     resolveValidation({ data: { id: 'dev-1', displayName: 'Avery Chen' } });
+    expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+  });
+
+  it('resumes a saved profile only after validating it with the API', async () => {
+    window.localStorage.setItem('pmo-hub.local-user-id', 'dev-1');
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/status')) return { data: { status: 'available' } };
+      if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
+      if (path.endsWith('/dev-1')) return { data: { id: 'dev-1', displayName: 'Avery Chen' } };
+      throw new Error(`Unexpected request: ${path}`);
+    });
+
+    renderApp();
+
+    expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+    expect(mockedGet).toHaveBeenCalledWith('/api/hub/v1/local-users/dev-1', { timeout: HUB_API_TIMEOUT_MS });
+    expect(window.localStorage.getItem('pmo-hub.local-user-id')).toBe('dev-1');
+  });
+
+  it('clears a removed saved profile and requires a new selection', async () => {
+    window.localStorage.setItem('pmo-hub.local-user-id', 'gone');
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/status')) return { data: { status: 'available' } };
+      if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
+      if (path.endsWith('/gone')) throw Object.assign(new Error('Not found'), { response: { status: 404 } });
+      if (path.endsWith('/dev-1')) return { data: { id: 'dev-1', displayName: 'Avery Chen' } };
+      throw new Error(`Unexpected request: ${path}`);
+    });
+
+    renderApp();
+
+    expect(await screen.findByText('The saved profile no longer exists. Please select another local profile.')).toBeInTheDocument();
+    expect(window.localStorage.getItem('pmo-hub.local-user-id')).toBeNull();
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+  });
+
+  it('lets the person change profile and saves only the newly validated identifier', async () => {
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/status')) return { data: { status: 'available' } };
+      if (path.endsWith('/local-users')) return { data: [
+        { id: 'dev-1', displayName: 'Avery Chen' }, { id: 'dev-2', displayName: 'Jordan Lee' },
+      ] };
+      if (path.endsWith('/dev-1')) return { data: { id: 'dev-1', displayName: 'Avery Chen' } };
+      if (path.endsWith('/dev-2')) return { data: { id: 'dev-2', displayName: 'Jordan Lee' } };
+      throw new Error(`Unexpected request: ${path}`);
+    });
+
+    renderApp();
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Change profile' }));
+    expect(window.localStorage.getItem('pmo-hub.local-user-id')).toBe('dev-1');
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-2');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { name: 'Welcome, Jordan Lee' })).toBeInTheDocument();
+    expect(window.localStorage.getItem('pmo-hub.local-user-id')).toBe('dev-2');
+  });
+
+  it('allows a validated profile when browser storage is unavailable', async () => {
+    Object.defineProperty(window, 'localStorage', { configurable: true, value: {
+      getItem: () => { throw new Error('Storage disabled'); },
+      setItem: () => { throw new Error('Storage disabled'); },
+      removeItem: () => { throw new Error('Storage disabled'); },
+      clear: () => undefined,
+    } });
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/status')) return { data: { status: 'available' } };
+      if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
+      if (path.endsWith('/dev-1')) return { data: { id: 'dev-1', displayName: 'Avery Chen' } };
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    renderApp();
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
   });
 });
