@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { getHubStatus, getLocalUser, getLocalUsers, type LocalUser } from './api';
@@ -25,6 +25,7 @@ export function App() {
   const [savedUserId, setSavedUserId] = useState(readSavedUserId);
   const [resumeError, setResumeError] = useState<'missing' | 'unavailable' | null>(null);
   const [switching, setSwitching] = useState(false);
+  const shouldResumeOnStartup = useRef(true);
 
   const statusQuery = useQuery({
     queryKey: ['hub-status'],
@@ -40,7 +41,8 @@ export function App() {
   });
 
   useEffect(() => {
-    if (savedUserId && statusQuery.isSuccess && usersQuery.isSuccess && !selectUserMutation.isPending && !selectUserMutation.isSuccess && !resumeError) {
+    if (shouldResumeOnStartup.current && savedUserId && statusQuery.isSuccess && usersQuery.isSuccess && !selectUserMutation.isPending && !selectUserMutation.isSuccess && !resumeError) {
+      shouldResumeOnStartup.current = false;
       selectUserMutation.mutate(savedUserId, {
         onSuccess: (user) => { saveUserId(user.id); setActiveUser(user); },
         onError: (error) => {
@@ -79,6 +81,8 @@ export function App() {
   }
 
   function validateManualSelection(userId: string) {
+    if (switching && userId === savedUserId) return;
+    shouldResumeOnStartup.current = false;
     selectUserMutation.mutate(userId, {
       onSuccess: (user) => { saveUserId(user.id); setSavedUserId(user.id); setSwitching(false); setActiveUser(user); setResumeError(null); },
       onError: () => setResumeError(null),
@@ -86,6 +90,7 @@ export function App() {
   }
 
   function changeProfile() {
+    shouldResumeOnStartup.current = false;
     setSwitching(true);
     setActiveUser(null);
     reset({ localUserId: '' });
@@ -94,7 +99,7 @@ export function App() {
   }
 
   const isLoading = statusQuery.isPending || (statusQuery.isSuccess && usersQuery.isPending);
-  const isResuming = selectUserMutation.isPending && selectUserMutation.variables === savedUserId || resumeError === 'unavailable';
+  const isResuming = (selectUserMutation.isPending && selectUserMutation.variables === savedUserId) || resumeError === 'unavailable';
   const loadError = statusQuery.error ?? usersQuery.error;
 
   return (
@@ -107,7 +112,7 @@ export function App() {
 
         <div className="service-status" role="status" aria-live="polite">
           <span className={`status-dot ${statusQuery.isSuccess ? 'is-available' : ''}`} aria-hidden="true" />
-          <span>{statusQuery.isSuccess ? 'Hub available' : statusQuery.isError ? 'Hub unavailable' : 'Checking Hub availability…'}</span>
+          <span>{statusQuery.isSuccess && resumeError !== 'unavailable' ? 'Hub available' : statusQuery.isError || resumeError === 'unavailable' ? 'Hub unavailable' : 'Checking Hub availability…'}</span>
         </div>
 
         {!activeUser && (
@@ -141,14 +146,14 @@ export function App() {
                 <select
                   id="local-profile"
                   disabled={selectUserMutation.isPending}
-                  {...register('localUserId', { required: true, onChange: () => selectUserMutation.reset() })}
+                  {...register('localUserId', { required: true, onChange: () => { selectUserMutation.reset(); setResumeError(null); shouldResumeOnStartup.current = false; } })}
                 >
                   <option value="" disabled>Select a profile</option>
                   {usersQuery.data.map((user) => (
                     <option key={user.id} value={user.id}>{user.displayName}</option>
                   ))}
                 </select>
-                {selectUserMutation.isError && !isResuming && (
+                {selectUserMutation.isError && !isResuming && resumeError !== 'missing' && (
                   <div className="message message-error" role="alert">
                     <p>The selected profile could not be validated. Check the Hub connection and try again.</p>
                     <button className="text-button" type="button" onClick={retry}>Try again</button>

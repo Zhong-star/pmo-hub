@@ -9,6 +9,7 @@ const { mockedGet } = vi.hoisted(() => {
   const mockedGet = vi.fn();
   return { mockedGet };
 });
+const localStorageDescriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
 
 vi.mock('axios', () => ({
   default: { create: () => ({ get: mockedGet }) },
@@ -28,7 +29,8 @@ function renderApp() {
 afterEach(() => {
   cleanup();
   mockedGet.mockReset();
-  window.localStorage.clear();
+  try { window.localStorage.clear(); } catch { /* Storage may be disabled in the current test. */ }
+  if (localStorageDescriptor) Object.defineProperty(window, 'localStorage', localStorageDescriptor);
 });
 
 describe('Hub entry', () => {
@@ -191,5 +193,28 @@ describe('Hub entry', () => {
     await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-1');
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+  });
+
+  it('does not automatically retry the saved profile after a manual selection fails', async () => {
+    window.localStorage.setItem('pmo-hub.local-user-id', 'dev-1');
+    const requestedProfiles: string[] = [];
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/status')) return { data: { status: 'available' } };
+      if (path.endsWith('/local-users')) return { data: [
+        { id: 'dev-1', displayName: 'Avery Chen' }, { id: 'dev-2', displayName: 'Jordan Lee' },
+      ] };
+      if (path.includes('/local-users/dev-')) {
+        const userId = path.split('/').pop()!;
+        requestedProfiles.push(userId);
+        throw Object.assign(new Error('Unavailable'), { response: { status: 503 } });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    renderApp();
+    expect(await screen.findByText('The saved profile could not be validated because the Hub is unavailable.')).toBeInTheDocument();
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-2');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText('The selected profile could not be validated. Check the Hub connection and try again.')).toBeInTheDocument();
+    expect(requestedProfiles).toEqual(['dev-1', 'dev-2']);
   });
 });
