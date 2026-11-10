@@ -55,7 +55,7 @@ h2 { margin: 0; color: #1d3458; font-size: 20px; letter-spacing: -.02em; }
 form { display: grid; gap: 11px; }
 label { color: #324765; font-size: 13px; font-weight: 650; }
 select { width: 100%; height: 46px; padding: 0 13px; color: #253a59; background: #fff; border: 1px solid #cbd5e1; border-radius: 9px; }
-select:focus-visible, button:focus-visible { outline: 3px solid #a9c2ff; outline-offset: 2px; }
+select:focus-visible, button:focus-visible { outline: 3px solid #315cbb; outline-offset: 2px; }
 .button { min-height: 44px; padding: 0 17px; border: 0; border-radius: 9px; font-weight: 650; cursor: pointer; }
 .button-primary { margin-top: 5px; color: #fff; background: #315cbb; }
 .button-primary:hover:not(:disabled) { background: #264d9f; }
@@ -80,7 +80,7 @@ select:focus-visible, button:focus-visible { outline: 3px solid #a9c2ff; outline
 .module-card h3 { margin: 0; color: #1d3458; font-size: 19px; letter-spacing: -.02em; }
 .module-card p { margin: 11px 0 22px; color: #64748b; font-size: 14px; line-height: 1.6; }
 .module-action { align-self: flex-start; margin-top: auto; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
-.module-action:focus-visible { outline: 3px solid #a9c2ff; outline-offset: 2px; }
+.module-action:focus-visible { outline: 3px solid #315cbb; outline-offset: 2px; }
 footer { margin-top: 24px; color: #8795aa; font-size: 12px; }
 
 @media (max-width: 520px) {

@@ -1,5 +1,20 @@
 import { expect, test } from '@playwright/test';
 
+function relativeLuminance(color: string): number {
+  const channels = color.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number);
+  if (!channels || channels.length !== 3) throw new Error(`Unexpected computed color: ${color}`);
+  const [red, green, blue] = channels.map((channel) => {
+    const normalized = channel / 255;
+    return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function contrastRatio(firstColor: string, secondColor: string): number {
+  const luminances = [relativeLuminance(firstColor), relativeLuminance(secondColor)].sort((a, b) => b - a);
+  return (luminances[0] + 0.05) / (luminances[1] + 0.05);
+}
+
 test('selecting a configured local profile opens the module catalog', async ({ page }) => {
   await page.goto('/');
 
@@ -22,6 +37,9 @@ test('selecting a configured local profile opens the module catalog', async ({ p
   const changeProfileButton = page.getByRole('button', { name: 'Change profile' });
   await expect(changeProfileButton).toBeFocused();
   await expect(changeProfileButton).toHaveCSS('outline-style', 'solid');
+  const focusOutlineColor = await changeProfileButton.evaluate((button) => getComputedStyle(button).outlineColor);
+  expect(focusOutlineColor).toBe('rgb(49, 92, 187)');
+  expect(contrastRatio(focusOutlineColor, 'rgb(255, 255, 255)')).toBeGreaterThanOrEqual(3);
   await page.keyboard.press('Enter');
   await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
 });
@@ -47,6 +65,24 @@ test('validation failure keeps the entry blocked and can be retried', async ({ p
   await page.getByRole('button', { name: 'Try again' }).click();
 
   await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
+});
+
+test('keeps the module catalog hidden while a selected profile is being validated', async ({ page }) => {
+  let finishValidation!: () => void;
+  const validationGate = new Promise<void>((resolve) => { finishValidation = resolve; });
+  await page.route('**/api/hub/v1/local-users/local-developer', async (route) => {
+    await validationGate;
+    await route.continue();
+  });
+
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+
+  await expect(page.getByRole('button', { name: 'Validating profile…' })).toBeDisabled();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).not.toBeVisible();
+  finishValidation();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
 });
 
 test('a profile-list timeout offers retry without a page reload', async ({ page }) => {
@@ -102,6 +138,10 @@ test('switches profiles only after selecting and validating a different profile'
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Welcome, Local Reviewer' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lessons Learned' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Lessons Learned: Coming soon' })).toBeDisabled();
+  await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
   await expect(page.evaluate(() => localStorage.getItem('pmo-hub.local-user-id'))).resolves.toBe('local-reviewer');
 });
 
