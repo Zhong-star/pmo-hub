@@ -11,6 +11,7 @@ const { mockedGet } = vi.hoisted(() => {
   return { mockedGet };
 });
 const localStorageDescriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+const originalEnabledValues = new Map(hubCatalogConfig.map((module) => [module, module.enabled]));
 
 vi.mock('axios', () => ({
   default: { create: () => ({ get: mockedGet }) },
@@ -30,7 +31,7 @@ function renderApp() {
 afterEach(() => {
   cleanup();
   mockedGet.mockReset();
-  hubCatalogConfig.forEach((module) => { module.enabled = false; });
+  originalEnabledValues.forEach((enabled, module) => { module.enabled = enabled; });
   try { window.localStorage.clear(); } catch { /* Storage may be disabled in the current test. */ }
   if (localStorageDescriptor) Object.defineProperty(window, 'localStorage', localStorageDescriptor);
 });
