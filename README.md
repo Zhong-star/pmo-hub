@@ -4,7 +4,7 @@ Código do PMO Hub em monorepo npm. Aplicações de navegador ficam em `apps/`; 
 
 ## Planejamento e tickets
 
-Specs e tickets de engenharia ficam versionados em `docs/<feature>/`, junto ao código que entregam. A Fase 1 de entrada do Hub está documentada em [`docs/phase-1-entry/`](docs/phase-1-entry/spec.md).
+Specs ficam em `docs/<feature>/`, junto ao código que descrevem. O acompanhamento de trabalho acontece como GitHub Issues. A Fase 1 do Hub está ligada às issues [#1](https://github.com/Zhong-star/pmo-hub/issues/1) e [#2](https://github.com/Zhong-star/pmo-hub/issues/2), com contexto adicional em [`docs/phase-1-entry/spec.md`](docs/phase-1-entry/spec.md).
 
 ## Hub local
 

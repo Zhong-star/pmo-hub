@@ -8,6 +8,7 @@
 **Verificação:** `npm test` (9 testes frontend, 6 API); `npm run test:e2e --workspace @pmo-hub/hub` (7 testes de navegador); `npm run typecheck`; `npm run build`; `npm run lint` — todos passaram. O build também passou com `HUB_LOCAL_USERS_FILE` apontando para arquivo inexistente.  
 **Commits:** `repos/pmo-hub`, branch `main`: `c0386eb`, `30c3e1a`, `58189dd`, `dbbb82f`, `4ec5000`, `86ef9c4`, `95e20ae6946e8d2a4fc663582baeb64446103c89`, `aa594f0ba4f41493ad88a03b8ecdb7ae78063a46`.
 **Código da Fase 1 no GitHub:** [commits de implementação do ticket 02](https://github.com/Zhong-star/pmo-hub/compare/86ef9c4754902caf2753bf985c6f94374f2b9e16...aa594f0ba4f41493ad88a03b8ecdb7ae78063a46).
+**GitHub Issues:** [#1 — Selecionar um usuário local](https://github.com/Zhong-star/pmo-hub/issues/1); [#2 — Retomar e trocar perfil](https://github.com/Zhong-star/pmo-hub/issues/2).
 
 **Conclusão:** persistência, retomada e troca de perfil foram entregues no ticket 02. O ticket foi revisado, corrigido e verificado. A revisão final do ticket 01 não encontrou pendências materiais de spec.
 
