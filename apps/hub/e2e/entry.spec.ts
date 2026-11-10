@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('selecting a configured local profile opens the Hub welcome page', async ({ page }) => {
+test('selecting a configured local profile opens the module catalog', async ({ page }) => {
   await page.goto('/');
 
   await expect(page.getByText('Hub available')).toBeVisible();
@@ -8,7 +8,22 @@ test('selecting a configured local profile opens the Hub welcome page', async ({
   await page.getByRole('button', { name: 'Continue' }).click();
 
   await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lessons Learned' })).toBeVisible();
+  await expect(page.getByText('Capture, review, and reuse lessons from project experience.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Lessons Learned: Coming soon' })).toBeDisabled();
+  await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
+  await expect(page.getByText('Request and coordinate technology resources across projects.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
+  await expect(page.getByRole('link', { name: /Lessons Learned|Tech Resource Allocation/ })).toHaveCount(0);
   await expect(page.getByText('Hub available')).toBeVisible();
+
+  await page.keyboard.press('Tab');
+  const changeProfileButton = page.getByRole('button', { name: 'Change profile' });
+  await expect(changeProfileButton).toBeFocused();
+  await expect(changeProfileButton).toHaveCSS('outline-style', 'solid');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
 });
 
 
@@ -61,8 +76,10 @@ test('resumes a saved profile after reopening the browser page', async ({ page }
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
 });
 
 test('switches profiles only after selecting and validating a different profile', async ({ page }) => {
@@ -84,6 +101,7 @@ test('switches profiles only after selecting and validating a different profile'
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-reviewer');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Welcome, Local Reviewer' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
   await expect(page.evaluate(() => localStorage.getItem('pmo-hub.local-user-id'))).resolves.toBe('local-reviewer');
 });
 
