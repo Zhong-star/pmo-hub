@@ -10,7 +10,13 @@ export class HubController {
 
   @Get('status')
   @ApiOperation({ summary: 'Get Hub API availability' })
-  @ApiOkResponse({ schema: { example: { status: 'available' } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: { status: { type: 'string', enum: ['available'] } },
+      required: ['status'],
+    },
+  })
   getStatus(): { status: 'available' } {
     return { status: 'available' };
   }

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "openapi:generate": "npm run build && node dist/generate-openapi.js",
     "start": "node dist/main.js",
     "lint": "eslint src test",
     "typecheck": "tsc --noEmit -p tsconfig.json",

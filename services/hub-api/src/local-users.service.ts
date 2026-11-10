@@ -48,6 +48,8 @@ export class LocalUsersService {
       if (
         typeof candidate?.id !== 'string' ||
         candidate.id.trim() === '' ||
+        candidate.id === '.' ||
+        candidate.id === '..' ||
         typeof candidate.displayName !== 'string' ||
         candidate.displayName.trim() === ''
       ) {

@@ -33,3 +33,25 @@ test('validation failure keeps the entry blocked and can be retried', async ({ p
 
   await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
 });
+
+test('a profile-list timeout offers retry without a page reload', async ({ page }) => {
+  let listAttempts = 0;
+  await page.route('**/api/hub/v1/local-users', async (route) => {
+    listAttempts += 1;
+    if (listAttempts === 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5_500));
+      try {
+        await route.continue();
+      } catch {
+        // Axios has already timed out and aborted this request.
+      }
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/');
+  await expect(page.getByRole('alert')).toContainText('Local profiles could not be loaded.', { timeout: 8_000 });
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
+});

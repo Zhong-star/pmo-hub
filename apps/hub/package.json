@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "openapi:types": "openapi-typescript ../../services/hub-api/openapi/hub-v1.json -o src/generated/hub-api.d.ts",
     "test": "vitest run",
     "test:e2e": "npm run build --workspace @pmo-hub/hub-api && playwright test",
     "test:watch": "vitest"
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "openapi-typescript": "^7.10.1",
     "@playwright/test": "^1.65.0",
     "@testing-library/jest-dom": "^6.9.0",
     "@testing-library/react": "^16.3.0",

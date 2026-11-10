@@ -1,0 +1,126 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/hub/v1/status": {
+      "get": {
+        "operationId": "HubController_getStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "available"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Hub API availability",
+        "tags": [
+          "Hub entry"
+        ]
+      }
+    },
+    "/api/hub/v1/local-users": {
+      "get": {
+        "operationId": "HubController_listLocalUsers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LocalUserDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List locally configured Hub profiles",
+        "tags": [
+          "Hub entry"
+        ]
+      }
+    },
+    "/api/hub/v1/local-users/{id}": {
+      "get": {
+        "operationId": "HubController_getLocalUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalUserDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The local profile does not exist."
+          }
+        },
+        "summary": "Validate and return a locally configured Hub profile",
+        "tags": [
+          "Hub entry"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "PMO Hub API",
+    "description": "Local entry and profile endpoints for the PMO Hub.",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "schemas": {
+      "LocalUserDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "local-developer"
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Local Developer"
+          }
+        },
+        "required": [
+          "id",
+          "displayName"
+        ]
+      }
+    }
+  }
+}

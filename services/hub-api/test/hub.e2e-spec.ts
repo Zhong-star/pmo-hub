@@ -1,9 +1,13 @@
 import 'reflect-metadata';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
+import { LocalUsersService } from '../src/local-users.service';
 
 describe('Hub entry API', () => {
   let app: INestApplication;
@@ -46,5 +50,22 @@ describe('Hub entry API', () => {
     await request(app.getHttpServer())
       .get('/api/hub/v1/local-users/unknown')
       .expect(404);
+  });
+
+  it.each(['.', '..'])('rejects reserved path-segment profile id %j', (id) => {
+    const directory = mkdtempSync(join(tmpdir(), 'hub-local-users-'));
+    const configPath = join(directory, 'users.json');
+    const previousConfigPath = process.env.HUB_LOCAL_USERS_FILE;
+
+    try {
+      writeFileSync(configPath, JSON.stringify([{ id, displayName: 'Invalid Profile' }]));
+      process.env.HUB_LOCAL_USERS_FILE = configPath;
+
+      expect(() => new LocalUsersService()).toThrow('Unable to load local Hub profiles');
+    } finally {
+      if (previousConfigPath === undefined) delete process.env.HUB_LOCAL_USERS_FILE;
+      else process.env.HUB_LOCAL_USERS_FILE = previousConfigPath;
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

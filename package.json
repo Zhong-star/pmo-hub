@@ -9,7 +9,9 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "contracts:generate": "npm run openapi:generate --workspace @pmo-hub/hub-api && npm run openapi:types --workspace @pmo-hub/hub",
     "lint": "npm run lint --workspaces --if-present",
+    "prebuild": "npm run contracts:generate",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }
