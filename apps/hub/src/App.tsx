@@ -190,7 +190,9 @@ export function App() {
                       <h3 id={`catalog-${module.code}-title`}>{module.name}</h3>
                       <p>{module.description}</p>
                       {module.enabled ? (
-                        <span className="module-action module-status" role="status">Ready to open</span>
+                        <a className="button button-primary module-action" href={module.route} aria-label={`Open ${module.name}`}>
+                          Open module
+                        </a>
                       ) : (
                         <button
                           className="button button-secondary module-action"

@@ -13,7 +13,7 @@ export const hubCatalogConfig: HubCatalogModule[] = [
     name: 'Lessons Learned',
     description: 'Capture, review, and reuse lessons from project experience.',
     route: '/lessons-learned',
-    enabled: false,
+    enabled: true,
   },
   {
     code: 'resource-allocation',

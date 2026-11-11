@@ -8,6 +8,19 @@ Specs ficam em `docs/<feature>/`, junto ao código que descrevem. O acompanhamen
 
 ## Hub local
 
-O Hub usa React/Vite em `apps/hub/` e a API NestJS em `services/hub-api/`. Execute `npm install` na raiz, depois inicie a API e a aplicação Hub pelos scripts dos workspaces.
+O Hub e Lessons Learned têm frontends React/Vite e APIs NestJS próprios. Na raiz do monorepo, execute `npm ci` e `npm run build`. Inicie cada componente em um terminal separado, a partir da raiz:
+
+```sh
+npm run start --workspace @pmo-hub/hub-api
+npm run start --workspace @pmo-hub/lessons-learned-api
+npm run dev --workspace @pmo-hub/lessons-learned
+npm run dev --workspace @pmo-hub/hub
+```
+
+Abra [PMO Hub](http://127.0.0.1:5173) e selecione um perfil para abrir Lessons Learned pelo catálogo. Para acessar a tela técnica diretamente, use [Lessons Learned](http://127.0.0.1:5173/lessons-learned). O servidor local do Hub é o ponto de entrada para os dois frontends e suas APIs. Lessons Learned mostra o estado da própria API e oferece o link **PMO Hub** de retorno.
+
+`npm run contracts:generate` gera os contratos OpenAPI, os tipos do Hub e o cliente de Lessons Learned. Use `npm test`, `npm run typecheck` e `npm run lint` para verificar os workspaces.
+
+Para verificar a navegação no navegador, encerre os servidores de desenvolvimento e execute `npm run test:e2e --workspace @pmo-hub/hub` para o Hub e `npm run test:e2e:lessons-learned --workspace @pmo-hub/hub` para Lessons Learned. Se o Chromium do Playwright ainda não estiver instalado, execute `npx playwright install chromium` primeiro.
 
 Perfis locais de desenvolvimento são configurados pela API; consulte o README do serviço Hub API.

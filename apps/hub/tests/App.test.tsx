@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from '../src/App';
@@ -11,7 +11,6 @@ const { mockedGet } = vi.hoisted(() => {
   return { mockedGet };
 });
 const localStorageDescriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
-const originalEnabledValues = new Map(hubCatalogConfig.map((module) => [module, module.enabled]));
 
 vi.mock('axios', () => ({
   default: { create: () => ({ get: mockedGet }) },
@@ -31,7 +30,6 @@ function renderApp() {
 afterEach(() => {
   cleanup();
   mockedGet.mockReset();
-  originalEnabledValues.forEach((enabled, module) => { module.enabled = enabled; });
   try { window.localStorage.clear(); } catch { /* Storage may be disabled in the current test. */ }
   if (localStorageDescriptor) Object.defineProperty(window, 'localStorage', localStorageDescriptor);
 });
@@ -59,19 +57,15 @@ describe('Hub entry', () => {
     expect(screen.getByRole('heading', { name: 'Module catalog' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Lessons Learned' })).toBeInTheDocument();
     expect(screen.getByText('Capture, review, and reuse lessons from project experience.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Lessons Learned: Coming soon' })).toBeDisabled();
+    expect(screen.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
     expect(screen.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeInTheDocument();
     expect(screen.getByText('Request and coordinate technology resources across projects.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
-    expect(screen.queryByRole('link', { name: /Lessons Learned|Tech Resource Allocation/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open Tech Resource Allocation' })).not.toBeInTheDocument();
     expect(mockedGet).toHaveBeenCalledWith('/api/hub/v1/local-users/dev-1', { timeout: HUB_API_TIMEOUT_MS });
   });
 
-  it('shows module readiness from a mixed Hub configuration without making enabled modules interactive', async () => {
-    const enabledModule = hubCatalogConfig.find((module) => module.code === 'resource-allocation');
-    if (!enabledModule) throw new Error('Resource Allocation module configuration is missing.');
-    enabledModule.enabled = true;
-
+  it('uses the catalog configuration to enable Lessons Learned and keep Tech Resource Allocation coming soon', async () => {
     mockedGet.mockImplementation(async (path: string) => {
       if (path.endsWith('/status')) return { data: { status: 'available' } };
       if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
@@ -84,13 +78,12 @@ describe('Hub entry', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(await screen.findByRole('heading', { name: 'Tech Resource Allocation' })).toBeInTheDocument();
-    const enabledModuleCard = screen.getByRole('heading', { name: 'Tech Resource Allocation' }).closest('article');
-    expect(enabledModuleCard).not.toBeNull();
-    expect(within(enabledModuleCard!).getByRole('status')).toHaveTextContent('Ready to open');
-    expect(screen.getByRole('button', { name: 'Lessons Learned: Coming soon' })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: 'Tech Resource Allocation: Ready to open' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Tech Resource Allocation: Ready to open' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Lessons Learned|Tech Resource Allocation/ })).not.toBeInTheDocument();
+    const lessonsLearned = hubCatalogConfig.find((module) => module.code === 'lessons-learned');
+    const resourceAllocation = hubCatalogConfig.find((module) => module.code === 'resource-allocation');
+    expect(lessonsLearned?.enabled).toBe(true);
+    expect(resourceAllocation?.enabled).toBe(false);
+    expect(screen.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
+    expect(screen.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
   });
 
   it('keeps entry blocked and offers retry when local profiles cannot be loaded', async () => {
@@ -222,7 +215,7 @@ describe('Hub entry', () => {
     expect(await screen.findByRole('heading', { name: 'Welcome, Jordan Lee' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Module catalog' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Lessons Learned' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Lessons Learned: Coming soon' })).toBeDisabled();
+    expect(screen.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
     expect(screen.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
     expect(window.localStorage.getItem('pmo-hub.local-user-id')).toBe('dev-2');

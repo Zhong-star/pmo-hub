@@ -26,11 +26,11 @@ test('selecting a configured local profile opens the module catalog', async ({ p
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Lessons Learned' })).toBeVisible();
   await expect(page.getByText('Capture, review, and reuse lessons from project experience.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Lessons Learned: Coming soon' })).toBeDisabled();
+  await expect(page.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.getByText('Request and coordinate technology resources across projects.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
-  await expect(page.getByRole('link', { name: /Lessons Learned|Tech Resource Allocation/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Open Tech Resource Allocation' })).toHaveCount(0);
   await expect(page.getByText('Hub available')).toBeVisible();
 
   await page.keyboard.press('Tab');
@@ -145,7 +145,7 @@ test('switches profiles only after selecting and validating a different profile'
   await expect(page.getByRole('heading', { name: 'Welcome, Local Reviewer' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Lessons Learned' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Lessons Learned: Coming soon' })).toBeDisabled();
+  await expect(page.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
   await expect(page.evaluate(() => localStorage.getItem('pmo-hub.local-user-id'))).resolves.toBe('local-reviewer');
