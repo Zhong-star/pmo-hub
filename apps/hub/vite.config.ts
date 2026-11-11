@@ -45,6 +45,9 @@ function isHtmlNavigation(request: import('node:http').IncomingMessage): boolean
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true,
     proxy: {
       '^/api/lessons-learned(?:/|\\?|$)': {
         target: 'http://127.0.0.1:3002',
