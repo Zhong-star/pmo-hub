@@ -21,6 +21,8 @@ Abra [PMO Hub](http://127.0.0.1:5173) e selecione um perfil para abrir Lessons L
 
 `npm run contracts:generate` gera os contratos OpenAPI, os tipos do Hub e o cliente de Lessons Learned. Use `npm test`, `npm run typecheck` e `npm run lint` para verificar os workspaces.
 
+O PostgreSQL local de Lessons Learned é opcional e pertence ao serviço `services/lessons-learned-api`. Consulte o README do serviço para iniciar o Compose e executar `npm run migration:run`. O teste PostgreSQL isolado usa Testcontainers e é executado separadamente com `npm run test:integration --workspace @pmo-hub/lessons-learned-api` (requer Docker).
+
 Para verificar a navegação no navegador, encerre os servidores de desenvolvimento e execute `npm run test:e2e --workspace @pmo-hub/hub` para o Hub e `npm run test:e2e:lessons-learned --workspace @pmo-hub/hub` para Lessons Learned. Se o Chromium do Playwright ainda não estiver instalado, execute `npx playwright install chromium` primeiro.
 
 Perfis locais de desenvolvimento são configurados pela API; consulte o README do serviço Hub API.
