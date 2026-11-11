@@ -29,6 +29,10 @@ test('an upstream document error gets a fallback while asset errors pass through
     expect(assetResult.status).toBe(404);
     expect(assetResult.body).toBe('upstream 404');
 
+    const forbiddenEntry = await page.goto('/lessons-learned?forbidden');
+    expect(forbiddenEntry?.status()).toBe(503);
+    await expect(page.getByRole('link', { name: 'Return to PMO Hub' })).toBeVisible();
+
     const forbiddenResponse = await page.goto('/lessons-learned/forbidden');
     expect(forbiddenResponse?.status()).toBe(403);
     await expect(page.getByText('upstream forbidden')).toBeVisible();
@@ -41,13 +45,15 @@ test('an upstream document error gets a fallback while asset errors pass through
 });
 
 test('unavailable module frontend shows a local fallback and Hub return link', async ({ page }) => {
-  const response = await page.goto('/lessons-learned');
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
 
-  expect(response?.status()).toBe(503);
   await expect(page.getByRole('heading', { name: 'Lessons Learned is unavailable' })).toBeVisible();
   await expect(page.getByText(/frontend did not respond successfully/i)).toBeVisible();
   await expect(page.getByRole('link', { name: 'Return to PMO Hub' })).toHaveAttribute('href', '/');
 
   await page.getByRole('link', { name: 'Return to PMO Hub' }).click();
-  await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
 });

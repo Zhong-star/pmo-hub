@@ -50,7 +50,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '^/api/lessons-learned(?:/|\\?|$)': {
-        target: 'http://127.0.0.1:3002',
+        target: process.env.LESSONS_LEARNED_API_TARGET ?? 'http://127.0.0.1:3002',
         changeOrigin: true,
       },
       '^/lessons-learned(?:/|\\?|$)': {
@@ -61,7 +61,9 @@ export default defineConfig({
         configure(proxy) {
           proxy.on('proxyRes', (proxyResponse, request, response) => {
             const status = proxyResponse.statusCode ?? 0;
-            if ((status !== 404 && (status < 500 || status > 599)) || !isHtmlNavigation(request)) return;
+            const isModuleEntry = /^\/lessons-learned\/?(?:\?|$)/.test(request.url ?? '');
+            const isUnavailable = status === 404 || status >= 500 || (isModuleEntry && status >= 400);
+            if (!isUnavailable || !isHtmlNavigation(request)) return;
 
             proxyResponse.resume();
             response.writeHead(503, {

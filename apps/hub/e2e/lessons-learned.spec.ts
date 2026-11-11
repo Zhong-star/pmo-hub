@@ -45,12 +45,15 @@ test('catalog link opens in the same tab and reload, back, and module return pre
 });
 
 test('module screen stays open and offers return when its API is unavailable', async ({ page }) => {
-  await page.route('**/api/lessons-learned/v1/health', (route) => route.abort());
-  await page.goto('/lessons-learned');
+  await page.goto('http://127.0.0.1:5176');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
 
   await expect(page.getByRole('heading', { name: 'Lessons Learned' })).toBeVisible();
   await expect(page.getByRole('alert')).toContainText('API unavailable');
-  await expect(page.getByRole('link', { name: 'PMO Hub' })).toHaveAttribute('href', '/');
+  await page.getByRole('link', { name: 'PMO Hub' }).click();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
 });
 
 test('Hub proxy matches complete module prefixes only', async ({ page }) => {
