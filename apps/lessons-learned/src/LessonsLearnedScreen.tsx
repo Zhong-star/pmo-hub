@@ -64,27 +64,34 @@ function readModulePage(): ModulePage {
 
 export function LessonsLearnedScreen() {
   const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
-  const [authorizedProfileId, setAuthorizedProfileId] = useState<string | null>(null);
+  const [selectionGeneration, setSelectionGeneration] = useState(0);
+  const [authorizedSelectionGeneration, setAuthorizedSelectionGeneration] = useState<number | null>(null);
   const [modulePage, setModulePage] = useState<ModulePage>(readModulePage);
   const { theme, selectTheme } = useThemePreference();
   const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [selectedDraft, setSelectedDraft] = useState<LessonDraft | null>(null);
   const selectedProfileIdRef = useRef(selectedProfileId);
+  const selectionGenerationRef = useRef(selectionGeneration);
   const pendingCreateProfilesRef = useRef(new Set<string>());
   const [pendingCreateProfiles, setPendingCreateProfiles] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const homeQuery = useQuery({
-    queryKey: ['lessons-learned-home', selectedProfileId],
+    queryKey: ['lessons-learned-home', selectedProfileId, selectionGeneration],
     queryFn: async () => {
       const profileId = selectedProfileId ?? '';
+      const requestGeneration = selectionGeneration;
+      const isCurrentSelection = () => (
+        selectedProfileIdRef.current === profileId
+        && selectionGenerationRef.current === requestGeneration
+      );
       try {
         const home = await getHome(profileId);
-        if (selectedProfileIdRef.current === profileId) setAuthorizedProfileId(profileId);
+        if (isCurrentSelection()) setAuthorizedSelectionGeneration(requestGeneration);
         return home;
       } catch (error) {
-        if (isDefinitiveAccessError(error) && selectedProfileIdRef.current === profileId) {
-          setAuthorizedProfileId(null);
+        if (isDefinitiveAccessError(error) && isCurrentSelection()) {
+          setAuthorizedSelectionGeneration(null);
         }
         throw error;
       }
@@ -107,7 +114,7 @@ export function LessonsLearnedScreen() {
   );
   const isDefinitiveAccessFailure = isAuthenticationRequired || isAccessDenied || isAccessConfigurationError;
   const hasUsableHomeData = homeQuery.data !== undefined
-    && authorizedProfileId === selectedProfileId
+    && authorizedSelectionGeneration === selectionGeneration
     && !isDefinitiveAccessFailure;
   const isHomePage = selectedProfileId !== null && hasUsableHomeData;
   const showHomeRecheckError = isHomePage && homeQuery.isError && !homeQuery.isFetching;
@@ -131,8 +138,10 @@ export function LessonsLearnedScreen() {
   const updateSelectedProfile = useCallback((profileId: string | null) => {
     if (profileId === selectedProfileIdRef.current) return;
     selectedProfileIdRef.current = profileId;
+    selectionGenerationRef.current += 1;
+    setSelectionGeneration(selectionGenerationRef.current);
     setSelectedProfileId(profileId);
-    setAuthorizedProfileId(null);
+    setAuthorizedSelectionGeneration(null);
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
   }, []);
@@ -150,7 +159,7 @@ export function LessonsLearnedScreen() {
     if (!isDefinitiveAccessFailure) return;
     // An access revocation must discard the private editor state before a later recheck can restore the page.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAuthorizedProfileId(null);
+    setAuthorizedSelectionGeneration(null);
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
   }, [isDefinitiveAccessFailure]);
@@ -256,7 +265,7 @@ export function LessonsLearnedScreen() {
   return (
     <div className="app-shell">
       <HubHeader
-        profileName={(authorizedProfileId === selectedProfileId ? homeQuery.data?.profile.displayName : undefined)
+        profileName={(authorizedSelectionGeneration === selectionGeneration ? homeQuery.data?.profile.displayName : undefined)
           ?? selectedProfileId ?? undefined}
         onChangeProfile={selectedProfileId ? changeProfile : undefined}
         theme={theme}

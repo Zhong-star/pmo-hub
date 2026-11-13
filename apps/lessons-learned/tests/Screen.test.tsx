@@ -702,12 +702,18 @@ describe('Lessons Learned access check', () => {
       }
       return new Promise((resolve) => { resolveContributorAgain = resolve; });
     });
+    vi.mocked(getMyOpenDrafts).mockImplementation(async (localUserId) => (
+      localUserId === 'local-contributor'
+        ? [lessonDraft({ title: 'Private contributor draft' })]
+        : []
+    ));
 
     renderScreen('local-contributor', 60_000);
     expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
     const user = userEvent.setup();
     await user.click(screen.getByRole('link', { name: 'My Submissions' }));
     await screen.findByRole('heading', { name: 'My Submissions' });
+    expect(await screen.findByText('Private contributor draft')).toBeInTheDocument();
 
     act(() => {
       window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
@@ -726,13 +732,101 @@ describe('Lessons Learned access check', () => {
     expect(screen.queryByRole('heading', { name: 'My Submissions' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Create lesson' })).not.toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'Lessons Learned' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Private contributor draft')).not.toBeInTheDocument();
     expect(getMyOpenDrafts).toHaveBeenCalledTimes(2);
+    expect(getMyOpenDrafts).toHaveBeenNthCalledWith(1, 'local-contributor');
+    expect(getMyOpenDrafts).toHaveBeenNthCalledWith(2, 'local-pmo');
+    expect(vi.mocked(getHome).mock.calls.map(([profileId]) => profileId)).toEqual([
+      'local-contributor',
+      'local-pmo',
+      'local-contributor',
+    ]);
 
     await act(async () => { resolveContributorAgain(contributor); });
     expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create lesson' })).toBeVisible();
+    expect(screen.getByText('Private contributor draft')).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(document.querySelectorAll('#page-title')).toHaveLength(1);
+  });
+
+  it('does not authorize a reselection from an older pending Home check', async () => {
+    let resolveStaleContributor!: (value: typeof contributor) => void;
+    let resolveFreshContributor!: (value: typeof contributor) => void;
+    let contributorRequests = 0;
+    vi.mocked(getHome).mockImplementation((localUserId) => {
+      if (localUserId === 'local-pmo') return Promise.resolve(pmo);
+      contributorRequests += 1;
+      if (contributorRequests === 1) return Promise.resolve(contributor);
+      if (contributorRequests === 2) {
+        return new Promise((resolve) => { resolveStaleContributor = resolve; });
+      }
+      return new Promise((resolve) => { resolveFreshContributor = resolve; });
+    });
+    vi.mocked(getMyOpenDrafts).mockImplementation(async (localUserId) => (
+      localUserId === 'local-contributor'
+        ? [lessonDraft({ title: 'Private contributor draft' })]
+        : []
+    ));
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor', 60_000);
+    expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    expect(await screen.findByText('Private contributor draft')).toBeInTheDocument();
+
+    act(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      window.dispatchEvent(new Event('visibilitychange'));
+    });
+    await vi.waitFor(() => expect(getHome).toHaveBeenCalledTimes(2));
+    expect(getHome).toHaveBeenNthCalledWith(2, 'local-contributor');
+
+    act(() => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'pmo-hub.local-user-id', newValue: 'local-pmo' }));
+    });
+    expect(await screen.findByRole('button', { name: 'Local PMO' })).toBeInTheDocument();
+    expect(screen.queryByText('Private contributor draft')).not.toBeInTheDocument();
+
+    act(() => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'pmo-hub.local-user-id',
+        newValue: 'local-contributor',
+      }));
+    });
+
+    expect(await screen.findByRole('status')).toHaveTextContent('local-contributor');
+    await vi.waitFor(() => expect(getHome).toHaveBeenCalledTimes(4));
+    expect(vi.mocked(getHome).mock.calls.map(([profileId]) => profileId)).toEqual([
+      'local-contributor',
+      'local-contributor',
+      'local-pmo',
+      'local-contributor',
+    ]);
+    expect(screen.queryByRole('heading', { name: 'Home' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'My Submissions' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create lesson' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Lessons Learned' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Private contributor draft')).not.toBeInTheDocument();
+
+    await act(async () => { resolveStaleContributor(contributor); });
+
+    expect(screen.getByRole('status')).toHaveTextContent('local-contributor');
+    expect(screen.queryByRole('heading', { name: 'Home' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'My Submissions' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create lesson' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Lessons Learned' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Private contributor draft')).not.toBeInTheDocument();
+
+    await act(async () => { resolveFreshContributor(contributor); });
+
+    expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create lesson' })).toBeVisible();
+    expect(screen.getByText('Private contributor draft')).toBeInTheDocument();
   });
 
   it('hides cached private data after authentication is required on a background recheck', async () => {
