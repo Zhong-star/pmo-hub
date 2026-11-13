@@ -3,6 +3,9 @@ import {
   api,
   getHealth,
   getHome,
+  getMyOpenDrafts,
+  createLessonDraft,
+  LESSONS_LEARNED_LESSONS_PATH,
   LESSONS_LEARNED_HEALTH_PATH,
   LESSONS_LEARNED_HOME_PATH,
   LESSONS_LEARNED_API_TIMEOUT_MS,
@@ -64,6 +67,36 @@ describe('lessons learned HTTP client', () => {
       url: LESSONS_LEARNED_HOME_PATH,
       method: 'get',
       timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
+    }));
+  });
+
+  it('creates a title-only draft and retrieves the current profile’s open drafts', async () => {
+    const draft = {
+      id: 7,
+      title: 'Improve release handover',
+      authorId: 'local-contributor',
+      status: 'Open' as const,
+      createdAt: '2026-11-13T12:00:00.000Z',
+      updatedAt: '2026-11-13T12:00:00.000Z',
+    };
+    const adapter = vi.fn()
+      .mockResolvedValueOnce({ data: draft, status: 201, statusText: 'Created', headers: {}, config: {} })
+      .mockResolvedValueOnce({ data: [draft], status: 200, statusText: 'OK', headers: {}, config: {} });
+    api.defaults.adapter = adapter;
+
+    await expect(createLessonDraft('local-contributor', 'Improve release handover')).resolves.toEqual(draft);
+    await expect(getMyOpenDrafts('local-contributor')).resolves.toEqual([draft]);
+
+    expect(adapter).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      url: LESSONS_LEARNED_LESSONS_PATH,
+      method: 'post',
+      data: JSON.stringify({ title: 'Improve release handover' }),
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
+    }));
+    expect(adapter).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      url: LESSONS_LEARNED_LESSONS_PATH,
+      method: 'get',
       headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
     }));
   });

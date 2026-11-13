@@ -97,11 +97,97 @@
           "Lessons Learned home"
         ]
       }
+    },
+    "/api/lessons-learned/v1/lessons": {
+      "post": {
+        "operationId": "LessonsController_createDraft",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLessonRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonDraftResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The title must contain 1 to 150 characters."
+          },
+          "401": {
+            "description": "A local Hub profile must be selected."
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access."
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable."
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Create a title-only Open lesson draft for the selected profile",
+        "tags": [
+          "Lessons"
+        ]
+      },
+      "get": {
+        "operationId": "LessonsController_getMyOpenDrafts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LessonDraftResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected."
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access."
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable."
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List the selected profile’s Open lesson drafts",
+        "tags": [
+          "Lessons"
+        ]
+      }
     }
   },
   "info": {
     "title": "Lessons Learned API",
-    "description": "Local access and Home endpoints for the Lessons Learned module.",
+    "description": "Local access, Home, and draft registration endpoints for the Lessons Learned module.",
     "version": "1.0.0",
     "contact": {}
   },
@@ -232,6 +318,60 @@
         "required": [
           "profile",
           "navigation"
+        ]
+      },
+      "CreateLessonRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 150,
+            "example": "Improve release handover"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "LessonDraftResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 150,
+            "example": "Improve release handover"
+          },
+          "authorId": {
+            "type": "string",
+            "example": "local-contributor"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Open"
+            ],
+            "example": "Open"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "authorId",
+          "status",
+          "createdAt",
+          "updatedAt"
         ]
       }
     }

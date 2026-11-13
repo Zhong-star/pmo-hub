@@ -10,7 +10,8 @@
     "openapi:types": "openapi-typescript ../../services/hub-api/openapi/hub-v1.json -o src/generated/hub-api.d.ts",
     "test": "vitest run",
     "test:e2e": "npm run build --workspace @pmo-hub/hub-api && playwright test",
-    "test:e2e:lessons-learned": "npm run build --workspace @pmo-hub/hub-api && npm run build --workspace @pmo-hub/lessons-learned-api && playwright test --config playwright.lessons-learned.config.ts && playwright test --config playwright.lessons-learned-unavailable.config.ts",
+    "test:e2e:lessons-learned": "node ../../services/lessons-learned-api/run-playwright-e2e.mjs",
+    "test:e2e:lessons-learned:registration": "node ../../services/lessons-learned-api/run-playwright-e2e.mjs --grep \"Contributor creates a title-only lesson\"",
     "test:watch": "vitest"
   },
   "dependencies": {

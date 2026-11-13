@@ -67,6 +67,31 @@ test('direct Lessons Learned URL works before profile selection and can return t
   await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
 });
 
+test('Contributor creates a title-only lesson and reopens the saved draft after reload', async ({ page }) => {
+  expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
+  const title = `Issue 20 draft ${Date.now()}`;
+
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'My Submissions' }).click();
+  await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
+  await page.getByRole('button', { name: 'Create lesson' }).click();
+  await page.getByRole('textbox', { name: 'Title' }).fill(title);
+  await page.getByRole('button', { name: 'Save Draft' }).click();
+  await expect(page.getByRole('status')).toHaveText('Draft saved.');
+  await expect(page.getByText(title, { exact: true })).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
+  await page.getByRole('button', { name: `Reopen ${title}` }).click();
+  await expect(page.getByRole('dialog', { name: 'Open draft' })).toContainText(title);
+});
+
 test('catalog link opens in the same tab and reload, back, and module return preserve the profile', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');

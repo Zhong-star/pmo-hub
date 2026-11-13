@@ -38,6 +38,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/lessons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the selected profile’s Open lesson drafts */
+        get: operations["LessonsController_getMyOpenDrafts"];
+        put?: never;
+        /** Create a title-only Open lesson draft for the selected profile */
+        post: operations["LessonsController_createDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -81,6 +99,27 @@ export interface components {
         LessonsLearnedHomeResponse: {
             profile: components["schemas"]["LessonsLearnedProfile"];
             navigation: components["schemas"]["LessonsLearnedNavigationItem"][];
+        };
+        CreateLessonRequest: {
+            /** @example Improve release handover */
+            title: string;
+        };
+        LessonDraftResponse: {
+            /** @example 1 */
+            id: number;
+            /** @example Improve release handover */
+            title: string;
+            /** @example local-contributor */
+            authorId: string;
+            /**
+             * @example Open
+             * @enum {string}
+             */
+            status: "Open";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
         };
     };
     responses: never;
@@ -163,6 +202,97 @@ export interface operations {
                 content: {
                     "application/problem+json": components["schemas"]["LocalAccessProblem"];
                 };
+            };
+        };
+    };
+    LessonsController_getMyOpenDrafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDraftResponse"][];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LessonsController_createDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLessonRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDraftResponse"];
+                };
+            };
+            /** @description The title must contain 1 to 150 characters. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

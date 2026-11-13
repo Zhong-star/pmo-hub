@@ -62,7 +62,7 @@ describe('Lessons Learned PostgreSQL persistence', () => {
       .expect({ status: 'ok' });
   });
 
-  it('runs the documented migration command when there are no business migrations', async () => {
+  it('runs the documented lesson and history migrations', async () => {
     if (!container) {
       throw new Error('The PostgreSQL integration container did not start.');
     }
@@ -79,6 +79,20 @@ describe('Lessons Learned PostgreSQL persistence', () => {
       windowsHide: true,
     });
 
-    expect(result.stdout).toContain('No migrations are pending');
+    expect(result.stdout).toContain('CreateLessonsAndHistory1710000000000 has been executed successfully');
+
+    const repeat = await execFileAsync('npm', ['run', 'migration:run'], {
+      cwd: resolve(__dirname, '..'),
+      env: {
+        ...process.env,
+        LESSONS_LEARNED_DATABASE_URL: container.getConnectionUri(),
+      },
+      maxBuffer: 1024 * 1024,
+      shell: process.platform === 'win32',
+      timeout: 120_000,
+      windowsHide: true,
+    });
+
+    expect(repeat.stdout).toContain('No migrations are pending');
   });
 });

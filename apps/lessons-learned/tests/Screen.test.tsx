@@ -3,10 +3,12 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsLearnedScreen } from '../src/LessonsLearnedScreen';
-import { getHome } from '../src/api';
+import { createLessonDraft, getHome, getMyOpenDrafts } from '../src/api';
 
 vi.mock('../src/api', () => ({
+  createLessonDraft: vi.fn(),
   getHome: vi.fn(),
+  getMyOpenDrafts: vi.fn(),
 }));
 
 const contributor = {
@@ -21,6 +23,7 @@ const pmo = {
 
 function renderScreen(localUserId?: string, gcTime = 0) {
   window.localStorage.clear();
+  window.history.replaceState(null, '', '/lessons-learned/');
   if (localUserId) window.localStorage.setItem('pmo-hub.local-user-id', localUserId);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime } },
@@ -58,6 +61,72 @@ describe('Lessons Learned access check', () => {
     expect(screen.getByText(/No local profile is selected/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Select a local profile' })).toHaveAttribute('href', '/');
     expect(getHome).not.toHaveBeenCalled();
+  });
+
+  it('lists the current profile’s open drafts and reopens a saved draft after navigation', async () => {
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([{
+      id: 7,
+      title: 'Improve release handover',
+      authorId: 'local-contributor',
+      status: 'Open',
+      createdAt: '2026-11-13T12:00:00.000Z',
+      updatedAt: '2026-11-13T12:00:00.000Z',
+    }]);
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+
+    expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Reopen Improve release handover' }));
+    expect(screen.getByRole('dialog', { name: 'Open draft' })).toHaveTextContent('Improve release handover');
+    expect(getMyOpenDrafts).toHaveBeenCalledWith('local-contributor');
+  });
+
+  it('creates a title-only draft and keeps the entered title when saving fails', async () => {
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
+    vi.mocked(createLessonDraft).mockRejectedValueOnce(new Error('Save failed'));
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await screen.findByRole('heading', { name: 'My Submissions' });
+    await user.click(screen.getByRole('button', { name: 'Create lesson' }));
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Improve release handover');
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be saved');
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Improve release handover');
+    expect(screen.queryByRole('status', { name: /saved/i })).not.toBeInTheDocument();
+  });
+
+  it('saves a title-only Open draft for the selected profile', async () => {
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
+    vi.mocked(createLessonDraft).mockResolvedValue({
+      id: 7,
+      title: 'Improve release handover',
+      authorId: 'local-contributor',
+      status: 'Open',
+      createdAt: '2026-11-13T12:00:00.000Z',
+      updatedAt: '2026-11-13T12:00:00.000Z',
+    });
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await screen.findByRole('heading', { name: 'My Submissions' });
+    await user.click(screen.getByRole('button', { name: 'Create lesson' }));
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Improve release handover');
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Draft saved');
+    expect(createLessonDraft).toHaveBeenCalledWith('local-contributor', 'Improve release handover');
   });
 
   it('shows the selected identity while the API checks access without showing Home data', () => {

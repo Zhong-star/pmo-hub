@@ -39,6 +39,9 @@ export default defineConfig({
         PORT: '5199',
         LESSONS_LEARNED_LOCAL_AUTH_ENABLED: 'true',
         LESSONS_LEARNED_LOCAL_USERS_FILE: localProfilesFile,
+        ...(process.env.LESSONS_LEARNED_DATABASE_URL
+          ? { LESSONS_LEARNED_DATABASE_URL: process.env.LESSONS_LEARNED_DATABASE_URL }
+          : {}),
       },
     },
     {

@@ -4,8 +4,11 @@ import type { paths } from './lessons-learned-api';
 
 export const LESSONS_LEARNED_HEALTH_PATH = '/api/lessons-learned/v1/health' satisfies keyof paths;
 export const LESSONS_LEARNED_HOME_PATH = '/api/lessons-learned/v1/home' satisfies keyof paths;
+export const LESSONS_LEARNED_LESSONS_PATH = '/api/lessons-learned/v1/lessons' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
+type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
+type CreateLessonBody = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['post']['requestBody']['content']['application/json'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -25,6 +28,25 @@ export async function getHealth(): Promise<HealthResponse> {
 
 export async function getHome(localUserId: string): Promise<HomeResponse> {
   const { data } = await api.get<HomeResponse>(LESSONS_LEARNED_HOME_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function getMyOpenDrafts(localUserId: string): Promise<LessonDraft[]> {
+  const { data } = await api.get<LessonDraft[]>(LESSONS_LEARNED_LESSONS_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function createLessonDraft(localUserId: string, title: string): Promise<LessonDraft> {
+  const body: CreateLessonBody = { title };
+  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_LESSONS_PATH, body, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });

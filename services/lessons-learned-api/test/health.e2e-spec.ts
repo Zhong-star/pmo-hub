@@ -18,6 +18,11 @@ type OpenApiContract = {
         security?: Record<string, string[]>[];
         responses?: Record<string, { content?: Record<string, { schema?: { $ref?: string } }> }>;
       };
+      post?: {
+        security?: Record<string, string[]>[];
+        requestBody?: { content?: Record<string, { schema?: { $ref?: string } }> };
+        responses?: Record<string, { content?: Record<string, { schema?: { $ref?: string; type?: string; items?: { $ref?: string } } }> }>;
+      };
     }
   >;
   components?: {
@@ -84,6 +89,16 @@ describe('Lessons Learned health API', () => {
     expect(home?.security).toEqual([{ localProfile: [] }]);
     expect(home?.responses?.['401']?.content?.['application/problem+json']?.schema?.$ref)
       .toBe('#/components/schemas/LocalAccessProblem');
+
+    const lessons = contract.paths['/api/lessons-learned/v1/lessons'];
+    expect(lessons?.get?.security).toEqual([{ localProfile: [] }]);
+    expect(lessons?.get?.responses?.['200']?.content?.['application/json']?.schema)
+      .toMatchObject({ type: 'array', items: { $ref: '#/components/schemas/LessonDraftResponse' } });
+    expect(lessons?.post?.security).toEqual([{ localProfile: [] }]);
+    expect(lessons?.post?.requestBody?.content?.['application/json']?.schema?.$ref)
+      .toBe('#/components/schemas/CreateLessonRequest');
+    expect(lessons?.post?.responses?.['201']?.content?.['application/json']?.schema?.$ref)
+      .toBe('#/components/schemas/LessonDraftResponse');
 
     await request(app.getHttpServer())
       .get('/api/lessons-learned/v1/health')
