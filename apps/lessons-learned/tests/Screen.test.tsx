@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -45,6 +45,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  onlineManager.setOnline(true);
 });
 
 describe('Lessons Learned access check', () => {
@@ -191,6 +192,17 @@ describe('Lessons Learned access check', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
     expect(getHome).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers Retry when the browser goes offline before checking access', async () => {
+    onlineManager.setOnline(false);
+    vi.mocked(getHome).mockRejectedValueOnce(new Error('Network unavailable'));
+
+    renderScreen('local-contributor');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('temporarily unavailable');
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Home' })).not.toBeInTheDocument();
   });
 
   it('revalidates Home when the tab regains focus and hides data after access is revoked', async () => {
