@@ -44,6 +44,7 @@ export function LessonsLearnedScreen() {
     queryKey: ['lessons-learned-home', selectedProfileId],
     queryFn: () => getHome(selectedProfileId ?? ''),
     enabled: selectedProfileId !== null,
+    networkMode: 'always',
     retry: false,
     refetchOnWindowFocus: true,
   });
