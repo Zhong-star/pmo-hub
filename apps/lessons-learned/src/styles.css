@@ -114,6 +114,8 @@ button, a { font: inherit; }
   box-shadow: var(--card-shadow);
 }
 
+.module-card-with-navigation { width: min(100%, 1000px); }
+
 .eyebrow {
   margin: 0 0 12px;
   color: var(--eyebrow);
@@ -240,28 +242,71 @@ h1 {
 
 .active-role strong { color: var(--nav-current); }
 
-.module-sidebar { margin: 0; }
+.module-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  align-items: start;
+  gap: clamp(32px, 5vw, 58px);
+}
+
+.module-sidebar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 22px;
+  min-width: 0;
+}
+
+.module-menu-toggle {
+  display: none;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  background: var(--theme-control-background);
+  color: var(--theme-control-text);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.module-menu-toggle:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+}
 
 .module-navigation {
   display: flex;
-  margin: 0 0 16px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid var(--rule);
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
 }
 
 .module-navigation a {
-  padding: 0 0 12px;
-  border-bottom: 3px solid var(--nav-indicator);
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 10px 12px;
+  border-left: 3px solid transparent;
   color: var(--nav-current);
   font-size: 14px;
   font-weight: 700;
   text-decoration: none;
 }
 
+.module-navigation a[aria-current='page'] {
+  border-left-color: var(--nav-indicator);
+}
+
+.module-content { min-width: 0; }
+
 .theme-controls {
   display: inline-flex;
   gap: 3px;
-  margin: 0 0 28px;
+  margin: 0;
   padding: 3px;
   border: 1px solid var(--surface-border);
   border-radius: 11px;
@@ -298,6 +343,25 @@ h1 {
   .page-shell { width: min(100% - 30px, 1120px); }
   .topbar { height: 66px; }
   .module-card { border-radius: 17px; }
+}
+
+@media (max-width: 760px) {
+  .module-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+  }
+
+  .module-sidebar {
+    width: 100%;
+    gap: 12px;
+  }
+
+  .module-menu-toggle { display: inline-flex; align-items: center; }
+
+  .module-navigation { display: none; }
+
+  .module-sidebar[data-menu-open='true'] .module-navigation { display: flex; }
 }
 
 @media (prefers-reduced-motion: reduce) {

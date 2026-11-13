@@ -82,6 +82,37 @@ describe('Lessons Learned access check', () => {
     expect(screen.getByRole('link', { name: 'Back to PMO Hub' })).toHaveAttribute('href', '/');
   });
 
+  it('opens the module menu with the keyboard and closes it after choosing Home', async () => {
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+
+    const menuButton = await screen.findByRole('button', { name: 'Module menu' });
+    const navigation = screen.getByRole('navigation', { name: 'Lessons Learned' });
+    const homeLink = screen.getByRole('link', { name: 'Home' });
+
+    expect(menuButton).toHaveAttribute('aria-controls', 'module-navigation');
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+    expect(homeLink).toHaveAttribute('href', '/lessons-learned/');
+    expect(navigation).toHaveAttribute('id', 'module-navigation');
+
+    menuButton.focus();
+    await user.keyboard('{Enter}');
+    expect(menuButton).toHaveAttribute('aria-expanded', 'true');
+
+    await user.keyboard('{Enter}');
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(menuButton);
+    expect(menuButton).toHaveAttribute('aria-expanded', 'true');
+    homeLink.addEventListener('click', (event) => event.preventDefault(), { once: true });
+    await user.click(homeLink);
+
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('heading', { name: 'Home' })).toBeInTheDocument();
+  });
+
   it('switches the sidebar theme from the keyboard and keeps the choice in this session', async () => {
     vi.mocked(getHome).mockResolvedValue(contributor);
     const user = userEvent.setup();

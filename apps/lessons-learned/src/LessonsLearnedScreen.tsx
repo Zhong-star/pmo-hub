@@ -40,6 +40,7 @@ function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
 export function LessonsLearnedScreen() {
   const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
   const [theme, setTheme] = useState<Theme>(readThemePreference);
+  const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
   const homeQuery = useQuery({
     queryKey: ['lessons-learned-home', selectedProfileId],
     queryFn: () => getHome(selectedProfileId ?? ''),
@@ -48,6 +49,7 @@ export function LessonsLearnedScreen() {
     refetchOnWindowFocus: true,
   });
   const errorCode = homeQuery.isError ? getApiErrorCode(homeQuery.error) : null;
+  const isHomePage = selectedProfileId !== null && !homeQuery.isFetching && homeQuery.isSuccess && !homeQuery.isError;
 
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -82,7 +84,10 @@ export function LessonsLearnedScreen() {
         </a>
       </header>
 
-      <section className="module-card" aria-labelledby="page-title">
+      <section
+        className={isHomePage ? 'module-card module-card-with-navigation' : 'module-card'}
+        aria-labelledby="page-title"
+      >
         <p className="eyebrow">Lessons Learned</p>
 
         {!selectedProfileId && (
@@ -142,18 +147,29 @@ export function LessonsLearnedScreen() {
             </div>
           )}
 
-        {selectedProfileId && !homeQuery.isFetching && homeQuery.isSuccess && !homeQuery.isError && (
-          <>
-            <h1 id="page-title">Home</h1>
-            <p className="intro">Welcome, {homeQuery.data.profile.displayName}</p>
-            <p className="active-role">Active role: <strong>{getRoleLabel(homeQuery.data.profile.role)}</strong></p>
-            <aside className="module-sidebar" aria-label="Lessons Learned navigation">
-              <nav className="module-navigation" aria-label="Lessons Learned">
+        {isHomePage && (
+          <div className="module-layout">
+            <aside
+              className="module-sidebar"
+              aria-label="Lessons Learned navigation"
+              data-menu-open={isModuleMenuOpen}
+            >
+              <button
+                className="module-menu-toggle"
+                type="button"
+                aria-controls="module-navigation"
+                aria-expanded={isModuleMenuOpen}
+                onClick={() => setIsModuleMenuOpen((isOpen) => !isOpen)}
+              >
+                Module menu
+              </button>
+              <nav id="module-navigation" className="module-navigation" aria-label="Lessons Learned">
                 {homeQuery.data.navigation.map((destination) => (
                   <a
                     key={destination.id}
                     href="/lessons-learned/"
                     aria-current={destination.current ? 'page' : undefined}
+                    onClick={() => setIsModuleMenuOpen(false)}
                   >
                     {destination.label}
                   </a>
@@ -176,8 +192,13 @@ export function LessonsLearnedScreen() {
                 </button>
               </div>
             </aside>
-            <a className="primary-link" href="/">Back to PMO Hub</a>
-          </>
+            <div className="module-content">
+              <h1 id="page-title">Home</h1>
+              <p className="intro">Welcome, {homeQuery.data.profile.displayName}</p>
+              <p className="active-role">Active role: <strong>{getRoleLabel(homeQuery.data.profile.role)}</strong></p>
+              <a className="primary-link" href="/">Back to PMO Hub</a>
+            </div>
+          </div>
         )}
       </section>
     </main>
