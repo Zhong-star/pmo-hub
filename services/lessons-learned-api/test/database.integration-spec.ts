@@ -9,6 +9,7 @@ import { DataSource } from 'typeorm';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/configure-app';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../src/database/database.module';
 
 const execFileAsync = promisify(execFile);
@@ -29,7 +30,7 @@ describe('Lessons Learned PostgreSQL persistence', () => {
       imports: [AppModule.register(container.getConnectionUri())],
     }).compile();
     app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/lessons-learned/v1');
+    configureApp(app);
     await app.init();
     dataSource = app.get<DataSource>(LESSONS_LEARNED_DATA_SOURCE);
   }, 120_000);

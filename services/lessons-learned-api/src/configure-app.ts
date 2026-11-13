@@ -4,6 +4,7 @@ import { createOpenApiDocument } from './openapi-document';
 
 export function configureApp(app: INestApplication) {
   const prefix = 'api/lessons-learned/v1';
+  app.enableShutdownHooks();
   app.setGlobalPrefix(prefix);
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
 
