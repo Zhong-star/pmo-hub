@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
+import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { getHubStatus, getLocalUser, getLocalUsers, type LocalUser } from './api';
 import { hubCatalogConfig } from './catalog.config';
 
@@ -105,8 +106,12 @@ export function App() {
 
   return (
     <main className="page-shell">
-      <section className={`welcome-card${activeUser ? ' catalog-page' : ''}`} aria-labelledby="page-title">
-        <div className="brand-mark" aria-hidden="true">P</div>
+      <HubHeader
+        profileName={activeUser?.displayName}
+        onChangeProfile={activeUser ? changeProfile : undefined}
+      />
+      <div className="page-content">
+        <section className={`welcome-card${activeUser ? ' catalog-page' : ''}`} aria-labelledby="page-title">
         <p className="eyebrow">Project Management Office</p>
         <h1 id="page-title">Welcome to PMO Hub</h1>
         <p className="intro">Your starting point for the tools and experience that support project delivery.</p>
@@ -175,7 +180,6 @@ export function App() {
                 <p className="eyebrow">Your local profile</p>
                 <h2>Welcome, {activeUser.displayName}</h2>
               </div>
-              <button className="button button-secondary" type="button" onClick={changeProfile}>Change profile</button>
             </div>
 
             <section className="module-catalog" aria-labelledby="catalog-title">
@@ -194,14 +198,7 @@ export function App() {
                           Open {module.name}
                         </a>
                       ) : (
-                        <button
-                          className="button button-secondary module-action"
-                          type="button"
-                          disabled
-                          aria-label={`${module.name}: Coming soon`}
-                        >
-                          Coming soon
-                        </button>
+                        <span className="module-status">Unavailable</span>
                       )}
                     </article>
                   </li>
@@ -210,8 +207,9 @@ export function App() {
             </section>
           </>
         )}
-      </section>
-      <footer>PMO Hub · Local development</footer>
+        </section>
+        <footer>PMO Hub · Local development</footer>
+      </div>
     </main>
   );
 }

@@ -77,7 +77,7 @@ test('catalog link opens in the same tab and reload, back, and module return pre
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
 
-  await expect(page.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
+  await expect(page.getByText('Unavailable')).toBeVisible();
 });
 
 test('PMO can enter the module catalog and open Lessons Learned with the PMO role', async ({ page }) => {

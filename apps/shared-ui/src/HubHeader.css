@@ -1,0 +1,124 @@
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/inter-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+
+.hub-header {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 max(20px, calc((100vw - 1200px) / 2));
+  background: #fff;
+  border-bottom: 1px solid #f0f1f2;
+}
+
+.hub-header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #101214;
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.hub-header__mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  color: #fff;
+  background: #1868db;
+  font-size: 17px;
+}
+
+.hub-header__context {
+  color: #42526e;
+  font-size: 14px;
+}
+
+.hub-header__profile {
+  position: relative;
+}
+
+.hub-header__profile-trigger {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 28px;
+  color: #101214;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.hub-header__profile-trigger:hover,
+.hub-header__profile-trigger[aria-expanded='true'] {
+  background: #f0f1f2;
+}
+
+.hub-header__chevron {
+  color: #42526e;
+  font-size: 16px;
+}
+
+.hub-header__profile-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid #dfe1e6;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(9 30 66 / 14%);
+}
+
+.hub-header__profile-menu button {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  color: #101214;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hub-header__profile-menu button:hover {
+  background: #f0f1f2;
+}
+
+.hub-header :focus-visible {
+  outline: 3px solid #1868db;
+  outline-offset: 3px;
+}
+
+@media (max-width: 520px) {
+  .hub-header {
+    min-height: 58px;
+    padding: 0 14px;
+  }
+
+  .hub-header__profile-trigger {
+    gap: 6px;
+    padding: 0 8px;
+    font-size: 13px;
+  }
+}
