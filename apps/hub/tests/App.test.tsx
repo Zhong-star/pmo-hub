@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from '../src/App';
@@ -290,5 +290,37 @@ describe('Hub entry', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByText('The selected profile could not be validated. Check the Hub connection and try again.')).toBeInTheDocument();
     expect(requestedProfiles).toEqual(['dev-1', 'dev-2']);
+  });
+
+  it('revalidates the saved profile when the Hub catalog is restored from browser history', async () => {
+    window.localStorage.setItem('pmo-hub.local-user-id', 'dev-1');
+    let resolveContributor!: (response: { data: { id: string; displayName: string } }) => void;
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/status')) return { data: { status: 'available' } };
+      if (path.endsWith('/local-users')) return { data: [
+        { id: 'dev-1', displayName: 'Avery Chen' }, { id: 'dev-2', displayName: 'Jordan Lee' },
+      ] };
+      if (path.endsWith('/dev-1')) return { data: { id: 'dev-1', displayName: 'Avery Chen' } };
+      if (path.endsWith('/dev-2')) {
+        return new Promise((resolve) => { resolveContributor = resolve; });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+
+    renderApp();
+    expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+
+    await act(async () => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'dev-2');
+      window.dispatchEvent(new Event('pageshow'));
+    });
+
+    expect(screen.queryByRole('heading', { name: 'Welcome, Avery Chen' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Validating profile…' })).toBeDisabled();
+    await waitFor(() => expect(resolveContributor).toBeDefined());
+    await act(async () => resolveContributor({ data: { id: 'dev-2', displayName: 'Jordan Lee' } }));
+
+    expect(await screen.findByRole('heading', { name: 'Welcome, Jordan Lee' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Module catalog' })).toBeInTheDocument();
   });
 });

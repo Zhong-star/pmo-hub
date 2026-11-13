@@ -43,6 +43,7 @@ export function App() {
   const selectUserMutation = useMutation({
     mutationFn: getLocalUser,
   });
+  const resetSelectionMutation = selectUserMutation.reset;
 
   useEffect(() => {
     if (shouldResumeOnStartup.current && savedUserId && statusQuery.isSuccess && usersQuery.isSuccess && !selectUserMutation.isPending && !selectUserMutation.isSuccess && !resumeError) {
@@ -58,6 +59,24 @@ export function App() {
   // Resume once after Hub availability is confirmed.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedUserId, statusQuery.isSuccess, usersQuery.isSuccess, resumeError]);
+
+  useEffect(() => {
+    function reconcileSavedProfile() {
+      const currentSavedUserId = readSavedUserId();
+      if (currentSavedUserId === savedUserId) return;
+
+      shouldResumeOnStartup.current = Boolean(currentSavedUserId);
+      setActiveUser(null);
+      setSavedUserId(currentSavedUserId);
+      setResumeError(null);
+      setSwitching(false);
+      reset({ localUserId: '' });
+      resetSelectionMutation();
+    }
+
+    window.addEventListener('pageshow', reconcileSavedProfile);
+    return () => window.removeEventListener('pageshow', reconcileSavedProfile);
+  }, [savedUserId, reset, resetSelectionMutation]);
 
   function isNotFound(error: unknown) {
     return typeof error === 'object' && error !== null && 'response' in error &&
@@ -192,25 +211,29 @@ export function App() {
                 <p className="helper-text">Explore the modules available through PMO Hub.</p>
               </div>
               <ul className="module-grid">
-                {hubCatalogConfig.map((module) => (
-                  <li key={module.code} className={`module-card${module.enabled ? ' module-card-linked' : ''}`}>
-                    {module.enabled ? (
-                      <a className="module-card-link" href={module.route} aria-label={`Open ${module.name}`}>
-                        <article aria-labelledby={`catalog-${module.code}-title`}>
-                          <h3 id={`catalog-${module.code}-title`}>{module.name}</h3>
-                          <p>{module.description}</p>
-                          <span className="button button-primary module-action">Open {module.name}</span>
-                        </article>
-                      </a>
-                    ) : (
-                      <article aria-labelledby={`catalog-${module.code}-title`}>
-                        <h3 id={`catalog-${module.code}-title`}>{module.name}</h3>
-                        <p>{module.description}</p>
+                {hubCatalogConfig.map((module) => {
+                  const article = (
+                    <article aria-labelledby={`catalog-${module.code}-title`}>
+                      <h3 id={`catalog-${module.code}-title`}>{module.name}</h3>
+                      <p>{module.description}</p>
+                      {module.enabled ? (
+                        <span className="button button-primary module-action">Open {module.name}</span>
+                      ) : (
                         <span className="module-status">Unavailable</span>
-                      </article>
-                    )}
-                  </li>
-                ))}
+                      )}
+                    </article>
+                  );
+
+                  return (
+                    <li key={module.code} className={`module-card${module.enabled ? ' module-card-linked' : ''}`}>
+                      {module.enabled ? (
+                        <a className="module-card-link" href={module.route} aria-label={`Open ${module.name}`}>
+                          {article}
+                        </a>
+                      ) : article}
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           </>

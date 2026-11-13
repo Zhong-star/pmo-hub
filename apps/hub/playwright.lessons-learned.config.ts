@@ -16,7 +16,7 @@ if (!localProfilesFile) {
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: 'lessons-learned.spec.ts',
+  testMatch: ['lessons-learned.spec.ts', 'lessons-learned-responsive-nav.spec.ts'],
   workers: 1,
   use: {
     baseURL: 'http://127.0.0.1:5180',

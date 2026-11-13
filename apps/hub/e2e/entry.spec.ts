@@ -51,7 +51,13 @@ test('selecting a configured local profile opens the module catalog', async ({ p
 
   await page.getByRole('button', { name: 'Local Developer' }).click();
   const changeProfileButton = page.getByRole('button', { name: 'Change profile' });
+  const lightThemeButton = page.getByRole('button', { name: 'Light' });
+  const darkThemeButton = page.getByRole('button', { name: 'Dark' });
   await expect(changeProfileButton).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(lightThemeButton).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(darkThemeButton).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(changeProfileButton).toBeFocused();
   await expect(changeProfileButton).toHaveCSS('outline-style', 'solid');
@@ -66,6 +72,17 @@ test('selecting a configured local profile opens the module catalog', async ({ p
   expect(contrastRatio(focusColors.outline, focusColors.background)).toBeGreaterThanOrEqual(3);
   await page.keyboard.press('Enter');
   await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
+});
+
+test('the linked module card opens when clicked near its outer edge', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+
+  await page.locator('.module-card-linked').click({ position: { x: 4, y: 32 } });
+
+  await expect(page).toHaveURL(/\/lessons-learned\/?$/);
 });
 
 
