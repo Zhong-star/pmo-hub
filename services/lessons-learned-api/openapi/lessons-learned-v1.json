@@ -22,11 +22,136 @@
           "Lessons Learned health"
         ]
       }
+    },
+    "/api/lessons-learned/v1/home": {
+      "get": {
+        "operationId": "HomeController_getHome",
+        "parameters": [
+          {
+            "name": "x-pmo-local-user-id",
+            "in": "header",
+            "description": "Selected local Hub profile ID; the API resolves its module role.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonsLearnedHomeResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "statusCode",
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "statusCode": {
+                      "type": "number",
+                      "example": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "ACCESS_DENIED"
+                      ]
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Access denied."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The Lessons Learned local access configuration is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "statusCode",
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "statusCode": {
+                      "type": "number",
+                      "example": 500
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "ACCESS_CONFIGURATION_ERROR"
+                      ]
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Lessons Learned access configuration is invalid."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Local simulated identity is disabled for this runtime.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "statusCode",
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "statusCode": {
+                      "type": "number",
+                      "example": 503
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "LOCAL_AUTH_DISABLED"
+                      ]
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Local simulated access is not enabled for this runtime."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Revalidate local access and return the authorized Lessons Learned Home",
+        "tags": [
+          "Lessons Learned home"
+        ]
+      }
     }
   },
   "info": {
     "title": "Lessons Learned API",
-    "description": "Local health endpoint for the Lessons Learned module.",
+    "description": "Local access and Home endpoints for the Lessons Learned module.",
     "version": "1.0.0",
     "contact": {}
   },
@@ -47,6 +172,72 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "LessonsLearnedProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "local-contributor"
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Local Contributor"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "LESSONS_USER",
+              "LESSONS_MODERATOR"
+            ],
+            "example": "LESSONS_USER"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "role"
+        ]
+      },
+      "LessonsLearnedNavigationItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "home"
+          },
+          "label": {
+            "type": "string",
+            "example": "Home"
+          },
+          "current": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "current"
+        ]
+      },
+      "LessonsLearnedHomeResponse": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/LessonsLearnedProfile"
+          },
+          "navigation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LessonsLearnedNavigationItem"
+            }
+          }
+        },
+        "required": [
+          "profile",
+          "navigation"
         ]
       }
     }

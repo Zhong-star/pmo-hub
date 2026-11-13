@@ -2,5 +2,17 @@
   {
     "id": "local-developer",
     "displayName": "Local Developer"
+  },
+  {
+    "id": "local-contributor",
+    "displayName": "Local Contributor"
+  },
+  {
+    "id": "local-pmo",
+    "displayName": "Local PMO"
+  },
+  {
+    "id": "local-no-access",
+    "displayName": "Local User Without Access"
   }
 ]

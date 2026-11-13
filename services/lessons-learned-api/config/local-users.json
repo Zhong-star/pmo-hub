@@ -1,0 +1,17 @@
+[
+  {
+    "id": "local-developer",
+    "displayName": "Local Developer",
+    "role": "LESSONS_USER"
+  },
+  {
+    "id": "local-contributor",
+    "displayName": "Local Contributor",
+    "role": "LESSONS_USER"
+  },
+  {
+    "id": "local-pmo",
+    "displayName": "Local PMO",
+    "role": "LESSONS_MODERATOR"
+  }
+]

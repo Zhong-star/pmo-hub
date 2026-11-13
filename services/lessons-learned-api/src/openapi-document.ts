@@ -4,7 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 export function createOpenApiDocument(app: INestApplication) {
   const config = new DocumentBuilder()
     .setTitle('Lessons Learned API')
-    .setDescription('Local health endpoint for the Lessons Learned module.')
+    .setDescription('Local access and Home endpoints for the Lessons Learned module.')
     .setVersion('1.0.0')
     .build();
 

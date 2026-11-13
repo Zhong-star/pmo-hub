@@ -1,11 +1,52 @@
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getHealth } from './api';
+import { getHome } from './api';
+
+const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
+
+function readSelectedProfileId(): string | null {
+  try {
+    const id = window.localStorage.getItem(LOCAL_USER_STORAGE_KEY)?.trim();
+    return id || null;
+  } catch {
+    return null;
+  }
+}
+
+function getApiErrorCode(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return null;
+  const response = error.response;
+  if (typeof response !== 'object' || response === null || !('data' in response)) return null;
+  const data = response.data;
+  if (typeof data !== 'object' || data === null || !('code' in data)) return null;
+  return typeof data.code === 'string' ? data.code : null;
+}
+
+function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
+  return role === 'LESSONS_MODERATOR' ? 'PMO' : 'Contributor';
+}
 
 export function LessonsLearnedScreen() {
-  const healthQuery = useQuery({
-    queryKey: ['lessons-learned-health'],
-    queryFn: getHealth,
+  const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
+  const homeQuery = useQuery({
+    queryKey: ['lessons-learned-home', selectedProfileId],
+    queryFn: () => getHome(selectedProfileId ?? ''),
+    enabled: selectedProfileId !== null,
+    retry: false,
+    refetchOnWindowFocus: true,
   });
+  const errorCode = homeQuery.isError ? getApiErrorCode(homeQuery.error) : null;
+
+  useEffect(() => {
+    function updateSelectedProfile(event: StorageEvent) {
+      if (event.key === null || event.key === LOCAL_USER_STORAGE_KEY) {
+        setSelectedProfileId(readSelectedProfileId());
+      }
+    }
+
+    window.addEventListener('storage', updateSelectedProfile);
+    return () => window.removeEventListener('storage', updateSelectedProfile);
+  }, []);
 
   return (
     <main className="page-shell">
@@ -17,37 +58,86 @@ export function LessonsLearnedScreen() {
       </header>
 
       <section className="module-card" aria-labelledby="page-title">
-        <p className="eyebrow">Project delivery</p>
-        <h1 id="page-title">Lessons Learned</h1>
-        <p className="intro">Capture and share the experience gained across your projects.</p>
+        <p className="eyebrow">Lessons Learned</p>
 
-        {healthQuery.isPending && (
-          <div className="api-status" role="status" aria-live="polite">
-            <span className="status-indicator is-checking" aria-hidden="true" />
-            <span>Checking API availability</span>
-          </div>
+        {!selectedProfileId && (
+          <>
+            <h1 id="page-title">Access check</h1>
+            <p className="intro">No local profile is selected. Return to PMO Hub and select a profile to continue.</p>
+            <a className="primary-link" href="/">Select a local profile</a>
+          </>
         )}
 
-        {healthQuery.isSuccess && (
-          <div className="api-status" role="status" aria-live="polite">
-            <span className="status-indicator is-available" aria-hidden="true" />
-            <span>API available</span>
-          </div>
+        {selectedProfileId && homeQuery.isFetching && (
+          <>
+            <h1 id="page-title">Access check</h1>
+            <p className="intro">Lessons Learned verifies your local profile before opening Home.</p>
+            <div className="api-status" role="status" aria-live="polite">
+              <span className="status-indicator is-checking" aria-hidden="true" />
+              <span>Checking access for <strong>{selectedProfileId}</strong></span>
+            </div>
+          </>
         )}
 
-        {healthQuery.isError && (
+        {selectedProfileId && homeQuery.isError && errorCode === 'ACCESS_DENIED' && (
           <div className="api-status unavailable" role="alert" aria-live="assertive">
             <span className="status-indicator is-unavailable" aria-hidden="true" />
             <div>
-              <strong>API unavailable</strong>
-              <p>The Lessons Learned screen is open, but its service could not be reached.</p>
-              <button className="retry-button" type="button" onClick={() => void healthQuery.refetch()}>
-                Try again
-              </button>
+              <h1 id="page-title">Access denied</h1>
+              <p>Your local profile does not have access to Lessons Learned. Contact the PMO if you need access.</p>
+              <a className="primary-link" href="/">Back to PMO Hub</a>
             </div>
           </div>
         )}
 
+        {selectedProfileId && homeQuery.isError && (
+          errorCode === 'ACCESS_CONFIGURATION_ERROR' || errorCode === 'LOCAL_AUTH_DISABLED'
+        ) && (
+          <div className="api-status unavailable" role="alert" aria-live="assertive">
+            <span className="status-indicator is-unavailable" aria-hidden="true" />
+            <div>
+              <h1 id="page-title">Access configuration error</h1>
+              <p>The Lessons Learned access configuration is invalid. Contact the responsible team.</p>
+              <a className="primary-link" href="/">Back to PMO Hub</a>
+            </div>
+          </div>
+        )}
+
+        {selectedProfileId && homeQuery.isError && errorCode !== 'ACCESS_DENIED' &&
+          errorCode !== 'ACCESS_CONFIGURATION_ERROR' && errorCode !== 'LOCAL_AUTH_DISABLED' && (
+            <div className="api-status unavailable" role="alert" aria-live="assertive">
+              <span className="status-indicator is-unavailable" aria-hidden="true" />
+              <div>
+                <h1 id="page-title">Access check temporarily unavailable</h1>
+                <p>The API could not complete the access check. Retry to continue.</p>
+                <button className="retry-button" type="button" onClick={() => void homeQuery.refetch()}>
+                  Retry
+                </button>
+              </div>
+            </div>
+          )}
+
+        {selectedProfileId && homeQuery.isSuccess && !homeQuery.isError && (
+          <>
+            <h1 id="page-title">Home</h1>
+            <p className="intro">Welcome, {homeQuery.data.profile.displayName}</p>
+            <p className="active-role">Active role: <strong>{getRoleLabel(homeQuery.data.profile.role)}</strong></p>
+            <aside className="module-sidebar" aria-label="Lessons Learned navigation">
+              <nav className="module-navigation" aria-label="Lessons Learned">
+                {homeQuery.data.navigation.map((destination) => (
+                  <a
+                    key={destination.id}
+                    href="/lessons-learned/"
+                    aria-current={destination.current ? 'page' : undefined}
+                  >
+                    {destination.label}
+                  </a>
+                ))}
+              </nav>
+            </aside>
+            <a className="primary-link" href="/">Back to PMO Hub</a>
+          </>
+        )}
       </section>
     </main>
   );

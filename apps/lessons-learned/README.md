@@ -1,6 +1,6 @@
 # Lessons Learned frontend
 
-Independent React and Vite workspace for the technical Lessons Learned screen. Vite serves the app under `/lessons-learned/`, uses strict loopback port `5174`, and proxies `/api/lessons-learned/v1` to the local API on port `3002`.
+Independent React and Vite workspace for Lessons Learned. Vite serves the app under `/lessons-learned/`, uses strict loopback port `5174`, and proxies `/api/lessons-learned/v1` to the local API on port `3002`. The app reads the Hub's `pmo-hub.local-user-id` browser storage value and sends it to the API for a server-side role check. It shows Home only after the API authorizes that ID.
 
 From the monorepo root, use:
 

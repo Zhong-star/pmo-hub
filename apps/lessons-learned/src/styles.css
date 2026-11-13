@@ -150,9 +150,57 @@ h1 {
   text-underline-offset: 3px;
 }
 
-.retry-button:focus-visible, .hub-link:focus-visible, .return-link:focus-visible {
+.retry-button:focus-visible, .hub-link:focus-visible, .primary-link:focus-visible, .module-navigation a:focus-visible {
   outline: 3px solid #8bb897;
   outline-offset: 4px;
+}
+
+.primary-link {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 20px;
+  border-radius: 10px;
+  background: #2f6744;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.primary-link:hover { background: #26583a; }
+
+.active-role {
+  margin: -16px 0 26px;
+  color: #536359;
+  font-size: 14px;
+}
+
+.active-role strong { color: #285d39; }
+
+.module-sidebar { margin: 0; }
+
+.module-navigation {
+  display: flex;
+  margin: 0 0 28px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #e3e8e1;
+}
+
+.module-navigation a {
+  padding: 0 0 12px;
+  border-bottom: 3px solid #39804b;
+  color: #285d39;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.api-status h1 {
+  margin: 0 0 7px;
+  font-size: clamp(24px, 4vw, 30px);
+  letter-spacing: -.03em;
 }
 
 @keyframes pulse { to { opacity: .48; } }

@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/home": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Revalidate local access and return the authorized Lessons Learned Home */
+        get: operations["HomeController_getHome"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -31,6 +48,29 @@ export interface components {
              * @enum {string}
              */
             status: "ok";
+        };
+        LessonsLearnedProfile: {
+            /** @example local-contributor */
+            id: string;
+            /** @example Local Contributor */
+            displayName: string;
+            /**
+             * @example LESSONS_USER
+             * @enum {string}
+             */
+            role: "LESSONS_USER" | "LESSONS_MODERATOR";
+        };
+        LessonsLearnedNavigationItem: {
+            /** @example home */
+            id: string;
+            /** @example Home */
+            label: string;
+            /** @example true */
+            current: boolean;
+        };
+        LessonsLearnedHomeResponse: {
+            profile: components["schemas"]["LessonsLearnedProfile"];
+            navigation: components["schemas"]["LessonsLearnedNavigationItem"][];
         };
     };
     responses: never;
@@ -56,6 +96,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    HomeController_getHome: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Selected local Hub profile ID; the API resolves its module role. */
+                "x-pmo-local-user-id": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonsLearnedHomeResponse"];
+                };
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example 403 */
+                        statusCode: number;
+                        /** @enum {string} */
+                        code: "ACCESS_DENIED";
+                        /** @example Access denied. */
+                        message: string;
+                    };
+                };
+            };
+            /** @description The Lessons Learned local access configuration is invalid. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example 500 */
+                        statusCode: number;
+                        /** @enum {string} */
+                        code: "ACCESS_CONFIGURATION_ERROR";
+                        /** @example Lessons Learned access configuration is invalid. */
+                        message: string;
+                    };
+                };
+            };
+            /** @description Local simulated identity is disabled for this runtime. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example 503 */
+                        statusCode: number;
+                        /** @enum {string} */
+                        code: "LOCAL_AUTH_DISABLED";
+                        /** @example Local simulated access is not enabled for this runtime. */
+                        message: string;
+                    };
                 };
             };
         };

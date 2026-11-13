@@ -1,6 +1,10 @@
 # Lessons Learned API
 
-NestJS API for the local Lessons Learned module. The `openapi:generate` command writes the versioned OpenAPI artifact to the module-owned `openapi/` directory.
+NestJS API for Lessons Learned. `GET /api/lessons-learned/v1/home` is protected by the selected local Hub profile ID in `X-PMO-Local-User-ID`. The API reads `config/local-users.json` on every Home request, resolves `LESSONS_USER` or `LESSONS_MODERATOR` from this module's configuration, and returns no Home data for missing, unknown, or duplicate IDs. The response uses `Cache-Control: no-store`.
+
+Local simulated identity is enabled by default only outside `NODE_ENV=production`. Production mode rejects simulated identity unless `LESSONS_LEARNED_LOCAL_AUTH_ENABLED=true` is explicitly set by a local environment. The local Kubernetes deploy helper sets that flag and mounts this module's profile file from a ConfigMap; the Hub client sends only the selected profile ID, never a role. Do not enable simulated identity in a production deployment.
+
+The `openapi:generate` command writes the versioned OpenAPI artifact to the module-owned `openapi/` directory.
 
 The API listens on `127.0.0.1:3002` by default. Set `HOST` or `PORT` to override those local development defaults.
 

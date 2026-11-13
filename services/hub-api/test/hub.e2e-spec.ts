@@ -36,7 +36,12 @@ describe('Hub entry API', () => {
       .get('/api/hub/v1/local-users')
       .expect(200);
 
-    expect(response.body).toEqual([{ id: 'local-developer', displayName: 'Local Developer' }]);
+    expect(response.body).toEqual([
+      { id: 'local-developer', displayName: 'Local Developer' },
+      { id: 'local-contributor', displayName: 'Local Contributor' },
+      { id: 'local-pmo', displayName: 'Local PMO' },
+      { id: 'local-no-access', displayName: 'Local User Without Access' },
+    ]);
   });
 
   it('validates an existing local profile by id', async () => {
