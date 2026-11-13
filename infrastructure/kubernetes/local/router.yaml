@@ -1,0 +1,157 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pmo-router-nginx
+data:
+  default.conf: |
+    map $http_upgrade $connection_upgrade {
+      default upgrade;
+      '' close;
+    }
+
+    map "$request_method|$http_accept|$http_sec_fetch_dest" $lessons_learned_html_navigation {
+      default 0;
+      ~^GET\|[^|]*text/html[^|]*\|(document)?$ 1;
+    }
+
+    include /etc/nginx/runtime/resolver.conf;
+    resolver_timeout 2s;
+
+    server {
+      listen 8080;
+      server_name _;
+
+      proxy_http_version 1.1;
+      proxy_set_header Host $proxy_host;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-Host $host;
+
+      location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 'ok';
+      }
+
+      location = /lessons-learned {
+        rewrite ^ /lessons-learned/ last;
+      }
+
+      location = /lessons-learned/ {
+        set $lessons_learned_frontend lessons-learned.pmo-hub.svc.cluster.local:8080;
+        proxy_pass http://$lessons_learned_frontend$uri$is_args$args;
+        proxy_intercept_errors on;
+        error_page 400 401 402 403 404 405 406 407 408 409 410 411 412 413 414 415 416 417 418 421 422 423 424 425 426 428 429 431 451 500 501 502 503 504 505 506 507 508 510 511 = @lessons_learned_unavailable;
+      }
+
+      location ^~ /lessons-learned/ {
+        set $lessons_learned_frontend lessons-learned.pmo-hub.svc.cluster.local:8080;
+        proxy_pass http://$lessons_learned_frontend$request_uri;
+        proxy_intercept_errors on;
+        error_page 404 500 501 502 503 504 505 506 507 508 510 511 = @lessons_learned_unavailable;
+      }
+
+      location ~ ^/api/hub/v1(?:/|$) {
+        set $hub_api hub-api.pmo-hub.svc.cluster.local:3001;
+        proxy_pass http://$hub_api$request_uri;
+      }
+
+      location ~ ^/api/lessons-learned/v1(?:/|$) {
+        set $lessons_learned_api lessons-learned-api.pmo-hub.svc.cluster.local:3002;
+        proxy_pass http://$lessons_learned_api$request_uri;
+      }
+
+      location @lessons_learned_unavailable {
+        add_header Cache-Control no-store always;
+        if ($lessons_learned_html_navigation) {
+          rewrite ^ /__lessons_learned_unavailable.html last;
+        }
+        default_type text/plain;
+        return 503 'Lessons Learned frontend is unavailable.';
+      }
+
+      location = /__lessons_learned_unavailable.html {
+        internal;
+        default_type text/html;
+        add_header Cache-Control no-store always;
+        return 503 '<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Lessons Learned unavailable | PMO Hub</title><style>:root{color-scheme:light;font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#1d3458;background:#f3f6fb}body{display:grid;min-height:100vh;place-items:center;margin:0;padding:24px;box-sizing:border-box}main{width:min(100%,520px);padding:36px;background:white;border:1px solid #e1e8f2;border-radius:16px;box-shadow:0 18px 50px #1d34581c}h1{margin:0 0 12px;font-size:28px}p{margin:0 0 24px;color:#52627b;line-height:1.6}a{display:inline-flex;min-height:44px;align-items:center;padding:0 17px;border-radius:9px;color:white;background:#315cbb;font-weight:650;text-decoration:none}a:focus-visible{outline:3px solid #315cbb;outline-offset:3px}</style></head><body><main><p>PMO Hub</p><h1>Lessons Learned is unavailable</h1><p>The Lessons Learned screen could not be opened because its frontend did not respond successfully. Try again later or return to the module catalog.</p><a href="/">Return to PMO Hub</a></main></body></html>';
+      }
+
+      location / {
+        set $hub_frontend hub.pmo-hub.svc.cluster.local:8080;
+        proxy_pass http://$hub_frontend$request_uri;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pmo-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pmo-router
+  template:
+    metadata:
+      annotations:
+        pmo-hub/router-config: "ROUTER_MANIFEST_HASH"
+      labels:
+        app.kubernetes.io/name: pmo-router
+    spec:
+      initContainers:
+        - name: configure-cluster-dns
+          image: busybox:1.36.1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          args:
+            - awk '$1 == "nameserver" { printf "resolver %s valid=5s ipv6=off;\n", $2; exit }' /etc/resolv.conf > /runtime/resolver.conf
+          volumeMounts:
+            - name: nginx-runtime
+              mountPath: /runtime
+      containers:
+        - name: router
+          image: nginx:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+            - name: nginx-runtime
+              mountPath: /etc/nginx/runtime
+              readOnly: true
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: pmo-router-nginx
+        - name: nginx-runtime
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pmo-router
+spec:
+  selector:
+    app.kubernetes.io/name: pmo-router
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

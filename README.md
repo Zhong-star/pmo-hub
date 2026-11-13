@@ -26,3 +26,28 @@ O PostgreSQL local de Lessons Learned é opcional e pertence ao serviço `servic
 Para verificar a navegação no navegador, encerre os servidores de desenvolvimento e execute `npm run test:e2e --workspace @pmo-hub/hub` para o Hub e `npm run test:e2e:lessons-learned --workspace @pmo-hub/hub` para Lessons Learned. Se o Chromium do Playwright ainda não estiver instalado, execute `npx playwright install chromium` primeiro.
 
 Perfis locais de desenvolvimento são configurados pela API; consulte o README do serviço Hub API.
+
+## Kubernetes local
+
+Use Node.js, Docker em modo Linux, [kind](https://kind.sigs.k8s.io/docs/user/quick-start/) e [kubectl](https://kubernetes.io/docs/tasks/tools/) no PATH. Execute na raiz do monorepo:
+
+```powershell
+node infrastructure/kubernetes/local/deploy.mjs setup
+node infrastructure/kubernetes/local/deploy.mjs backend
+node infrastructure/kubernetes/local/deploy.mjs frontend
+kubectl --context kind-pmo-hub -n pmo-hub port-forward service/pmo-router 8080:8080
+```
+
+Abra [o Hub](http://127.0.0.1:8080/) ou [Lessons Learned](http://127.0.0.1:8080/lessons-learned/). As APIs respondem em `/api/hub/v1/status` e `/api/lessons-learned/v1/health`. O PostgreSQL está desabilitado nesta configuração.
+
+Execute `frontend` para atualizar Hub e Lessons Learned, ou `backend` para atualizar as duas APIs. O comando cria versões novas das duas imagens da camada, carrega as imagens no kind e aguarda ambos os rollouts. Em caso de falha, ele tenta restaurar as duas imagens da última release pronta e retorna um código de erro mesmo quando a restauração funciona.
+
+Para verificar a independência entre as camadas, compare as imagens antes e depois de cada deploy. Depois de uma release bem-sucedida, force a falha de um rollout e compare novamente. As quatro imagens devem voltar aos valores registrados imediatamente antes da falha:
+
+```powershell
+kubectl --context kind-pmo-hub -n pmo-hub get deployments -l layer -o custom-columns='NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image'
+node infrastructure/kubernetes/local/deploy.mjs backend --fail=lessons-learned-api
+kubectl --context kind-pmo-hub -n pmo-hub get deployments -l layer -o custom-columns='NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image'
+```
+
+Se o processo for interrompido à força e deixar a trava da camada, confirme que nenhum deploy dessa camada está em execução e remova o ConfigMap `pmo-frontend-deploy-lock` ou `pmo-backend-deploy-lock` do namespace `pmo-hub` antes de tentar de novo.
