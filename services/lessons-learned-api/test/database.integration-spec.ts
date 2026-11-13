@@ -80,6 +80,7 @@ describe('Lessons Learned PostgreSQL persistence', () => {
     });
 
     expect(result.stdout).toContain('CreateLessonsAndHistory1710000000000 has been executed successfully');
+    expect(result.stdout).toContain('AddLessonDraftContent1710000000001 has been executed successfully');
 
     const repeat = await execFileAsync('npm', ['run', 'migration:run'], {
       cwd: resolve(__dirname, '..'),

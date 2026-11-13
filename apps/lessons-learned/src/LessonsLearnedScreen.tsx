@@ -1,8 +1,17 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { useThemePreference } from '../../shared-ui/src/theme';
-import { createLessonDraft, getHome, getMyOpenDrafts } from './api';
+import {
+  createLessonDraft,
+  getHome,
+  getLessonProjects,
+  getMyOpenDrafts,
+  updateLessonDraft,
+  type LessonDraft,
+  type UpdateLessonDraftBody,
+} from './api';
+import { DraftEditor } from './DraftEditor';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
 
@@ -29,7 +38,6 @@ function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
 }
 
 type ModulePage = 'home' | 'my-submissions';
-type CreateDraftVariables = { profileId: string; title: string; submittedTitle: string };
 
 function readModulePage(): ModulePage {
   return new URLSearchParams(window.location.search).get('page') === 'my-submissions'
@@ -43,11 +51,8 @@ export function LessonsLearnedScreen() {
   const { theme, selectTheme } = useThemePreference();
   const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
-  const [draftTitle, setDraftTitle] = useState('');
-  const [draftTitleError, setDraftTitleError] = useState<string | null>(null);
-  const [selectedDraft, setSelectedDraft] = useState<Awaited<ReturnType<typeof getMyOpenDrafts>>[number] | null>(null);
+  const [selectedDraft, setSelectedDraft] = useState<LessonDraft | null>(null);
   const selectedProfileIdRef = useRef(selectedProfileId);
-  const draftTitleRef = useRef(draftTitle);
   const pendingCreateProfilesRef = useRef(new Set<string>());
   const [pendingCreateProfiles, setPendingCreateProfiles] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
@@ -69,25 +74,6 @@ export function LessonsLearnedScreen() {
     retry: false,
     refetchOnWindowFocus: true,
   });
-  const createDraftMutation = useMutation({
-    mutationFn: ({ profileId, title }: CreateDraftVariables) => createLessonDraft(profileId, title),
-    onSuccess: async (_draft, variables) => {
-      if (
-        selectedProfileIdRef.current === variables.profileId &&
-        draftTitleRef.current === variables.submittedTitle
-      ) {
-        draftTitleRef.current = '';
-        setDraftTitle('');
-        setDraftTitleError(null);
-        setIsCreateFormOpen(false);
-      }
-      await queryClient.invalidateQueries({
-        queryKey: ['lessons-learned-my-submissions', variables.profileId],
-      });
-    },
-    onSettled: (_draft, _error, variables) => markCreatePending(variables.profileId, false),
-  });
-
   function markCreatePending(profileId: string, isPending: boolean) {
     const nextPendingProfiles = new Set(pendingCreateProfilesRef.current);
     if (isPending) nextPendingProfiles.add(profileId);
@@ -96,20 +82,68 @@ export function LessonsLearnedScreen() {
     setPendingCreateProfiles(nextPendingProfiles);
   }
 
-  const resetCreateDraftMutation = createDraftMutation.reset;
   const updateSelectedProfile = useCallback((profileId: string | null) => {
     if (profileId === selectedProfileIdRef.current) return;
     selectedProfileIdRef.current = profileId;
     setSelectedProfileId(profileId);
-    draftTitleRef.current = '';
-    setDraftTitle('');
-    setDraftTitleError(null);
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
-    resetCreateDraftMutation();
-  }, [resetCreateDraftMutation]);
+  }, []);
 
   const isSavingCurrentDraft = selectedProfileId !== null && pendingCreateProfiles.has(selectedProfileId);
+  const projectsQuery = useQuery({
+    queryKey: ['lessons-learned-projects', selectedProfileId],
+    queryFn: () => getLessonProjects(selectedProfileId ?? ''),
+    enabled: isHomePage && modulePage === 'my-submissions' && (isCreateFormOpen || selectedDraft !== null),
+    networkMode: 'always',
+    retry: false,
+  });
+
+  async function saveDraftFields(input: UpdateLessonDraftBody, draftId: number | null): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before saving a lesson.');
+    if (draftId === null) {
+      if (pendingCreateProfilesRef.current.has(profileId)) throw new Error('A draft save is already in progress.');
+      markCreatePending(profileId, true);
+      try {
+        const draftInput = {
+          title: input.title,
+          projectId: input.projectId,
+          projectName: input.projectName,
+          projectCategory: input.projectCategory,
+          projectPhase: input.projectPhase,
+          situationObserved: input.situationObserved,
+          rootCause: input.rootCause,
+          lessonType: input.lessonType,
+          impact: input.impact,
+          recommendation: input.recommendation,
+          applicability: input.applicability,
+        };
+        const created = await createLessonDraft(profileId, draftInput);
+        await queryClient.invalidateQueries({
+          queryKey: ['lessons-learned-my-submissions', profileId],
+        });
+        return created;
+      } finally {
+        markCreatePending(profileId, false);
+      }
+    }
+
+    const updated = await updateLessonDraft(profileId, draftId, input);
+    await queryClient.invalidateQueries({
+      queryKey: ['lessons-learned-my-submissions', profileId],
+    });
+    return updated;
+  }
+
+  async function reloadDraftFields(draftId: number): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before reloading a lesson.');
+    const drafts = await getMyOpenDrafts(profileId);
+    const latest = drafts.find((draft) => draft.id === draftId);
+    if (!latest) throw new Error('This lesson is no longer an Open draft.');
+    return latest;
+  }
 
   useEffect(() => {
     function handleStorageChange(event: StorageEvent) {
@@ -151,23 +185,6 @@ export function LessonsLearnedScreen() {
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
     setIsModuleMenuOpen(false);
-  }
-
-  function saveDraft(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedProfileId || pendingCreateProfilesRef.current.has(selectedProfileId)) return;
-    const title = draftTitle.trim();
-    if (!title) {
-      setDraftTitleError('Enter a title to save this draft.');
-      return;
-    }
-    if (title.length > 150) {
-      setDraftTitleError('Title must be 150 characters or fewer.');
-      return;
-    }
-    setDraftTitleError(null);
-    markCreatePending(selectedProfileId, true);
-    createDraftMutation.mutate({ profileId: selectedProfileId, title, submittedTitle: draftTitle });
   }
 
   function changeProfile() {
@@ -305,58 +322,11 @@ export function LessonsLearnedScreen() {
                     </div>
                     <button className="draft-action" type="button" disabled={isSavingCurrentDraft} onClick={() => {
                       setSelectedDraft(null);
-                      draftTitleRef.current = '';
-                      setDraftTitle('');
-                      setDraftTitleError(null);
-                      createDraftMutation.reset();
                       setIsCreateFormOpen(true);
                     }}>
                       Create lesson
                     </button>
                   </div>
-
-                  {createDraftMutation.isSuccess && createDraftMutation.variables?.profileId === selectedProfileId && (
-                    <p className="draft-success" role="status">Draft saved.</p>
-                  )}
-                  {createDraftMutation.isError && createDraftMutation.variables?.profileId === selectedProfileId && (
-                    <p className="draft-error" role="alert">The draft could not be saved. Your title is still here; try again.</p>
-                  )}
-
-                  {isCreateFormOpen && (
-                    <form className="draft-form" onSubmit={saveDraft}>
-                      <h2>Create lesson</h2>
-                      <label htmlFor="draft-title">Title</label>
-                      <input
-                        id="draft-title"
-                        type="text"
-                        maxLength={150}
-                        required
-                        disabled={isSavingCurrentDraft}
-                        value={draftTitle}
-                        onChange={(event) => {
-                          draftTitleRef.current = event.target.value;
-                          setDraftTitle(event.target.value);
-                          setDraftTitleError(null);
-                          if (!pendingCreateProfilesRef.current.has(selectedProfileId)) createDraftMutation.reset();
-                        }}
-                        aria-invalid={draftTitleError ? 'true' : undefined}
-                        aria-describedby={draftTitleError ? 'draft-title-error' : 'draft-title-count'}
-                      />
-                      {draftTitleError ? (
-                        <p id="draft-title-error" className="draft-error">{draftTitleError}</p>
-                      ) : (
-                        <p id="draft-title-count" className="draft-helper">{draftTitle.length}/150 characters</p>
-                      )}
-                      <div className="draft-form-actions">
-                        <button className="draft-action" type="submit" disabled={isSavingCurrentDraft}>
-                          {isSavingCurrentDraft ? 'Saving…' : 'Save Draft'}
-                        </button>
-                        <button className="draft-cancel" type="button" disabled={isSavingCurrentDraft} onClick={() => setIsCreateFormOpen(false)}>
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
-                  )}
 
                   {submissionsQuery.isPending && <p role="status">Loading your drafts…</p>}
                   {submissionsQuery.isError && (
@@ -379,7 +349,10 @@ export function LessonsLearnedScreen() {
                           <button
                             className="draft-cancel"
                             type="button"
-                            onClick={() => setSelectedDraft(draft)}
+                            onClick={() => {
+                              setIsCreateFormOpen(false);
+                              setSelectedDraft(draft);
+                            }}
                             aria-label={`Reopen ${draft.title}`}
                           >
                             Reopen
@@ -388,13 +361,35 @@ export function LessonsLearnedScreen() {
                       ))}
                     </ul>
                   )}
-                  {selectedDraft && (
-                    <dialog open className="draft-dialog" aria-labelledby="draft-dialog-title">
-                      <h2 id="draft-dialog-title">Open draft</h2>
-                      <p>{selectedDraft.title}</p>
-                      <p className="draft-meta">Draft #{selectedDraft.id} · Open</p>
-                      <button className="draft-action" type="button" onClick={() => setSelectedDraft(null)}>Close</button>
-                    </dialog>
+                  {(isCreateFormOpen || selectedDraft !== null) && projectsQuery.isPending && (
+                    <p role="status">Loading project options…</p>
+                  )}
+                  {(isCreateFormOpen || selectedDraft !== null) && projectsQuery.isError && (
+                    <div className="draft-error" role="alert">
+                      <p>Project options could not be loaded.</p>
+                      <button className="draft-cancel" type="button" onClick={() => void projectsQuery.refetch()}>
+                        Retry
+                      </button>
+                      <button className="draft-cancel" type="button" onClick={() => {
+                        setSelectedDraft(null);
+                        setIsCreateFormOpen(false);
+                      }}>
+                        Close
+                      </button>
+                    </div>
+                  )}
+                  {(isCreateFormOpen || selectedDraft !== null) && projectsQuery.isSuccess && (
+                    <DraftEditor
+                      key={selectedDraft?.id ?? 'new'}
+                      draft={selectedDraft}
+                      projects={projectsQuery.data}
+                      onSave={saveDraftFields}
+                      onReload={reloadDraftFields}
+                      onClose={() => {
+                        setSelectedDraft(null);
+                        setIsCreateFormOpen(false);
+                      }}
+                    />
                   )}
                 </section>
               )}

@@ -1,6 +1,8 @@
 # Lessons Learned API
 
-NestJS API for Lessons Learned. `GET /api/lessons-learned/v1/home` is protected by the selected local Hub profile ID in `X-PMO-Local-User-ID`. The API reads `config/local-users.json` on every Home request, resolves `LESSONS_USER` or `LESSONS_MODERATOR` from this module's configuration, and returns no Home data for missing, unknown, or duplicate IDs. The response uses `Cache-Control: no-store`.
+NestJS API for Lessons Learned. Protected routes use the selected local Hub profile ID in `X-PMO-Local-User-ID`. The API reads `config/local-users.json` for module access and serves fictional local project choices from `config/projects.json`; both paths can be overridden with `LESSONS_LEARNED_LOCAL_USERS_FILE` and `LESSONS_LEARNED_PROJECTS_FILE`. Protected responses use `Cache-Control: no-store`.
+
+Open lesson drafts can be completed through `PATCH /api/lessons-learned/v1/lessons/{id}`. Updates include the last-read `version`; a stale version returns `409` with code `STALE_LESSON_VERSION`. Project ID and name are saved as a snapshot, so later catalog changes do not alter existing drafts. Editing does not add a lifecycle history event.
 
 Local simulated identity is enabled by default only outside `NODE_ENV=production`. The local Kubernetes deploy helper explicitly enables it and uses the module profile file packaged with the API image. Updating profiles in Kubernetes requires a backend release, and rollback restores the previous image and its profiles. The Hub client sends the selected profile ID. Keep simulated identity disabled in production deployments.
 
@@ -33,6 +35,6 @@ npm run migration:run
 npm run start
 ```
 
-Compose reads `.env` for its container settings; set `LESSONS_LEARNED_DATABASE_URL` in the shell separately for the API and migration command. Update the connection URL if you change the Compose database credentials or port. The Compose service publishes PostgreSQL on `127.0.0.1:5433` and keeps its data in a dedicated Docker volume. The initial migrations directory is intentionally empty; the migration command should complete successfully until a business flow needs its first table. Use `docker compose down` to stop the database. Use `docker compose down --volumes` only when you also want to delete its local data.
+Compose reads `.env` for its container settings; set `LESSONS_LEARNED_DATABASE_URL` in the shell separately for the API and migration command. Update the connection URL if you change the Compose database credentials or port. The Compose service publishes PostgreSQL on `127.0.0.1:5433` and keeps its data in a dedicated Docker volume. Apply pending migrations before using lesson registration. Use `docker compose down` to stop the database. Use `docker compose down --volumes` only when you also want to delete its local data.
 
 The health endpoint is `GET /api/lessons-learned/v1/health` and returns `{ "status": "ok" }`. Swagger UI is served at `/api/lessons-learned/v1/docs`.

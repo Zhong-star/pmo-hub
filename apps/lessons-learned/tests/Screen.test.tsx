@@ -3,12 +3,22 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsLearnedScreen } from '../src/LessonsLearnedScreen';
-import { createLessonDraft, getHome, getMyOpenDrafts } from '../src/api';
+import {
+  createLessonDraft,
+  getHome,
+  getLessonProjects,
+  getMyOpenDrafts,
+  updateLessonDraft,
+  type LessonDraft,
+  type UpdateLessonDraftBody,
+} from '../src/api';
 
 vi.mock('../src/api', () => ({
   createLessonDraft: vi.fn(),
   getHome: vi.fn(),
+  getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
+  updateLessonDraft: vi.fn(),
 }));
 
 const contributor = {
@@ -20,6 +30,30 @@ const pmo = {
   profile: { id: 'local-pmo', displayName: 'Local PMO', role: 'LESSONS_MODERATOR' as const },
   navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
 };
+
+function lessonDraft(overrides: Partial<LessonDraft> = {}): LessonDraft {
+  return {
+    id: 7,
+    title: 'Improve release handover',
+    authorId: 'local-contributor',
+    updatedBy: 'local-contributor',
+    status: 'Open',
+    version: 1,
+    projectId: null,
+    projectName: null,
+    projectCategory: null,
+    projectPhase: null,
+    situationObserved: null,
+    rootCause: null,
+    lessonType: null,
+    impact: null,
+    recommendation: null,
+    applicability: null,
+    createdAt: '2026-11-13T12:00:00.000Z',
+    updatedAt: '2026-11-13T12:00:00.000Z',
+    ...overrides,
+  };
+}
 
 function renderScreen(localUserId?: string, gcTime = 0) {
   window.localStorage.clear();
@@ -42,6 +76,15 @@ function apiError(status: number, code: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getLessonProjects).mockResolvedValue([
+    { id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' },
+  ]);
+  vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
+  vi.mocked(updateLessonDraft).mockImplementation(async (_profileId, _draftId, input) => lessonDraft({
+    ...input,
+    updatedBy: 'local-contributor',
+    version: input.version + 1,
+  }));
   window.localStorage.clear();
   window.sessionStorage.clear();
 });
@@ -65,14 +108,7 @@ describe('Lessons Learned access check', () => {
 
   it('lists the current profile’s open drafts and reopens a saved draft after navigation', async () => {
     vi.mocked(getHome).mockResolvedValue(contributor);
-    vi.mocked(getMyOpenDrafts).mockResolvedValue([{
-      id: 7,
-      title: 'Improve release handover',
-      authorId: 'local-contributor',
-      status: 'Open',
-      createdAt: '2026-11-13T12:00:00.000Z',
-      updatedAt: '2026-11-13T12:00:00.000Z',
-    }]);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([lessonDraft()]);
     const user = userEvent.setup();
 
     renderScreen('local-contributor');
@@ -81,7 +117,8 @@ describe('Lessons Learned access check', () => {
 
     expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Reopen Improve release handover' }));
-    expect(screen.getByRole('dialog', { name: 'Open draft' })).toHaveTextContent('Improve release handover');
+    expect(screen.getByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Improve release handover');
     expect(getMyOpenDrafts).toHaveBeenCalledWith('local-contributor');
   });
 
@@ -107,14 +144,7 @@ describe('Lessons Learned access check', () => {
   it('saves a title-only Open draft for the selected profile', async () => {
     vi.mocked(getHome).mockResolvedValue(contributor);
     vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
-    vi.mocked(createLessonDraft).mockResolvedValue({
-      id: 7,
-      title: 'Improve release handover',
-      authorId: 'local-contributor',
-      status: 'Open',
-      createdAt: '2026-11-13T12:00:00.000Z',
-      updatedAt: '2026-11-13T12:00:00.000Z',
-    });
+    vi.mocked(createLessonDraft).mockResolvedValue(lessonDraft());
     const user = userEvent.setup();
 
     renderScreen('local-contributor');
@@ -126,20 +156,87 @@ describe('Lessons Learned access check', () => {
     await user.click(screen.getByRole('button', { name: 'Save Draft' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('Draft saved');
-    expect(createLessonDraft).toHaveBeenCalledWith('local-contributor', 'Improve release handover');
+    expect(createLessonDraft).toHaveBeenCalledWith('local-contributor', {
+      title: 'Improve release handover',
+      projectId: null,
+      projectName: null,
+      projectCategory: null,
+      projectPhase: null,
+      situationObserved: null,
+      rootCause: null,
+      lessonType: null,
+      impact: null,
+      recommendation: null,
+      applicability: null,
+    });
+  });
+
+  it('creates a complete draft in the accessible editor using the selected project snapshot', async () => {
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
+    vi.mocked(createLessonDraft).mockResolvedValue(lessonDraft({
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+      projectCategory: 'Technology',
+      situationObserved: 'The current handover was missing the runbook.',
+    }));
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(screen.getByRole('button', { name: 'Create lesson' }));
+    await screen.findByRole('dialog', { name: 'Create lesson' });
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Complete project lesson');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }),
+      'LOCAL-PROJECT-001|Fictional Atlas Modernization');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project category' }), 'Technology');
+    await user.type(screen.getByRole('textbox', { name: 'Situation observed' }),
+      'The current handover was missing the runbook.');
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    expect(await screen.findByText('Draft saved.')).toBeInTheDocument();
+    expect(createLessonDraft).toHaveBeenCalledWith('local-contributor', {
+      title: 'Complete project lesson',
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+      projectCategory: 'Technology',
+      projectPhase: null,
+      situationObserved: 'The current handover was missing the runbook.',
+      rootCause: null,
+      lessonType: null,
+      impact: null,
+      recommendation: null,
+      applicability: null,
+    });
+  });
+
+  it('updates the selected Open draft with its last-read version', async () => {
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([lessonDraft({ version: 4 })]);
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(await screen.findByRole('button', { name: 'Reopen Improve release handover' }));
+    await user.type(screen.getByRole('textbox', { name: 'Situation observed' }), 'The release note was missing.');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project phase' }), 'Execution');
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    expect(await screen.findByText('Draft saved.')).toBeInTheDocument();
+    expect(updateLessonDraft).toHaveBeenCalledWith('local-contributor', 7, expect.objectContaining({
+      version: 4,
+      title: 'Improve release handover',
+      projectPhase: 'Execution',
+      situationObserved: 'The release note was missing.',
+    } satisfies Partial<UpdateLessonDraftBody>));
   });
 
   it('prevents duplicate submits and form changes while a save is pending', async () => {
     vi.mocked(getHome).mockResolvedValue(contributor);
     vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
-    let resolveCreate!: (draft: {
-      id: number;
-      title: string;
-      authorId: string;
-      status: 'Open';
-      createdAt: string;
-      updatedAt: string;
-    }) => void;
+    let resolveCreate!: (draft: LessonDraft) => void;
     vi.mocked(createLessonDraft).mockImplementation(() => new Promise((resolve) => {
       resolveCreate = resolve;
     }));
@@ -159,43 +256,23 @@ describe('Lessons Learned access check', () => {
     expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
     expect(titleInput).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Create lesson' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeDisabled();
     fireEvent.submit(form!);
     expect(createLessonDraft).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      resolveCreate({
-        id: 7,
-        title: 'First draft title',
-        authorId: 'local-contributor',
-        status: 'Open',
-        createdAt: '2026-11-13T12:00:00.000Z',
-        updatedAt: '2026-11-13T12:00:00.000Z',
-      });
+      resolveCreate(lessonDraft({ title: 'First draft title' }));
     });
 
     expect(await screen.findByText('Draft saved.')).toBeInTheDocument();
-    expect(screen.queryByRole('textbox', { name: 'Title' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('First draft title');
+    expect(screen.getByRole('heading', { name: 'Edit lesson' })).toBeInTheDocument();
     expect(createLessonDraft).toHaveBeenCalledTimes(1);
   });
 
   it('clears the previous profile draft UI when storage or pageshow selects another profile', async () => {
-    const contributorDraft = {
-      id: 7,
-      title: 'Contributor private draft',
-      authorId: 'local-contributor',
-      status: 'Open' as const,
-      createdAt: '2026-11-13T12:00:00.000Z',
-      updatedAt: '2026-11-13T12:00:00.000Z',
-    };
-    const pmoDraft = {
-      id: 9,
-      title: 'PMO private draft',
-      authorId: 'local-pmo',
-      status: 'Open' as const,
-      createdAt: '2026-11-13T12:00:00.000Z',
-      updatedAt: '2026-11-13T12:00:00.000Z',
-    };
+    const contributorDraft = lessonDraft({ title: 'Contributor private draft' });
+    const pmoDraft = lessonDraft({ id: 9, title: 'PMO private draft', authorId: 'local-pmo', updatedBy: 'local-pmo' });
     vi.mocked(getHome).mockImplementation((profileId) => Promise.resolve(
       profileId === 'local-pmo' ? pmo : contributor,
     ));
@@ -208,7 +285,8 @@ describe('Lessons Learned access check', () => {
     await screen.findByRole('heading', { name: 'Home' });
     await user.click(screen.getByRole('link', { name: 'My Submissions' }));
     await user.click(await screen.findByRole('button', { name: 'Reopen Contributor private draft' }));
-    expect(screen.getByRole('dialog', { name: 'Open draft' })).toHaveTextContent('Contributor private draft');
+    expect(screen.getByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Contributor private draft');
 
     act(() => {
       window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
@@ -220,7 +298,7 @@ describe('Lessons Learned access check', () => {
 
     expect(await screen.findByRole('button', { name: 'Local PMO' })).toBeInTheDocument();
     expect(await screen.findByText('PMO private draft')).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: 'Open draft' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Edit lesson' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Create lesson' }));
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Unsaved PMO title');
@@ -233,7 +311,7 @@ describe('Lessons Learned access check', () => {
     expect(await screen.findByText('Contributor private draft')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Title' })).not.toBeInTheDocument();
     expect(screen.queryByText('Unsaved PMO title')).not.toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: 'Open draft' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Edit lesson' })).not.toBeInTheDocument();
   });
 
   it('keeps a newly selected profile’s form unchanged when the previous profile save completes', async () => {
@@ -241,26 +319,17 @@ describe('Lessons Learned access check', () => {
       profileId === 'local-pmo' ? pmo : contributor,
     ));
     vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
-    let resolveCreate!: (draft: {
-      id: number;
-      title: string;
-      authorId: string;
-      status: 'Open';
-      createdAt: string;
-      updatedAt: string;
-    }) => void;
+    let resolveCreate!: (draft: LessonDraft) => void;
     vi.mocked(createLessonDraft).mockImplementation((profileId) => {
       if (profileId === 'local-contributor') return new Promise((resolve) => {
         resolveCreate = resolve;
       });
-      return Promise.resolve({
+      return Promise.resolve(lessonDraft({
         id: 9,
         title: 'New PMO title',
         authorId: 'local-pmo',
-        status: 'Open' as const,
-        createdAt: '2026-11-13T12:00:00.000Z',
-        updatedAt: '2026-11-13T12:00:00.000Z',
-      });
+        updatedBy: 'local-pmo',
+      }));
     });
     window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
     window.history.replaceState(null, '', '/lessons-learned/');
@@ -292,14 +361,7 @@ describe('Lessons Learned access check', () => {
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'New PMO title');
 
     await act(async () => {
-      resolveCreate({
-        id: 7,
-        title: 'Pending contributor title',
-        authorId: 'local-contributor',
-        status: 'Open',
-        createdAt: '2026-11-13T12:00:00.000Z',
-        updatedAt: '2026-11-13T12:00:00.000Z',
-      });
+      resolveCreate(lessonDraft({ title: 'Pending contributor title' }));
     });
 
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('New PMO title');

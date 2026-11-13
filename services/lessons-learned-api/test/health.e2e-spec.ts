@@ -23,10 +23,15 @@ type OpenApiContract = {
         requestBody?: { content?: Record<string, { schema?: { $ref?: string } }> };
         responses?: Record<string, { content?: Record<string, { schema?: { $ref?: string; type?: string; items?: { $ref?: string } } }> }>;
       };
+      patch?: {
+        security?: Record<string, string[]>[];
+        requestBody?: { content?: Record<string, { schema?: { $ref?: string } }> };
+        responses?: Record<string, { content?: Record<string, { schema?: { $ref?: string } }> }>;
+      };
     }
   >;
   components?: {
-    schemas?: Record<string, { properties?: Record<string, { enum?: string[] }> }>;
+    schemas?: Record<string, { properties?: Record<string, { enum?: string[]; maxLength?: number; minimum?: number }> }>;
   };
 };
 
@@ -99,6 +104,23 @@ describe('Lessons Learned health API', () => {
       .toBe('#/components/schemas/CreateLessonRequest');
     expect(lessons?.post?.responses?.['201']?.content?.['application/json']?.schema?.$ref)
       .toBe('#/components/schemas/LessonDraftResponse');
+
+    const projects = contract.paths['/api/lessons-learned/v1/lessons/projects']?.get;
+    expect(projects?.security).toEqual([{ localProfile: [] }]);
+    expect(projects?.responses?.['200']?.content?.['application/json']?.schema)
+      .toMatchObject({ type: 'array', items: { $ref: '#/components/schemas/LessonProjectResponse' } });
+
+    const updateDraft = contract.paths['/api/lessons-learned/v1/lessons/{id}']?.patch;
+    expect(updateDraft?.security).toEqual([{ localProfile: [] }]);
+    expect(updateDraft?.requestBody?.content?.['application/json']?.schema?.$ref)
+      .toBe('#/components/schemas/UpdateLessonDraftRequest');
+    expect(updateDraft?.responses?.['200']?.content?.['application/json']?.schema?.$ref)
+      .toBe('#/components/schemas/LessonDraftResponse');
+    expect(contract.components?.schemas?.UpdateLessonDraftRequest?.properties?.situationObserved?.maxLength)
+      .toBe(4000);
+    expect(contract.components?.schemas?.UpdateLessonDraftRequest?.properties?.projectCategory?.enum)
+      .toEqual(['Technology', 'Business', 'Infrastructure', 'Data']);
+    expect(contract.components?.schemas?.LessonDraftResponse?.properties?.version?.minimum).toBe(1);
 
     await request(app.getHttpServer())
       .get('/api/lessons-learned/v1/health')

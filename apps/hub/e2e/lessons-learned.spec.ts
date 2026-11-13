@@ -67,7 +67,7 @@ test('direct Lessons Learned URL works before profile selection and can return t
   await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
 });
 
-test('Contributor creates a title-only lesson and reopens the saved draft after reload', async ({ page }) => {
+test('Contributor creates a title-only lesson and completes it from the edit modal after reload', async ({ page }) => {
   expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
   const title = `Issue 20 draft ${Date.now()}`;
 
@@ -81,15 +81,30 @@ test('Contributor creates a title-only lesson and reopens the saved draft after 
   await page.getByRole('link', { name: 'My Submissions' }).click();
   await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
   await page.getByRole('button', { name: 'Create lesson' }).click();
+  await expect(page.getByRole('dialog', { name: 'Create lesson' })).toBeVisible();
   await page.getByRole('textbox', { name: 'Title' }).fill(title);
   await page.getByRole('button', { name: 'Save Draft' }).click();
-  await expect(page.getByRole('status')).toHaveText('Draft saved.');
-  await expect(page.getByText(title, { exact: true })).toBeVisible();
+  await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Edit lesson' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Close$/ })).toBeVisible();
+  await page.getByRole('button', { name: /^Close$/ }).click();
 
   await page.reload();
   await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
   await page.getByRole('button', { name: `Reopen ${title}` }).click();
-  await expect(page.getByRole('dialog', { name: 'Open draft' })).toContainText(title);
+  await expect(page.getByRole('dialog', { name: 'Edit lesson' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue(title);
+  await page.getByRole('combobox', { name: 'Project category' }).selectOption('Technology');
+  await page.getByRole('combobox', { name: 'Project phase' }).selectOption('Execution');
+  await page.getByRole('textbox', { name: 'Situation observed' }).fill('The release handover did not include the latest runbook.');
+  await page.getByRole('textbox', { name: 'Root cause' }).fill('The team had no shared release checklist.');
+  await page.getByRole('combobox', { name: 'Lesson type' }).selectOption('Future Prevention');
+  await page.getByRole('textbox', { name: 'Impact' }).fill('Operators spent extra time locating the current procedure.');
+  await page.getByRole('textbox', { name: 'Recommendation' }).fill('Review the runbook before each release.');
+  await page.getByRole('textbox', { name: 'Applicability' }).fill('Apply to software releases with an on-call handover.');
+  await page.getByRole('button', { name: 'Save Draft' }).click();
+  await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Root cause' })).toHaveValue('The team had no shared release checklist.');
 });
 
 test('catalog link opens in the same tab and reload, back, and module return preserve the profile', async ({ page }) => {

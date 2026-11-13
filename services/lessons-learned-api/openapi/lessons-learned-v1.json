@@ -183,6 +183,107 @@
           "Lessons"
         ]
       }
+    },
+    "/api/lessons-learned/v1/lessons/projects": {
+      "get": {
+        "operationId": "LessonsController_getProjects",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LessonProjectResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected."
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access."
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List fictional local projects available for lesson drafts",
+        "tags": [
+          "Lessons"
+        ]
+      }
+    },
+    "/api/lessons-learned/v1/lessons/{id}": {
+      "patch": {
+        "operationId": "LessonsController_updateOwnOpenDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The numeric ID of the lesson draft.",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLessonDraftRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonDraftResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The draft fields or project selection are invalid."
+          },
+          "401": {
+            "description": "A local Hub profile must be selected."
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access."
+          },
+          "404": {
+            "description": "The lesson does not exist or is not owned by the selected profile."
+          },
+          "409": {
+            "description": "The draft changed after it was loaded or is no longer Open."
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable."
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Update an author-owned Open lesson draft using its expected version",
+        "tags": [
+          "Lessons"
+        ]
+      }
     }
   },
   "info": {
@@ -327,6 +428,72 @@
             "type": "string",
             "maxLength": 150,
             "example": "Improve release handover"
+          },
+          "projectId": {
+            "type": "string",
+            "maxLength": 128,
+            "nullable": true
+          },
+          "projectName": {
+            "type": "string",
+            "maxLength": 200,
+            "nullable": true
+          },
+          "projectCategory": {
+            "type": "string",
+            "enum": [
+              "Technology",
+              "Business",
+              "Infrastructure",
+              "Data"
+            ],
+            "nullable": true
+          },
+          "projectPhase": {
+            "type": "string",
+            "enum": [
+              "Initiation",
+              "Planning",
+              "Execution",
+              "Closure",
+              "Not Applicable"
+            ],
+            "nullable": true
+          },
+          "situationObserved": {
+            "type": "string",
+            "maxLength": 4000,
+            "nullable": true
+          },
+          "rootCause": {
+            "type": "string",
+            "maxLength": 4000,
+            "nullable": true
+          },
+          "lessonType": {
+            "type": "string",
+            "enum": [
+              "Future Prevention",
+              "Success to Repeat",
+              "Risk Avoided",
+              "Communication"
+            ],
+            "nullable": true
+          },
+          "impact": {
+            "type": "string",
+            "maxLength": 4000,
+            "nullable": true
+          },
+          "recommendation": {
+            "type": "string",
+            "maxLength": 4000,
+            "nullable": true
+          },
+          "applicability": {
+            "type": "string",
+            "maxLength": 4000,
+            "nullable": true
           }
         },
         "required": [
@@ -349,12 +516,87 @@
             "type": "string",
             "example": "local-contributor"
           },
+          "updatedBy": {
+            "type": "string",
+            "example": "local-contributor"
+          },
           "status": {
             "type": "string",
             "enum": [
               "Open"
             ],
             "example": "Open"
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1,
+            "example": 1
+          },
+          "projectId": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 128
+          },
+          "projectName": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200
+          },
+          "projectCategory": {
+            "type": "string",
+            "enum": [
+              "Technology",
+              "Business",
+              "Infrastructure",
+              "Data"
+            ],
+            "nullable": true
+          },
+          "projectPhase": {
+            "type": "string",
+            "enum": [
+              "Initiation",
+              "Planning",
+              "Execution",
+              "Closure",
+              "Not Applicable"
+            ],
+            "nullable": true
+          },
+          "situationObserved": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 4000
+          },
+          "rootCause": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 4000
+          },
+          "lessonType": {
+            "type": "string",
+            "enum": [
+              "Future Prevention",
+              "Success to Repeat",
+              "Risk Avoided",
+              "Communication"
+            ],
+            "nullable": true
+          },
+          "impact": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 4000
+          },
+          "recommendation": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 4000
+          },
+          "applicability": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 4000
           },
           "createdAt": {
             "type": "string",
@@ -369,9 +611,123 @@
           "id",
           "title",
           "authorId",
+          "updatedBy",
           "status",
+          "version",
+          "projectId",
+          "projectName",
+          "projectCategory",
+          "projectPhase",
+          "situationObserved",
+          "rootCause",
+          "lessonType",
+          "impact",
+          "recommendation",
+          "applicability",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "LessonProjectResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "LOCAL-PROJECT-001"
+          },
+          "name": {
+            "type": "string",
+            "example": "Fictional Atlas Modernization"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "UpdateLessonDraftRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 150,
+            "example": "Improve release handover"
+          },
+          "projectId": {
+            "type": "string",
+            "maxLength": 128,
+            "nullable": true
+          },
+          "projectName": {
+            "type": "string",
+            "maxLength": 200,
+            "nullable": true
+          },
+          "projectCategory": {
+            "type": "string",
+            "enum": [
+              "Technology",
+              "Business",
+              "Infrastructure",
+              "Data"
+            ],
+            "nullable": true
+          },
+          "projectPhase": {
+            "type": "string",
+            "enum": [
+              "Initiation",
+              "Planning",
+              "Execution",
+              "Closure",
+              "Not Applicable"
+            ],
+            "nullable": true
+          },
+          "situationObserved": {
+            "type": "string",
+            "maxLength": 4000,
+            "nullable": true
+          },
+          "rootCause": {
+            "type": "string",
+            "maxLength": 4000,
+            "nullable": true
+          },
+          "lessonType": {
+            "type": "string",
+            "enum": [
+              "Future Prevention",
+              "Success to Repeat",
+              "Risk Avoided",
+              "Communication"
+            ],
+            "nullable": true
+          },
+          "impact": {
+            "type": "string",
+            "maxLength": 4000,
+            "nullable": true
+          },
+          "recommendation": {
+            "type": "string",
+            "maxLength": 4000,
+            "nullable": true
+          },
+          "applicability": {
+            "type": "string",
+            "maxLength": 4000,
+            "nullable": true
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1,
+            "example": 1
+          }
+        },
+        "required": [
+          "title",
+          "version"
         ]
       }
     }

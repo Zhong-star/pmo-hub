@@ -18,8 +18,10 @@ describe('Lessons Learned draft registration', () => {
   let dataSource: DataSource | undefined;
   let temporaryDirectory: string;
   let profilesPath: string;
+  let projectsPath: string;
   const previousProfilesFile = process.env.LESSONS_LEARNED_LOCAL_USERS_FILE;
   const previousLocalAuthEnabled = process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED;
+  const previousProjectsFile = process.env.LESSONS_LEARNED_PROJECTS_FILE;
 
   const profiles = [
     { id: 'local-contributor', displayName: 'Local Contributor', role: 'LESSONS_USER' },
@@ -30,7 +32,13 @@ describe('Lessons Learned draft registration', () => {
     temporaryDirectory = mkdtempSync(join(tmpdir(), 'pmo-hub-lessons-registration-'));
     profilesPath = join(temporaryDirectory, 'local-users.json');
     writeFileSync(profilesPath, JSON.stringify(profiles), 'utf8');
+    projectsPath = join(temporaryDirectory, 'projects.json');
+    writeFileSync(projectsPath, JSON.stringify([
+      { id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' },
+      { id: 'LOCAL-PROJECT-002', name: 'Fictional Harbor Migration' },
+    ]), 'utf8');
     process.env.LESSONS_LEARNED_LOCAL_USERS_FILE = profilesPath;
+    process.env.LESSONS_LEARNED_PROJECTS_FILE = projectsPath;
     process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED = 'true';
 
     container = await new PostgreSqlContainer('postgres:17-alpine')
@@ -57,6 +65,8 @@ describe('Lessons Learned draft registration', () => {
       rmSync(temporaryDirectory, { recursive: true, force: true });
       if (previousProfilesFile === undefined) delete process.env.LESSONS_LEARNED_LOCAL_USERS_FILE;
       else process.env.LESSONS_LEARNED_LOCAL_USERS_FILE = previousProfilesFile;
+      if (previousProjectsFile === undefined) delete process.env.LESSONS_LEARNED_PROJECTS_FILE;
+      else process.env.LESSONS_LEARNED_PROJECTS_FILE = previousProjectsFile;
       if (previousLocalAuthEnabled === undefined) delete process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED;
       else process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED = previousLocalAuthEnabled;
     }
@@ -160,5 +170,240 @@ describe('Lessons Learned draft registration', () => {
     expect(await dataSource.query('SELECT id FROM lesson_history')).toEqual([]);
     await dataSource.query('DROP TRIGGER reject_lesson_history_insert ON lesson_history');
     await dataSource.query('DROP FUNCTION reject_lesson_history()');
+  });
+
+  it('lets the author complete an Open draft without adding an edit history event', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Improve release handover' })
+      .expect(201);
+
+    const updated = await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: 'Improve release handover',
+        projectId: 'LOCAL-PROJECT-001',
+        projectName: 'Fictional Atlas Modernization',
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The deployment handover did not include the latest runbook.',
+        rootCause: 'The team had no shared release checklist.',
+        lessonType: 'Future Prevention',
+        impact: 'Operators spent extra time finding the current procedure.',
+        recommendation: 'Review the runbook before each release.',
+        applicability: 'Apply to software releases with an on-call handover.',
+      })
+      .expect(200);
+
+    expect(updated.body).toMatchObject({
+      id: created.body.id,
+      title: 'Improve release handover',
+      authorId: 'local-contributor',
+      status: 'Open',
+      version: created.body.version + 1,
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      lessonType: 'Future Prevention',
+      situationObserved: 'The deployment handover did not include the latest runbook.',
+    });
+    expect(await dataSource?.query(
+      'SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id',
+      [created.body.id],
+    )).toEqual([{ event_type: 'Created' }]);
+  });
+
+  it('creates a complete draft and its creation event together while still supporting a title-only draft', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        title: 'Complete a lesson in the create modal',
+        projectId: 'LOCAL-PROJECT-001',
+        projectName: 'Fictional Atlas Modernization',
+        projectCategory: 'Business',
+        projectPhase: 'Execution',
+        situationObserved: 'The handover omitted the release checklist.',
+        lessonType: 'Future Prevention',
+        rootCause: 'No checklist owner had been assigned.',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to update the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(201);
+
+    expect(created.body).toMatchObject({
+      title: 'Complete a lesson in the create modal',
+      authorId: 'local-contributor',
+      updatedBy: 'local-contributor',
+      status: 'Open',
+      version: 1,
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+      projectCategory: 'Business',
+      projectPhase: 'Execution',
+      lessonType: 'Future Prevention',
+      rootCause: 'No checklist owner had been assigned.',
+    });
+    expect(await dataSource?.query(
+      'SELECT event_type, actor_id FROM lesson_history WHERE lesson_id = $1',
+      [created.body.id],
+    )).toEqual([{ event_type: 'Created', actor_id: 'local-contributor' }]);
+
+    await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Still save a title-only draft' })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.title).toBe('Still save a title-only draft');
+        expect(body.situationObserved).toBeNull();
+      });
+  });
+
+  it('rejects a stale draft edit without overwriting the current version', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Improve release handover' })
+      .expect(201);
+
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: created.body.version, title: 'Current title' })
+      .expect(200);
+
+    const stale = await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: created.body.version, title: 'Stale overwrite' })
+      .expect(409);
+
+    expect(stale.body.code).toBe('STALE_LESSON_VERSION');
+    await server
+      .get('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body[0]).toMatchObject({ title: 'Current title' }));
+  });
+
+  it('validates lesson fields and preserves a selected project snapshot after catalog removal', async () => {
+    const server = request(app!.getHttpServer());
+    const catalog = await server
+      .get('/api/lessons-learned/v1/lessons/projects')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200);
+    expect(catalog.body).toContainEqual({ id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' });
+    await server.get('/api/lessons-learned/v1/lessons/projects').expect(401);
+
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Preserve project snapshot' })
+      .expect(201);
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: 'Preserve project snapshot',
+        projectId: catalog.body[0].id,
+        projectName: catalog.body[0].name,
+      })
+      .expect(200);
+
+    writeFileSync(projectsPath, JSON.stringify([
+      { id: 'LOCAL-PROJECT-002', name: 'Fictional Harbor Migration' },
+    ]), 'utf8');
+    const preserved = await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: created.body.version + 1, title: 'Preserve project snapshot after removal' })
+      .expect(200);
+    expect(preserved.body).toMatchObject({
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+    });
+
+    const longTextFields = [
+      'situationObserved',
+      'rootCause',
+      'impact',
+      'recommendation',
+      'applicability',
+    ] as const;
+    for (const field of longTextFields) {
+      await server
+        .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ version: preserved.body.version, title: 'Valid', [field]: 'x'.repeat(4001) })
+        .expect(400);
+    }
+    for (const input of [
+      { title: 'Valid', version: preserved.body.version, lessonType: 'Unexpected' },
+      { title: 'Valid', version: preserved.body.version, projectCategory: 'Unexpected' },
+      { title: 'Valid', version: preserved.body.version, projectPhase: 'Unexpected' },
+      { title: '   ', version: preserved.body.version },
+      { title: 'x'.repeat(151), version: preserved.body.version },
+    ]) {
+      await server
+        .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send(input)
+        .expect(400);
+    }
+
+    const noProject = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'No project lesson' })
+      .expect(201);
+    const boundaryText = 'x'.repeat(4000);
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${noProject.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: noProject.body.version,
+        title: 'No project lesson',
+        projectCategory: 'Business',
+        projectPhase: 'Not Applicable',
+        situationObserved: boundaryText,
+        rootCause: boundaryText,
+        impact: boundaryText,
+        recommendation: boundaryText,
+        applicability: boundaryText,
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.projectId).toBeNull();
+        expect(body.projectCategory).toBe('Business');
+        expect(body.situationObserved).toHaveLength(4000);
+        expect(body.rootCause).toHaveLength(4000);
+        expect(body.impact).toHaveLength(4000);
+        expect(body.recommendation).toHaveLength(4000);
+        expect(body.applicability).toHaveLength(4000);
+      });
+  });
+
+  it('does not allow a contributor to edit another author’s draft', async () => {
+    const created = await request(app!.getHttpServer())
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ title: 'PMO-owned draft' })
+      .expect(201);
+
+    await request(app!.getHttpServer())
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: created.body.version, title: 'Unauthorized edit' })
+      .expect(404);
   });
 });

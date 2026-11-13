@@ -5,9 +5,13 @@ import {
   getHome,
   getMyOpenDrafts,
   createLessonDraft,
+  getLessonProjects,
+  updateLessonDraft,
   LESSONS_LEARNED_LESSONS_PATH,
   LESSONS_LEARNED_HEALTH_PATH,
   LESSONS_LEARNED_HOME_PATH,
+  LESSONS_LEARNED_PROJECTS_PATH,
+  LESSONS_LEARNED_DRAFT_PATH,
   LESSONS_LEARNED_API_TIMEOUT_MS,
 } from '../src/api';
 
@@ -97,6 +101,58 @@ describe('lessons learned HTTP client', () => {
     expect(adapter).toHaveBeenNthCalledWith(2, expect.objectContaining({
       url: LESSONS_LEARNED_LESSONS_PATH,
       method: 'get',
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
+    }));
+  });
+
+  it('loads the local project catalog and updates an Open draft with its expected version', async () => {
+    const project = { id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' };
+    const updated = {
+      id: 7,
+      title: 'Improve release handover',
+      authorId: 'local-contributor',
+      updatedBy: 'local-contributor',
+      status: 'Open' as const,
+      version: 2,
+      projectId: project.id,
+      projectName: project.name,
+      projectCategory: 'Technology' as const,
+      projectPhase: 'Execution' as const,
+      situationObserved: 'The deployment handover lacked the current runbook.',
+      rootCause: null,
+      lessonType: null,
+      impact: null,
+      recommendation: null,
+      applicability: null,
+      createdAt: '2026-11-13T12:00:00.000Z',
+      updatedAt: '2026-11-13T12:05:00.000Z',
+    };
+    const body = {
+      version: 1,
+      title: updated.title,
+      projectId: project.id,
+      projectName: project.name,
+      projectCategory: 'Technology' as const,
+      projectPhase: 'Execution' as const,
+      situationObserved: updated.situationObserved,
+    };
+    const adapter = vi.fn()
+      .mockResolvedValueOnce({ data: [project], status: 200, statusText: 'OK', headers: {}, config: {} })
+      .mockResolvedValueOnce({ data: updated, status: 200, statusText: 'OK', headers: {}, config: {} });
+    api.defaults.adapter = adapter;
+
+    await expect(getLessonProjects('local-contributor')).resolves.toEqual([project]);
+    await expect(updateLessonDraft('local-contributor', 7, body)).resolves.toEqual(updated);
+
+    expect(adapter).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      url: LESSONS_LEARNED_PROJECTS_PATH,
+      method: 'get',
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
+    }));
+    expect(adapter).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      url: LESSONS_LEARNED_DRAFT_PATH.replace('{id}', '7'),
+      method: 'patch',
+      data: JSON.stringify(body),
       headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
     }));
   });

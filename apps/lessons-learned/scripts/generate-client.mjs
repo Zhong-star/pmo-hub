@@ -8,6 +8,8 @@ const outputPath = resolve(appDirectory, 'src/generated/lessons-learned-api-clie
 const healthPath = '/api/lessons-learned/v1/health';
 const homePath = '/api/lessons-learned/v1/home';
 const lessonsPath = '/api/lessons-learned/v1/lessons';
+const projectsPath = `${lessonsPath}/projects`;
+const draftPath = `${lessonsPath}/{id}`;
 const contract = JSON.parse(await readFile(contractPath, 'utf8'));
 const operation = contract.paths?.[healthPath]?.get;
 const responseSchema = operation?.responses?.['200']?.content?.['application/json']?.schema;
@@ -18,6 +20,11 @@ const lessonsResponseSchema = lessonsOperation?.responses?.['200']?.content?.['a
 const createLessonOperation = contract.paths?.[lessonsPath]?.post;
 const createLessonRequestSchema = createLessonOperation?.requestBody?.content?.['application/json']?.schema;
 const createLessonResponseSchema = createLessonOperation?.responses?.['201']?.content?.['application/json']?.schema;
+const projectsOperation = contract.paths?.[projectsPath]?.get;
+const projectsResponseSchema = projectsOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const updateLessonOperation = contract.paths?.[draftPath]?.patch;
+const updateLessonRequestSchema = updateLessonOperation?.requestBody?.content?.['application/json']?.schema;
+const updateLessonResponseSchema = updateLessonOperation?.responses?.['200']?.content?.['application/json']?.schema;
 
 if (!operation || responseSchema?.$ref !== '#/components/schemas/HealthResponse') {
   throw new Error(`Expected GET ${healthPath} with a HealthResponse schema in ${contractPath}`);
@@ -37,6 +44,16 @@ if (!createLessonOperation || createLessonRequestSchema?.$ref !== '#/components/
   throw new Error(`Expected POST ${lessonsPath} with CreateLessonRequest and LessonDraftResponse in ${contractPath}`);
 }
 
+if (!projectsOperation || projectsResponseSchema?.type !== 'array' ||
+  projectsResponseSchema.items?.$ref !== '#/components/schemas/LessonProjectResponse') {
+  throw new Error(`Expected GET ${projectsPath} with an array of LessonProjectResponse in ${contractPath}`);
+}
+
+if (!updateLessonOperation || updateLessonRequestSchema?.$ref !== '#/components/schemas/UpdateLessonDraftRequest' ||
+  updateLessonResponseSchema?.$ref !== '#/components/schemas/LessonDraftResponse') {
+  throw new Error(`Expected PATCH ${draftPath} with UpdateLessonDraftRequest and LessonDraftResponse in ${contractPath}`);
+}
+
 const generatedClient = `/* This file is generated from services/lessons-learned-api/openapi/lessons-learned-v1.json. Do not edit directly. */
 import axios from 'axios';
 import type { paths } from './lessons-learned-api';
@@ -44,10 +61,14 @@ import type { paths } from './lessons-learned-api';
 export const LESSONS_LEARNED_HEALTH_PATH = '${healthPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_HOME_PATH = '${homePath}' satisfies keyof paths;
 export const LESSONS_LEARNED_LESSONS_PATH = '${lessonsPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_PROJECTS_PATH = '${projectsPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_DRAFT_PATH = '${draftPath}' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
-type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
-type CreateLessonBody = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['post']['requestBody']['content']['application/json'];
+export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
+export type CreateLessonDraftBody = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['post']['requestBody']['content']['application/json'];
+export type LessonProject = paths[typeof LESSONS_LEARNED_PROJECTS_PATH]['get']['responses'][200]['content']['application/json'][number];
+export type UpdateLessonDraftBody = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['patch']['requestBody']['content']['application/json'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -83,9 +104,34 @@ export async function getMyOpenDrafts(localUserId: string): Promise<LessonDraft[
   return data;
 }
 
-export async function createLessonDraft(localUserId: string, title: string): Promise<LessonDraft> {
-  const body: CreateLessonBody = { title };
+export async function createLessonDraft(
+  localUserId: string,
+  titleOrInput: string | CreateLessonDraftBody,
+): Promise<LessonDraft> {
+  const body: CreateLessonDraftBody = typeof titleOrInput === 'string' ? { title: titleOrInput } : titleOrInput;
   const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_LESSONS_PATH, body, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function getLessonProjects(localUserId: string): Promise<LessonProject[]> {
+  const { data } = await api.get<LessonProject[]>(LESSONS_LEARNED_PROJECTS_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function updateLessonDraft(
+  localUserId: string,
+  lessonId: number,
+  input: UpdateLessonDraftBody,
+): Promise<LessonDraft> {
+  const { data } = await api.patch<LessonDraft>(LESSONS_LEARNED_DRAFT_PATH.replace('{id}', String(lessonId)), input, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });

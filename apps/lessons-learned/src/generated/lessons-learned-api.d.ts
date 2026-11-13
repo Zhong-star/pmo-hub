@@ -56,6 +56,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/lessons/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List fictional local projects available for lesson drafts */
+        get: operations["LessonsController_getProjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lessons-learned/v1/lessons/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update an author-owned Open lesson draft using its expected version */
+        patch: operations["LessonsController_updateOwnOpenDraft"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -103,6 +137,19 @@ export interface components {
         CreateLessonRequest: {
             /** @example Improve release handover */
             title: string;
+            projectId?: string | null;
+            projectName?: string | null;
+            /** @enum {string|null} */
+            projectCategory?: "Technology" | "Business" | "Infrastructure" | "Data" | null;
+            /** @enum {string|null} */
+            projectPhase?: "Initiation" | "Planning" | "Execution" | "Closure" | "Not Applicable" | null;
+            situationObserved?: string | null;
+            rootCause?: string | null;
+            /** @enum {string|null} */
+            lessonType?: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication" | null;
+            impact?: string | null;
+            recommendation?: string | null;
+            applicability?: string | null;
         };
         LessonDraftResponse: {
             /** @example 1 */
@@ -111,15 +158,57 @@ export interface components {
             title: string;
             /** @example local-contributor */
             authorId: string;
+            /** @example local-contributor */
+            updatedBy: string;
             /**
              * @example Open
              * @enum {string}
              */
             status: "Open";
+            /** @example 1 */
+            version: number;
+            projectId: string | null;
+            projectName: string | null;
+            /** @enum {string|null} */
+            projectCategory: "Technology" | "Business" | "Infrastructure" | "Data" | null;
+            /** @enum {string|null} */
+            projectPhase: "Initiation" | "Planning" | "Execution" | "Closure" | "Not Applicable" | null;
+            situationObserved: string | null;
+            rootCause: string | null;
+            /** @enum {string|null} */
+            lessonType: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication" | null;
+            impact: string | null;
+            recommendation: string | null;
+            applicability: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        LessonProjectResponse: {
+            /** @example LOCAL-PROJECT-001 */
+            id: string;
+            /** @example Fictional Atlas Modernization */
+            name: string;
+        };
+        UpdateLessonDraftRequest: {
+            /** @example Improve release handover */
+            title: string;
+            projectId?: string | null;
+            projectName?: string | null;
+            /** @enum {string|null} */
+            projectCategory?: "Technology" | "Business" | "Infrastructure" | "Data" | null;
+            /** @enum {string|null} */
+            projectPhase?: "Initiation" | "Planning" | "Execution" | "Closure" | "Not Applicable" | null;
+            situationObserved?: string | null;
+            rootCause?: string | null;
+            /** @enum {string|null} */
+            lessonType?: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication" | null;
+            impact?: string | null;
+            recommendation?: string | null;
+            applicability?: string | null;
+            /** @example 1 */
+            version: number;
         };
     };
     responses: never;
@@ -282,6 +371,107 @@ export interface operations {
             };
             /** @description The selected profile has no active Lessons Learned access. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LessonsController_getProjects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonProjectResponse"][];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LessonsController_updateOwnOpenDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric ID of the lesson draft. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateLessonDraftRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDraftResponse"];
+                };
+            };
+            /** @description The draft fields or project selection are invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson does not exist or is not owned by the selected profile. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The draft changed after it was loaded or is no longer Open. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

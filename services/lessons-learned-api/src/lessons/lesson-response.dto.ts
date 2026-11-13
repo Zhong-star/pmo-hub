@@ -10,8 +10,52 @@ export class LessonDraftResponse {
   @ApiProperty({ type: String, example: 'local-contributor' })
   authorId!: string;
 
+  @ApiProperty({ type: String, example: 'local-contributor' })
+  updatedBy!: string;
+
   @ApiProperty({ type: String, enum: ['Open'], example: 'Open' })
   status!: 'Open';
+
+  @ApiProperty({ type: Number, minimum: 1, example: 1 })
+  version!: number;
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 128 })
+  projectId!: string | null;
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 200 })
+  projectName!: string | null;
+
+  @ApiProperty({ type: String, enum: ['Technology', 'Business', 'Infrastructure', 'Data'], nullable: true })
+  projectCategory!: 'Technology' | 'Business' | 'Infrastructure' | 'Data' | null;
+
+  @ApiProperty({
+    type: String,
+    enum: ['Initiation', 'Planning', 'Execution', 'Closure', 'Not Applicable'],
+    nullable: true,
+  })
+  projectPhase!: 'Initiation' | 'Planning' | 'Execution' | 'Closure' | 'Not Applicable' | null;
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 4000 })
+  situationObserved!: string | null;
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 4000 })
+  rootCause!: string | null;
+
+  @ApiProperty({
+    type: String,
+    enum: ['Future Prevention', 'Success to Repeat', 'Risk Avoided', 'Communication'],
+    nullable: true,
+  })
+  lessonType!: 'Future Prevention' | 'Success to Repeat' | 'Risk Avoided' | 'Communication' | null;
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 4000 })
+  impact!: string | null;
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 4000 })
+  recommendation!: string | null;
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 4000 })
+  applicability!: string | null;
 
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt!: Date;

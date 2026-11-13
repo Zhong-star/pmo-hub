@@ -73,5 +73,6 @@ RUN npm ci --omit=dev --workspace @pmo-hub/lessons-learned-api
 WORKDIR /app/services/lessons-learned-api
 COPY --from=lessons-learned-api-build /workspace/services/lessons-learned-api/dist/ ./dist/
 COPY --from=lessons-learned-api-build /workspace/services/lessons-learned-api/config/local-users.json ./config/local-users.json
+COPY --from=lessons-learned-api-build /workspace/services/lessons-learned-api/config/projects.json ./config/projects.json
 EXPOSE 3002
 CMD ["node", "dist/main.js"]

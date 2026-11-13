@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:e2e": "npm run build --workspace @pmo-hub/hub-api && playwright test",
     "test:e2e:lessons-learned": "node ../../services/lessons-learned-api/run-playwright-e2e.mjs",
-    "test:e2e:lessons-learned:registration": "node ../../services/lessons-learned-api/run-playwright-e2e.mjs --grep \"Contributor creates a title-only lesson\"",
+    "test:e2e:lessons-learned:registration": "node ../../services/lessons-learned-api/run-playwright-e2e.mjs --grep \"Contributor creates a title-only lesson and completes it\"",
     "test:watch": "vitest"
   },
   "dependencies": {
