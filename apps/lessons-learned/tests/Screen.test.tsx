@@ -82,6 +82,34 @@ describe('Lessons Learned access check', () => {
     expect(screen.getByRole('link', { name: 'Back to PMO Hub' })).toHaveAttribute('href', '/');
   });
 
+  it('switches the sidebar theme from the keyboard and keeps the choice in this session', async () => {
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    const user = userEvent.setup();
+    const view = renderScreen('local-contributor');
+
+    await screen.findByRole('navigation', { name: 'Lessons Learned' });
+    const lightTheme = screen.getByRole('button', { name: 'Light' });
+    const darkTheme = screen.getByRole('button', { name: 'Dark' });
+    expect(lightTheme).toHaveAttribute('aria-pressed', 'true');
+    expect(darkTheme).toHaveAttribute('aria-pressed', 'false');
+
+    screen.getByRole('link', { name: 'Home' }).focus();
+    await user.tab();
+    await user.tab();
+    expect(darkTheme).toHaveFocus();
+    await user.keyboard('{Enter}');
+
+    expect(darkTheme).toHaveAttribute('aria-pressed', 'true');
+    expect(lightTheme).toHaveAttribute('aria-pressed', 'false');
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+    expect(window.sessionStorage.getItem('pmo-hub.lessons-learned.theme')).toBe('dark');
+
+    view.unmount();
+    renderScreen('local-contributor');
+    await screen.findByRole('navigation', { name: 'Lessons Learned' });
+    expect(screen.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('shows the PMO role returned by the API', async () => {
     vi.mocked(getHome).mockResolvedValue(pmo);
 

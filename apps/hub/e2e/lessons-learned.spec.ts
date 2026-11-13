@@ -4,6 +4,35 @@ import { fileURLToPath } from 'node:url';
 
 const localProfilesFile = fileURLToPath(new URL('./fixtures/lessons-learned-local-users.json', import.meta.url));
 
+async function getThemeContrastRatios(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    function luminance(color: string) {
+      const channels = color.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? [];
+      const linear = channels.map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return .2126 * linear[0]! + .7152 * linear[1]! + .0722 * linear[2]!;
+    }
+
+    function contrast(foreground: string, background: string) {
+      const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+      return (values[0]! + .05) / (values[1]! + .05);
+    }
+
+    const card = document.querySelector<HTMLElement>('.module-card')!;
+    const activeTheme = document.querySelector<HTMLButtonElement>('.theme-controls button[aria-pressed="true"]')!;
+    const inactiveTheme = document.querySelector<HTMLButtonElement>('.theme-controls button[aria-pressed="false"]')!;
+
+    return {
+      heading: contrast(getComputedStyle(document.querySelector('h1')!).color, getComputedStyle(card).backgroundColor),
+      intro: contrast(getComputedStyle(document.querySelector('.intro')!).color, getComputedStyle(card).backgroundColor),
+      activeTheme: contrast(getComputedStyle(activeTheme).color, getComputedStyle(activeTheme).backgroundColor),
+      inactiveTheme: contrast(getComputedStyle(inactiveTheme).color, getComputedStyle(inactiveTheme.parentElement!).backgroundColor),
+    };
+  });
+}
+
 test('direct Lessons Learned URL works before profile selection and can return to profile entry', async ({ page }) => {
   const response = await page.goto('/lessons-learned');
 
@@ -49,6 +78,38 @@ test('catalog link opens in the same tab and reload, back, and module return pre
   await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
 
   await expect(page.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
+});
+
+test('sidebar theme is keyboard operable, readable, and scoped to the current tab session', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('pmo-hub.local-user-id', 'local-contributor'));
+  await page.goto('/lessons-learned');
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+
+  const lightTheme = page.getByRole('button', { name: 'Light' });
+  const darkTheme = page.getByRole('button', { name: 'Dark' });
+  await expect(lightTheme).toHaveAttribute('aria-pressed', 'true');
+  await expect(darkTheme).toHaveAttribute('aria-pressed', 'false');
+  expect(Object.values(await getThemeContrastRatios(page)).every((ratio) => ratio >= 4.5)).toBe(true);
+
+  await page.getByRole('link', { name: 'Home' }).focus();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  await expect(darkTheme).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(darkTheme).toHaveAttribute('aria-pressed', 'true');
+  await expect(lightTheme).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  expect(Object.values(await getThemeContrastRatios(page)).every((ratio) => ratio >= 4.5)).toBe(true);
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+  const freshTab = await page.context().newPage();
+  await freshTab.goto('/lessons-learned');
+  await expect(freshTab.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(freshTab.getByRole('button', { name: 'Light' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(freshTab.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('catalog entry checks the Contributor identity before rendering Home', async ({ page }) => {

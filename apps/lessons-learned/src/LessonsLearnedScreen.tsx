@@ -1,8 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getHome } from './api';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
+const THEME_STORAGE_KEY = 'pmo-hub.lessons-learned.theme';
+
+type Theme = 'light' | 'dark';
+
+function readThemePreference(): Theme {
+  try {
+    return window.sessionStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+}
 
 function readSelectedProfileId(): string | null {
   try {
@@ -28,6 +39,7 @@ function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
 
 export function LessonsLearnedScreen() {
   const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
+  const [theme, setTheme] = useState<Theme>(readThemePreference);
   const homeQuery = useQuery({
     queryKey: ['lessons-learned-home', selectedProfileId],
     queryFn: () => getHome(selectedProfileId ?? ''),
@@ -36,6 +48,19 @@ export function LessonsLearnedScreen() {
     refetchOnWindowFocus: true,
   });
   const errorCode = homeQuery.isError ? getApiErrorCode(homeQuery.error) : null;
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  function selectTheme(nextTheme: Theme) {
+    setTheme(nextTheme);
+    try {
+      window.sessionStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    } catch {
+      // Keep the current selection for this render if browser storage is unavailable.
+    }
+  }
 
   useEffect(() => {
     function updateSelectedProfile(event: StorageEvent) {
@@ -134,6 +159,22 @@ export function LessonsLearnedScreen() {
                   </a>
                 ))}
               </nav>
+              <div className="theme-controls" role="group" aria-label="Color theme">
+                <button
+                  type="button"
+                  aria-pressed={theme === 'light'}
+                  onClick={() => selectTheme('light')}
+                >
+                  Light
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={theme === 'dark'}
+                  onClick={() => selectTheme('dark')}
+                >
+                  Dark
+                </button>
+              </div>
             </aside>
             <a className="primary-link" href="/">Back to PMO Hub</a>
           </>
