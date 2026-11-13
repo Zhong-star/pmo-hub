@@ -17,7 +17,7 @@ npm run dev --workspace @pmo-hub/lessons-learned
 npm run dev --workspace @pmo-hub/hub
 ```
 
-Abra [PMO Hub](http://127.0.0.1:5173) e selecione um perfil para abrir Lessons Learned pelo catálogo. Para acessar a tela técnica diretamente, use [Lessons Learned](http://127.0.0.1:5173/lessons-learned). O servidor local do Hub é o ponto de entrada para os dois frontends e suas APIs. Lessons Learned mostra o estado da própria API e oferece o link **PMO Hub** de retorno.
+Abra [PMO Hub](http://127.0.0.1:5173) e selecione um perfil para abrir Lessons Learned pelo catálogo. Também é possível abrir [Lessons Learned](http://127.0.0.1:5173/lessons-learned/) diretamente pela mesma origem. O Access Check usa o perfil selecionado no Hub e verifica as permissões do módulo antes de mostrar a Home.
 
 `npm run contracts:generate` gera os contratos OpenAPI, os tipos do Hub e o cliente de Lessons Learned. Use `npm test`, `npm run typecheck` e `npm run lint` para verificar os workspaces.
 
@@ -25,7 +25,7 @@ O PostgreSQL local de Lessons Learned é opcional e pertence ao serviço `servic
 
 Para verificar a navegação no navegador, encerre os servidores de desenvolvimento e execute `npm run test:e2e --workspace @pmo-hub/hub` para o Hub e `npm run test:e2e:lessons-learned --workspace @pmo-hub/hub` para Lessons Learned. Se o Chromium do Playwright ainda não estiver instalado, execute `npx playwright install chromium` primeiro.
 
-Perfis locais de desenvolvimento são configurados pela API; consulte o README do serviço Hub API.
+Consulte os READMEs do [Hub API](services/hub-api/README.md) e da [Lessons Learned API](services/lessons-learned-api/README.md) para configurar os perfis locais e os papéis do módulo.
 
 ## Kubernetes local
 
