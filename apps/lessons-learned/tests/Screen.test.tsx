@@ -1,5 +1,5 @@
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsLearnedScreen } from '../src/LessonsLearnedScreen';
@@ -186,13 +186,18 @@ describe('Lessons Learned access check', () => {
     await user.click(screen.getByRole('link', { name: 'My Submissions' }));
     await user.click(await screen.findByRole('button', { name: 'Create lesson' }));
 
-    expect(screen.getByRole('dialog', { name: 'Create lesson' })).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Loading project options');
+    const dialog = screen.getByRole('dialog', { name: 'Create lesson' });
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Loading project options');
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Title-only while offline');
     await act(async () => { rejectProjects(new Error('Catalog unavailable')); });
-    expect(await screen.findByRole('alert')).toHaveTextContent('Project options could not be loaded');
-    expect(screen.getByRole('dialog', { name: 'Create lesson' })).toBeInTheDocument();
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Project options could not be loaded');
+    expect(dialog).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue('');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Retry project options' }));
+    await vi.waitFor(() => expect(getLessonProjects).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Title-only while offline');
+    await vi.waitFor(() => expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument());
 
     await user.click(screen.getByRole('button', { name: 'Save Draft' }));
     expect(await screen.findByText('Draft #23 · Open')).toBeInTheDocument();
@@ -218,8 +223,8 @@ describe('Lessons Learned access check', () => {
     await user.click(screen.getByRole('link', { name: 'My Submissions' }));
     await user.click(await screen.findByRole('button', { name: 'Reopen Improve release handover' }));
 
-    expect(await screen.findByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Project options could not be loaded');
+    const dialog = await screen.findByRole('dialog', { name: 'Edit lesson' });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Project options could not be loaded');
     expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue(JSON.stringify([
       'LEGACY-PROJECT-001', 'Removed fictional project',
     ]));
@@ -605,7 +610,8 @@ describe('Lessons Learned access check', () => {
     let rejectRecheck!: (error: Error) => void;
     vi.mocked(getHome)
       .mockResolvedValueOnce(contributor)
-      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRecheck = reject; }));
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRecheck = reject; }))
+      .mockResolvedValueOnce(contributor);
     vi.mocked(createLessonDraft).mockResolvedValue(lessonDraft({ id: 19, title: 'Saved draft' }));
     vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
     const user = userEvent.setup();
@@ -634,6 +640,14 @@ describe('Lessons Learned access check', () => {
     expect(screen.getByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
     expect(screen.getByText('Draft #19 · Open')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Situation observed' })).toHaveValue('Unsaved editor text');
+    const dialog = screen.getByRole('dialog', { name: 'Edit lesson' });
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Access check temporarily unavailable' })).not.toBeInTheDocument();
+    expect(document.querySelectorAll('#page-title')).toHaveLength(1);
+    expect(within(dialog).getByRole('alert', { name: 'Home access check temporarily unavailable' })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Retry access check' }));
+    expect(getHome).toHaveBeenCalledTimes(3);
   });
 
   it('does not keep the previous profile Home visible while a changed profile is checked', async () => {
@@ -679,7 +693,7 @@ describe('Lessons Learned access check', () => {
     expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
   });
 
-  it('shows one Access check title while a cached profile is being revalidated', async () => {
+  it('keeps cached authorized Home visible while a profile is being revalidated', async () => {
     let resolveContributorAgain!: (value: typeof contributor) => void;
     vi.mocked(getHome).mockImplementation((localUserId) => {
       if (localUserId === 'local-pmo') return Promise.resolve(pmo);
@@ -703,14 +717,45 @@ describe('Lessons Learned access check', () => {
       window.dispatchEvent(new StorageEvent('storage', { key: 'pmo-hub.local-user-id', newValue: 'local-contributor' }));
     });
 
-    expect(await screen.findByRole('status')).toHaveTextContent('local-contributor');
+    expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole('heading', { name: 'Access check' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Home' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Home' })).toBeInTheDocument();
     expect(screen.queryByText('Welcome, Local PMO')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('#page-title')).toHaveLength(1);
 
     resolveContributorAgain(contributor);
     expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
+  it('hides cached private data after authentication is required on a background recheck', async () => {
+    vi.mocked(getHome)
+      .mockResolvedValueOnce(contributor)
+      .mockRejectedValueOnce(apiError(401, 'AUTHENTICATION_REQUIRED'))
+      .mockResolvedValueOnce(contributor);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByText('Welcome, Local Contributor');
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(await screen.findByRole('button', { name: 'Create lesson' }));
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Private unsaved title');
+
+    act(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      window.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Authentication required' })).toBeInTheDocument();
+    expect(screen.queryByText('Welcome, Local Contributor')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Create lesson' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Select a local profile' })).toHaveAttribute('href', '/');
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Create lesson' })).not.toBeInTheDocument();
+    expect(getHome).toHaveBeenCalledTimes(3);
   });
 });

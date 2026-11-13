@@ -43,6 +43,32 @@
   line-height: 1;
 }
 
+.draft-editor-catalog-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: 9px;
+  background: var(--theme-control-background);
+}
+.draft-editor-catalog-status p { margin: 0; }
+.draft-editor-catalog-status button {
+  min-height: 38px;
+  padding: 7px 11px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.draft-editor-catalog-status button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+
 .draft-editor-field { display: grid; gap: 7px; min-width: 0; }
 .draft-editor-field label { font-size: 14px; font-weight: 700; }
 .draft-editor-field input,
@@ -60,6 +86,7 @@
 
 .draft-editor-field textarea { min-height: 108px; resize: vertical; }
 .draft-editor-field input[aria-invalid='true'] { border-color: var(--warning-indicator); }
+.draft-editor-field select[aria-invalid='true'] { border-color: var(--warning-indicator); }
 .draft-editor-field input:focus-visible,
 .draft-editor-field select:focus-visible,
 .draft-editor-field textarea:focus-visible,
@@ -89,6 +116,7 @@
 
 @media (max-width: 560px) {
   .draft-editor-dialog { border-radius: 12px; }
+  .draft-editor-catalog-status { align-items: flex-start; flex-direction: column; }
   .draft-editor-grid { grid-template-columns: minmax(0, 1fr); }
   .draft-editor-primary { margin-left: 0; }
 }
