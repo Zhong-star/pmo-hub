@@ -5,15 +5,19 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const localProfilesTemplate = fileURLToPath(new URL('./e2e/fixtures/lessons-learned-local-users.json', import.meta.url));
-const fixtureDirectory = mkdtempSync(join(tmpdir(), 'pmo-hub-lessons-learned-e2e-'));
-const localProfilesFile = join(fixtureDirectory, 'local-users.json');
-copyFileSync(localProfilesTemplate, localProfilesFile);
-process.env.LESSONS_LEARNED_E2E_LOCAL_USERS_FILE = localProfilesFile;
-process.on('exit', () => rmSync(fixtureDirectory, { recursive: true, force: true }));
+let localProfilesFile = process.env.LESSONS_LEARNED_E2E_LOCAL_USERS_FILE;
+if (!localProfilesFile) {
+  const fixtureDirectory = mkdtempSync(join(tmpdir(), 'pmo-hub-lessons-learned-e2e-'));
+  localProfilesFile = join(fixtureDirectory, 'local-users.json');
+  copyFileSync(localProfilesTemplate, localProfilesFile);
+  process.env.LESSONS_LEARNED_E2E_LOCAL_USERS_FILE = localProfilesFile;
+  process.on('exit', () => rmSync(fixtureDirectory, { recursive: true, force: true }));
+}
 
 export default defineConfig({
   testDir: './e2e',
   testMatch: 'lessons-learned.spec.ts',
+  workers: 1,
   use: {
     baseURL: 'http://127.0.0.1:5180',
     ...devices['Desktop Chrome'],
