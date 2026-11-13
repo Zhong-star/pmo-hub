@@ -2,7 +2,7 @@
 
 NestJS API for Lessons Learned. `GET /api/lessons-learned/v1/home` is protected by the selected local Hub profile ID in `X-PMO-Local-User-ID`. The API reads `config/local-users.json` on every Home request, resolves `LESSONS_USER` or `LESSONS_MODERATOR` from this module's configuration, and returns no Home data for missing, unknown, or duplicate IDs. The response uses `Cache-Control: no-store`.
 
-Local simulated identity is enabled by default only outside `NODE_ENV=production`. Production mode rejects simulated identity unless `LESSONS_LEARNED_LOCAL_AUTH_ENABLED=true` is explicitly set by a local environment. The local Kubernetes deploy helper sets that flag and mounts this module's profile file from a ConfigMap; the Hub client sends only the selected profile ID, never a role. Do not enable simulated identity in a production deployment.
+Local simulated identity is enabled by default only outside `NODE_ENV=production`. The local Kubernetes deploy helper explicitly enables it and uses the module profile file packaged with the API image. Updating profiles in Kubernetes requires a backend release, and rollback restores the previous image and its profiles. The Hub client sends the selected profile ID. Keep simulated identity disabled in production deployments.
 
 The `openapi:generate` command writes the versioned OpenAPI artifact to the module-owned `openapi/` directory.
 

@@ -15,6 +15,7 @@ type OpenApiContract = {
     string,
     {
       get?: {
+        security?: Record<string, string[]>[];
         responses?: Record<string, { content?: Record<string, { schema?: { $ref?: string } }> }>;
       };
     }
@@ -79,6 +80,10 @@ describe('Lessons Learned health API', () => {
 
     expect(responseSchemaRef).toBe('#/components/schemas/HealthResponse');
     expect(contract.components?.schemas?.HealthResponse?.properties?.status?.enum).toEqual(['ok']);
+    const home = contract.paths['/api/lessons-learned/v1/home']?.get;
+    expect(home?.security).toEqual([{ localProfile: [] }]);
+    expect(home?.responses?.['401']?.content?.['application/problem+json']?.schema?.$ref)
+      .toBe('#/components/schemas/LocalAccessProblem');
 
     await request(app.getHttpServer())
       .get('/api/lessons-learned/v1/health')
@@ -120,14 +125,27 @@ describe('Lessons Learned health API', () => {
   it('denies missing identities and Hub profiles without a Lessons Learned role', async () => {
     await request(app.getHttpServer())
       .get('/api/lessons-learned/v1/home')
-      .expect(403)
-      .expect({ statusCode: 403, code: 'ACCESS_DENIED', message: 'Access denied.' });
+      .set('X-Correlation-ID', '8bbab621-f989-4fd5-9350-2eb1ac41d760')
+      .expect(401)
+      .expect('WWW-Authenticate', 'LocalProfile realm="Lessons Learned"')
+      .expect('X-Correlation-ID', '8bbab621-f989-4fd5-9350-2eb1ac41d760')
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect({
+        type: 'https://pmo-hub.example/problems/authentication-required',
+        title: 'Local profile required',
+        status: 401,
+        detail: 'Select a local Hub profile.',
+        instance: '/api/lessons-learned/v1/home',
+        code: 'AUTHENTICATION_REQUIRED',
+        correlationId: '8bbab621-f989-4fd5-9350-2eb1ac41d760',
+      });
 
     await request(app.getHttpServer())
       .get('/api/lessons-learned/v1/home')
       .set('X-PMO-Local-User-ID', 'local-no-access')
       .expect(403)
-      .expect({ statusCode: 403, code: 'ACCESS_DENIED', message: 'Access denied.' });
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(({ body }) => expect(body).toMatchObject({ status: 403, code: 'ACCESS_DENIED' }));
   });
 
   it('blocks only an ID with duplicate module profiles and reports a configuration error', async () => {
@@ -145,11 +163,11 @@ describe('Lessons Learned health API', () => {
       .get('/api/lessons-learned/v1/home')
       .set('X-PMO-Local-User-ID', 'local-pmo')
       .expect(500)
-      .expect({
-        statusCode: 500,
+      .expect(({ body }) => expect(body).toMatchObject({
+        status: 500,
         code: 'ACCESS_CONFIGURATION_ERROR',
-        message: 'Lessons Learned access configuration is invalid.',
-      });
+        detail: 'Lessons Learned access configuration is invalid.',
+      }));
   });
 
   it('revalidates the selected profile on every protected Home request', async () => {
@@ -164,7 +182,7 @@ describe('Lessons Learned health API', () => {
       .get('/api/lessons-learned/v1/home')
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .expect(403)
-      .expect({ statusCode: 403, code: 'ACCESS_DENIED', message: 'Access denied.' });
+      .expect(({ body }) => expect(body).toMatchObject({ status: 403, code: 'ACCESS_DENIED' }));
   });
 
   it('rejects simulated identity when the runtime explicitly disables local access', async () => {
@@ -173,11 +191,11 @@ describe('Lessons Learned health API', () => {
       .get('/api/lessons-learned/v1/home')
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .expect(503)
-      .expect({
-        statusCode: 503,
+      .expect(({ body }) => expect(body).toMatchObject({
+        status: 503,
         code: 'LOCAL_AUTH_DISABLED',
-        message: 'Local simulated access is not enabled for this runtime.',
-      });
+        detail: 'Local simulated access is not enabled for this runtime.',
+      }));
     process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED = 'true';
   });
 });

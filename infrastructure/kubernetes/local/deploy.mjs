@@ -6,11 +6,9 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const router = fileURLToPath(new URL('./router.yaml', import.meta.url));
 const postgres = fileURLToPath(new URL('./postgres.yaml', import.meta.url));
-const lessonsLearnedProfiles = fileURLToPath(new URL('../../../services/lessons-learned-api/config/local-users.json', import.meta.url));
 const cluster = 'pmo-hub';
 const namespace = 'pmo-hub';
 const databaseSecret = 'lessons-learned-postgres';
-const lessonsLearnedProfilesConfigMap = 'lessons-learned-local-users';
 const layers = {
   frontend: [
     { name: 'hub', port: 8080, path: '/' },
@@ -45,22 +43,6 @@ function databaseEnv() {
     name: 'LESSONS_LEARNED_DATABASE_URL',
     valueFrom: { secretKeyRef: { name: databaseSecret, key: 'url' } },
   }];
-}
-
-function lessonsLearnedAccessEnv() {
-  return [
-    { name: 'LESSONS_LEARNED_LOCAL_AUTH_ENABLED', value: 'true' },
-    { name: 'LESSONS_LEARNED_LOCAL_USERS_FILE', value: '/app/config/lessons-learned/local-users.json' },
-  ];
-}
-
-function applyLessonsLearnedProfiles() {
-  apply({
-    apiVersion: 'v1',
-    kind: 'ConfigMap',
-    metadata: { name: lessonsLearnedProfilesConfigMap },
-    data: { 'local-users.json': readFileSync(lessonsLearnedProfiles, 'utf8') },
-  });
 }
 
 function migrateDatabase(image, version) {
@@ -137,22 +119,14 @@ function resources(layer, { images, withPostgres }) {
                 image: images[name],
                 imagePullPolicy: 'Never',
                 ...(name === 'lessons-learned-api' ? {
-                  env: [...lessonsLearnedAccessEnv(), ...(withPostgres ? databaseEnv() : [])],
-                  volumeMounts: [{
-                    name: 'lessons-learned-local-users',
-                    mountPath: '/app/config/lessons-learned',
-                    readOnly: true,
-                  }],
+                  env: [
+                    { name: 'LESSONS_LEARNED_LOCAL_AUTH_ENABLED', value: 'true' },
+                    ...(withPostgres ? databaseEnv() : []),
+                  ],
                 } : {}),
                 ports: [{ name: 'http', containerPort: port }],
                 readinessProbe: { httpGet: { path, port: 'http' }, periodSeconds: 2 },
               }],
-              ...(name === 'lessons-learned-api' ? {
-                volumes: [{
-                  name: 'lessons-learned-local-users',
-                  configMap: { name: lessonsLearnedProfilesConfigMap },
-                }],
-              } : {}),
             },
           },
         },
@@ -163,7 +137,6 @@ function resources(layer, { images, withPostgres }) {
 }
 
 function release(layer, configuration) {
-  if (layer === 'backend') applyLessonsLearnedProfiles();
   apply(resources(layer, configuration));
   for (const { name } of layers[layer]) {
     kubectl(['rollout', 'status', `deployment/${name}`, '--timeout=90s']);

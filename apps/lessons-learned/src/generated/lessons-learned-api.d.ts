@@ -49,6 +49,16 @@ export interface components {
              */
             status: "ok";
         };
+        LocalAccessProblem: {
+            type: string;
+            title: string;
+            status: number;
+            detail: string;
+            instance: string;
+            code: string;
+            /** Format: uuid */
+            correlationId: string;
+        };
         LessonsLearnedProfile: {
             /** @example local-contributor */
             id: string;
@@ -103,10 +113,7 @@ export interface operations {
     HomeController_getHome: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Selected local Hub profile ID; the API resolves its module role. */
-                "x-pmo-local-user-id": string;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -120,20 +127,23 @@ export interface operations {
                     "application/json": components["schemas"]["LessonsLearnedHomeResponse"];
                 };
             };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LocalAccessProblem"];
+                };
+            };
             /** @description The selected profile has no active Lessons Learned access. */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** @example 403 */
-                        statusCode: number;
-                        /** @enum {string} */
-                        code: "ACCESS_DENIED";
-                        /** @example Access denied. */
-                        message: string;
-                    };
+                    "application/problem+json": components["schemas"]["LocalAccessProblem"];
                 };
             };
             /** @description The Lessons Learned local access configuration is invalid. */
@@ -142,14 +152,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** @example 500 */
-                        statusCode: number;
-                        /** @enum {string} */
-                        code: "ACCESS_CONFIGURATION_ERROR";
-                        /** @example Lessons Learned access configuration is invalid. */
-                        message: string;
-                    };
+                    "application/problem+json": components["schemas"]["LocalAccessProblem"];
                 };
             };
             /** @description Local simulated identity is disabled for this runtime. */
@@ -158,14 +161,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** @example 503 */
-                        statusCode: number;
-                        /** @enum {string} */
-                        code: "LOCAL_AUTH_DISABLED";
-                        /** @example Local simulated access is not enabled for this runtime. */
-                        message: string;
-                    };
+                    "application/problem+json": components["schemas"]["LocalAccessProblem"];
                 };
             };
         };
