@@ -210,6 +210,12 @@ export interface components {
             /** @example 1 */
             version: number;
         };
+        LessonConflictResponse: {
+            /** @enum {string} */
+            code: "STALE_LESSON_VERSION" | "LESSON_NOT_OPEN";
+            /** @example This draft changed after you opened it. Reload the current version before saving again. */
+            message: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -475,7 +481,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["LessonConflictResponse"];
+                };
             };
             /** @description Lessons Learned persistence is unavailable. */
             503: {

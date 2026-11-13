@@ -288,11 +288,76 @@ describe('Lessons Learned draft registration', () => {
       .expect(409);
 
     expect(stale.body.code).toBe('STALE_LESSON_VERSION');
+    expect(stale.body.message).toBe(
+      'This draft changed after you opened it. Reload the current version before saving again.',
+    );
     await server
       .get('/api/lessons-learned/v1/lessons')
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .expect(200)
       .expect(({ body }) => expect(body[0]).toMatchObject({ title: 'Current title' }));
+  });
+
+  it('returns a typed conflict when the draft is no longer Open', async () => {
+    if (!dataSource) throw new Error('The PostgreSQL test database did not start.');
+    const created = await request(app!.getHttpServer())
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Submitted draft' })
+      .expect(201);
+    await dataSource.query('UPDATE lessons SET status = $2 WHERE id = $1', [created.body.id, 'PMOEvaluation']);
+
+    await request(app!.getHttpServer())
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: created.body.version, title: 'Cannot edit submitted draft' })
+      .expect(409)
+      .expect({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
+  });
+
+  it('returns the row written by a version-checked update when a later writer changes it immediately', async () => {
+    if (!dataSource) throw new Error('The PostgreSQL test database did not start.');
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Starting title' })
+      .expect(201);
+
+    await dataSource.query(`
+      CREATE FUNCTION apply_later_lesson_update() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.title = 'First writer title' THEN
+          UPDATE lessons
+          SET title = 'Later writer title', version = NEW.version + 1, updated_at = clock_timestamp()
+          WHERE id = NEW.id;
+        END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER apply_later_lesson_update_trigger
+      AFTER UPDATE ON lessons FOR EACH ROW EXECUTE FUNCTION apply_later_lesson_update();
+    `);
+
+    try {
+      const response = await server
+        .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ version: created.body.version, title: 'First writer title' })
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        title: 'First writer title',
+        version: created.body.version + 1,
+      });
+      expect(await dataSource.query(
+        'SELECT title, version FROM lessons WHERE id = $1',
+        [created.body.id],
+      )).toEqual([{ title: 'Later writer title', version: created.body.version + 2 }]);
+    } finally {
+      await dataSource.query('DROP TRIGGER IF EXISTS apply_later_lesson_update_trigger ON lessons');
+      await dataSource.query('DROP FUNCTION IF EXISTS apply_later_lesson_update()');
+    }
   });
 
   it('validates lesson fields and preserves a selected project snapshot after catalog removal', async () => {
@@ -320,9 +385,7 @@ describe('Lessons Learned draft registration', () => {
       })
       .expect(200);
 
-    writeFileSync(projectsPath, JSON.stringify([
-      { id: 'LOCAL-PROJECT-002', name: 'Fictional Harbor Migration' },
-    ]), 'utf8');
+    rmSync(projectsPath);
     const preserved = await server
       .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
       .set('X-PMO-Local-User-ID', 'local-contributor')
@@ -332,6 +395,20 @@ describe('Lessons Learned draft registration', () => {
       projectId: 'LOCAL-PROJECT-001',
       projectName: 'Fictional Atlas Modernization',
     });
+
+    writeFileSync(projectsPath, JSON.stringify([
+      { id: 'LOCAL-PROJECT-002', name: 'Fictional Harbor Migration' },
+    ]), 'utf8');
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: preserved.body.version,
+        title: 'Reject an unconfigured project snapshot',
+        projectId: 'LOCAL-PROJECT-999',
+        projectName: 'Fictional Unknown Project',
+      })
+      .expect(400);
 
     const longTextFields = [
       'situationObserved',

@@ -16,6 +16,7 @@ import {
   ApiCreatedResponse,
   ApiExtraModels,
   ApiBody,
+  ApiConflictResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -31,6 +32,7 @@ import {
 } from '../local-access-problem';
 import { CreateLessonRequest } from './create-lesson-request.dto';
 import { LessonDraftResponse } from './lesson-response.dto';
+import { LessonConflictResponse } from './lesson-conflict-response.dto';
 import { LessonsService } from './lessons.service';
 import { LessonProjectResponse } from './project-response.dto';
 import { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
@@ -98,7 +100,10 @@ export class LessonsController {
   @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
   @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
   @ApiResponse({ status: 404, description: 'The lesson does not exist or is not owned by the selected profile.' })
-  @ApiResponse({ status: 409, description: 'The draft changed after it was loaded or is no longer Open.' })
+  @ApiConflictResponse({
+    type: LessonConflictResponse,
+    description: 'The draft changed after it was loaded or is no longer Open.',
+  })
   @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
   updateOwnOpenDraft(
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,

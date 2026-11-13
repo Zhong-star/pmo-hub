@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Inject,
+  InternalServerErrorException,
   Injectable,
   NotFoundException,
   Optional,
@@ -121,6 +122,7 @@ export class LessonsService {
         status: 'Open',
         version: input.version,
       })
+      .returning('*')
       .execute();
 
     if (!result.affected) {
@@ -132,8 +134,9 @@ export class LessonsService {
       throw this.staleVersionConflict();
     }
 
-    const updated = await repository.findOneByOrFail({ id: lessonId });
-    return this.toResponse(updated);
+    const updated = result.raw[0] as Record<string, unknown> | undefined;
+    if (!updated) throw new InternalServerErrorException('The updated draft could not be returned.');
+    return this.toResponseFromDatabaseRow(updated);
   }
 
   private validateProjectSelection(
@@ -154,10 +157,12 @@ export class LessonsService {
 
     const unchangedSnapshot = current !== null &&
       projectId === current.projectId && projectName === current.projectName;
+    if (unchangedSnapshot) return;
+
     const catalogMatches = this.projectCatalog.list().some(
       (project) => project.id === projectId && project.name === projectName,
     );
-    if (!unchangedSnapshot && !catalogMatches) {
+    if (!catalogMatches) {
       throw new BadRequestException({
         code: 'INVALID_PROJECT_SELECTION',
         message: 'Select a project from the local catalog or clear the project selection.',
@@ -199,6 +204,29 @@ export class LessonsService {
       applicability: lesson.applicability ?? null,
       createdAt: lesson.createdAt,
       updatedAt: lesson.updatedAt,
+    };
+  }
+
+  private toResponseFromDatabaseRow(row: Record<string, unknown>): LessonDraftResponse {
+    return {
+      id: row.id as number,
+      title: row.title as string,
+      authorId: row.author_id as string,
+      updatedBy: row.updated_by as string,
+      status: row.status as 'Open',
+      version: row.version as number,
+      projectId: (row.project_id as string | null) ?? null,
+      projectName: (row.project_name as string | null) ?? null,
+      projectCategory: (row.project_category as Lesson['projectCategory']) ?? null,
+      projectPhase: (row.project_phase as Lesson['projectPhase']) ?? null,
+      situationObserved: (row.situation_observed as string | null) ?? null,
+      rootCause: (row.root_cause as string | null) ?? null,
+      lessonType: (row.lesson_type as Lesson['lessonType']) ?? null,
+      impact: (row.impact as string | null) ?? null,
+      recommendation: (row.recommendation as string | null) ?? null,
+      applicability: (row.applicability as string | null) ?? null,
+      createdAt: row.created_at as Date,
+      updatedAt: row.updated_at as Date,
     };
   }
 }

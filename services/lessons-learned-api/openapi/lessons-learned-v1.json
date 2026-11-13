@@ -268,7 +268,14 @@
             "description": "The lesson does not exist or is not owned by the selected profile."
           },
           "409": {
-            "description": "The draft changed after it was loaded or is no longer Open."
+            "description": "The draft changed after it was loaded or is no longer Open.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonConflictResponse"
+                }
+              }
+            }
           },
           "503": {
             "description": "Lessons Learned persistence is unavailable."
@@ -728,6 +735,26 @@
         "required": [
           "title",
           "version"
+        ]
+      },
+      "LessonConflictResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "STALE_LESSON_VERSION",
+              "LESSON_NOT_OPEN"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "example": "This draft changed after you opened it. Reload the current version before saving again."
+          }
+        },
+        "required": [
+          "code",
+          "message"
         ]
       }
     }

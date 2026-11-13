@@ -31,7 +31,15 @@ type OpenApiContract = {
     }
   >;
   components?: {
-    schemas?: Record<string, { properties?: Record<string, { enum?: string[]; maxLength?: number; minimum?: number }> }>;
+    schemas?: Record<string, {
+      required?: string[];
+      properties?: Record<string, {
+        enum?: string[];
+        maxLength?: number;
+        minimum?: number;
+        type?: string;
+      }>;
+    }>;
   };
 };
 
@@ -116,6 +124,12 @@ describe('Lessons Learned health API', () => {
       .toBe('#/components/schemas/UpdateLessonDraftRequest');
     expect(updateDraft?.responses?.['200']?.content?.['application/json']?.schema?.$ref)
       .toBe('#/components/schemas/LessonDraftResponse');
+    expect(updateDraft?.responses?.['409']?.content?.['application/json']?.schema?.$ref)
+      .toBe('#/components/schemas/LessonConflictResponse');
+    expect(contract.components?.schemas?.LessonConflictResponse?.required).toEqual(['code', 'message']);
+    expect(contract.components?.schemas?.LessonConflictResponse?.properties?.code?.enum)
+      .toEqual(['STALE_LESSON_VERSION', 'LESSON_NOT_OPEN']);
+    expect(contract.components?.schemas?.LessonConflictResponse?.properties?.message?.type).toBe('string');
     expect(contract.components?.schemas?.UpdateLessonDraftRequest?.properties?.situationObserved?.maxLength)
       .toBe(4000);
     expect(contract.components?.schemas?.UpdateLessonDraftRequest?.properties?.projectCategory?.enum)
