@@ -1,17 +1,11 @@
 import 'reflect-metadata';
-import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import { createOpenApiDocument } from './openapi-document';
+import { configureApp } from './configure-app';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule.register());
-  app.setGlobalPrefix('api/lessons-learned/v1');
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-
-  const openApiDocument = createOpenApiDocument(app);
-  SwaggerModule.setup('api/lessons-learned/v1/docs', app, openApiDocument);
+  configureApp(app);
 
   const port = Number(process.env.PORT ?? 3002);
   const host = process.env.HOST ?? '127.0.0.1';

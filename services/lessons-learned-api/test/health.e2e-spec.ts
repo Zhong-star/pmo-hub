@@ -6,6 +6,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/configure-app';
 
 type OpenApiContract = {
   paths: Record<
@@ -27,7 +28,7 @@ describe('Lessons Learned health API', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/lessons-learned/v1');
+    configureApp(app);
     await app.init();
   });
 
@@ -39,6 +40,12 @@ describe('Lessons Learned health API', () => {
     const contract = JSON.parse(
       readFileSync(resolve(process.cwd(), 'openapi/lessons-learned-v1.json'), 'utf8'),
     ) as OpenApiContract;
+    const published = await request(app.getHttpServer())
+      .get('/api/lessons-learned/v1/docs-json')
+      .expect(200)
+      .expect('Content-Type', /application\/json/);
+    expect(published.body).toEqual(contract);
+
     const responseSchemaRef =
       contract.paths['/api/lessons-learned/v1/health']?.get?.responses?.['200']?.content?.[
         'application/json'

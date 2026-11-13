@@ -1,6 +1,6 @@
 # Lessons Learned API
 
-NestJS API for the local Lessons Learned module. Start the service from this directory so its versioned OpenAPI artifact is written to the module-owned `openapi/` directory.
+NestJS API for the local Lessons Learned module. The `openapi:generate` command writes the versioned OpenAPI artifact to the module-owned `openapi/` directory.
 
 The API listens on `127.0.0.1:3002` by default. Set `HOST` or `PORT` to override those local development defaults.
 
