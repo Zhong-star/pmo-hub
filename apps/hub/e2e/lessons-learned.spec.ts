@@ -34,9 +34,17 @@ async function getThemeContrastRatios(page: import('@playwright/test').Page) {
 }
 
 test('direct Lessons Learned URL works before profile selection and can return to profile entry', async ({ page }) => {
+  const sharedHeaderResponses: { url: string; status: number }[] = [];
+  page.on('response', (response) => {
+    if (response.url().includes('HubHeader')) {
+      sharedHeaderResponses.push({ url: response.url(), status: response.status() });
+    }
+  });
   const response = await page.goto('/lessons-learned');
 
   expect(response?.status()).toBe(200);
+  await expect(page.getByRole('banner')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'PMO Hub' })).toHaveAttribute('href', '/');
   await expect(page.getByRole('heading', { name: 'Access check' })).toBeVisible();
   await expect(page.getByText(/No local profile is selected/)).toBeVisible();
   await expect(page.getByRole('link', { name: 'Select a local profile' })).toHaveAttribute('href', '/');
@@ -45,6 +53,8 @@ test('direct Lessons Learned URL works before profile selection and can return t
   const moduleResources = await page.evaluate(() => performance.getEntriesByType('resource').map(({ name }) => name));
   expect(moduleResources.some((resource) => resource.includes('/lessons-learned/src/main.tsx'))).toBe(true);
   expect(moduleResources.every((resource) => !resource.includes(':5174'))).toBe(true);
+  expect(sharedHeaderResponses.some(({ url, status }) => url.includes('HubHeader.tsx') && status === 200)).toBe(true);
+  expect(sharedHeaderResponses.some(({ url, status }) => url.includes('HubHeader.css') && status === 200)).toBe(true);
 
   await page.getByRole('link', { name: 'Select a local profile', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
@@ -82,6 +92,7 @@ test('catalog link opens in the same tab and reload, back, and module return pre
 
 test('PMO can enter the module catalog and open Lessons Learned with the PMO role', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('banner')).toBeVisible();
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-pmo');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
@@ -89,8 +100,48 @@ test('PMO can enter the module catalog and open Lessons Learned with the PMO rol
 
   await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.getByRole('banner')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Local PMO' })).toBeVisible();
   await expect(page.getByText('Welcome, Local PMO')).toBeVisible();
   await expect(page.getByText('PMO', { exact: true })).toBeVisible();
+});
+
+test('change profile from Lessons Learned returns to selection and browser history never restores a stale profile', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-pmo');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await expect(page.getByText('Welcome, Local PMO')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Local PMO' }).click();
+  await page.getByRole('button', { name: 'Change profile' }).click();
+  await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).not.toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('pmo-hub.local-user-id'))).toBeNull();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/lessons-learned\/?$/);
+  await expect(page.getByRole('heading', { name: 'Access check' })).toBeVisible();
+  await expect(page.getByText('Welcome, Local PMO')).not.toBeVisible();
+  await expect(page.getByRole('banner')).toBeVisible();
+  await expect(page.getByText(/No local profile is selected/)).toBeVisible();
+
+  await page.goForward();
+  await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-contributor');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Welcome, Local Contributor' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await expect(page.getByText('Welcome, Local Contributor')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Local Contributor' })).toBeVisible();
+  await expect(page.getByText('Welcome, Local PMO')).not.toBeVisible();
+
+  await page.getByRole('link', { name: 'PMO Hub', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByText('Welcome, Local Contributor')).toBeVisible();
+  await expect(page.getByText('Welcome, Local PMO')).not.toBeVisible();
 });
 
 test('sidebar theme is keyboard operable, readable, and scoped to the current tab session', async ({ page }) => {
@@ -184,6 +235,8 @@ test('a direct module URL denies a saved Hub profile without module access', asy
   await page.goto('/lessons-learned');
 
   await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
+  await expect(page.getByRole('banner')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'local-no-access' })).toBeVisible();
   await expect(page.getByRole('alert')).toContainText('Contact the PMO');
   await expect(page.getByRole('navigation', { name: 'Lessons Learned' })).toHaveCount(0);
   await expect(page.getByText(/No local profile is selected/)).toHaveCount(0);

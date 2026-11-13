@@ -50,6 +50,8 @@ describe('Lessons Learned access check', () => {
   it('returns to the Hub profile selector when no local profile is selected', () => {
     renderScreen();
 
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'PMO Hub' })).toHaveAttribute('href', '/');
     expect(screen.getByRole('heading', { name: 'Access check' })).toBeInTheDocument();
     expect(screen.getByText(/No local profile is selected/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Select a local profile' })).toHaveAttribute('href', '/');
@@ -156,6 +158,8 @@ describe('Lessons Learned access check', () => {
     renderScreen('local-no-access');
 
     expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'local-no-access' })).toBeInTheDocument();
     expect(screen.getByText(/Contact the PMO/)).toBeInTheDocument();
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
     expect(screen.queryByText('Welcome, Local Contributor')).not.toBeInTheDocument();

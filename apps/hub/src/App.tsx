@@ -105,12 +105,12 @@ export function App() {
   const loadError = statusQuery.error ?? usersQuery.error;
 
   return (
-    <main className="page-shell">
+    <div className="page-shell">
       <HubHeader
         profileName={activeUser?.displayName}
         onChangeProfile={activeUser ? changeProfile : undefined}
       />
-      <div className="page-content">
+      <main className="page-content">
         <section className={`welcome-card${activeUser ? ' catalog-page' : ''}`} aria-labelledby="page-title">
         <p className="eyebrow">Project Management Office</p>
         <h1 id="page-title">Welcome to PMO Hub</h1>
@@ -189,18 +189,22 @@ export function App() {
               </div>
               <ul className="module-grid">
                 {hubCatalogConfig.map((module) => (
-                  <li key={module.code} className="module-card">
-                    <article aria-labelledby={`catalog-${module.code}-title`}>
-                      <h3 id={`catalog-${module.code}-title`}>{module.name}</h3>
-                      <p>{module.description}</p>
-                      {module.enabled ? (
-                        <a className="button button-primary module-action" href={module.route}>
-                          Open {module.name}
-                        </a>
-                      ) : (
+                  <li key={module.code} className={`module-card${module.enabled ? ' module-card-linked' : ''}`}>
+                    {module.enabled ? (
+                      <a className="module-card-link" href={module.route} aria-label={`Open ${module.name}`}>
+                        <article aria-labelledby={`catalog-${module.code}-title`}>
+                          <h3 id={`catalog-${module.code}-title`}>{module.name}</h3>
+                          <p>{module.description}</p>
+                          <span className="button button-primary module-action">Open {module.name}</span>
+                        </article>
+                      </a>
+                    ) : (
+                      <article aria-labelledby={`catalog-${module.code}-title`}>
+                        <h3 id={`catalog-${module.code}-title`}>{module.name}</h3>
+                        <p>{module.description}</p>
                         <span className="module-status">Unavailable</span>
-                      )}
-                    </article>
+                      </article>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -209,7 +213,7 @@ export function App() {
         )}
         </section>
         <footer>PMO Hub · Local development</footer>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

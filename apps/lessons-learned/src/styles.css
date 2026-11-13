@@ -76,33 +76,19 @@ body {
 
 button, a { font: inherit; }
 
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+}
+
 .page-shell {
   width: min(100% - 48px, 1120px);
-  min-height: 100vh;
+  flex: 1;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
 }
-
-.topbar {
-  height: 76px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--rule);
-}
-
-.hub-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 11px;
-  color: var(--link);
-  font-size: 14px;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.hub-link:hover { color: var(--link-hover); }
 
 .module-card {
   width: min(100%, 690px);
@@ -210,7 +196,7 @@ h1 {
 }
 
 .retry-button:focus-visible,
-.hub-link:focus-visible,
+.hub-header :focus-visible,
 .primary-link:focus-visible,
 .module-navigation a:focus-visible,
 .theme-controls button:focus-visible {

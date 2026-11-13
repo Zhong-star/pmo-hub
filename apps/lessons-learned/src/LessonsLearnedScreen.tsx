@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { getHome } from './api';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
@@ -71,19 +72,35 @@ export function LessonsLearnedScreen() {
       }
     }
 
+    function restoreSelectedProfile() {
+      setSelectedProfileId(readSelectedProfileId());
+    }
+
     window.addEventListener('storage', updateSelectedProfile);
-    return () => window.removeEventListener('storage', updateSelectedProfile);
+    window.addEventListener('pageshow', restoreSelectedProfile);
+    return () => {
+      window.removeEventListener('storage', updateSelectedProfile);
+      window.removeEventListener('pageshow', restoreSelectedProfile);
+    };
   }, []);
 
-  return (
-    <main className="page-shell">
-      <header className="topbar">
-        <a className="hub-link" href="/" aria-label="PMO Hub">
-          <span aria-hidden="true">←</span>
-          <span>PMO Hub</span>
-        </a>
-      </header>
+  function changeProfile() {
+    try {
+      window.localStorage.removeItem(LOCAL_USER_STORAGE_KEY);
+    } catch {
+      // The Hub still presents profile selection when browser storage is unavailable.
+    }
+    setSelectedProfileId(null);
+    window.location.assign('/');
+  }
 
+  return (
+    <div className="app-shell">
+      <HubHeader
+        profileName={homeQuery.data?.profile.displayName ?? selectedProfileId ?? undefined}
+        onChangeProfile={selectedProfileId ? changeProfile : undefined}
+      />
+      <main className="page-shell">
       <section
         className={isHomePage ? 'module-card module-card-with-navigation' : 'module-card'}
         aria-labelledby="page-title"
@@ -201,6 +218,7 @@ export function LessonsLearnedScreen() {
           </div>
         )}
       </section>
-    </main>
+      </main>
+    </div>
   );
 }

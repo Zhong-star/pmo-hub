@@ -83,6 +83,10 @@ describe('Hub entry', () => {
     expect(screen.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
     expect(screen.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeInTheDocument();
     expect(screen.getByText('Request and coordinate technology resources across projects.')).toBeInTheDocument();
+    const lessonsLearnedCard = screen.getByRole('link', { name: 'Open Lessons Learned' });
+    expect(lessonsLearnedCard).toContainElement(screen.getByRole('heading', { name: 'Lessons Learned' }));
+    expect(lessonsLearnedCard).toContainElement(screen.getByText('Capture, review, and reuse lessons from project experience.'));
+    expect(lessonsLearnedCard).toContainElement(screen.getByText('Open Lessons Learned'));
     expect(screen.getByText('Unavailable')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open Tech Resource Allocation' })).not.toBeInTheDocument();
     expect(mockedGet).toHaveBeenCalledWith('/api/hub/v1/local-users/dev-1', { timeout: HUB_API_TIMEOUT_MS });
