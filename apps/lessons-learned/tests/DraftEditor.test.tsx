@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
@@ -32,6 +32,7 @@ const projects: LessonProject[] = [
 
 function renderEditor(overrides: Partial<{
   draft: LessonDraft | null;
+  projects: LessonProject[];
   onSave: (input: UpdateLessonDraftBody, draftId: number | null) => Promise<LessonDraft>;
   onReload: (draftId: number) => Promise<LessonDraft>;
   onClose: () => void;
@@ -71,7 +72,9 @@ describe('Lessons Learned draft editor', () => {
 
     expect(screen.getByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Improve release handover');
-    expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue('LOCAL-PROJECT-001|Fictional Atlas Modernization');
+    expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue(JSON.stringify([
+      'LOCAL-PROJECT-001', 'Fictional Atlas Modernization',
+    ]));
     expect(screen.getByRole('option', { name: /Fictional Atlas Modernization.*saved project/i })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Project category' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Project phase' })).toBeInTheDocument();
@@ -83,6 +86,41 @@ describe('Lessons Learned draft editor', () => {
     expect(screen.getByRole('textbox', { name: 'Applicability' })).toBeInTheDocument();
     expect(screen.getAllByText('0/4000 characters')).toHaveLength(5);
     expect(screen.getByText('Improve release handover'.length + '/150 characters')).toBeInTheDocument();
+  });
+
+  it('keeps a legacy project snapshot available after choosing No project', async () => {
+    const user = userEvent.setup();
+    const catalog = [
+      { id: 'A|B', name: 'C' },
+      { id: 'A', name: 'B|C' },
+      { id: 'LOCAL-PROJECT-002', name: 'Fictional Harbor Migration' },
+    ];
+    const { props } = renderEditor({ projects: catalog });
+    const projectSelect = screen.getByRole('combobox', { name: 'Project' });
+    const snapshotValue = JSON.stringify(['LOCAL-PROJECT-001', 'Fictional Atlas Modernization']);
+
+    expect(screen.getByRole('option', { name: 'C' })).toHaveValue(JSON.stringify(['A|B', 'C']));
+    expect(screen.getByRole('option', { name: 'B|C' })).toHaveValue(JSON.stringify(['A', 'B|C']));
+    expect([...projectSelect.querySelectorAll('option')].map((option) => option.textContent)).toEqual([
+      'No project', 'C', 'B|C', 'Fictional Harbor Migration',
+      'Fictional Atlas Modernization (saved project)',
+    ]);
+
+    await user.selectOptions(projectSelect, '');
+    expect(projectSelect).toHaveValue('');
+    expect(screen.getByRole('option', { name: /Fictional Atlas Modernization.*saved project/ })).toBeInTheDocument();
+    expect([...projectSelect.querySelectorAll('option')].map((option) => option.textContent)).toEqual([
+      'No project', 'C', 'B|C', 'Fictional Harbor Migration',
+      'Fictional Atlas Modernization (saved project)',
+    ]);
+    await user.selectOptions(projectSelect, snapshotValue);
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    expect(await screen.findByText('Draft saved.')).toBeInTheDocument();
+    expect(props.onSave).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+    }), 7);
   });
 
   it('saves a draft with only a title and keeps all other fields optional', async () => {
@@ -128,6 +166,52 @@ describe('Lessons Learned draft editor', () => {
     expect(screen.getByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
   });
 
+  it('clears category, phase, and lesson type to null when creating a draft', async () => {
+    const user = userEvent.setup();
+    const { props } = renderEditor({ draft: null });
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Draft without classifications');
+    for (const [label, value] of [
+      ['Project category', 'Technology'],
+      ['Project phase', 'Execution'],
+      ['Lesson type', 'Communication'],
+    ]) {
+      const select = screen.getByRole('combobox', { name: label });
+      await user.selectOptions(select, value);
+      await user.selectOptions(select, '');
+    }
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    expect(await screen.findByText('Draft saved.')).toBeInTheDocument();
+    expect(props.onSave).toHaveBeenCalledWith(expect.objectContaining({
+      projectCategory: null,
+      projectPhase: null,
+      lessonType: null,
+    }), null);
+  });
+
+  it('clears category, phase, and lesson type to null when editing a draft', async () => {
+    const user = userEvent.setup();
+    const { props } = renderEditor({ draft: {
+      ...draft,
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      lessonType: 'Communication',
+    } });
+
+    for (const label of ['Project category', 'Project phase', 'Lesson type']) {
+      await user.selectOptions(screen.getByRole('combobox', { name: label }), '');
+    }
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    expect(await screen.findByText('Draft saved.')).toBeInTheDocument();
+    expect(props.onSave).toHaveBeenCalledWith(expect.objectContaining({
+      projectCategory: null,
+      projectPhase: null,
+      lessonType: null,
+    }), 7);
+  });
+
   it('keeps the typed fields when a save fails', async () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockRejectedValueOnce(new Error('Save failed'));
@@ -144,6 +228,7 @@ describe('Lessons Learned draft editor', () => {
 
   it('preserves edits after a stale-version conflict and reloads only after the user chooses', async () => {
     const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const latest = { ...draft, title: 'Latest saved title', version: 4 };
     const onSave = vi.fn().mockRejectedValueOnce(apiError(409, 'STALE_LESSON_VERSION'));
     const onReload = vi.fn().mockResolvedValue(latest);
@@ -158,9 +243,53 @@ describe('Lessons Learned draft editor', () => {
     expect(title).toHaveValue('My unsaved change');
     await user.click(screen.getByRole('button', { name: 'Reload latest version' }));
 
+    expect(confirm).toHaveBeenCalledWith('Reloading the latest version will discard your unsaved changes. Continue?');
+    expect(onReload).not.toHaveBeenCalled();
+    expect(title).toHaveValue('My unsaved change');
+    confirm.mockReturnValue(true);
+    await user.click(screen.getByRole('button', { name: 'Reload latest version' }));
     expect(await screen.findByRole('textbox', { name: 'Title' })).toHaveValue('Latest saved title');
     expect(onReload).toHaveBeenCalledOnce();
     expect(screen.queryByRole('button', { name: 'Reload latest version' })).not.toBeInTheDocument();
+  });
+
+  it('freezes fields while reloading and keeps edits when the reload fails', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const onSave = vi.fn().mockRejectedValueOnce(apiError(409, 'STALE_LESSON_VERSION'));
+    let rejectReload!: (error: Error) => void;
+    const onReload = vi.fn(() => new Promise<LessonDraft>((_resolve, reject) => { rejectReload = reject; }));
+    renderEditor({ onSave, onReload });
+
+    const title = screen.getByRole('textbox', { name: 'Title' });
+    await user.clear(title);
+    await user.type(title, 'Unsaved title');
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+    await user.click(await screen.findByRole('button', { name: 'Reload latest version' }));
+    await vi.waitFor(() => expect(onReload).toHaveBeenCalledOnce());
+
+    expect(title).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Project category' })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'Situation observed' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Close editor' })).toBeDisabled();
+    await act(async () => { rejectReload(new Error('Request failed')); });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('latest version could not be loaded');
+    expect(title).toHaveValue('Unsaved title');
+    expect(title).toBeEnabled();
+    expect(screen.getByRole('textbox', { name: 'Situation observed' })).toBeEnabled();
+  });
+
+  it('focuses the title and announces its validation error after an empty Save Draft', async () => {
+    const user = userEvent.setup();
+    const { props } = renderEditor({ draft: null });
+    const title = screen.getByRole('textbox', { name: 'Title' });
+
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a title to save this draft.');
+    expect(title).toHaveFocus();
+    expect(props.onSave).not.toHaveBeenCalled();
   });
 
   it('focuses the title initially and confirms dirty close on Escape before returning focus', async () => {
