@@ -1,12 +1,15 @@
 import { useRef, useState } from 'react';
+import type { Theme } from './theme';
 import './HubHeader.css';
 
 export interface HubHeaderProps {
   profileName?: string;
   onChangeProfile?: () => void;
+  theme: Theme;
+  onThemeChange: (theme: Theme) => void;
 }
 
-export function HubHeader({ profileName, onChangeProfile }: HubHeaderProps) {
+export function HubHeader({ profileName, onChangeProfile, theme, onThemeChange }: HubHeaderProps) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuTrigger = useRef<HTMLButtonElement>(null);
   const canChangeProfile = Boolean(profileName && onChangeProfile);
@@ -46,6 +49,23 @@ export function HubHeader({ profileName, onChangeProfile }: HubHeaderProps) {
             aria-label="Profile actions"
             hidden={!isProfileMenuOpen}
           >
+            <div className="hub-header__theme-controls" role="group" aria-label="Color theme">
+              <button
+                type="button"
+                aria-pressed={theme === 'light'}
+                onClick={() => onThemeChange('light')}
+              >
+                Light
+              </button>
+              <button
+                type="button"
+                aria-pressed={theme === 'dark'}
+                onClick={() => onThemeChange('dark')}
+              >
+                Dark
+              </button>
+            </div>
+            <div className="hub-header__menu-divider" aria-hidden="true" />
             <button
               type="button"
               onClick={() => {

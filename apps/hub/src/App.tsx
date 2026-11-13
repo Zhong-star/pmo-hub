@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
+import { useThemePreference } from '../../shared-ui/src/theme';
 import { getHubStatus, getLocalUser, getLocalUsers, type LocalUser } from './api';
 import { hubCatalogConfig } from './catalog.config';
 
@@ -19,6 +20,7 @@ function saveUserId(id: string | null): void {
 }
 
 export function App() {
+  const { theme, selectTheme } = useThemePreference();
   const { register, handleSubmit, control, reset } = useForm<{ localUserId: string }>({
     defaultValues: { localUserId: '' },
   });
@@ -109,6 +111,8 @@ export function App() {
       <HubHeader
         profileName={activeUser?.displayName}
         onChangeProfile={activeUser ? changeProfile : undefined}
+        theme={theme}
+        onThemeChange={selectTheme}
       />
       <main className="page-content">
         <section className={`welcome-card${activeUser ? ' catalog-page' : ''}`} aria-labelledby="page-title">

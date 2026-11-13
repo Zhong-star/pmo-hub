@@ -40,6 +40,7 @@ function apiError(status: number, code: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
+  window.sessionStorage.clear();
 });
 
 afterEach(() => {
@@ -115,18 +116,21 @@ describe('Lessons Learned access check', () => {
     expect(screen.getByRole('heading', { name: 'Home' })).toBeInTheDocument();
   });
 
-  it('switches the sidebar theme from the keyboard and keeps the choice in this session', async () => {
+  it('switches the shared header theme from the keyboard and keeps the choice in this session', async () => {
     vi.mocked(getHome).mockResolvedValue(contributor);
     const user = userEvent.setup();
     const view = renderScreen('local-contributor');
 
     await screen.findByRole('navigation', { name: 'Lessons Learned' });
+    const profileTrigger = screen.getByRole('button', { name: 'Local Contributor' });
+    await user.click(profileTrigger);
     const lightTheme = screen.getByRole('button', { name: 'Light' });
     const darkTheme = screen.getByRole('button', { name: 'Dark' });
     expect(lightTheme).toHaveAttribute('aria-pressed', 'true');
     expect(darkTheme).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('group', { name: 'Color theme' })).toBeInTheDocument();
+    expect(document.querySelector('.module-sidebar .theme-controls')).toBeNull();
 
-    screen.getByRole('link', { name: 'Home' }).focus();
     await user.tab();
     await user.tab();
     expect(darkTheme).toHaveFocus();
@@ -135,11 +139,12 @@ describe('Lessons Learned access check', () => {
     expect(darkTheme).toHaveAttribute('aria-pressed', 'true');
     expect(lightTheme).toHaveAttribute('aria-pressed', 'false');
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
-    expect(window.sessionStorage.getItem('pmo-hub.lessons-learned.theme')).toBe('dark');
+    expect(window.sessionStorage.getItem('pmo-hub.theme')).toBe('dark');
 
     view.unmount();
     renderScreen('local-contributor');
     await screen.findByRole('navigation', { name: 'Lessons Learned' });
+    await user.click(screen.getByRole('button', { name: 'Local Contributor' }));
     expect(screen.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
   });
 

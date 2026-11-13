@@ -1,20 +1,10 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
+import { useThemePreference } from '../../shared-ui/src/theme';
 import { getHome } from './api';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
-const THEME_STORAGE_KEY = 'pmo-hub.lessons-learned.theme';
-
-type Theme = 'light' | 'dark';
-
-function readThemePreference(): Theme {
-  try {
-    return window.sessionStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
-  } catch {
-    return 'light';
-  }
-}
 
 function readSelectedProfileId(): string | null {
   try {
@@ -40,7 +30,7 @@ function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
 
 export function LessonsLearnedScreen() {
   const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
-  const [theme, setTheme] = useState<Theme>(readThemePreference);
+  const { theme, selectTheme } = useThemePreference();
   const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
   const homeQuery = useQuery({
     queryKey: ['lessons-learned-home', selectedProfileId],
@@ -51,19 +41,6 @@ export function LessonsLearnedScreen() {
   });
   const errorCode = homeQuery.isError ? getApiErrorCode(homeQuery.error) : null;
   const isHomePage = selectedProfileId !== null && !homeQuery.isFetching && homeQuery.isSuccess && !homeQuery.isError;
-
-  useLayoutEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
-
-  function selectTheme(nextTheme: Theme) {
-    setTheme(nextTheme);
-    try {
-      window.sessionStorage.setItem(THEME_STORAGE_KEY, nextTheme);
-    } catch {
-      // Keep the current selection for this render if browser storage is unavailable.
-    }
-  }
 
   useEffect(() => {
     function updateSelectedProfile(event: StorageEvent) {
@@ -99,6 +76,8 @@ export function LessonsLearnedScreen() {
       <HubHeader
         profileName={homeQuery.data?.profile.displayName ?? selectedProfileId ?? undefined}
         onChangeProfile={selectedProfileId ? changeProfile : undefined}
+        theme={theme}
+        onThemeChange={selectTheme}
       />
       <main className="page-shell">
       <section
@@ -192,22 +171,6 @@ export function LessonsLearnedScreen() {
                   </a>
                 ))}
               </nav>
-              <div className="theme-controls" role="group" aria-label="Color theme">
-                <button
-                  type="button"
-                  aria-pressed={theme === 'light'}
-                  onClick={() => selectTheme('light')}
-                >
-                  Light
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={theme === 'dark'}
-                  onClick={() => selectTheme('dark')}
-                >
-                  Dark
-                </button>
-              </div>
             </aside>
             <div className="module-content">
               <h1 id="page-title">Home</h1>
