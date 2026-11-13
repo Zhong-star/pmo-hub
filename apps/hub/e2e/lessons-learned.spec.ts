@@ -20,23 +20,38 @@ async function getThemeContrastRatios(page: import('@playwright/test').Page) {
       return (values[0]! + .05) / (values[1]! + .05);
     }
 
-    const card = document.querySelector<HTMLElement>('.module-card')!;
-    const activeTheme = document.querySelector<HTMLButtonElement>('.theme-controls button[aria-pressed="true"]')!;
-    const inactiveTheme = document.querySelector<HTMLButtonElement>('.theme-controls button[aria-pressed="false"]')!;
+    const card = document.querySelector<HTMLElement>('.welcome-card:not(.catalog-page), .module-card')!;
+    const themeMenu = document.querySelector<HTMLElement>('.hub-header__profile-menu')!;
+    const activeTheme = document.querySelector<HTMLButtonElement>('.hub-header__profile-menu button[aria-pressed="true"]')!;
+    const inactiveTheme = document.querySelector<HTMLButtonElement>('.hub-header__profile-menu button[aria-pressed="false"]')!;
+    const primaryAction = document.querySelector<HTMLElement>('.primary-link, .module-action')!;
+    const header = document.querySelector<HTMLElement>('.hub-header')!;
+    const focusedThemeButton = document.querySelector<HTMLButtonElement>('.hub-header__profile-menu button:focus-visible');
 
     return {
-      heading: contrast(getComputedStyle(document.querySelector('h1')!).color, getComputedStyle(card).backgroundColor),
+      heading: contrast(getComputedStyle(document.querySelector('#page-title')!).color, getComputedStyle(card).backgroundColor),
       intro: contrast(getComputedStyle(document.querySelector('.intro')!).color, getComputedStyle(card).backgroundColor),
+      primaryAction: contrast(getComputedStyle(primaryAction).color, getComputedStyle(primaryAction).backgroundColor),
       activeTheme: contrast(getComputedStyle(activeTheme).color, getComputedStyle(activeTheme).backgroundColor),
-      inactiveTheme: contrast(getComputedStyle(inactiveTheme).color, getComputedStyle(inactiveTheme.parentElement!).backgroundColor),
+      inactiveTheme: contrast(getComputedStyle(inactiveTheme).color, getComputedStyle(themeMenu).backgroundColor),
+      headerBrand: contrast(getComputedStyle(document.querySelector('.hub-header__brand')!).color, getComputedStyle(header).backgroundColor),
+      focus: focusedThemeButton ? contrast(getComputedStyle(focusedThemeButton).outlineColor, getComputedStyle(themeMenu).backgroundColor) : null,
     };
   });
 }
 
 test('direct Lessons Learned URL works before profile selection and can return to profile entry', async ({ page }) => {
+  const sharedHeaderResponses: { url: string; status: number }[] = [];
+  page.on('response', (response) => {
+    if (response.url().includes('HubHeader')) {
+      sharedHeaderResponses.push({ url: response.url(), status: response.status() });
+    }
+  });
   const response = await page.goto('/lessons-learned');
 
   expect(response?.status()).toBe(200);
+  await expect(page.getByRole('banner')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'PMO Hub' })).toHaveAttribute('href', '/');
   await expect(page.getByRole('heading', { name: 'Access check' })).toBeVisible();
   await expect(page.getByText(/No local profile is selected/)).toBeVisible();
   await expect(page.getByRole('link', { name: 'Select a local profile' })).toHaveAttribute('href', '/');
@@ -45,6 +60,8 @@ test('direct Lessons Learned URL works before profile selection and can return t
   const moduleResources = await page.evaluate(() => performance.getEntriesByType('resource').map(({ name }) => name));
   expect(moduleResources.some((resource) => resource.includes('/lessons-learned/src/main.tsx'))).toBe(true);
   expect(moduleResources.every((resource) => !resource.includes(':5174'))).toBe(true);
+  expect(sharedHeaderResponses.some(({ url, status }) => url.includes('HubHeader.tsx') && status === 200)).toBe(true);
+  expect(sharedHeaderResponses.some(({ url, status }) => url.includes('HubHeader.css') && status === 200)).toBe(true);
 
   await page.getByRole('link', { name: 'Select a local profile', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
@@ -77,11 +94,12 @@ test('catalog link opens in the same tab and reload, back, and module return pre
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
 
-  await expect(page.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
+  await expect(page.getByText('Unavailable')).toBeVisible();
 });
 
 test('PMO can enter the module catalog and open Lessons Learned with the PMO role', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('banner')).toBeVisible();
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-pmo');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
@@ -89,40 +107,153 @@ test('PMO can enter the module catalog and open Lessons Learned with the PMO rol
 
   await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.getByRole('banner')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Local PMO' })).toBeVisible();
   await expect(page.getByText('Welcome, Local PMO')).toBeVisible();
   await expect(page.getByText('PMO', { exact: true })).toBeVisible();
 });
 
-test('sidebar theme is keyboard operable, readable, and scoped to the current tab session', async ({ page }) => {
+test('change profile from Lessons Learned returns to selection and browser history never restores a stale profile', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-pmo');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await expect(page.getByText('Welcome, Local PMO')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Local PMO' }).click();
+  await page.getByRole('button', { name: 'Change profile' }).click();
+  await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).not.toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('pmo-hub.local-user-id'))).toBeNull();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/lessons-learned\/?$/);
+  await expect(page.getByRole('heading', { name: 'Access check' })).toBeVisible();
+  await expect(page.getByText('Welcome, Local PMO')).not.toBeVisible();
+  await expect(page.getByRole('banner')).toBeVisible();
+  await expect(page.getByText(/No local profile is selected/)).toBeVisible();
+
+  await page.goForward();
+  await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-contributor');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Welcome, Local Contributor' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await expect(page.getByText('Welcome, Local Contributor')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Local Contributor' })).toBeVisible();
+  await expect(page.getByText('Welcome, Local PMO')).not.toBeVisible();
+
+  await page.getByRole('link', { name: 'PMO Hub', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByText('Welcome, Local Contributor')).toBeVisible();
+  await expect(page.getByText('Welcome, Local PMO')).not.toBeVisible();
+});
+
+test('profile menu theme is keyboard operable, readable, and shared across both apps in the current tab', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('pmo-hub.local-user-id', 'local-contributor'));
-  await page.goto('/lessons-learned');
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 
-  const lightTheme = page.getByRole('button', { name: 'Light' });
-  const darkTheme = page.getByRole('button', { name: 'Dark' });
-  await expect(lightTheme).toHaveAttribute('aria-pressed', 'true');
-  await expect(darkTheme).toHaveAttribute('aria-pressed', 'false');
-  expect(Object.values(await getThemeContrastRatios(page)).every((ratio) => ratio >= 4.5)).toBe(true);
+  const profileTrigger = page.getByRole('button', { name: 'Local Contributor' });
+  const selectDarkWithKeyboard = async () => {
+    const lightTheme = page.getByRole('button', { name: 'Light' });
+    const darkTheme = page.getByRole('button', { name: 'Dark' });
+    if (!(await darkTheme.isVisible())) {
+      await profileTrigger.focus();
+      await page.keyboard.press('Enter');
+    }
+    await profileTrigger.focus();
+    await expect(lightTheme).toBeVisible();
+    await page.keyboard.press('Tab');
+    await expect(lightTheme).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(darkTheme).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(darkTheme).toHaveAttribute('aria-pressed', 'true');
+    await expect(lightTheme).toHaveAttribute('aria-pressed', 'false');
+  };
+  const assertReadableTheme = async () => {
+    const ratios = await getThemeContrastRatios(page);
+    const { focus, ...textAndControlRatios } = ratios;
+    expect(Object.values(textAndControlRatios).every((ratio) => ratio >= 4.5)).toBe(true);
+    if (focus !== null) expect(focus).toBeGreaterThanOrEqual(3);
+  };
+  const selectLightWithKeyboard = async () => {
+    const lightTheme = page.getByRole('button', { name: 'Light' });
+    const darkTheme = page.getByRole('button', { name: 'Dark' });
+    await expect(darkTheme).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(lightTheme).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(lightTheme).toHaveAttribute('aria-pressed', 'true');
+    await expect(darkTheme).toHaveAttribute('aria-pressed', 'false');
+  };
 
-  await page.getByRole('link', { name: 'Home' }).focus();
-  await page.keyboard.press('Tab');
-  await page.keyboard.press('Tab');
-  await expect(darkTheme).toBeFocused();
-  await page.keyboard.press('Enter');
-  await expect(darkTheme).toHaveAttribute('aria-pressed', 'true');
-  await expect(lightTheme).toHaveAttribute('aria-pressed', 'false');
+  await profileTrigger.click();
+  await expect(page.getByRole('button', { name: 'Light' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'false');
+  await assertReadableTheme();
+
+  await selectDarkWithKeyboard();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  expect(Object.values(await getThemeContrastRatios(page)).every((ratio) => ratio >= 4.5)).toBe(true);
+  await expect(page.locator('.module-action')).toHaveCSS('background-color', 'rgb(24, 104, 219)');
+  await assertReadableTheme();
+
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.getByRole('button', { name: 'Local Contributor' }).focus();
+  await page.keyboard.press('Enter');
+  const darkTheme = page.getByRole('button', { name: 'Dark' });
+  await expect(darkTheme).toHaveAttribute('aria-pressed', 'true');
+  await assertReadableTheme();
+  await darkTheme.focus();
+  await selectLightWithKeyboard();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('.primary-link')).toHaveCSS('background-color', 'rgb(24, 104, 219)');
+  await assertReadableTheme();
+
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  if (!(await page.getByRole('button', { name: 'Light' }).isVisible())) {
+    await page.getByRole('button', { name: 'Local Contributor' }).click();
+  }
+  await expect(page.getByRole('button', { name: 'Light' })).toHaveAttribute('aria-pressed', 'true');
+  await selectDarkWithKeyboard();
+  await page.goForward();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
   await page.reload();
+  await page.getByRole('button', { name: 'Local Contributor' }).click();
   await expect(page.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
   const freshTab = await page.context().newPage();
-  await freshTab.goto('/lessons-learned');
-  await expect(freshTab.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await freshTab.addInitScript(() => localStorage.setItem('pmo-hub.local-user-id', 'local-contributor'));
+  await freshTab.goto('/');
+  await expect(freshTab.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await freshTab.getByRole('button', { name: 'Local Contributor' }).click();
   await expect(freshTab.getByRole('button', { name: 'Light' })).toHaveAttribute('aria-pressed', 'true');
   await expect(freshTab.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('migrates the existing Lessons Learned theme preference to the shared session preference', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
+    sessionStorage.setItem('pmo-hub.lessons-learned.theme', 'dark');
+  });
+  await page.goto('/lessons-learned');
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.getByRole('button', { name: 'Local Contributor' }).click();
+  await expect(page.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => sessionStorage.getItem('pmo-hub.theme'))).toBe('dark');
+  expect(await page.evaluate(() => sessionStorage.getItem('pmo-hub.lessons-learned.theme'))).toBeNull();
 });
 
 test('catalog entry checks the Contributor identity before rendering Home', async ({ page }) => {
@@ -184,6 +315,8 @@ test('a direct module URL denies a saved Hub profile without module access', asy
   await page.goto('/lessons-learned');
 
   await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
+  await expect(page.getByRole('banner')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'local-no-access' })).toBeVisible();
   await expect(page.getByRole('alert')).toContainText('Contact the PMO');
   await expect(page.getByRole('navigation', { name: 'Lessons Learned' })).toHaveCount(0);
   await expect(page.getByText(/No local profile is selected/)).toHaveCount(0);

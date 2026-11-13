@@ -1,19 +1,10 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { HubHeader } from '../../shared-ui/src/HubHeader';
+import { useThemePreference } from '../../shared-ui/src/theme';
 import { getHome } from './api';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
-const THEME_STORAGE_KEY = 'pmo-hub.lessons-learned.theme';
-
-type Theme = 'light' | 'dark';
-
-function readThemePreference(): Theme {
-  try {
-    return window.sessionStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
-  } catch {
-    return 'light';
-  }
-}
 
 function readSelectedProfileId(): string | null {
   try {
@@ -39,7 +30,8 @@ function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
 
 export function LessonsLearnedScreen() {
   const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
-  const [theme, setTheme] = useState<Theme>(readThemePreference);
+  const { theme, selectTheme } = useThemePreference();
+  const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
   const homeQuery = useQuery({
     queryKey: ['lessons-learned-home', selectedProfileId],
     queryFn: () => getHome(selectedProfileId ?? ''),
@@ -49,19 +41,7 @@ export function LessonsLearnedScreen() {
     refetchOnWindowFocus: true,
   });
   const errorCode = homeQuery.isError ? getApiErrorCode(homeQuery.error) : null;
-
-  useLayoutEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
-
-  function selectTheme(nextTheme: Theme) {
-    setTheme(nextTheme);
-    try {
-      window.sessionStorage.setItem(THEME_STORAGE_KEY, nextTheme);
-    } catch {
-      // Keep the current selection for this render if browser storage is unavailable.
-    }
-  }
+  const isHomePage = selectedProfileId !== null && !homeQuery.isFetching && homeQuery.isSuccess && !homeQuery.isError;
 
   useEffect(() => {
     function updateSelectedProfile(event: StorageEvent) {
@@ -70,20 +50,41 @@ export function LessonsLearnedScreen() {
       }
     }
 
+    function restoreSelectedProfile() {
+      setSelectedProfileId(readSelectedProfileId());
+    }
+
     window.addEventListener('storage', updateSelectedProfile);
-    return () => window.removeEventListener('storage', updateSelectedProfile);
+    window.addEventListener('pageshow', restoreSelectedProfile);
+    return () => {
+      window.removeEventListener('storage', updateSelectedProfile);
+      window.removeEventListener('pageshow', restoreSelectedProfile);
+    };
   }, []);
 
-  return (
-    <main className="page-shell">
-      <header className="topbar">
-        <a className="hub-link" href="/" aria-label="PMO Hub">
-          <span aria-hidden="true">←</span>
-          <span>PMO Hub</span>
-        </a>
-      </header>
+  function changeProfile() {
+    try {
+      window.localStorage.removeItem(LOCAL_USER_STORAGE_KEY);
+    } catch {
+      // The Hub still presents profile selection when browser storage is unavailable.
+    }
+    setSelectedProfileId(null);
+    window.location.assign('/');
+  }
 
-      <section className="module-card" aria-labelledby="page-title">
+  return (
+    <div className="app-shell">
+      <HubHeader
+        profileName={homeQuery.data?.profile.displayName ?? selectedProfileId ?? undefined}
+        onChangeProfile={selectedProfileId ? changeProfile : undefined}
+        theme={theme}
+        onThemeChange={selectTheme}
+      />
+      <main className="page-shell">
+      <section
+        className={isHomePage ? 'module-card module-card-with-navigation' : 'module-card'}
+        aria-labelledby="page-title"
+      >
         <p className="eyebrow">Lessons Learned</p>
 
         {!selectedProfileId && (
@@ -143,44 +144,45 @@ export function LessonsLearnedScreen() {
             </div>
           )}
 
-        {selectedProfileId && !homeQuery.isFetching && homeQuery.isSuccess && !homeQuery.isError && (
-          <>
-            <h1 id="page-title">Home</h1>
-            <p className="intro">Welcome, {homeQuery.data.profile.displayName}</p>
-            <p className="active-role">Active role: <strong>{getRoleLabel(homeQuery.data.profile.role)}</strong></p>
-            <aside className="module-sidebar" aria-label="Lessons Learned navigation">
-              <nav className="module-navigation" aria-label="Lessons Learned">
+        {isHomePage && (
+          <div className="module-layout">
+            <aside
+              className="module-sidebar"
+              aria-label="Lessons Learned navigation"
+              data-menu-open={isModuleMenuOpen}
+            >
+              <button
+                className="module-menu-toggle"
+                type="button"
+                aria-controls="module-navigation"
+                aria-expanded={isModuleMenuOpen}
+                onClick={() => setIsModuleMenuOpen((isOpen) => !isOpen)}
+              >
+                Module menu
+              </button>
+              <nav id="module-navigation" className="module-navigation" aria-label="Lessons Learned">
                 {homeQuery.data.navigation.map((destination) => (
                   <a
                     key={destination.id}
                     href="/lessons-learned/"
                     aria-current={destination.current ? 'page' : undefined}
+                    onClick={() => setIsModuleMenuOpen(false)}
                   >
                     {destination.label}
                   </a>
                 ))}
               </nav>
-              <div className="theme-controls" role="group" aria-label="Color theme">
-                <button
-                  type="button"
-                  aria-pressed={theme === 'light'}
-                  onClick={() => selectTheme('light')}
-                >
-                  Light
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={theme === 'dark'}
-                  onClick={() => selectTheme('dark')}
-                >
-                  Dark
-                </button>
-              </div>
             </aside>
-            <a className="primary-link" href="/">Back to PMO Hub</a>
-          </>
+            <div className="module-content">
+              <h1 id="page-title">Home</h1>
+              <p className="intro">Welcome, {homeQuery.data.profile.displayName}</p>
+              <p className="active-role">Active role: <strong>{getRoleLabel(homeQuery.data.profile.role)}</strong></p>
+              <a className="primary-link" href="/">Back to PMO Hub</a>
+            </div>
+          </div>
         )}
       </section>
-    </main>
+      </main>
+    </div>
   );
 }

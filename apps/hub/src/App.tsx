@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
+import { HubHeader } from '../../shared-ui/src/HubHeader';
+import { useThemePreference } from '../../shared-ui/src/theme';
 import { getHubStatus, getLocalUser, getLocalUsers, type LocalUser } from './api';
 import { hubCatalogConfig } from './catalog.config';
 
@@ -18,6 +20,7 @@ function saveUserId(id: string | null): void {
 }
 
 export function App() {
+  const { theme, selectTheme } = useThemePreference();
   const { register, handleSubmit, control, reset } = useForm<{ localUserId: string }>({
     defaultValues: { localUserId: '' },
   });
@@ -40,6 +43,7 @@ export function App() {
   const selectUserMutation = useMutation({
     mutationFn: getLocalUser,
   });
+  const resetSelectionMutation = selectUserMutation.reset;
 
   useEffect(() => {
     if (shouldResumeOnStartup.current && savedUserId && statusQuery.isSuccess && usersQuery.isSuccess && !selectUserMutation.isPending && !selectUserMutation.isSuccess && !resumeError) {
@@ -55,6 +59,24 @@ export function App() {
   // Resume once after Hub availability is confirmed.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedUserId, statusQuery.isSuccess, usersQuery.isSuccess, resumeError]);
+
+  useEffect(() => {
+    function reconcileSavedProfile() {
+      const currentSavedUserId = readSavedUserId();
+      if (currentSavedUserId === savedUserId) return;
+
+      shouldResumeOnStartup.current = Boolean(currentSavedUserId);
+      setActiveUser(null);
+      setSavedUserId(currentSavedUserId);
+      setResumeError(null);
+      setSwitching(false);
+      reset({ localUserId: '' });
+      resetSelectionMutation();
+    }
+
+    window.addEventListener('pageshow', reconcileSavedProfile);
+    return () => window.removeEventListener('pageshow', reconcileSavedProfile);
+  }, [savedUserId, reset, resetSelectionMutation]);
 
   function isNotFound(error: unknown) {
     return typeof error === 'object' && error !== null && 'response' in error &&
@@ -104,9 +126,15 @@ export function App() {
   const loadError = statusQuery.error ?? usersQuery.error;
 
   return (
-    <main className="page-shell">
-      <section className={`welcome-card${activeUser ? ' catalog-page' : ''}`} aria-labelledby="page-title">
-        <div className="brand-mark" aria-hidden="true">P</div>
+    <div className="page-shell">
+      <HubHeader
+        profileName={activeUser?.displayName}
+        onChangeProfile={activeUser ? changeProfile : undefined}
+        theme={theme}
+        onThemeChange={selectTheme}
+      />
+      <main className="page-content">
+        <section className={`welcome-card${activeUser ? ' catalog-page' : ''}`} aria-labelledby="page-title">
         <p className="eyebrow">Project Management Office</p>
         <h1 id="page-title">Welcome to PMO Hub</h1>
         <p className="intro">Your starting point for the tools and experience that support project delivery.</p>
@@ -175,7 +203,6 @@ export function App() {
                 <p className="eyebrow">Your local profile</p>
                 <h2>Welcome, {activeUser.displayName}</h2>
               </div>
-              <button className="button button-secondary" type="button" onClick={changeProfile}>Change profile</button>
             </div>
 
             <section className="module-catalog" aria-labelledby="catalog-title">
@@ -184,34 +211,36 @@ export function App() {
                 <p className="helper-text">Explore the modules available through PMO Hub.</p>
               </div>
               <ul className="module-grid">
-                {hubCatalogConfig.map((module) => (
-                  <li key={module.code} className="module-card">
+                {hubCatalogConfig.map((module) => {
+                  const article = (
                     <article aria-labelledby={`catalog-${module.code}-title`}>
                       <h3 id={`catalog-${module.code}-title`}>{module.name}</h3>
                       <p>{module.description}</p>
                       {module.enabled ? (
-                        <a className="button button-primary module-action" href={module.route}>
-                          Open {module.name}
-                        </a>
+                        <span className="button button-primary module-action">Open {module.name}</span>
                       ) : (
-                        <button
-                          className="button button-secondary module-action"
-                          type="button"
-                          disabled
-                          aria-label={`${module.name}: Coming soon`}
-                        >
-                          Coming soon
-                        </button>
+                        <span className="module-status">Unavailable</span>
                       )}
                     </article>
-                  </li>
-                ))}
+                  );
+
+                  return (
+                    <li key={module.code} className={`module-card${module.enabled ? ' module-card-linked' : ''}`}>
+                      {module.enabled ? (
+                        <a className="module-card-link" href={module.route} aria-label={`Open ${module.name}`}>
+                          {article}
+                        </a>
+                      ) : article}
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           </>
         )}
-      </section>
-      <footer>PMO Hub · Local development</footer>
-    </main>
+        </section>
+        <footer>PMO Hub · Local development</footer>
+      </main>
+    </div>
   );
 }

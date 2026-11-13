@@ -40,6 +40,7 @@ function apiError(status: number, code: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
+  window.sessionStorage.clear();
 });
 
 afterEach(() => {
@@ -51,6 +52,8 @@ describe('Lessons Learned access check', () => {
   it('returns to the Hub profile selector when no local profile is selected', () => {
     renderScreen();
 
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'PMO Hub' })).toHaveAttribute('href', '/');
     expect(screen.getByRole('heading', { name: 'Access check' })).toBeInTheDocument();
     expect(screen.getByText(/No local profile is selected/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Select a local profile' })).toHaveAttribute('href', '/');
@@ -83,18 +86,52 @@ describe('Lessons Learned access check', () => {
     expect(screen.getByRole('link', { name: 'Back to PMO Hub' })).toHaveAttribute('href', '/');
   });
 
-  it('switches the sidebar theme from the keyboard and keeps the choice in this session', async () => {
+  it('opens the module menu with the keyboard and closes it after choosing Home', async () => {
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+
+    const menuButton = await screen.findByRole('button', { name: 'Module menu' });
+    const navigation = screen.getByRole('navigation', { name: 'Lessons Learned' });
+    const homeLink = screen.getByRole('link', { name: 'Home' });
+
+    expect(menuButton).toHaveAttribute('aria-controls', 'module-navigation');
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+    expect(homeLink).toHaveAttribute('href', '/lessons-learned/');
+    expect(navigation).toHaveAttribute('id', 'module-navigation');
+
+    menuButton.focus();
+    await user.keyboard('{Enter}');
+    expect(menuButton).toHaveAttribute('aria-expanded', 'true');
+
+    await user.keyboard('{Enter}');
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(menuButton);
+    expect(menuButton).toHaveAttribute('aria-expanded', 'true');
+    homeLink.addEventListener('click', (event) => event.preventDefault(), { once: true });
+    await user.click(homeLink);
+
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('heading', { name: 'Home' })).toBeInTheDocument();
+  });
+
+  it('switches the shared header theme from the keyboard and keeps the choice in this session', async () => {
     vi.mocked(getHome).mockResolvedValue(contributor);
     const user = userEvent.setup();
     const view = renderScreen('local-contributor');
 
     await screen.findByRole('navigation', { name: 'Lessons Learned' });
+    const profileTrigger = screen.getByRole('button', { name: 'Local Contributor' });
+    await user.click(profileTrigger);
     const lightTheme = screen.getByRole('button', { name: 'Light' });
     const darkTheme = screen.getByRole('button', { name: 'Dark' });
     expect(lightTheme).toHaveAttribute('aria-pressed', 'true');
     expect(darkTheme).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('group', { name: 'Color theme' })).toBeInTheDocument();
+    expect(document.querySelector('.module-sidebar .theme-controls')).toBeNull();
 
-    screen.getByRole('link', { name: 'Home' }).focus();
     await user.tab();
     await user.tab();
     expect(darkTheme).toHaveFocus();
@@ -103,11 +140,12 @@ describe('Lessons Learned access check', () => {
     expect(darkTheme).toHaveAttribute('aria-pressed', 'true');
     expect(lightTheme).toHaveAttribute('aria-pressed', 'false');
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
-    expect(window.sessionStorage.getItem('pmo-hub.lessons-learned.theme')).toBe('dark');
+    expect(window.sessionStorage.getItem('pmo-hub.theme')).toBe('dark');
 
     view.unmount();
     renderScreen('local-contributor');
     await screen.findByRole('navigation', { name: 'Lessons Learned' });
+    await user.click(screen.getByRole('button', { name: 'Local Contributor' }));
     expect(screen.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -126,6 +164,8 @@ describe('Lessons Learned access check', () => {
     renderScreen('local-no-access');
 
     expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'local-no-access' })).toBeInTheDocument();
     expect(screen.getByText(/Contact the PMO/)).toBeInTheDocument();
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
     expect(screen.queryByText('Welcome, Local Contributor')).not.toBeInTheDocument();

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from '../src/App';
@@ -35,6 +35,29 @@ afterEach(() => {
 });
 
 describe('Hub entry', () => {
+  it('uses the Hub header for profile selection and offers profile switching in the catalog menu', async () => {
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/status')) return { data: { status: 'available' } };
+      if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
+      if (path.endsWith('/dev-1')) return { data: { id: 'dev-1', displayName: 'Avery Chen' } };
+      throw new Error(`Unexpected request: ${path}`);
+    });
+
+    renderApp();
+
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'PMO Hub' })).toHaveAttribute('href', '/');
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    const profileMenuButton = await screen.findByRole('button', { name: 'Avery Chen' });
+    await userEvent.click(profileMenuButton);
+    await userEvent.click(screen.getByRole('button', { name: 'Change profile' }));
+
+    expect(await screen.findByRole('combobox', { name: 'Local profile' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Module catalog' })).not.toBeInTheDocument();
+  });
+
   it('validates a selected local profile before showing the module catalog', async () => {
     mockedGet.mockImplementation(async (path: string) => {
       if (path.endsWith('/status')) return { data: { status: 'available' } };
@@ -60,12 +83,16 @@ describe('Hub entry', () => {
     expect(screen.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
     expect(screen.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeInTheDocument();
     expect(screen.getByText('Request and coordinate technology resources across projects.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
+    const lessonsLearnedCard = screen.getByRole('link', { name: 'Open Lessons Learned' });
+    expect(lessonsLearnedCard).toContainElement(screen.getByRole('heading', { name: 'Lessons Learned' }));
+    expect(lessonsLearnedCard).toContainElement(screen.getByText('Capture, review, and reuse lessons from project experience.'));
+    expect(lessonsLearnedCard).toContainElement(screen.getByText('Open Lessons Learned'));
+    expect(screen.getByText('Unavailable')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open Tech Resource Allocation' })).not.toBeInTheDocument();
     expect(mockedGet).toHaveBeenCalledWith('/api/hub/v1/local-users/dev-1', { timeout: HUB_API_TIMEOUT_MS });
   });
 
-  it('uses the catalog configuration to enable Lessons Learned and keep Tech Resource Allocation coming soon', async () => {
+  it('uses the catalog configuration to enable Lessons Learned and show Tech Resource Allocation as unavailable', async () => {
     mockedGet.mockImplementation(async (path: string) => {
       if (path.endsWith('/status')) return { data: { status: 'available' } };
       if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
@@ -83,7 +110,8 @@ describe('Hub entry', () => {
     expect(lessonsLearned?.enabled).toBe(true);
     expect(resourceAllocation?.enabled).toBe(false);
     expect(screen.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
-    expect(screen.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
+    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tech Resource Allocation' }).parentElement?.querySelector('a, button')).toBeNull();
   });
 
   it('keeps entry blocked and offers retry when local profiles cannot be loaded', async () => {
@@ -208,7 +236,8 @@ describe('Hub entry', () => {
     renderApp();
     await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-1');
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Change profile' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Avery Chen' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Change profile' }));
     expect(window.localStorage.getItem('pmo-hub.local-user-id')).toBe('dev-1');
     await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-2');
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -217,7 +246,7 @@ describe('Hub entry', () => {
     expect(screen.getByRole('heading', { name: 'Lessons Learned' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
     expect(screen.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
+    expect(screen.getByText('Unavailable')).toBeInTheDocument();
     expect(window.localStorage.getItem('pmo-hub.local-user-id')).toBe('dev-2');
   });
 
@@ -261,5 +290,37 @@ describe('Hub entry', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByText('The selected profile could not be validated. Check the Hub connection and try again.')).toBeInTheDocument();
     expect(requestedProfiles).toEqual(['dev-1', 'dev-2']);
+  });
+
+  it('revalidates the saved profile when the Hub catalog is restored from browser history', async () => {
+    window.localStorage.setItem('pmo-hub.local-user-id', 'dev-1');
+    let resolveContributor!: (response: { data: { id: string; displayName: string } }) => void;
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/status')) return { data: { status: 'available' } };
+      if (path.endsWith('/local-users')) return { data: [
+        { id: 'dev-1', displayName: 'Avery Chen' }, { id: 'dev-2', displayName: 'Jordan Lee' },
+      ] };
+      if (path.endsWith('/dev-1')) return { data: { id: 'dev-1', displayName: 'Avery Chen' } };
+      if (path.endsWith('/dev-2')) {
+        return new Promise((resolve) => { resolveContributor = resolve; });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+
+    renderApp();
+    expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+
+    await act(async () => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'dev-2');
+      window.dispatchEvent(new Event('pageshow'));
+    });
+
+    expect(screen.queryByRole('heading', { name: 'Welcome, Avery Chen' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Validating profile…' })).toBeDisabled();
+    await waitFor(() => expect(resolveContributor).toBeDefined());
+    await act(async () => resolveContributor({ data: { id: 'dev-2', displayName: 'Jordan Lee' } }));
+
+    expect(await screen.findByRole('heading', { name: 'Welcome, Jordan Lee' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Module catalog' })).toBeInTheDocument();
   });
 });

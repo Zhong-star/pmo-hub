@@ -16,8 +16,13 @@ function contrastRatio(firstColor: string, secondColor: string): number {
 }
 
 test('selecting a configured local profile opens the module catalog', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
 
+  await expect(page.getByRole('banner')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'PMO Hub' })).toHaveAttribute('href', '/');
+  const interFontLoaded = await page.evaluate(async () => (await document.fonts.load('400 16px Inter', 'PMO Hub')).length > 0);
+  expect(interFontLoaded).toBe(true);
   await expect(page.getByText('Hub available')).toBeVisible();
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -29,17 +34,36 @@ test('selecting a configured local profile opens the module catalog', async ({ p
   await expect(page.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.getByText('Request and coordinate technology resources across projects.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
+  await expect(page.getByText('Unavailable')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open Tech Resource Allocation' })).toHaveCount(0);
   await expect(page.getByText('Hub available')).toBeVisible();
 
-  await page.keyboard.press('Tab');
+  const moduleGrid = page.locator('.module-grid');
+  const wideColumnCount = await moduleGrid.evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').length);
+  expect(wideColumnCount).toBeGreaterThan(0);
+  expect(wideColumnCount).toBeLessThanOrEqual(3);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const narrowColumnCount = await moduleGrid.evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').length);
+  expect(narrowColumnCount).toBe(1);
+  await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 390);
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  await page.getByRole('button', { name: 'Local Developer' }).click();
   const changeProfileButton = page.getByRole('button', { name: 'Change profile' });
+  const lightThemeButton = page.getByRole('button', { name: 'Light' });
+  const darkThemeButton = page.getByRole('button', { name: 'Dark' });
+  await expect(changeProfileButton).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(lightThemeButton).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(darkThemeButton).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(changeProfileButton).toBeFocused();
   await expect(changeProfileButton).toHaveCSS('outline-style', 'solid');
   const focusColors = await changeProfileButton.evaluate((button) => {
-    const card = button.closest('.welcome-card');
-    if (!card) throw new Error('The profile control is not inside the welcome card.');
+    const card = button.closest('.hub-header__profile-menu');
+    if (!card) throw new Error('The profile control is not inside the profile menu.');
     return {
       outline: getComputedStyle(button).outlineColor,
       background: getComputedStyle(card).backgroundColor,
@@ -48,6 +72,17 @@ test('selecting a configured local profile opens the module catalog', async ({ p
   expect(contrastRatio(focusColors.outline, focusColors.background)).toBeGreaterThanOrEqual(3);
   await page.keyboard.press('Enter');
   await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
+});
+
+test('the linked module card opens when clicked near its outer edge', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+
+  await page.locator('.module-card-linked').click({ position: { x: 4, y: 32 } });
+
+  await expect(page).toHaveURL(/\/lessons-learned\/?$/);
 });
 
 
@@ -136,6 +171,7 @@ test('switches profiles only after selecting and validating a different profile'
   await page.goto('/');
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
   await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Local Developer' }).click();
   await page.getByRole('button', { name: 'Change profile' }).click();
   await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
@@ -147,7 +183,7 @@ test('switches profiles only after selecting and validating a different profile'
   await expect(page.getByRole('heading', { name: 'Lessons Learned' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
+  await expect(page.getByText('Unavailable')).toBeVisible();
   await expect(page.evaluate(() => localStorage.getItem('pmo-hub.local-user-id'))).resolves.toBe('local-reviewer');
 });
 
