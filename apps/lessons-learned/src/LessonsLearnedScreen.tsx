@@ -104,7 +104,7 @@ export function LessonsLearnedScreen() {
           </>
         )}
 
-        {selectedProfileId && homeQuery.isError && errorCode === 'ACCESS_DENIED' && (
+        {selectedProfileId && !homeQuery.isFetching && homeQuery.isError && errorCode === 'ACCESS_DENIED' && (
           <div className="api-status unavailable" role="alert" aria-live="assertive">
             <span className="status-indicator is-unavailable" aria-hidden="true" />
             <div>
@@ -115,7 +115,7 @@ export function LessonsLearnedScreen() {
           </div>
         )}
 
-        {selectedProfileId && homeQuery.isError && (
+        {selectedProfileId && !homeQuery.isFetching && homeQuery.isError && (
           errorCode === 'ACCESS_CONFIGURATION_ERROR' || errorCode === 'LOCAL_AUTH_DISABLED'
         ) && (
           <div className="api-status unavailable" role="alert" aria-live="assertive">
@@ -128,7 +128,7 @@ export function LessonsLearnedScreen() {
           </div>
         )}
 
-        {selectedProfileId && homeQuery.isError && errorCode !== 'ACCESS_DENIED' &&
+        {selectedProfileId && !homeQuery.isFetching && homeQuery.isError && errorCode !== 'ACCESS_DENIED' &&
           errorCode !== 'ACCESS_CONFIGURATION_ERROR' && errorCode !== 'LOCAL_AUTH_DISABLED' && (
             <div className="api-status unavailable" role="alert" aria-live="assertive">
               <span className="status-indicator is-unavailable" aria-hidden="true" />
@@ -142,7 +142,7 @@ export function LessonsLearnedScreen() {
             </div>
           )}
 
-        {selectedProfileId && homeQuery.isSuccess && !homeQuery.isError && (
+        {selectedProfileId && !homeQuery.isFetching && homeQuery.isSuccess && !homeQuery.isError && (
           <>
             <h1 id="page-title">Home</h1>
             <p className="intro">Welcome, {homeQuery.data.profile.displayName}</p>

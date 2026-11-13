@@ -1,7 +1,15 @@
 import { defineConfig, devices } from '@playwright/test';
+import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const localProfilesFile = fileURLToPath(new URL('./e2e/fixtures/lessons-learned-local-users.json', import.meta.url));
+const localProfilesTemplate = fileURLToPath(new URL('./e2e/fixtures/lessons-learned-local-users.json', import.meta.url));
+const fixtureDirectory = mkdtempSync(join(tmpdir(), 'pmo-hub-lessons-learned-e2e-'));
+const localProfilesFile = join(fixtureDirectory, 'local-users.json');
+copyFileSync(localProfilesTemplate, localProfilesFile);
+process.env.LESSONS_LEARNED_E2E_LOCAL_USERS_FILE = localProfilesFile;
+process.on('exit', () => rmSync(fixtureDirectory, { recursive: true, force: true }));
 
 export default defineConfig({
   testDir: './e2e',

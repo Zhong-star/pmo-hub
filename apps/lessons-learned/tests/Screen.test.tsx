@@ -19,11 +19,11 @@ const pmo = {
   navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
 };
 
-function renderScreen(localUserId?: string) {
+function renderScreen(localUserId?: string, gcTime = 0) {
   window.localStorage.clear();
   if (localUserId) window.localStorage.setItem('pmo-hub.local-user-id', localUserId);
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    defaultOptions: { queries: { retry: false, gcTime } },
   });
 
   return render(
@@ -212,5 +212,40 @@ describe('Lessons Learned access check', () => {
     expect(screen.queryByText('Welcome, Local PMO')).not.toBeInTheDocument();
     resolveContributorAgain(contributor);
     expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
+  });
+
+  it('shows one Access check title while a cached profile is being revalidated', async () => {
+    let resolveContributorAgain!: (value: typeof contributor) => void;
+    vi.mocked(getHome).mockImplementation((localUserId) => {
+      if (localUserId === 'local-pmo') return Promise.resolve(pmo);
+      if (vi.mocked(getHome).mock.calls.filter(([id]) => id === 'local-contributor').length === 1) {
+        return Promise.resolve(contributor);
+      }
+      return new Promise((resolve) => { resolveContributorAgain = resolve; });
+    });
+
+    renderScreen('local-contributor', 60_000);
+    expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
+
+    act(() => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'pmo-hub.local-user-id', newValue: 'local-pmo' }));
+    });
+    expect(await screen.findByText('Welcome, Local PMO')).toBeInTheDocument();
+
+    act(() => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'pmo-hub.local-user-id', newValue: 'local-contributor' }));
+    });
+
+    expect(await screen.findByRole('status')).toHaveTextContent('local-contributor');
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'Access check' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Home' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Welcome, Local PMO')).not.toBeInTheDocument();
+
+    resolveContributorAgain(contributor);
+    expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 });

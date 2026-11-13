@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 
-const localProfilesFile = fileURLToPath(new URL('./fixtures/lessons-learned-local-users.json', import.meta.url));
+const localProfilesFile = process.env.LESSONS_LEARNED_E2E_LOCAL_USERS_FILE;
+if (!localProfilesFile) throw new Error('The Lessons Learned E2E profile fixture was not initialized.');
 
 async function getThemeContrastRatios(page: import('@playwright/test').Page) {
   return page.evaluate(() => {
@@ -78,6 +78,19 @@ test('catalog link opens in the same tab and reload, back, and module return pre
   await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
 
   await expect(page.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
+});
+
+test('PMO can enter the module catalog and open Lessons Learned with the PMO role', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-pmo');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome, Local PMO' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.getByText('Welcome, Local PMO')).toBeVisible();
+  await expect(page.getByText('PMO', { exact: true })).toBeVisible();
 });
 
 test('sidebar theme is keyboard operable, readable, and scoped to the current tab session', async ({ page }) => {
@@ -164,6 +177,16 @@ test('a profile without module access sees Access denied', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
   await expect(page.getByRole('alert')).toContainText('Contact the PMO');
   await expect(page.getByRole('navigation', { name: 'Lessons Learned' })).toHaveCount(0);
+});
+
+test('a direct module URL denies a saved Hub profile without module access', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('pmo-hub.local-user-id', 'local-no-access'));
+  await page.goto('/lessons-learned');
+
+  await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('Contact the PMO');
+  await expect(page.getByRole('navigation', { name: 'Lessons Learned' })).toHaveCount(0);
+  await expect(page.getByText(/No local profile is selected/)).toHaveCount(0);
 });
 
 test('duplicate module profiles show a configuration error', async ({ page }) => {
