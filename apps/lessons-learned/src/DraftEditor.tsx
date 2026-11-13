@@ -57,7 +57,7 @@ function toFormValues(draft: LessonDraft | null): DraftFields {
 }
 
 function projectKey(project: LessonProject): string {
-  return `${project.id}|${project.name}`;
+  return JSON.stringify([project.id, project.name]);
 }
 
 function getApiErrorCode(error: unknown): string | null {
@@ -87,18 +87,16 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
 
   const isDirty = JSON.stringify(fields) !== JSON.stringify(savedFields);
   const selectedProjectValue = fields.projectId !== null && fields.projectName !== null
-    ? `${fields.projectId}|${fields.projectName}`
+    ? projectKey({ id: fields.projectId, name: fields.projectName })
     : '';
-  const savedProject = fields.projectId && fields.projectName
-    ? { id: fields.projectId, name: fields.projectName }
+  const savedProject = savedFields.projectId && savedFields.projectName
+    ? { id: savedFields.projectId, name: savedFields.projectName }
     : null;
   const projectChoices = [
-    ...(savedProject ? [{ ...savedProject, isSavedSnapshot: !projects.some(
-      (project) => project.id === savedProject.id && project.name === savedProject.name,
-    ) }] : []),
-    ...projects
-      .filter((project) => !savedProject || projectKey(project) !== projectKey(savedProject))
-      .map((project) => ({ ...project, isSavedSnapshot: false })),
+    ...projects.map((project) => ({ ...project, isSavedSnapshot: false })),
+    ...(savedProject && !projects.some((project) => projectKey(project) === projectKey(savedProject))
+      ? [{ ...savedProject, isSavedSnapshot: true }]
+      : []),
   ];
 
   useEffect(() => {
@@ -119,6 +117,7 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
   }, []);
 
   function requestClose() {
+    if (isSaving || isReloading) return;
     if (isDirty && !window.confirm('Discard your unsaved changes?')) return;
     onClose();
   }
@@ -159,10 +158,12 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
     const title = fields.title.trim();
     if (!title) {
       setTitleError('Enter a title to save this draft.');
+      titleRef.current?.focus();
       return;
     }
     if (title.length > 150) {
       setTitleError('Title must be 150 characters or fewer.');
+      titleRef.current?.focus();
       return;
     }
 
@@ -193,7 +194,8 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
   }
 
   async function reloadLatestVersion() {
-    if (draftId === null) return;
+    if (draftId === null || isReloading) return;
+    if (isDirty && !window.confirm('Reloading the latest version will discard your unsaved changes. Continue?')) return;
     setIsReloading(true);
     try {
       const latest = await onReload(draftId);
@@ -244,7 +246,7 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
               {draftId !== null && <p className="draft-editor-eyebrow">Draft #{draftId} · Open</p>}
               <h2 id="draft-editor-title">{draftId === null ? 'Create lesson' : 'Edit lesson'}</h2>
             </div>
-            <button className="draft-editor-close" type="button" aria-label="Close editor" disabled={isSaving} onClick={requestClose}>
+            <button className="draft-editor-close" type="button" aria-label="Close editor" disabled={isSaving || isReloading} onClick={requestClose}>
               ×
             </button>
           </div>
@@ -257,14 +259,14 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
               type="text"
               required
               maxLength={150}
-              disabled={isSaving}
+              disabled={isSaving || isReloading}
               value={fields.title}
               aria-invalid={titleError ? 'true' : undefined}
               aria-describedby={titleError ? 'lesson-title-error' : 'lesson-title-count'}
               onChange={(event) => updateField('title', event.target.value)}
             />
             {titleError ? (
-              <p id="lesson-title-error" className="draft-editor-error">{titleError}</p>
+              <p id="lesson-title-error" className="draft-editor-error" role="alert" aria-live="assertive">{titleError}</p>
             ) : (
               <p id="lesson-title-count" className="draft-editor-counter">{fields.title.length}/150 characters</p>
             )}
@@ -274,7 +276,7 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
             <label htmlFor="lesson-project">Project</label>
             <select
               id="lesson-project"
-              disabled={isSaving}
+              disabled={isSaving || isReloading}
               value={selectedProjectValue}
               onChange={(event) => setProject(event.target.value)}
             >
@@ -292,9 +294,9 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
               <label htmlFor="lesson-project-category">Project category</label>
               <select
                 id="lesson-project-category"
-                disabled={isSaving}
+                disabled={isSaving || isReloading}
                 value={fields.projectCategory ?? ''}
-                onChange={(event) => updateField('projectCategory', event.target.value as DraftFields['projectCategory'])}
+                onChange={(event) => updateField('projectCategory', (event.target.value || null) as DraftFields['projectCategory'])}
               >
                 <option value="">Select category</option>
                 {categories.map((category) => <option key={category}>{category}</option>)}
@@ -304,9 +306,9 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
               <label htmlFor="lesson-project-phase">Project phase</label>
               <select
                 id="lesson-project-phase"
-                disabled={isSaving}
+                disabled={isSaving || isReloading}
                 value={fields.projectPhase ?? ''}
-                onChange={(event) => updateField('projectPhase', event.target.value as DraftFields['projectPhase'])}
+                onChange={(event) => updateField('projectPhase', (event.target.value || null) as DraftFields['projectPhase'])}
               >
                 <option value="">Select phase</option>
                 {phases.map((phase) => <option key={phase}>{phase}</option>)}
@@ -321,7 +323,7 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
                 id={`lesson-${field.name}`}
                 rows={4}
                 maxLength={4000}
-                disabled={isSaving}
+                disabled={isSaving || isReloading}
                 value={fields[field.name] ?? ''}
                 aria-describedby={`lesson-${field.name}-count`}
                 onChange={(event) => updateField(field.name, event.target.value)}
@@ -336,9 +338,9 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
             <label htmlFor="lesson-type">Lesson type</label>
             <select
               id="lesson-type"
-              disabled={isSaving}
+              disabled={isSaving || isReloading}
               value={fields.lessonType ?? ''}
-              onChange={(event) => updateField('lessonType', event.target.value as DraftFields['lessonType'])}
+              onChange={(event) => updateField('lessonType', (event.target.value || null) as DraftFields['lessonType'])}
             >
               <option value="">Select lesson type</option>
               {types.map((lessonType) => <option key={lessonType}>{lessonType}</option>)}
@@ -352,7 +354,7 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
                 id={`lesson-${field.name}`}
                 rows={4}
                 maxLength={4000}
-                disabled={isSaving}
+                disabled={isSaving || isReloading}
                 value={fields[field.name] ?? ''}
                 aria-describedby={`lesson-${field.name}-count`}
                 onChange={(event) => updateField(field.name, event.target.value)}
@@ -374,7 +376,7 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
             <button className="draft-editor-primary" type="submit" disabled={isSaving || isReloading}>
               {isSaving ? 'Saving…' : 'Save Draft'}
             </button>
-            <button className="draft-editor-secondary" type="button" disabled={isSaving} onClick={requestClose}>Close</button>
+            <button className="draft-editor-secondary" type="button" disabled={isSaving || isReloading} onClick={requestClose}>Close</button>
           </div>
         </form>
       </dialog>,

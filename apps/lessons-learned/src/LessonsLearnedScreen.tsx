@@ -65,7 +65,8 @@ export function LessonsLearnedScreen() {
     refetchOnWindowFocus: true,
   });
   const errorCode = homeQuery.isError ? getApiErrorCode(homeQuery.error) : null;
-  const isHomePage = selectedProfileId !== null && !homeQuery.isFetching && homeQuery.isSuccess && !homeQuery.isError;
+  const isHomePage = selectedProfileId !== null && homeQuery.isFetchedAfterMount && homeQuery.data !== undefined &&
+    errorCode !== 'ACCESS_DENIED' && errorCode !== 'ACCESS_CONFIGURATION_ERROR' && errorCode !== 'LOCAL_AUTH_DISABLED';
   const submissionsQuery = useQuery({
     queryKey: ['lessons-learned-my-submissions', selectedProfileId],
     queryFn: () => getMyOpenDrafts(selectedProfileId ?? ''),
@@ -370,19 +371,13 @@ export function LessonsLearnedScreen() {
                       <button className="draft-cancel" type="button" onClick={() => void projectsQuery.refetch()}>
                         Retry
                       </button>
-                      <button className="draft-cancel" type="button" onClick={() => {
-                        setSelectedDraft(null);
-                        setIsCreateFormOpen(false);
-                      }}>
-                        Close
-                      </button>
                     </div>
                   )}
-                  {(isCreateFormOpen || selectedDraft !== null) && projectsQuery.isSuccess && (
+                  {(isCreateFormOpen || selectedDraft !== null) && (
                     <DraftEditor
                       key={selectedDraft?.id ?? 'new'}
                       draft={selectedDraft}
-                      projects={projectsQuery.data}
+                      projects={projectsQuery.data ?? []}
                       onSave={saveDraftFields}
                       onReload={reloadDraftFields}
                       onClose={() => {

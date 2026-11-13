@@ -171,6 +171,67 @@ describe('Lessons Learned access check', () => {
     });
   });
 
+  it('keeps title-only Create available while project options are pending or unavailable', async () => {
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
+    vi.mocked(createLessonDraft).mockResolvedValue(lessonDraft({ id: 23, title: 'Title-only while offline' }));
+    let rejectProjects!: (error: Error) => void;
+    vi.mocked(getLessonProjects).mockImplementationOnce(() => new Promise((_resolve, reject) => {
+      rejectProjects = reject;
+    }));
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(await screen.findByRole('button', { name: 'Create lesson' }));
+
+    expect(screen.getByRole('dialog', { name: 'Create lesson' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Loading project options');
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Title-only while offline');
+    await act(async () => { rejectProjects(new Error('Catalog unavailable')); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Project options could not be loaded');
+    expect(screen.getByRole('dialog', { name: 'Create lesson' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue('');
+
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+    expect(await screen.findByText('Draft #23 · Open')).toBeInTheDocument();
+    expect(createLessonDraft).toHaveBeenCalledWith('local-contributor', expect.objectContaining({
+      title: 'Title-only while offline',
+      projectId: null,
+      projectName: null,
+    }));
+  });
+
+  it('keeps an edit form available when project options cannot be loaded', async () => {
+    const savedProjectDraft = lessonDraft({
+      projectId: 'LEGACY-PROJECT-001',
+      projectName: 'Removed fictional project',
+    });
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([savedProjectDraft]);
+    vi.mocked(getLessonProjects).mockRejectedValueOnce(new Error('Catalog unavailable'));
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(await screen.findByRole('button', { name: 'Reopen Improve release handover' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Project options could not be loaded');
+    expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue(JSON.stringify([
+      'LEGACY-PROJECT-001', 'Removed fictional project',
+    ]));
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    expect(await screen.findByText('Draft saved.')).toBeInTheDocument();
+    expect(updateLessonDraft).toHaveBeenCalledWith('local-contributor', 7, expect.objectContaining({
+      projectId: 'LEGACY-PROJECT-001',
+      projectName: 'Removed fictional project',
+    }));
+  });
+
   it('creates a complete draft in the accessible editor using the selected project snapshot', async () => {
     vi.mocked(getHome).mockResolvedValue(contributor);
     vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
@@ -189,7 +250,7 @@ describe('Lessons Learned access check', () => {
     await screen.findByRole('dialog', { name: 'Create lesson' });
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Complete project lesson');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }),
-      'LOCAL-PROJECT-001|Fictional Atlas Modernization');
+      JSON.stringify(['LOCAL-PROJECT-001', 'Fictional Atlas Modernization']));
     await user.selectOptions(screen.getByRole('combobox', { name: 'Project category' }), 'Technology');
     await user.type(screen.getByRole('textbox', { name: 'Situation observed' }),
       'The current handover was missing the runbook.');
@@ -524,6 +585,10 @@ describe('Lessons Learned access check', () => {
 
     renderScreen('local-contributor');
     expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(await screen.findByRole('button', { name: 'Create lesson' }));
+    expect(screen.getByRole('dialog', { name: 'Create lesson' })).toBeInTheDocument();
 
     act(() => {
       Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
@@ -532,7 +597,43 @@ describe('Lessons Learned access check', () => {
 
     expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
     expect(screen.queryByText('Welcome, Local Contributor')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Create lesson' })).not.toBeInTheDocument();
     expect(getHome).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a draft editor mounted while a focus recheck is pending or temporarily unavailable', async () => {
+    let rejectRecheck!: (error: Error) => void;
+    vi.mocked(getHome)
+      .mockResolvedValueOnce(contributor)
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRecheck = reject; }));
+    vi.mocked(createLessonDraft).mockResolvedValue(lessonDraft({ id: 19, title: 'Saved draft' }));
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(await screen.findByRole('button', { name: 'Create lesson' }));
+    const title = screen.getByRole('textbox', { name: 'Title' });
+    await user.type(title, 'Saved draft');
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+    expect(await screen.findByText('Draft #19 · Open')).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Situation observed' }), 'Unsaved editor text');
+
+    act(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      window.dispatchEvent(new Event('visibilitychange'));
+    });
+    await vi.waitFor(() => expect(getHome).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Situation observed' })).toHaveValue('Unsaved editor text');
+    await act(async () => { rejectRecheck(new Error('API unavailable')); });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('temporarily unavailable');
+    expect(screen.getByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
+    expect(screen.getByText('Draft #19 · Open')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Situation observed' })).toHaveValue('Unsaved editor text');
   });
 
   it('does not keep the previous profile Home visible while a changed profile is checked', async () => {
