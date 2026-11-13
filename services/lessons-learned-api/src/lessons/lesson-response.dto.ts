@@ -13,8 +13,8 @@ export class LessonDraftResponse {
   @ApiProperty({ type: String, example: 'local-contributor' })
   updatedBy!: string;
 
-  @ApiProperty({ type: String, enum: ['Open'], example: 'Open' })
-  status!: 'Open';
+  @ApiProperty({ type: String, enum: ['Open', 'PMOEvaluation'], example: 'Open' })
+  status!: 'Open' | 'PMOEvaluation';
 
   @ApiProperty({ type: Number, minimum: 1, example: 1 })
   version!: number;

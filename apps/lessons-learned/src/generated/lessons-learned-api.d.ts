@@ -90,6 +90,23 @@ export interface paths {
         patch: operations["LessonsController_updateOwnOpenDraft"];
         trace?: never;
     };
+    "/api/lessons-learned/v1/lessons/{id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit a complete author-owned Open lesson for PMO evaluation */
+        post: operations["LessonsController_submitOwnOpenDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -164,7 +181,7 @@ export interface components {
              * @example Open
              * @enum {string}
              */
-            status: "Open";
+            status: "Open" | "PMOEvaluation";
             /** @example 1 */
             version: number;
             projectId: string | null;
@@ -215,6 +232,43 @@ export interface components {
             code: "STALE_LESSON_VERSION" | "LESSON_NOT_OPEN";
             /** @example This draft changed after you opened it. Reload the current version before saving again. */
             message: string;
+        };
+        SubmitLessonRequest: {
+            /** @example 2 */
+            version: number;
+            /** @example Improve release handover */
+            title: string;
+            projectId?: string | null;
+            projectName?: string | null;
+            /**
+             * @example Technology
+             * @enum {string}
+             */
+            projectCategory: "Technology" | "Business" | "Infrastructure" | "Data";
+            /**
+             * @example Execution
+             * @enum {string}
+             */
+            projectPhase: "Initiation" | "Planning" | "Execution" | "Closure" | "Not Applicable";
+            situationObserved: string;
+            rootCause?: string | null;
+            /**
+             * @example Future Prevention
+             * @enum {string}
+             */
+            lessonType: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication";
+            impact: string;
+            recommendation: string;
+            applicability: string;
+        };
+        LessonSubmissionValidationResponse: {
+            /** @example INVALID_LESSON_SUBMISSION */
+            code: string;
+            /** @example Correct the indicated fields before submitting. */
+            message: string;
+            fieldErrors: {
+                [key: string]: string;
+            };
         };
     };
     responses: never;
@@ -477,6 +531,78 @@ export interface operations {
                 content?: never;
             };
             /** @description The draft changed after it was loaded or is no longer Open. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonConflictResponse"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LessonsController_submitOwnOpenDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric ID of the lesson draft. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitLessonRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDraftResponse"];
+                };
+            };
+            /** @description Submission fields are invalid; fieldErrors identifies the fields to correct. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonSubmissionValidationResponse"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson does not exist or is not owned by the selected profile. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson is no longer Open or the submitted version is stale. */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -291,6 +291,85 @@
           "Lessons"
         ]
       }
+    },
+    "/api/lessons-learned/v1/lessons/{id}/submit": {
+      "post": {
+        "operationId": "LessonsController_submitOwnOpenDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The numeric ID of the lesson draft.",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitLessonRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonDraftResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Submission fields are invalid; fieldErrors identifies the fields to correct.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonSubmissionValidationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected."
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access."
+          },
+          "404": {
+            "description": "The lesson does not exist or is not owned by the selected profile."
+          },
+          "409": {
+            "description": "The lesson is no longer Open or the submitted version is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonConflictResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable."
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Submit a complete author-owned Open lesson for PMO evaluation",
+        "tags": [
+          "Lessons"
+        ]
+      }
     }
   },
   "info": {
@@ -530,7 +609,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "Open"
+              "Open",
+              "PMOEvaluation"
             ],
             "example": "Open"
           },
@@ -755,6 +835,118 @@
         "required": [
           "code",
           "message"
+        ]
+      },
+      "SubmitLessonRequest": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "minimum": 1,
+            "example": 2
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 150,
+            "example": "Improve release handover"
+          },
+          "projectId": {
+            "type": "string",
+            "maxLength": 128,
+            "nullable": true
+          },
+          "projectName": {
+            "type": "string",
+            "maxLength": 200,
+            "nullable": true
+          },
+          "projectCategory": {
+            "type": "string",
+            "enum": [
+              "Technology",
+              "Business",
+              "Infrastructure",
+              "Data"
+            ],
+            "example": "Technology"
+          },
+          "projectPhase": {
+            "type": "string",
+            "enum": [
+              "Initiation",
+              "Planning",
+              "Execution",
+              "Closure",
+              "Not Applicable"
+            ],
+            "example": "Execution"
+          },
+          "situationObserved": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "rootCause": {
+            "type": "string",
+            "maxLength": 4000,
+            "nullable": true
+          },
+          "lessonType": {
+            "type": "string",
+            "enum": [
+              "Future Prevention",
+              "Success to Repeat",
+              "Risk Avoided",
+              "Communication"
+            ],
+            "example": "Future Prevention"
+          },
+          "impact": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "recommendation": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "applicability": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "version",
+          "title",
+          "projectCategory",
+          "projectPhase",
+          "situationObserved",
+          "lessonType",
+          "impact",
+          "recommendation",
+          "applicability"
+        ]
+      },
+      "LessonSubmissionValidationResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "INVALID_LESSON_SUBMISSION"
+          },
+          "message": {
+            "type": "string",
+            "example": "Correct the indicated fields before submitting."
+          },
+          "fieldErrors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "fieldErrors"
         ]
       }
     }

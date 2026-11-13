@@ -7,8 +7,10 @@ import {
   getHome,
   getLessonProjects,
   getMyOpenDrafts,
+  submitLesson as submitLessonRequest,
   updateLessonDraft,
   type LessonDraft,
+  type SubmitLessonBody,
   type UpdateLessonDraftBody,
 } from './api';
 import { DraftEditor } from './DraftEditor';
@@ -208,6 +210,16 @@ export function LessonsLearnedScreen() {
     const latest = drafts.find((draft) => draft.id === draftId);
     if (!latest) throw new Error('This lesson is no longer an Open draft.');
     return latest;
+  }
+
+  async function submitDraft(input: SubmitLessonBody, draftId: number): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before submitting a lesson.');
+    const submitted = await submitLessonRequest(profileId, draftId, input);
+    await queryClient.invalidateQueries({
+      queryKey: ['lessons-learned-my-submissions', profileId],
+    });
+    return submitted;
   }
 
   useEffect(() => {
@@ -457,6 +469,7 @@ export function LessonsLearnedScreen() {
                       homeRecheckError={showHomeRecheckError}
                       onRetryHomeCheck={() => void homeQuery.refetch()}
                       onSave={saveDraftFields}
+                      onSubmit={submitDraft}
                       onReload={reloadDraftFields}
                       onClose={() => {
                         setSelectedDraft(null);

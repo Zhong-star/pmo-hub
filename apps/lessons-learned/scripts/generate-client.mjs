@@ -10,6 +10,7 @@ const homePath = '/api/lessons-learned/v1/home';
 const lessonsPath = '/api/lessons-learned/v1/lessons';
 const projectsPath = `${lessonsPath}/projects`;
 const draftPath = `${lessonsPath}/{id}`;
+const submitPath = `${draftPath}/submit`;
 const contract = JSON.parse(await readFile(contractPath, 'utf8'));
 const operation = contract.paths?.[healthPath]?.get;
 const responseSchema = operation?.responses?.['200']?.content?.['application/json']?.schema;
@@ -25,6 +26,9 @@ const projectsResponseSchema = projectsOperation?.responses?.['200']?.content?.[
 const updateLessonOperation = contract.paths?.[draftPath]?.patch;
 const updateLessonRequestSchema = updateLessonOperation?.requestBody?.content?.['application/json']?.schema;
 const updateLessonResponseSchema = updateLessonOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const submitLessonOperation = contract.paths?.[submitPath]?.post;
+const submitLessonRequestSchema = submitLessonOperation?.requestBody?.content?.['application/json']?.schema;
+const submitLessonResponseSchema = submitLessonOperation?.responses?.['200']?.content?.['application/json']?.schema;
 
 if (!operation || responseSchema?.$ref !== '#/components/schemas/HealthResponse') {
   throw new Error(`Expected GET ${healthPath} with a HealthResponse schema in ${contractPath}`);
@@ -54,6 +58,11 @@ if (!updateLessonOperation || updateLessonRequestSchema?.$ref !== '#/components/
   throw new Error(`Expected PATCH ${draftPath} with UpdateLessonDraftRequest and LessonDraftResponse in ${contractPath}`);
 }
 
+if (!submitLessonOperation || submitLessonRequestSchema?.$ref !== '#/components/schemas/SubmitLessonRequest' ||
+  submitLessonResponseSchema?.$ref !== '#/components/schemas/LessonDraftResponse') {
+  throw new Error(`Expected POST ${submitPath} with SubmitLessonRequest and LessonDraftResponse in ${contractPath}`);
+}
+
 const generatedClient = `/* This file is generated from services/lessons-learned-api/openapi/lessons-learned-v1.json. Do not edit directly. */
 import axios from 'axios';
 import type { paths } from './lessons-learned-api';
@@ -63,12 +72,14 @@ export const LESSONS_LEARNED_HOME_PATH = '${homePath}' satisfies keyof paths;
 export const LESSONS_LEARNED_LESSONS_PATH = '${lessonsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_PROJECTS_PATH = '${projectsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_DRAFT_PATH = '${draftPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_SUBMIT_PATH = '${submitPath}' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
 export type CreateLessonDraftBody = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['post']['requestBody']['content']['application/json'];
 export type LessonProject = paths[typeof LESSONS_LEARNED_PROJECTS_PATH]['get']['responses'][200]['content']['application/json'][number];
 export type UpdateLessonDraftBody = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['patch']['requestBody']['content']['application/json'];
+export type SubmitLessonBody = paths[typeof LESSONS_LEARNED_SUBMIT_PATH]['post']['requestBody']['content']['application/json'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -132,6 +143,19 @@ export async function updateLessonDraft(
   input: UpdateLessonDraftBody,
 ): Promise<LessonDraft> {
   const { data } = await api.patch<LessonDraft>(LESSONS_LEARNED_DRAFT_PATH.replace('{id}', String(lessonId)), input, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function submitLesson(
+  localUserId: string,
+  lessonId: number,
+  input: SubmitLessonBody,
+): Promise<LessonDraft> {
+  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_SUBMIT_PATH.replace('{id}', String(lessonId)), input, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });

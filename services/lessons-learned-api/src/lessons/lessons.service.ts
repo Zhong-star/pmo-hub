@@ -15,6 +15,7 @@ import { LessonHistory } from './lesson-history.entity';
 import { Lesson } from './lesson.entity';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
 import { ProjectCatalogService, type LessonProject } from './project-catalog.service';
+import type { SubmitLessonRequest } from './submit-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import type { LessonDraftResponse } from './lesson-response.dto';
 
@@ -139,6 +140,66 @@ export class LessonsService {
     return this.toResponseFromDatabaseRow(updated);
   }
 
+  async submitOwnOpenDraft(
+    localUserId: string | undefined,
+    lessonId: number,
+    input: SubmitLessonRequest,
+  ): Promise<LessonDraftResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction(async (manager) => {
+      const lessons = manager.getRepository(Lesson);
+      const current = await lessons.findOne({
+        where: { id: lessonId, authorId: profile.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!current) throw new NotFoundException('Lesson not found.');
+      if (current.status !== 'Open') {
+        throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be submitted.' });
+      }
+      if (current.version !== input.version) throw this.staleVersionConflict();
+      if (input.lessonType === 'Future Prevention' && !input.rootCause?.trim()) {
+        throw new BadRequestException({
+          code: 'INVALID_LESSON_SUBMISSION',
+          message: 'Root cause is required for Future Prevention.',
+          fieldErrors: { rootCause: 'Root cause is required for Future Prevention.' },
+        });
+      }
+
+      const projectId = input.projectId === undefined ? current.projectId : input.projectId;
+      const projectName = input.projectName === undefined ? current.projectName : input.projectName;
+      this.validateProjectSelection(current, projectId ?? null, projectName ?? null);
+
+      current.title = input.title;
+      current.projectId = projectId ?? null;
+      current.projectName = projectName ?? null;
+      current.projectCategory = input.projectCategory;
+      current.projectPhase = input.projectPhase;
+      current.situationObserved = input.situationObserved;
+      current.rootCause = input.rootCause ?? null;
+      current.lessonType = input.lessonType;
+      current.impact = input.impact;
+      current.recommendation = input.recommendation;
+      current.applicability = input.applicability;
+      current.updatedBy = profile.id;
+      current.status = 'PMOEvaluation';
+      current.version += 1;
+
+      const submitted = await lessons.save(current);
+      const history = manager.getRepository(LessonHistory);
+      await history.save(history.create({
+        lessonId: submitted.id,
+        actorId: profile.id,
+        eventType: 'Submitted',
+        previousStatus: 'Open',
+        newStatus: 'PMOEvaluation',
+      }));
+
+      return this.toResponse(submitted);
+    });
+  }
+
   private validateProjectSelection(
     current: Lesson | null,
     projectId: string | null,
@@ -213,7 +274,7 @@ export class LessonsService {
       title: row.title as string,
       authorId: row.author_id as string,
       updatedBy: row.updated_by as string,
-      status: row.status as 'Open',
+      status: row.status as Lesson['status'],
       version: row.version as number,
       projectId: (row.project_id as string | null) ?? null,
       projectName: (row.project_name as string | null) ?? null,

@@ -267,6 +267,261 @@ describe('Lessons Learned draft registration', () => {
       });
   });
 
+  it('submits a complete Open draft for PMO evaluation with exactly one history event', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Submit a complete lesson' })
+      .expect(201);
+
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the current runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+
+    expect(submitted.body).toMatchObject({
+      id: created.body.id,
+      title: 'Submit a complete lesson',
+      authorId: 'local-contributor',
+      updatedBy: 'local-contributor',
+      status: 'PMOEvaluation',
+      version: created.body.version + 1,
+      projectId: null,
+      projectCategory: 'Technology',
+    });
+    expect(await dataSource?.query(
+      'SELECT actor_id, event_type, previous_status, new_status FROM lesson_history WHERE lesson_id = $1 ORDER BY id',
+      [created.body.id],
+    )).toEqual([
+      { actor_id: 'local-contributor', event_type: 'Created', previous_status: null, new_status: 'Open' },
+      { actor_id: 'local-contributor', event_type: 'Submitted', previous_status: 'Open', new_status: 'PMOEvaluation' },
+    ]);
+  });
+
+  it('validates submission fields before changing an Open draft', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Keep this draft Open when submission is invalid' })
+      .expect(201);
+    const complete = {
+      version: created.body.version,
+      title: created.body.title,
+      projectId: null,
+      projectName: null,
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      situationObserved: 'The release handover omitted the current runbook.',
+      rootCause: 'No checklist owner had been assigned.',
+      lessonType: 'Future Prevention',
+      impact: 'The release team repeated verification work.',
+      recommendation: 'Assign an owner to review the checklist.',
+      applicability: 'Use for releases with shared operational ownership.',
+    };
+    const invalidInputs = [
+      { ...complete, projectCategory: null },
+      { ...complete, projectPhase: null },
+      { ...complete, situationObserved: '   ' },
+      { ...complete, lessonType: null },
+      { ...complete, impact: null },
+      { ...complete, recommendation: null },
+      { ...complete, applicability: null },
+      { ...complete, lessonType: 'Future Prevention', rootCause: '  ' },
+      { ...complete, lessonType: 'Unsupported type' },
+      { ...complete, title: 'x'.repeat(151) },
+      { ...complete, situationObserved: 'x'.repeat(4001) },
+      { ...complete, rootCause: 'x'.repeat(4001) },
+      { ...complete, impact: 'x'.repeat(4001) },
+      { ...complete, recommendation: 'x'.repeat(4001) },
+      { ...complete, applicability: 'x'.repeat(4001) },
+    ];
+
+    for (const input of invalidInputs) {
+      const response = await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send(input);
+      expect(response.status, JSON.stringify(input)).toBe(400);
+    }
+
+    const missingCategory = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ ...complete, projectCategory: null });
+    expect(missingCategory.status).toBe(400);
+    expect(missingCategory.body.fieldErrors.projectCategory).toBeTruthy();
+
+    const missingRootCause = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ ...complete, rootCause: '   ' });
+    expect(missingRootCause.status).toBe(400);
+    expect(missingRootCause.body.fieldErrors.rootCause).toBe('Root cause is required for Future Prevention.');
+
+    await server
+      .get('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body).toEqual([created.body]));
+    expect(await dataSource?.query(
+      'SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id',
+      [created.body.id],
+    )).toEqual([{ event_type: 'Created' }]);
+  });
+
+  it('allows only the author to submit and does not duplicate a completed transition', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Only my author can submit this lesson' })
+      .expect(201);
+    const complete = {
+      version: created.body.version,
+      title: created.body.title,
+      projectId: null,
+      projectName: null,
+      projectCategory: 'Business',
+      projectPhase: 'Planning',
+      situationObserved: 'The team changed the release date without telling operations.',
+      rootCause: null,
+      lessonType: 'Communication',
+      impact: 'Operations prepared the wrong weekend coverage.',
+      recommendation: 'Share the approved release date with operations.',
+      applicability: 'Use whenever a delivery schedule changes.',
+    };
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send(complete)
+      .expect(404);
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send(complete)
+      .expect(200);
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send(complete)
+      .expect(409);
+
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: created.body.version, title: 'Cannot edit after submission' })
+      .expect(409);
+
+    expect(await dataSource?.query(
+      'SELECT actor_id, event_type, previous_status, new_status FROM lesson_history WHERE lesson_id = $1 ORDER BY id',
+      [created.body.id],
+    )).toEqual([
+      { actor_id: 'local-contributor', event_type: 'Created', previous_status: null, new_status: 'Open' },
+      { actor_id: 'local-contributor', event_type: 'Submitted', previous_status: 'Open', new_status: 'PMOEvaluation' },
+    ]);
+  });
+
+  it('allows a PMO to submit a complete lesson authored by that same PMO profile', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ title: 'PMO submits their own experience' })
+      .expect(201);
+
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectCategory: 'Data',
+        projectPhase: 'Closure',
+        situationObserved: 'The final migration report was not shared with the support team.',
+        lessonType: 'Success to Repeat',
+        impact: 'Support had less context for later maintenance.',
+        recommendation: 'Share the migration report with support before closure.',
+        applicability: 'Use for projects that hand over systems to support.',
+      })
+      .expect(200);
+
+    expect(submitted.body).toMatchObject({ authorId: 'local-pmo', updatedBy: 'local-pmo', status: 'PMOEvaluation' });
+    expect(await dataSource?.query(
+      'SELECT actor_id, event_type, previous_status, new_status FROM lesson_history WHERE lesson_id = $1 ORDER BY id',
+      [created.body.id],
+    )).toEqual([
+      { actor_id: 'local-pmo', event_type: 'Created', previous_status: null, new_status: 'Open' },
+      { actor_id: 'local-pmo', event_type: 'Submitted', previous_status: 'Open', new_status: 'PMOEvaluation' },
+    ]);
+  });
+
+  it('rolls back submission when recording its history fails', async () => {
+    if (!dataSource) throw new Error('The PostgreSQL test database did not start.');
+    const created = await request(app!.getHttpServer())
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Submission history must be atomic' })
+      .expect(201);
+    await dataSource.query(`
+      CREATE FUNCTION reject_submission_history() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.event_type = 'Submitted' THEN RAISE EXCEPTION 'submission history write intentionally rejected'; END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER reject_submission_history_insert
+      BEFORE INSERT ON lesson_history FOR EACH ROW EXECUTE FUNCTION reject_submission_history();
+    `);
+
+    try {
+      await request(app!.getHttpServer())
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          version: created.body.version,
+          title: created.body.title,
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The release handover omitted the current runbook.',
+          rootCause: null,
+          lessonType: 'Communication',
+          impact: 'The release team repeated verification work.',
+          recommendation: 'Assign an owner to review the checklist.',
+          applicability: 'Use for releases with shared operational ownership.',
+        })
+        .expect(500);
+
+      expect(await dataSource.query('SELECT status FROM lessons WHERE id = $1', [created.body.id]))
+        .toEqual([{ status: 'Open' }]);
+      expect(await dataSource.query(
+        "SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id",
+        [created.body.id],
+      )).toEqual([{ event_type: 'Created' }]);
+    } finally {
+      await dataSource.query('DROP TRIGGER IF EXISTS reject_submission_history_insert ON lesson_history');
+      await dataSource.query('DROP FUNCTION IF EXISTS reject_submission_history()');
+    }
+  });
+
   it('rejects a stale draft edit without overwriting the current version', async () => {
     const server = request(app!.getHttpServer());
     const created = await server

@@ -7,11 +7,13 @@ import {
   createLessonDraft,
   getLessonProjects,
   updateLessonDraft,
+  submitLesson,
   LESSONS_LEARNED_LESSONS_PATH,
   LESSONS_LEARNED_HEALTH_PATH,
   LESSONS_LEARNED_HOME_PATH,
   LESSONS_LEARNED_PROJECTS_PATH,
   LESSONS_LEARNED_DRAFT_PATH,
+  LESSONS_LEARNED_SUBMIT_PATH,
   LESSONS_LEARNED_API_TIMEOUT_MS,
 } from '../src/api';
 
@@ -152,6 +154,54 @@ describe('lessons learned HTTP client', () => {
     expect(adapter).toHaveBeenNthCalledWith(2, expect.objectContaining({
       url: LESSONS_LEARNED_DRAFT_PATH.replace('{id}', '7'),
       method: 'patch',
+      data: JSON.stringify(body),
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
+    }));
+  });
+
+  it('submits a complete lesson for the selected author profile', async () => {
+    const submitted = {
+      id: 7,
+      title: 'Improve release handover',
+      authorId: 'local-contributor',
+      updatedBy: 'local-contributor',
+      status: 'PMOEvaluation' as const,
+      version: 4,
+      projectId: null,
+      projectName: null,
+      projectCategory: 'Technology' as const,
+      projectPhase: 'Execution' as const,
+      situationObserved: 'The handover omitted the current runbook.',
+      rootCause: null,
+      lessonType: 'Communication' as const,
+      impact: 'Operations followed an outdated procedure.',
+      recommendation: 'Share the current runbook before release.',
+      applicability: 'Use for releases with an operations handover.',
+      createdAt: '2026-11-13T12:00:00.000Z',
+      updatedAt: '2026-11-13T12:05:00.000Z',
+    };
+    const body = {
+      version: 3,
+      title: submitted.title,
+      projectId: null,
+      projectName: null,
+      projectCategory: 'Technology' as const,
+      projectPhase: 'Execution' as const,
+      situationObserved: submitted.situationObserved,
+      rootCause: null,
+      lessonType: 'Communication' as const,
+      impact: submitted.impact,
+      recommendation: submitted.recommendation,
+      applicability: submitted.applicability,
+    };
+    const adapter = vi.fn().mockResolvedValue({ data: submitted, status: 200, statusText: 'OK', headers: {}, config: {} });
+    api.defaults.adapter = adapter;
+
+    await expect(submitLesson('local-contributor', 7, body)).resolves.toEqual(submitted);
+
+    expect(adapter).toHaveBeenCalledWith(expect.objectContaining({
+      url: LESSONS_LEARNED_SUBMIT_PATH.replace('{id}', '7'),
+      method: 'post',
       data: JSON.stringify(body),
       headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
     }));

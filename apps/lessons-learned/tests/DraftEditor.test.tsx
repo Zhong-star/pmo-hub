@@ -34,6 +34,7 @@ function renderEditor(overrides: Partial<{
   draft: LessonDraft | null;
   projects: LessonProject[];
   onSave: (input: UpdateLessonDraftBody, draftId: number | null) => Promise<LessonDraft>;
+  onSubmit: (input: UpdateLessonDraftBody, draftId: number) => Promise<LessonDraft>;
   onReload: (draftId: number) => Promise<LessonDraft>;
   onClose: () => void;
 }> = {}) {
@@ -46,6 +47,15 @@ function renderEditor(overrides: Partial<{
       ...(startingDraft ?? draft),
       ...input,
       id: draftId ?? 8,
+      updatedBy: (startingDraft ?? draft).authorId,
+      version: input.version + 1,
+      updatedAt: '2026-11-13T12:05:00.000Z',
+    } as LessonDraft)),
+    onSubmit: vi.fn(async (input: UpdateLessonDraftBody, draftId: number) => ({
+      ...(startingDraft ?? draft),
+      ...input,
+      id: draftId,
+      status: 'PMOEvaluation',
       updatedBy: (startingDraft ?? draft).authorId,
       version: input.version + 1,
       updatedAt: '2026-11-13T12:05:00.000Z',
@@ -258,6 +268,134 @@ describe('Lessons Learned draft editor', () => {
     expect(screen.queryByText('Draft saved.')).not.toBeInTheDocument();
   });
 
+  it('associates submission validation errors with required fields, including category when there is no project', async () => {
+    const user = userEvent.setup();
+    const { props } = renderEditor({ draft: { ...draft, projectId: null, projectName: null } });
+
+    await user.click(screen.getByRole('button', { name: 'Submit for PMO Review' }));
+
+    const category = screen.getByRole('combobox', { name: 'Project category' });
+    expect(category).toHaveAttribute('aria-invalid', 'true');
+    expect(category.getAttribute('aria-describedby')).toContain('lesson-project-category-error');
+    expect(await screen.findByRole('alert', { name: 'Submission errors' })).toHaveTextContent('Project category is required.');
+    expect(category).toHaveFocus();
+    expect(props.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('requires Root cause for Future Prevention and associates the error with that field', async () => {
+    const user = userEvent.setup();
+    const { props } = renderEditor({ draft: {
+      ...draft,
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      situationObserved: 'The handover omitted the current runbook.',
+      lessonType: 'Future Prevention',
+      impact: 'Operations followed an outdated procedure.',
+      recommendation: 'Share the current runbook before release.',
+      applicability: 'Use for releases with an operations handover.',
+    } });
+
+    await user.click(screen.getByRole('button', { name: 'Submit for PMO Review' }));
+
+    const rootCause = screen.getByRole('textbox', { name: 'Root cause' });
+    expect(rootCause).toHaveAttribute('aria-invalid', 'true');
+    expect(rootCause.getAttribute('aria-describedby')).toContain('lesson-rootCause-error');
+    expect(await screen.findByRole('alert', { name: 'Submission errors' })).toHaveTextContent(
+      'Root cause is required for Future Prevention.',
+    );
+    expect(rootCause).toHaveFocus();
+    expect(props.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('submits a complete lesson with No project and becomes read-only after success', async () => {
+    const user = userEvent.setup();
+    const { props } = renderEditor({ draft: { ...draft, projectId: null, projectName: null } });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project category' }), 'Technology');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project phase' }), 'Execution');
+    await user.type(screen.getByRole('textbox', { name: 'Situation observed' }), 'The handover omitted the current runbook.');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Lesson type' }), 'Communication');
+    await user.type(screen.getByRole('textbox', { name: 'Impact' }), 'Operations followed an outdated procedure.');
+    await user.type(screen.getByRole('textbox', { name: 'Recommendation' }), 'Share the current runbook before release.');
+    await user.type(screen.getByRole('textbox', { name: 'Applicability' }), 'Use for releases with an operations handover.');
+
+    await user.click(screen.getByRole('button', { name: 'Submit for PMO Review' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Lesson submitted for PMO review.');
+    expect(props.onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      version: 3,
+      title: 'Improve release handover',
+      projectId: null,
+      projectName: null,
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      lessonType: 'Communication',
+      rootCause: null,
+    }), 7);
+    expect(screen.getByRole('textbox', { name: 'Title' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Submit for PMO Review' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save Draft' })).not.toBeInTheDocument();
+  });
+
+  it('prevents a duplicate submit and field changes while submission is pending', async () => {
+    const user = userEvent.setup();
+    let resolveSubmission!: (lesson: LessonDraft) => void;
+    const onSubmit = vi.fn(() => new Promise<LessonDraft>((resolve) => { resolveSubmission = resolve; }));
+    const completeDraft = {
+      ...draft,
+      projectCategory: 'Technology' as const,
+      projectPhase: 'Execution' as const,
+      situationObserved: 'The handover omitted the current runbook.',
+      lessonType: 'Communication' as const,
+      impact: 'Operations followed an outdated procedure.',
+      recommendation: 'Share the current runbook before release.',
+      applicability: 'Use for releases with an operations handover.',
+    };
+    renderEditor({ draft: completeDraft, onSubmit });
+    const submitButton = screen.getByRole('button', { name: 'Submit for PMO Review' });
+    const recommendation = screen.getByRole('textbox', { name: 'Recommendation' });
+
+    await user.click(submitButton);
+    expect(onSubmit).toHaveBeenCalledOnce();
+    expect(submitButton).toBeDisabled();
+    expect(recommendation).toBeDisabled();
+
+    await user.click(submitButton);
+    await user.type(recommendation, ' A duplicate change');
+    expect(onSubmit).toHaveBeenCalledOnce();
+    expect(recommendation).toHaveValue('Share the current runbook before release.');
+
+    resolveSubmission({ ...completeDraft, status: 'PMOEvaluation', version: completeDraft.version + 1 });
+    expect(await screen.findByRole('status')).toHaveTextContent('Lesson submitted for PMO review.');
+  });
+
+  it('preserves edited fields and shows no success when submission fails', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValueOnce(new Error('Submit failed'));
+    renderEditor({
+      draft: {
+        ...draft,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The handover omitted the current runbook.',
+        lessonType: 'Communication',
+        impact: 'Operations followed an outdated procedure.',
+        recommendation: 'Share the current runbook before release.',
+        applicability: 'Use for releases with an operations handover.',
+      },
+      onSubmit,
+    });
+    const recommendation = screen.getByRole('textbox', { name: 'Recommendation' });
+    await user.clear(recommendation);
+    await user.type(recommendation, 'Keep this recommendation if the request fails.');
+
+    await user.click(screen.getByRole('button', { name: 'Submit for PMO Review' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be submitted');
+    expect(recommendation).toHaveValue('Keep this recommendation if the request fails.');
+    expect(screen.queryByText('Lesson submitted for PMO review.')).not.toBeInTheDocument();
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
   it('preserves edits after a stale-version conflict and reloads only after the user chooses', async () => {
     const user = userEvent.setup();
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
@@ -334,7 +472,7 @@ describe('Lessons Learned draft editor', () => {
       return (
         <>
           <button type="button" onClick={() => setOpen(true)}>Open editor</button>
-          {open && <DraftEditor draft={draft} projects={projects} onSave={onSave} onReload={async () => draft} onClose={() => setOpen(false)} />}
+          {open && <DraftEditor draft={draft} projects={projects} onSave={onSave} onSubmit={async () => draft} onReload={async () => draft} onClose={() => setOpen(false)} />}
         </>
       );
     }
@@ -366,6 +504,7 @@ describe('Lessons Learned draft editor', () => {
             draft={draft}
             projects={projects}
             onSave={async (input) => ({ ...draft, ...input } as LessonDraft)}
+            onSubmit={async () => draft}
             onReload={async () => draft}
             onClose={() => setOpen(false)}
           />}

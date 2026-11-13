@@ -105,6 +105,12 @@ test('Contributor creates a title-only lesson and completes it from the edit mod
   await page.getByRole('button', { name: 'Save Draft' }).click();
   await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Root cause' })).toHaveValue('The team had no shared release checklist.');
+
+  await page.getByRole('button', { name: 'Submit for PMO Review' }).click();
+  await expect(page.getByRole('status')).toContainText('Lesson submitted for PMO review.');
+  await expect(page.getByRole('textbox', { name: 'Title' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Save Draft' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Submit for PMO Review' })).toHaveCount(0);
 });
 
 test('catalog link opens in the same tab and reload, back, and module return preserve the profile', async ({ page }) => {
