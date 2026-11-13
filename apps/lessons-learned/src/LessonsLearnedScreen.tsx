@@ -40,6 +40,16 @@ function getApiErrorStatus(error: unknown): number | null {
   return typeof response.status === 'number' ? response.status : null;
 }
 
+function isDefinitiveAccessError(error: unknown): boolean {
+  const errorCode = getApiErrorCode(error);
+  return getApiErrorStatus(error) === 401
+    || getApiErrorStatus(error) === 403
+    || errorCode === 'AUTHENTICATION_REQUIRED'
+    || errorCode === 'ACCESS_DENIED'
+    || errorCode === 'ACCESS_CONFIGURATION_ERROR'
+    || errorCode === 'LOCAL_AUTH_DISABLED';
+}
+
 function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
   return role === 'LESSONS_MODERATOR' ? 'PMO' : 'Contributor';
 }
@@ -54,6 +64,7 @@ function readModulePage(): ModulePage {
 
 export function LessonsLearnedScreen() {
   const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
+  const [authorizedProfileId, setAuthorizedProfileId] = useState<string | null>(null);
   const [modulePage, setModulePage] = useState<ModulePage>(readModulePage);
   const { theme, selectTheme } = useThemePreference();
   const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
@@ -65,7 +76,19 @@ export function LessonsLearnedScreen() {
   const queryClient = useQueryClient();
   const homeQuery = useQuery({
     queryKey: ['lessons-learned-home', selectedProfileId],
-    queryFn: () => getHome(selectedProfileId ?? ''),
+    queryFn: async () => {
+      const profileId = selectedProfileId ?? '';
+      try {
+        const home = await getHome(profileId);
+        if (selectedProfileIdRef.current === profileId) setAuthorizedProfileId(profileId);
+        return home;
+      } catch (error) {
+        if (isDefinitiveAccessError(error) && selectedProfileIdRef.current === profileId) {
+          setAuthorizedProfileId(null);
+        }
+        throw error;
+      }
+    },
     enabled: selectedProfileId !== null,
     networkMode: 'always',
     retry: false,
@@ -83,7 +106,9 @@ export function LessonsLearnedScreen() {
     errorCode === 'ACCESS_CONFIGURATION_ERROR' || errorCode === 'LOCAL_AUTH_DISABLED'
   );
   const isDefinitiveAccessFailure = isAuthenticationRequired || isAccessDenied || isAccessConfigurationError;
-  const hasUsableHomeData = homeQuery.data !== undefined && !isDefinitiveAccessFailure;
+  const hasUsableHomeData = homeQuery.data !== undefined
+    && authorizedProfileId === selectedProfileId
+    && !isDefinitiveAccessFailure;
   const isHomePage = selectedProfileId !== null && hasUsableHomeData;
   const showHomeRecheckError = isHomePage && homeQuery.isError && !homeQuery.isFetching;
   const isEditorOpen = isCreateFormOpen || selectedDraft !== null;
@@ -107,6 +132,7 @@ export function LessonsLearnedScreen() {
     if (profileId === selectedProfileIdRef.current) return;
     selectedProfileIdRef.current = profileId;
     setSelectedProfileId(profileId);
+    setAuthorizedProfileId(null);
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
   }, []);
@@ -124,6 +150,7 @@ export function LessonsLearnedScreen() {
     if (!isDefinitiveAccessFailure) return;
     // An access revocation must discard the private editor state before a later recheck can restore the page.
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAuthorizedProfileId(null);
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
   }, [isDefinitiveAccessFailure]);
@@ -229,7 +256,8 @@ export function LessonsLearnedScreen() {
   return (
     <div className="app-shell">
       <HubHeader
-        profileName={homeQuery.data?.profile.displayName ?? selectedProfileId ?? undefined}
+        profileName={(authorizedProfileId === selectedProfileId ? homeQuery.data?.profile.displayName : undefined)
+          ?? selectedProfileId ?? undefined}
         onChangeProfile={selectedProfileId ? changeProfile : undefined}
         theme={theme}
         onThemeChange={selectTheme}

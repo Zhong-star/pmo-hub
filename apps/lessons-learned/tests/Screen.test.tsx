@@ -693,7 +693,7 @@ describe('Lessons Learned access check', () => {
     expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
   });
 
-  it('keeps cached authorized Home visible while a profile is being revalidated', async () => {
+  it('rechecks a cached profile before showing its Home or submissions', async () => {
     let resolveContributorAgain!: (value: typeof contributor) => void;
     vi.mocked(getHome).mockImplementation((localUserId) => {
       if (localUserId === 'local-pmo') return Promise.resolve(pmo);
@@ -705,27 +705,34 @@ describe('Lessons Learned access check', () => {
 
     renderScreen('local-contributor', 60_000);
     expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await screen.findByRole('heading', { name: 'My Submissions' });
 
     act(() => {
       window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
       window.dispatchEvent(new StorageEvent('storage', { key: 'pmo-hub.local-user-id', newValue: 'local-pmo' }));
     });
-    expect(await screen.findByText('Welcome, Local PMO')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
+    expect(getMyOpenDrafts).toHaveBeenCalledTimes(2);
 
     act(() => {
       window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
       window.dispatchEvent(new StorageEvent('storage', { key: 'pmo-hub.local-user-id', newValue: 'local-contributor' }));
     });
 
-    expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
-    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole('heading', { name: 'Home' })).toBeInTheDocument();
-    expect(screen.queryByText('Welcome, Local PMO')).not.toBeInTheDocument();
-    expect(document.querySelectorAll('#page-title')).toHaveLength(1);
+    expect(await screen.findByRole('status')).toHaveTextContent('local-contributor');
+    expect(screen.queryByText('Welcome, Local Contributor')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'My Submissions' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create lesson' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Lessons Learned' })).not.toBeInTheDocument();
+    expect(getMyOpenDrafts).toHaveBeenCalledTimes(2);
 
-    resolveContributorAgain(contributor);
-    expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
+    await act(async () => { resolveContributorAgain(contributor); });
+    expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create lesson' })).toBeVisible();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(document.querySelectorAll('#page-title')).toHaveLength(1);
   });
 
   it('hides cached private data after authentication is required on a background recheck', async () => {
@@ -757,5 +764,45 @@ describe('Lessons Learned access check', () => {
     expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Create lesson' })).not.toBeInTheDocument();
     expect(getHome).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps revoked profile data hidden after a transient retry failure until Home succeeds', async () => {
+    vi.mocked(getHome)
+      .mockResolvedValueOnce(contributor)
+      .mockRejectedValueOnce(apiError(401, 'AUTHENTICATION_REQUIRED'))
+      .mockRejectedValueOnce(apiError(502, 'SERVICE_UNAVAILABLE'))
+      .mockResolvedValueOnce(contributor);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByText('Welcome, Local Contributor');
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(await screen.findByRole('button', { name: 'Create lesson' }));
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Private unsaved title');
+
+    act(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      window.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Authentication required' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Create lesson' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByRole('heading', { name: 'Access check temporarily unavailable' })).toBeInTheDocument();
+    expect(screen.queryByText('Welcome, Local Contributor')).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Lessons Learned' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'My Submissions' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create lesson' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create lesson' })).toBeVisible();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(getHome).toHaveBeenCalledTimes(4);
   });
 });
