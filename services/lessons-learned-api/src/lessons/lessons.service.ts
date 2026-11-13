@@ -169,7 +169,23 @@ export class LessonsService {
 
       const projectId = input.projectId === undefined ? current.projectId : input.projectId;
       const projectName = input.projectName === undefined ? current.projectName : input.projectName;
-      this.validateProjectSelection(current, projectId ?? null, projectName ?? null);
+      try {
+        this.validateProjectSelection(current, projectId ?? null, projectName ?? null);
+      } catch (error) {
+        const response = error instanceof BadRequestException ? error.getResponse() : null;
+        if (
+          typeof response === 'object' && response !== null &&
+          'code' in response && response.code === 'INVALID_PROJECT_SELECTION'
+        ) {
+          const message = 'Choose a current project or No project before submitting.';
+          throw new BadRequestException({
+            code: 'INVALID_LESSON_SUBMISSION',
+            message,
+            fieldErrors: { projectId: message },
+          });
+        }
+        throw error;
+      }
 
       current.title = input.title;
       current.projectId = projectId ?? null;

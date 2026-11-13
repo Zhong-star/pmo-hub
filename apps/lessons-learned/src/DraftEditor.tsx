@@ -148,6 +148,14 @@ export function DraftEditor({
   const projectRef = useRef<HTMLSelectElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const savingRef = useRef(false);
+  const pendingSubmissionFocusRef = useRef<keyof DraftFields | null>(null);
+
+  useEffect(() => {
+    const field = pendingSubmissionFocusRef.current;
+    if (isSaving || field === null) return;
+    pendingSubmissionFocusRef.current = null;
+    dialogRef.current?.querySelector<HTMLElement>(`#${submissionInputIds[field]}`)?.focus();
+  }, [isSaving, submissionFieldErrors]);
 
   const isDirty = JSON.stringify(fields) !== JSON.stringify(savedFields);
   const selectedProjectValue = fields.projectId !== null && fields.projectName !== null
@@ -350,7 +358,7 @@ export function DraftEditor({
       if (serverFieldErrors) {
         setSubmissionFieldErrors(serverFieldErrors);
         const firstField = Object.keys(serverFieldErrors)[0] as keyof DraftFields | undefined;
-        if (firstField) dialogRef.current?.querySelector<HTMLElement>(`#${submissionInputIds[firstField]}`)?.focus();
+        if (firstField) pendingSubmissionFocusRef.current = firstField;
         setError('Correct the indicated fields before submitting. Your changes are still here.');
       } else if (getApiErrorCode(submitError) === 'STALE_LESSON_VERSION') {
         setHasConflict(true);

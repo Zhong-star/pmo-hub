@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
@@ -67,8 +67,8 @@ function renderEditor(overrides: Partial<{
   return { ...view, props };
 }
 
-function apiError(status: number, code: string) {
-  return Object.assign(new Error('Request failed'), { response: { status, data: { code } } });
+function apiError(status: number, code: string, fieldErrors?: Record<string, string>) {
+  return Object.assign(new Error('Request failed'), { response: { status, data: { code, fieldErrors } } });
 }
 
 afterEach(() => {
@@ -305,6 +305,35 @@ describe('Lessons Learned draft editor', () => {
     );
     expect(rootCause).toHaveFocus();
     expect(props.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('associates server submission errors with fields and focuses them after submission finishes', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValueOnce(apiError(400, 'INVALID_LESSON_SUBMISSION', {
+      situationObserved: 'Describe what happened before submitting.',
+    }));
+    renderEditor({ draft: {
+      ...draft,
+      projectId: null,
+      projectName: null,
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      situationObserved: 'The handover omitted the current runbook.',
+      lessonType: 'Communication',
+      impact: 'The release team repeated verification work.',
+      recommendation: 'Assign an owner to review the checklist.',
+      applicability: 'Use for releases with shared operational ownership.',
+    }, onSubmit });
+
+    await user.click(screen.getByRole('button', { name: 'Submit for PMO Review' }));
+
+    const situation = screen.getByRole('textbox', { name: 'Situation observed' });
+    expect(await screen.findByText('Describe what happened before submitting.')).toBeInTheDocument();
+    expect(situation).toHaveAttribute('aria-invalid', 'true');
+    expect(situation.getAttribute('aria-describedby')).toContain('lesson-situationObserved-error');
+    await waitFor(() => expect(situation).toHaveFocus());
+    expect(situation).toBeEnabled();
+    expect(onSubmit).toHaveBeenCalledOnce();
   });
 
   it('submits a complete lesson with No project and becomes read-only after success', async () => {

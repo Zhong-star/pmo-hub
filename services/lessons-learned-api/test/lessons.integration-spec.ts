@@ -385,6 +385,56 @@ describe('Lessons Learned draft registration', () => {
     )).toEqual([{ event_type: 'Created' }]);
   });
 
+  it('reports a removed project selection as a submission field error', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Choose a project that is still available' })
+      .expect(201);
+    writeFileSync(projectsPath, JSON.stringify([
+      { id: 'LOCAL-PROJECT-002', name: 'Fictional Harbor Migration' },
+    ]), 'utf8');
+
+    try {
+      const response = await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          version: created.body.version,
+          title: created.body.title,
+          projectId: 'LOCAL-PROJECT-001',
+          projectName: 'Fictional Atlas Modernization',
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The release handover omitted the current runbook.',
+          rootCause: null,
+          lessonType: 'Communication',
+          impact: 'The release team repeated verification work.',
+          recommendation: 'Assign an owner to review the checklist.',
+          applicability: 'Use for releases with shared operational ownership.',
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        code: 'INVALID_LESSON_SUBMISSION',
+        message: 'Choose a current project or No project before submitting.',
+        fieldErrors: { projectId: 'Choose a current project or No project before submitting.' },
+      });
+      expect(await dataSource?.query('SELECT status FROM lessons WHERE id = $1', [created.body.id]))
+        .toEqual([{ status: 'Open' }]);
+      expect(await dataSource?.query(
+        'SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id',
+        [created.body.id],
+      )).toEqual([{ event_type: 'Created' }]);
+    } finally {
+      writeFileSync(projectsPath, JSON.stringify([
+        { id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' },
+        { id: 'LOCAL-PROJECT-002', name: 'Fictional Harbor Migration' },
+      ]), 'utf8');
+    }
+  });
+
   it('allows only the author to submit and does not duplicate a completed transition', async () => {
     const server = request(app!.getHttpServer());
     const created = await server
