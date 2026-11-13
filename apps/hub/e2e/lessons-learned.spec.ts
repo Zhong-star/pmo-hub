@@ -70,7 +70,7 @@ test('catalog entry checks the Contributor identity before rendering Home', asyn
 
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.getByText('Welcome, Local Contributor')).toBeVisible();
-  await expect(page.getByText('Contributor', { selector: 'strong' })).toBeVisible();
+  await expect(page.getByText('Contributor', { exact: true })).toBeVisible();
   await expect(page.getByRole('complementary', { name: 'Lessons Learned navigation' })).toBeVisible();
 });
 
