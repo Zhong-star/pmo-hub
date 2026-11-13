@@ -123,6 +123,38 @@ describe('Lessons Learned draft editor', () => {
     }), 7);
   });
 
+  it('requires replacing a newly selected project that disappears from the catalog', async () => {
+    const user = userEvent.setup();
+    const selectedProject = { id: 'LOCAL-PROJECT-003', name: 'Fictional Forest Renewal' };
+    const view = renderEditor({ draft: null, projects: [selectedProject] });
+    const projectValue = JSON.stringify([selectedProject.id, selectedProject.name]);
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Keep the selection honest');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }), projectValue);
+
+    view.rerender(<DraftEditor {...view.props} projects={[]} />);
+
+    const projectSelect = screen.getByRole('combobox', { name: 'Project' });
+    expect(projectSelect).toHaveValue(projectValue);
+    expect(screen.getByRole('option', { name: /Fictional Forest Renewal.*no longer available/i })).toBeInTheDocument();
+    const projectError = screen.getByRole('alert');
+    expect(projectError).toHaveTextContent('Choose a current project or No project before saving.');
+    expect(projectSelect).toHaveAttribute('aria-invalid', 'true');
+
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+    expect(projectSelect).toHaveFocus();
+    expect(view.props.onSave).not.toHaveBeenCalled();
+
+    await user.selectOptions(projectSelect, '');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    expect(await screen.findByText('Draft saved.')).toBeInTheDocument();
+    expect(view.props.onSave).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: null,
+      projectName: null,
+    }), null);
+  });
+
   it('saves a draft with only a title and keeps all other fields optional', async () => {
     const user = userEvent.setup();
     const { props } = renderEditor();

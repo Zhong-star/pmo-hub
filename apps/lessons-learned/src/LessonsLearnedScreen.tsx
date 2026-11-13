@@ -33,6 +33,13 @@ function getApiErrorCode(error: unknown): string | null {
   return typeof data.code === 'string' ? data.code : null;
 }
 
+function getApiErrorStatus(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return null;
+  const response = error.response;
+  if (typeof response !== 'object' || response === null || !('status' in response)) return null;
+  return typeof response.status === 'number' ? response.status : null;
+}
+
 function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
   return role === 'LESSONS_MODERATOR' ? 'PMO' : 'Contributor';
 }
@@ -65,8 +72,21 @@ export function LessonsLearnedScreen() {
     refetchOnWindowFocus: true,
   });
   const errorCode = homeQuery.isError ? getApiErrorCode(homeQuery.error) : null;
-  const isHomePage = selectedProfileId !== null && homeQuery.isFetchedAfterMount && homeQuery.data !== undefined &&
-    errorCode !== 'ACCESS_DENIED' && errorCode !== 'ACCESS_CONFIGURATION_ERROR' && errorCode !== 'LOCAL_AUTH_DISABLED';
+  const errorStatus = homeQuery.isError ? getApiErrorStatus(homeQuery.error) : null;
+  const isAuthenticationRequired = homeQuery.isError && (
+    errorCode === 'AUTHENTICATION_REQUIRED' || errorStatus === 401
+  );
+  const isAccessDenied = homeQuery.isError && !isAuthenticationRequired && (
+    errorCode === 'ACCESS_DENIED' || errorStatus === 403
+  );
+  const isAccessConfigurationError = homeQuery.isError && (
+    errorCode === 'ACCESS_CONFIGURATION_ERROR' || errorCode === 'LOCAL_AUTH_DISABLED'
+  );
+  const isDefinitiveAccessFailure = isAuthenticationRequired || isAccessDenied || isAccessConfigurationError;
+  const hasUsableHomeData = homeQuery.data !== undefined && !isDefinitiveAccessFailure;
+  const isHomePage = selectedProfileId !== null && hasUsableHomeData;
+  const showHomeRecheckError = isHomePage && homeQuery.isError && !homeQuery.isFetching;
+  const isEditorOpen = isCreateFormOpen || selectedDraft !== null;
   const submissionsQuery = useQuery({
     queryKey: ['lessons-learned-my-submissions', selectedProfileId],
     queryFn: () => getMyOpenDrafts(selectedProfileId ?? ''),
@@ -99,6 +119,14 @@ export function LessonsLearnedScreen() {
     networkMode: 'always',
     retry: false,
   });
+
+  useEffect(() => {
+    if (!isDefinitiveAccessFailure) return;
+    // An access revocation must discard the private editor state before a later recheck can restore the page.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedDraft(null);
+    setIsCreateFormOpen(false);
+  }, [isDefinitiveAccessFailure]);
 
   async function saveDraftFields(input: UpdateLessonDraftBody, draftId: number | null): Promise<LessonDraft> {
     const profileId = selectedProfileIdRef.current;
@@ -221,7 +249,7 @@ export function LessonsLearnedScreen() {
           </>
         )}
 
-        {selectedProfileId && homeQuery.isFetching && (
+        {selectedProfileId && homeQuery.isFetching && !hasUsableHomeData && (
           <>
             <h1 id="page-title">Access check</h1>
             <p className="intro">Lessons Learned verifies your local profile before opening Home.</p>
@@ -232,7 +260,19 @@ export function LessonsLearnedScreen() {
           </>
         )}
 
-        {selectedProfileId && !homeQuery.isFetching && homeQuery.isError && errorCode === 'ACCESS_DENIED' && (
+        {selectedProfileId && !homeQuery.isFetching && isAuthenticationRequired && (
+          <div className="api-status unavailable" role="alert" aria-live="assertive">
+            <span className="status-indicator is-unavailable" aria-hidden="true" />
+            <div>
+              <h1 id="page-title">Authentication required</h1>
+              <p>Your session is no longer authorized to access Lessons Learned. Retry the check or select a local profile.</p>
+              <button className="retry-button" type="button" onClick={() => void homeQuery.refetch()}>Retry</button>
+              <a className="primary-link" href="/">Select a local profile</a>
+            </div>
+          </div>
+        )}
+
+        {selectedProfileId && !homeQuery.isFetching && isAccessDenied && (
           <div className="api-status unavailable" role="alert" aria-live="assertive">
             <span className="status-indicator is-unavailable" aria-hidden="true" />
             <div>
@@ -243,9 +283,7 @@ export function LessonsLearnedScreen() {
           </div>
         )}
 
-        {selectedProfileId && !homeQuery.isFetching && homeQuery.isError && (
-          errorCode === 'ACCESS_CONFIGURATION_ERROR' || errorCode === 'LOCAL_AUTH_DISABLED'
-        ) && (
+        {selectedProfileId && !homeQuery.isFetching && isAccessConfigurationError && (
           <div className="api-status unavailable" role="alert" aria-live="assertive">
             <span className="status-indicator is-unavailable" aria-hidden="true" />
             <div>
@@ -256,8 +294,7 @@ export function LessonsLearnedScreen() {
           </div>
         )}
 
-        {selectedProfileId && !homeQuery.isFetching && homeQuery.isError && errorCode !== 'ACCESS_DENIED' &&
-          errorCode !== 'ACCESS_CONFIGURATION_ERROR' && errorCode !== 'LOCAL_AUTH_DISABLED' && (
+        {selectedProfileId && !homeQuery.isFetching && homeQuery.isError && !hasUsableHomeData && !isDefinitiveAccessFailure && (
             <div className="api-status unavailable" role="alert" aria-live="assertive">
               <span className="status-indicator is-unavailable" aria-hidden="true" />
               <div>
@@ -269,6 +306,16 @@ export function LessonsLearnedScreen() {
               </div>
             </div>
           )}
+
+        {showHomeRecheckError && !isEditorOpen && (
+          <div className="api-status unavailable" role="alert" aria-label="Home access check temporarily unavailable">
+            <span className="status-indicator is-unavailable" aria-hidden="true" />
+            <div>
+              <p>The Home access recheck is temporarily unavailable. Your loaded page remains available; retry to verify access.</p>
+              <button className="retry-button" type="button" onClick={() => void homeQuery.refetch()}>Retry access check</button>
+            </div>
+          </div>
+        )}
 
         {isHomePage && (
           <div className="module-layout">
@@ -362,22 +409,16 @@ export function LessonsLearnedScreen() {
                       ))}
                     </ul>
                   )}
-                  {(isCreateFormOpen || selectedDraft !== null) && projectsQuery.isPending && (
-                    <p role="status">Loading project options…</p>
-                  )}
-                  {(isCreateFormOpen || selectedDraft !== null) && projectsQuery.isError && (
-                    <div className="draft-error" role="alert">
-                      <p>Project options could not be loaded.</p>
-                      <button className="draft-cancel" type="button" onClick={() => void projectsQuery.refetch()}>
-                        Retry
-                      </button>
-                    </div>
-                  )}
-                  {(isCreateFormOpen || selectedDraft !== null) && (
+                  {isEditorOpen && (
                     <DraftEditor
                       key={selectedDraft?.id ?? 'new'}
                       draft={selectedDraft}
                       projects={projectsQuery.data ?? []}
+                      projectsLoading={projectsQuery.isFetching}
+                      projectsError={projectsQuery.isError && !projectsQuery.isFetching}
+                      onRetryProjects={() => void projectsQuery.refetch()}
+                      homeRecheckError={showHomeRecheckError}
+                      onRetryHomeCheck={() => void homeQuery.refetch()}
                       onSave={saveDraftFields}
                       onReload={reloadDraftFields}
                       onClose={() => {

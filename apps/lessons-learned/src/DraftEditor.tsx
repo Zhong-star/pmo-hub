@@ -8,6 +8,11 @@ type DraftFields = Required<Omit<UpdateLessonDraftBody, 'version'>>;
 type DraftEditorProps = {
   draft: LessonDraft | null;
   projects: LessonProject[];
+  projectsLoading?: boolean;
+  projectsError?: boolean;
+  onRetryProjects?: () => void;
+  homeRecheckError?: boolean;
+  onRetryHomeCheck?: () => void;
   onClose: () => void;
   onSave: (input: UpdateLessonDraftBody, draftId: number | null) => Promise<LessonDraft>;
   onReload: (draftId: number) => Promise<LessonDraft>;
@@ -69,7 +74,18 @@ function getApiErrorCode(error: unknown): string | null {
   return typeof data.code === 'string' ? data.code : null;
 }
 
-export function DraftEditor({ draft, projects, onClose, onSave, onReload }: DraftEditorProps) {
+export function DraftEditor({
+  draft,
+  projects,
+  projectsLoading = false,
+  projectsError = false,
+  onRetryProjects,
+  homeRecheckError = false,
+  onRetryHomeCheck,
+  onClose,
+  onSave,
+  onReload,
+}: DraftEditorProps) {
   const [fields, setFields] = useState(() => toFormValues(draft));
   const [savedFields, setSavedFields] = useState(() => toFormValues(draft));
   const [draftId, setDraftId] = useState(draft?.id ?? null);
@@ -82,6 +98,7 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
   const [isSaved, setIsSaved] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  const projectRef = useRef<HTMLSelectElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const savingRef = useRef(false);
 
@@ -92,10 +109,22 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
   const savedProject = savedFields.projectId && savedFields.projectName
     ? { id: savedFields.projectId, name: savedFields.projectName }
     : null;
+  const selectedProject = fields.projectId !== null && fields.projectName !== null
+    ? { id: fields.projectId, name: fields.projectName }
+    : null;
+  const savedProjectValue = savedProject ? projectKey(savedProject) : '';
+  const selectedProjectIsCurrent = selectedProject !== null && projects.some(
+    (project) => projectKey(project) === selectedProjectValue,
+  );
+  const selectedProjectIsSavedSnapshot = selectedProject !== null && selectedProjectValue === savedProjectValue;
+  const hasUnavailableProjectSelection = selectedProject !== null && !selectedProjectIsCurrent && !selectedProjectIsSavedSnapshot;
   const projectChoices = [
-    ...projects.map((project) => ({ ...project, isSavedSnapshot: false })),
+    ...projects.map((project) => ({ ...project, isSavedSnapshot: false, isUnavailableSelection: false })),
     ...(savedProject && !projects.some((project) => projectKey(project) === projectKey(savedProject))
-      ? [{ ...savedProject, isSavedSnapshot: true }]
+      ? [{ ...savedProject, isSavedSnapshot: true, isUnavailableSelection: false }]
+      : []),
+    ...(hasUnavailableProjectSelection && selectedProject
+      ? [{ ...selectedProject, isSavedSnapshot: false, isUnavailableSelection: true }]
       : []),
   ];
 
@@ -164,6 +193,10 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
     if (title.length > 150) {
       setTitleError('Title must be 150 characters or fewer.');
       titleRef.current?.focus();
+      return;
+    }
+    if (hasUnavailableProjectSelection) {
+      projectRef.current?.focus();
       return;
     }
 
@@ -251,6 +284,24 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
             </button>
           </div>
 
+          {projectsLoading && <p className="draft-editor-catalog-status" role="status">Loading project options…</p>}
+          {projectsError && (
+            <div className="draft-editor-catalog-status" role="alert" aria-label="Project options error">
+              <p>Project options could not be loaded.</p>
+              <button className="draft-editor-secondary" type="button" onClick={onRetryProjects}>
+                Retry project options
+              </button>
+            </div>
+          )}
+          {homeRecheckError && (
+            <div className="draft-editor-catalog-status" role="alert" aria-label="Home access check temporarily unavailable">
+              <p>The Home access recheck is temporarily unavailable. Retry to verify access.</p>
+              <button className="draft-editor-secondary" type="button" onClick={onRetryHomeCheck}>
+                Retry access check
+              </button>
+            </div>
+          )}
+
           <div className="draft-editor-field">
             <label htmlFor="lesson-title">Title</label>
             <input
@@ -275,18 +326,28 @@ export function DraftEditor({ draft, projects, onClose, onSave, onReload }: Draf
           <div className="draft-editor-field">
             <label htmlFor="lesson-project">Project</label>
             <select
+              ref={projectRef}
               id="lesson-project"
               disabled={isSaving || isReloading}
               value={selectedProjectValue}
+              aria-invalid={hasUnavailableProjectSelection ? 'true' : undefined}
+              aria-describedby={hasUnavailableProjectSelection ? 'lesson-project-error' : undefined}
               onChange={(event) => setProject(event.target.value)}
             >
               <option value="">No project</option>
               {projectChoices.map((project) => (
                 <option key={projectKey(project)} value={projectKey(project)}>
-                  {project.name}{project.isSavedSnapshot ? ' (saved project)' : ''}
+                  {project.name}
+                  {project.isSavedSnapshot ? ' (saved project)' : ''}
+                  {project.isUnavailableSelection ? ' (no longer available; choose another project)' : ''}
                 </option>
               ))}
             </select>
+            {hasUnavailableProjectSelection && (
+              <p id="lesson-project-error" className="draft-editor-error" role="alert">
+                This project is no longer available. Choose a current project or No project before saving.
+              </p>
+            )}
           </div>
 
           <div className="draft-editor-grid">
