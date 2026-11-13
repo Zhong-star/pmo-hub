@@ -22,17 +22,100 @@
           "Lessons Learned health"
         ]
       }
+    },
+    "/api/lessons-learned/v1/home": {
+      "get": {
+        "operationId": "HomeController_getHome",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonsLearnedHomeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalAccessProblem"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Lessons Learned\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalAccessProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The Lessons Learned local access configuration is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalAccessProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Local simulated identity is disabled for this runtime.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalAccessProblem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Revalidate local access and return the authorized Lessons Learned Home",
+        "tags": [
+          "Lessons Learned home"
+        ]
+      }
     }
   },
   "info": {
     "title": "Lessons Learned API",
-    "description": "Local health endpoint for the Lessons Learned module.",
+    "description": "Local access and Home endpoints for the Lessons Learned module.",
     "version": "1.0.0",
     "contact": {}
   },
   "tags": [],
   "servers": [],
   "components": {
+    "securitySchemes": {
+      "localProfile": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-PMO-Local-User-ID",
+        "description": "Simulated local Hub profile ID. The API resolves the module role."
+      }
+    },
     "schemas": {
       "HealthResponse": {
         "type": "object",
@@ -47,6 +130,108 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "LocalAccessProblem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "number"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "instance",
+          "code",
+          "correlationId"
+        ]
+      },
+      "LessonsLearnedProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "local-contributor"
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Local Contributor"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "LESSONS_USER",
+              "LESSONS_MODERATOR"
+            ],
+            "example": "LESSONS_USER"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "role"
+        ]
+      },
+      "LessonsLearnedNavigationItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "home"
+          },
+          "label": {
+            "type": "string",
+            "example": "Home"
+          },
+          "current": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "current"
+        ]
+      },
+      "LessonsLearnedHomeResponse": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/LessonsLearnedProfile"
+          },
+          "navigation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LessonsLearnedNavigationItem"
+            }
+          }
+        },
+        "required": [
+          "profile",
+          "navigation"
         ]
       }
     }

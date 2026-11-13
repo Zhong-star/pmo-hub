@@ -96,7 +96,10 @@ export default defineConfig({
           });
         },
       },
-      '/api': 'http://127.0.0.1:3001',
+      '/api': {
+        target: process.env.HUB_API_TARGET ?? 'http://127.0.0.1:3001',
+        changeOrigin: true,
+      },
     },
   },
   test: {
