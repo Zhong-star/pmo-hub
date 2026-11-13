@@ -42,6 +42,14 @@ Abra [o Hub](http://127.0.0.1:8080/) ou [Lessons Learned](http://127.0.0.1:8080/
 
 Execute `frontend` para atualizar Hub e Lessons Learned, ou `backend` para atualizar as duas APIs. O comando cria versões novas das duas imagens da camada, carrega as imagens no kind e aguarda ambos os rollouts. Em caso de falha, ele tenta restaurar as duas imagens da última release pronta e retorna um código de erro mesmo quando a restauração funciona.
 
+Para validar Lessons Learned com PostgreSQL, execute:
+
+```powershell
+node infrastructure/kubernetes/local/deploy.mjs backend --with-postgres
+```
+
+O comando provisiona o banco dedicado no cluster com volume persistente e gera o Secret local na primeira execução. Antes do rollout, executa as migrações TypeORM em um Job com a imagem da API. O Job e o Deployment usam a mesma URL do Secret. Repita o comando para verificar que não há migrações pendentes e confira as quatro rotas pela origem do Hub. Preserve o Secret junto com o volume para manter o acesso aos dados entre releases. Uma release com `backend` sem a opção `--with-postgres` desabilita a conexão da API. O rollback restaura as imagens e a configuração de conexão da release anterior. As migrações já aplicadas continuam no banco.
+
 Para verificar a independência entre as camadas, compare as imagens antes e depois de cada deploy. Depois de uma release bem-sucedida, force a falha de um rollout e compare novamente. As quatro imagens devem voltar aos valores registrados imediatamente antes da falha:
 
 ```powershell
@@ -51,3 +59,5 @@ kubectl --context kind-pmo-hub -n pmo-hub get deployments -l layer -o custom-col
 ```
 
 Se o processo for interrompido à força e deixar a trava da camada, confirme que nenhum deploy dessa camada está em execução e remova o ConfigMap `pmo-frontend-deploy-lock` ou `pmo-backend-deploy-lock` do namespace `pmo-hub` antes de tentar de novo.
+
+Antes de remover a trava do backend, confirme também que os Jobs `lessons-learned-migrate-*` terminaram com sucesso ou falha. Use `kubectl --context kind-pmo-hub -n pmo-hub get jobs` para consultar o estado e `kubectl logs job/<nome>` com o mesmo contexto e namespace para diagnosticar uma falha.

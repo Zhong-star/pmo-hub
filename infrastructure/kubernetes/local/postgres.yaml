@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: lessons-learned-postgres
+spec:
+  selector:
+    app: lessons-learned-postgres
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: lessons-learned-postgres
+spec:
+  serviceName: lessons-learned-postgres
+  selector:
+    matchLabels:
+      app: lessons-learned-postgres
+  template:
+    metadata:
+      labels:
+        app: lessons-learned-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: lessons_learned
+            - name: POSTGRES_DB
+              value: lessons_learned
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lessons-learned-postgres
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: [pg_isready, -h, "127.0.0.1", -U, lessons_learned, -d, lessons_learned]
+            periodSeconds: 2
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi

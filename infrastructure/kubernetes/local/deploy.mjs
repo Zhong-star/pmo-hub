@@ -5,8 +5,10 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const router = fileURLToPath(new URL('./router.yaml', import.meta.url));
+const postgres = fileURLToPath(new URL('./postgres.yaml', import.meta.url));
 const cluster = 'pmo-hub';
 const namespace = 'pmo-hub';
+const databaseSecret = 'lessons-learned-postgres';
 const layers = {
   frontend: [
     { name: 'hub', port: 8080, path: '/' },
@@ -36,7 +38,64 @@ function apply(resource) {
   kubectl(['apply', '-f', '-'], JSON.stringify(resource));
 }
 
-function resources(layer, images) {
+function databaseEnv() {
+  return [{
+    name: 'LESSONS_LEARNED_DATABASE_URL',
+    valueFrom: { secretKeyRef: { name: databaseSecret, key: 'url' } },
+  }];
+}
+
+function migrateDatabase(image, version) {
+  if (!kubectl(['get', 'secret', databaseSecret, '--ignore-not-found', '-o', 'name'])) {
+    const password = randomUUID();
+    kubectl(['create', '-f', '-'], JSON.stringify({
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: { name: databaseSecret },
+      immutable: true,
+      data: {
+        password: Buffer.from(password).toString('base64'),
+        url: Buffer.from(`postgresql://lessons_learned:${password}@${databaseSecret}:5432/lessons_learned`).toString('base64'),
+      },
+    }));
+  }
+  kubectl(['apply', '-f', postgres]);
+  kubectl(['rollout', 'status', `statefulset/${databaseSecret}`, '--timeout=120s']);
+
+  const name = `lessons-learned-migrate-${version}`;
+  kubectl(['create', '-f', '-'], JSON.stringify({
+    apiVersion: 'batch/v1',
+    kind: 'Job',
+    metadata: { name },
+    spec: {
+      backoffLimit: 0,
+      activeDeadlineSeconds: 90,
+      ttlSecondsAfterFinished: 3600,
+      template: {
+        spec: {
+          restartPolicy: 'Never',
+          containers: [{
+            name: 'migrate',
+            image,
+            imagePullPolicy: 'Never',
+            command: ['node', '/app/node_modules/typeorm/cli.js', 'migration:run', '-d', 'dist/database/data-source.js'],
+            env: databaseEnv(),
+          }],
+        },
+      },
+    },
+  }));
+  try {
+    kubectl(['wait', '--for=condition=complete', `job/${name}`, '--timeout=100s']);
+  } catch (error) {
+    throw new Error(`Migration job ${name} did not complete. Inspect its status and logs in namespace ${namespace}.`, {
+      cause: error,
+    });
+  }
+  console.log(kubectl(['logs', `job/${name}`]));
+}
+
+function resources(layer, { images, withPostgres }) {
   const items = layers[layer].flatMap(({ name, port, path }) => {
     const labels = { app: name, layer };
     return [
@@ -59,6 +118,7 @@ function resources(layer, images) {
                 name,
                 image: images[name],
                 imagePullPolicy: 'Never',
+                ...(withPostgres && name === 'lessons-learned-api' ? { env: databaseEnv() } : {}),
                 ports: [{ name: 'http', containerPort: port }],
                 readinessProbe: { httpGet: { path, port: 'http' }, periodSeconds: 2 },
               }],
@@ -71,14 +131,14 @@ function resources(layer, images) {
   return { apiVersion: 'v1', kind: 'List', items };
 }
 
-function release(layer, images) {
-  apply(resources(layer, images));
+function release(layer, configuration) {
+  apply(resources(layer, configuration));
   for (const { name } of layers[layer]) {
     kubectl(['rollout', 'status', `deployment/${name}`, '--timeout=90s']);
   }
 }
 
-function deploy(layer, failureTarget) {
+function deploy(layer, failureTarget, withPostgres) {
   const names = layers[layer].map(({ name }) => name);
   if (failureTarget && !names.includes(failureTarget)) {
     throw new Error(`Choose a failure target in the ${layer} layer.`);
@@ -99,20 +159,21 @@ function deploy(layer, failureTarget) {
   kubectl(['create', 'configmap', lock]);
   try {
     const saved = kubectl(['get', 'configmap', state, '--ignore-not-found', '-o', 'json']);
-    const previous = saved ? JSON.parse(JSON.parse(saved).data.images) : undefined;
+    const previous = saved ? JSON.parse(saved).data : undefined;
     if (failureTarget && !previous) throw new Error('Deploy a successful release before testing rollback.');
+    if (withPostgres) migrateDatabase(images['lessons-learned-api'], version);
     try {
-      release(layer, images);
+      release(layer, { images, withPostgres });
       apply({
         apiVersion: 'v1',
         kind: 'ConfigMap',
         metadata: { name: state },
-        data: { images: JSON.stringify(images) },
+        data: { images: JSON.stringify(images), withPostgres: String(withPostgres) },
       });
     } catch (error) {
       if (!previous) throw new Error('First release failed. No previous release is available.', { cause: error });
       try {
-        release(layer, previous);
+        release(layer, { images: JSON.parse(previous.images), withPostgres: previous.withPostgres === 'true' });
       } catch (rollbackError) {
         throw new AggregateError([error, rollbackError], `${layer} release and rollback failed.`);
       }
@@ -140,10 +201,11 @@ try {
     kubectl(['apply', '-f', '-'], manifest.replace('ROUTER_MANIFEST_HASH', revision));
     kubectl(['rollout', 'status', 'deployment/pmo-router', '--timeout=90s']);
     console.log('Local cluster and router are ready.');
-  } else if (Object.hasOwn(layers, command) && !extra.length && (!option || option.startsWith('--fail='))) {
-    deploy(command, option?.slice('--fail='.length));
+  } else if (Object.hasOwn(layers, command) && !extra.length &&
+      (!option || option.startsWith('--fail=') || (command === 'backend' && option === '--with-postgres'))) {
+    deploy(command, option?.startsWith('--fail=') ? option.slice('--fail='.length) : undefined, option === '--with-postgres');
   } else {
-    throw new Error('Usage: node deploy.mjs setup | frontend | backend [--fail=component]');
+    throw new Error('Usage: node deploy.mjs setup | frontend [--fail=component] | backend [--with-postgres | --fail=component]');
   }
 } catch (error) {
   console.error(error.message);
