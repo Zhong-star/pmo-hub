@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { useThemePreference } from '../../shared-ui/src/theme';
@@ -29,6 +29,7 @@ function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
 }
 
 type ModulePage = 'home' | 'my-submissions';
+type CreateDraftVariables = { profileId: string; title: string; submittedTitle: string };
 
 function readModulePage(): ModulePage {
   return new URLSearchParams(window.location.search).get('page') === 'my-submissions'
@@ -45,6 +46,10 @@ export function LessonsLearnedScreen() {
   const [draftTitle, setDraftTitle] = useState('');
   const [draftTitleError, setDraftTitleError] = useState<string | null>(null);
   const [selectedDraft, setSelectedDraft] = useState<Awaited<ReturnType<typeof getMyOpenDrafts>>[number] | null>(null);
+  const selectedProfileIdRef = useRef(selectedProfileId);
+  const draftTitleRef = useRef(draftTitle);
+  const pendingCreateProfilesRef = useRef(new Set<string>());
+  const [pendingCreateProfiles, setPendingCreateProfiles] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const homeQuery = useQuery({
     queryKey: ['lessons-learned-home', selectedProfileId],
@@ -65,33 +70,65 @@ export function LessonsLearnedScreen() {
     refetchOnWindowFocus: true,
   });
   const createDraftMutation = useMutation({
-    mutationFn: ({ profileId, title }: { profileId: string; title: string }) => createLessonDraft(profileId, title),
-    onSuccess: async () => {
-      setDraftTitle('');
-      setDraftTitleError(null);
-      setIsCreateFormOpen(false);
-      await queryClient.invalidateQueries({ queryKey: ['lessons-learned-my-submissions', selectedProfileId] });
+    mutationFn: ({ profileId, title }: CreateDraftVariables) => createLessonDraft(profileId, title),
+    onSuccess: async (_draft, variables) => {
+      if (
+        selectedProfileIdRef.current === variables.profileId &&
+        draftTitleRef.current === variables.submittedTitle
+      ) {
+        draftTitleRef.current = '';
+        setDraftTitle('');
+        setDraftTitleError(null);
+        setIsCreateFormOpen(false);
+      }
+      await queryClient.invalidateQueries({
+        queryKey: ['lessons-learned-my-submissions', variables.profileId],
+      });
     },
+    onSettled: (_draft, _error, variables) => markCreatePending(variables.profileId, false),
   });
 
+  function markCreatePending(profileId: string, isPending: boolean) {
+    const nextPendingProfiles = new Set(pendingCreateProfilesRef.current);
+    if (isPending) nextPendingProfiles.add(profileId);
+    else nextPendingProfiles.delete(profileId);
+    pendingCreateProfilesRef.current = nextPendingProfiles;
+    setPendingCreateProfiles(nextPendingProfiles);
+  }
+
+  const resetCreateDraftMutation = createDraftMutation.reset;
+  const updateSelectedProfile = useCallback((profileId: string | null) => {
+    if (profileId === selectedProfileIdRef.current) return;
+    selectedProfileIdRef.current = profileId;
+    setSelectedProfileId(profileId);
+    draftTitleRef.current = '';
+    setDraftTitle('');
+    setDraftTitleError(null);
+    setSelectedDraft(null);
+    setIsCreateFormOpen(false);
+    resetCreateDraftMutation();
+  }, [resetCreateDraftMutation]);
+
+  const isSavingCurrentDraft = selectedProfileId !== null && pendingCreateProfiles.has(selectedProfileId);
+
   useEffect(() => {
-    function updateSelectedProfile(event: StorageEvent) {
+    function handleStorageChange(event: StorageEvent) {
       if (event.key === null || event.key === LOCAL_USER_STORAGE_KEY) {
-        setSelectedProfileId(readSelectedProfileId());
+        updateSelectedProfile(readSelectedProfileId());
       }
     }
 
     function restoreSelectedProfile() {
-      setSelectedProfileId(readSelectedProfileId());
+      updateSelectedProfile(readSelectedProfileId());
     }
 
-    window.addEventListener('storage', updateSelectedProfile);
+    window.addEventListener('storage', handleStorageChange);
     window.addEventListener('pageshow', restoreSelectedProfile);
     return () => {
-      window.removeEventListener('storage', updateSelectedProfile);
+      window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('pageshow', restoreSelectedProfile);
     };
-  }, []);
+  }, [updateSelectedProfile]);
 
   useEffect(() => {
     function restorePageFromUrl() {
@@ -118,6 +155,7 @@ export function LessonsLearnedScreen() {
 
   function saveDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!selectedProfileId || pendingCreateProfilesRef.current.has(selectedProfileId)) return;
     const title = draftTitle.trim();
     if (!title) {
       setDraftTitleError('Enter a title to save this draft.');
@@ -128,7 +166,8 @@ export function LessonsLearnedScreen() {
       return;
     }
     setDraftTitleError(null);
-    if (selectedProfileId) createDraftMutation.mutate({ profileId: selectedProfileId, title });
+    markCreatePending(selectedProfileId, true);
+    createDraftMutation.mutate({ profileId: selectedProfileId, title, submittedTitle: draftTitle });
   }
 
   function changeProfile() {
@@ -137,7 +176,7 @@ export function LessonsLearnedScreen() {
     } catch {
       // The Hub still presents profile selection when browser storage is unavailable.
     }
-    setSelectedProfileId(null);
+    updateSelectedProfile(null);
     window.location.assign('/');
   }
 
@@ -264,8 +303,9 @@ export function LessonsLearnedScreen() {
                       <h1 id="page-title">My Submissions</h1>
                       <p className="intro">Your open lesson drafts.</p>
                     </div>
-                    <button className="draft-action" type="button" onClick={() => {
+                    <button className="draft-action" type="button" disabled={isSavingCurrentDraft} onClick={() => {
                       setSelectedDraft(null);
+                      draftTitleRef.current = '';
                       setDraftTitle('');
                       setDraftTitleError(null);
                       createDraftMutation.reset();
@@ -275,10 +315,10 @@ export function LessonsLearnedScreen() {
                     </button>
                   </div>
 
-                  {createDraftMutation.isSuccess && (
+                  {createDraftMutation.isSuccess && createDraftMutation.variables?.profileId === selectedProfileId && (
                     <p className="draft-success" role="status">Draft saved.</p>
                   )}
-                  {createDraftMutation.isError && (
+                  {createDraftMutation.isError && createDraftMutation.variables?.profileId === selectedProfileId && (
                     <p className="draft-error" role="alert">The draft could not be saved. Your title is still here; try again.</p>
                   )}
 
@@ -291,11 +331,13 @@ export function LessonsLearnedScreen() {
                         type="text"
                         maxLength={150}
                         required
+                        disabled={isSavingCurrentDraft}
                         value={draftTitle}
                         onChange={(event) => {
+                          draftTitleRef.current = event.target.value;
                           setDraftTitle(event.target.value);
                           setDraftTitleError(null);
-                          createDraftMutation.reset();
+                          if (!pendingCreateProfilesRef.current.has(selectedProfileId)) createDraftMutation.reset();
                         }}
                         aria-invalid={draftTitleError ? 'true' : undefined}
                         aria-describedby={draftTitleError ? 'draft-title-error' : 'draft-title-count'}
@@ -306,10 +348,10 @@ export function LessonsLearnedScreen() {
                         <p id="draft-title-count" className="draft-helper">{draftTitle.length}/150 characters</p>
                       )}
                       <div className="draft-form-actions">
-                        <button className="draft-action" type="submit" disabled={createDraftMutation.isPending}>
-                          {createDraftMutation.isPending ? 'Saving…' : 'Save Draft'}
+                        <button className="draft-action" type="submit" disabled={isSavingCurrentDraft}>
+                          {isSavingCurrentDraft ? 'Saving…' : 'Save Draft'}
                         </button>
-                        <button className="draft-cancel" type="button" onClick={() => setIsCreateFormOpen(false)}>
+                        <button className="draft-cancel" type="button" disabled={isSavingCurrentDraft} onClick={() => setIsCreateFormOpen(false)}>
                           Cancel
                         </button>
                       </div>

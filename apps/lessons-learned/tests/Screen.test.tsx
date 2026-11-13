@@ -1,5 +1,5 @@
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsLearnedScreen } from '../src/LessonsLearnedScreen';
@@ -127,6 +127,187 @@ describe('Lessons Learned access check', () => {
 
     expect(await screen.findByRole('status')).toHaveTextContent('Draft saved');
     expect(createLessonDraft).toHaveBeenCalledWith('local-contributor', 'Improve release handover');
+  });
+
+  it('prevents duplicate submits and form changes while a save is pending', async () => {
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
+    let resolveCreate!: (draft: {
+      id: number;
+      title: string;
+      authorId: string;
+      status: 'Open';
+      createdAt: string;
+      updatedAt: string;
+    }) => void;
+    vi.mocked(createLessonDraft).mockImplementation(() => new Promise((resolve) => {
+      resolveCreate = resolve;
+    }));
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await screen.findByRole('heading', { name: 'My Submissions' });
+    await user.click(screen.getByRole('button', { name: 'Create lesson' }));
+    const titleInput = screen.getByRole('textbox', { name: 'Title' });
+    await user.type(titleInput, 'First draft title');
+    const form = titleInput.closest('form');
+    expect(form).not.toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    expect(titleInput).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Create lesson' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    fireEvent.submit(form!);
+    expect(createLessonDraft).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveCreate({
+        id: 7,
+        title: 'First draft title',
+        authorId: 'local-contributor',
+        status: 'Open',
+        createdAt: '2026-11-13T12:00:00.000Z',
+        updatedAt: '2026-11-13T12:00:00.000Z',
+      });
+    });
+
+    expect(await screen.findByText('Draft saved.')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Title' })).not.toBeInTheDocument();
+    expect(createLessonDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the previous profile draft UI when storage or pageshow selects another profile', async () => {
+    const contributorDraft = {
+      id: 7,
+      title: 'Contributor private draft',
+      authorId: 'local-contributor',
+      status: 'Open' as const,
+      createdAt: '2026-11-13T12:00:00.000Z',
+      updatedAt: '2026-11-13T12:00:00.000Z',
+    };
+    const pmoDraft = {
+      id: 9,
+      title: 'PMO private draft',
+      authorId: 'local-pmo',
+      status: 'Open' as const,
+      createdAt: '2026-11-13T12:00:00.000Z',
+      updatedAt: '2026-11-13T12:00:00.000Z',
+    };
+    vi.mocked(getHome).mockImplementation((profileId) => Promise.resolve(
+      profileId === 'local-pmo' ? pmo : contributor,
+    ));
+    vi.mocked(getMyOpenDrafts).mockImplementation((profileId) => Promise.resolve(
+      profileId === 'local-pmo' ? [pmoDraft] : [contributorDraft],
+    ));
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(await screen.findByRole('button', { name: 'Reopen Contributor private draft' }));
+    expect(screen.getByRole('dialog', { name: 'Open draft' })).toHaveTextContent('Contributor private draft');
+
+    act(() => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'pmo-hub.local-user-id',
+        newValue: 'local-pmo',
+      }));
+    });
+
+    expect(await screen.findByRole('button', { name: 'Local PMO' })).toBeInTheDocument();
+    expect(await screen.findByText('PMO private draft')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Open draft' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Create lesson' }));
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Unsaved PMO title');
+    act(() => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
+      window.dispatchEvent(new PageTransitionEvent('pageshow'));
+    });
+
+    expect(await screen.findByRole('button', { name: 'Local Contributor' })).toBeInTheDocument();
+    expect(await screen.findByText('Contributor private draft')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Title' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Unsaved PMO title')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Open draft' })).not.toBeInTheDocument();
+  });
+
+  it('keeps a newly selected profile’s form unchanged when the previous profile save completes', async () => {
+    vi.mocked(getHome).mockImplementation((profileId) => Promise.resolve(
+      profileId === 'local-pmo' ? pmo : contributor,
+    ));
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
+    let resolveCreate!: (draft: {
+      id: number;
+      title: string;
+      authorId: string;
+      status: 'Open';
+      createdAt: string;
+      updatedAt: string;
+    }) => void;
+    vi.mocked(createLessonDraft).mockImplementation((profileId) => {
+      if (profileId === 'local-contributor') return new Promise((resolve) => {
+        resolveCreate = resolve;
+      });
+      return Promise.resolve({
+        id: 9,
+        title: 'New PMO title',
+        authorId: 'local-pmo',
+        status: 'Open' as const,
+        createdAt: '2026-11-13T12:00:00.000Z',
+        updatedAt: '2026-11-13T12:00:00.000Z',
+      });
+    });
+    window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
+    window.history.replaceState(null, '', '/lessons-learned/');
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LessonsLearnedScreen />
+      </QueryClientProvider>,
+    );
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await screen.findByRole('heading', { name: 'My Submissions' });
+    await user.click(screen.getByRole('button', { name: 'Create lesson' }));
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Pending contributor title');
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    act(() => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'pmo-hub.local-user-id',
+        newValue: 'local-pmo',
+      }));
+    });
+    expect(await screen.findByRole('button', { name: 'Local PMO' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create lesson' }));
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'New PMO title');
+
+    await act(async () => {
+      resolveCreate({
+        id: 7,
+        title: 'Pending contributor title',
+        authorId: 'local-contributor',
+        status: 'Open',
+        createdAt: '2026-11-13T12:00:00.000Z',
+        updatedAt: '2026-11-13T12:00:00.000Z',
+      });
+    });
+
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('New PMO title');
+    expect(screen.getByRole('heading', { name: 'Create lesson' })).toBeInTheDocument();
+    expect(screen.queryByText('Draft saved.')).not.toBeInTheDocument();
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['lessons-learned-my-submissions', 'local-contributor'],
+    });
   });
 
   it('shows the selected identity while the API checks access without showing Home data', () => {
