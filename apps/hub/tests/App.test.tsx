@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from '../src/App';
 import { HUB_API_TIMEOUT_MS } from '../src/api';
+import { hubCatalogConfig } from '../src/catalog.config';
 
 const { mockedGet } = vi.hoisted(() => {
   const mockedGet = vi.fn();
@@ -34,7 +35,7 @@ afterEach(() => {
 });
 
 describe('Hub entry', () => {
-  it('validates a selected local profile before opening the initial experience', async () => {
+  it('validates a selected local profile before showing the module catalog', async () => {
     mockedGet.mockImplementation(async (path: string) => {
       if (path.endsWith('/status')) return { data: { status: 'available' } };
       if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
@@ -53,7 +54,36 @@ describe('Hub entry', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Module catalog' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Lessons Learned' })).toBeInTheDocument();
+    expect(screen.getByText('Capture, review, and reuse lessons from project experience.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
+    expect(screen.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeInTheDocument();
+    expect(screen.getByText('Request and coordinate technology resources across projects.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
+    expect(screen.queryByRole('link', { name: 'Open Tech Resource Allocation' })).not.toBeInTheDocument();
     expect(mockedGet).toHaveBeenCalledWith('/api/hub/v1/local-users/dev-1', { timeout: HUB_API_TIMEOUT_MS });
+  });
+
+  it('uses the catalog configuration to enable Lessons Learned and keep Tech Resource Allocation coming soon', async () => {
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/status')) return { data: { status: 'available' } };
+      if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
+      if (path.endsWith('/dev-1')) return { data: { id: 'dev-1', displayName: 'Avery Chen' } };
+      throw new Error(`Unexpected request: ${path}`);
+    });
+
+    renderApp();
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByRole('heading', { name: 'Tech Resource Allocation' })).toBeInTheDocument();
+    const lessonsLearned = hubCatalogConfig.find((module) => module.code === 'lessons-learned');
+    const resourceAllocation = hubCatalogConfig.find((module) => module.code === 'resource-allocation');
+    expect(lessonsLearned?.enabled).toBe(true);
+    expect(resourceAllocation?.enabled).toBe(false);
+    expect(screen.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
+    expect(screen.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
   });
 
   it('keeps entry blocked and offers retry when local profiles cannot be loaded', async () => {
@@ -96,6 +126,7 @@ describe('Hub entry', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
 
     expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Module catalog' })).toBeInTheDocument();
   });
 
   it('locks the selected profile while validation is pending', async () => {
@@ -115,22 +146,31 @@ describe('Hub entry', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(profileSelect).toBeDisabled();
+    expect(screen.queryByRole('heading', { name: 'Module catalog' })).not.toBeInTheDocument();
     resolveValidation({ data: { id: 'dev-1', displayName: 'Avery Chen' } });
     expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Module catalog' })).toBeInTheDocument();
   });
 
   it('resumes a saved profile only after validating it with the API', async () => {
     window.localStorage.setItem('pmo-hub.local-user-id', 'dev-1');
+    let resolveValidation!: (response: { data: { id: string; displayName: string } }) => void;
     mockedGet.mockImplementation(async (path: string) => {
       if (path.endsWith('/status')) return { data: { status: 'available' } };
       if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
-      if (path.endsWith('/dev-1')) return { data: { id: 'dev-1', displayName: 'Avery Chen' } };
+      if (path.endsWith('/dev-1')) {
+        return new Promise((resolve) => { resolveValidation = resolve; });
+      }
       throw new Error(`Unexpected request: ${path}`);
     });
 
     renderApp();
 
+    await waitFor(() => expect(resolveValidation).toBeDefined());
+    expect(screen.queryByRole('heading', { name: 'Module catalog' })).not.toBeInTheDocument();
+    resolveValidation({ data: { id: 'dev-1', displayName: 'Avery Chen' } });
     expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Module catalog' })).toBeInTheDocument();
     expect(mockedGet).toHaveBeenCalledWith('/api/hub/v1/local-users/dev-1', { timeout: HUB_API_TIMEOUT_MS });
     expect(window.localStorage.getItem('pmo-hub.local-user-id')).toBe('dev-1');
   });
@@ -173,6 +213,11 @@ describe('Hub entry', () => {
     await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Local profile' }), 'dev-2');
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('heading', { name: 'Welcome, Jordan Lee' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Module catalog' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Lessons Learned' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
+    expect(screen.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tech Resource Allocation: Coming soon' })).toBeDisabled();
     expect(window.localStorage.getItem('pmo-hub.local-user-id')).toBe('dev-2');
   });
 

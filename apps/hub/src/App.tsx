@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { getHubStatus, getLocalUser, getLocalUsers, type LocalUser } from './api';
+import { hubCatalogConfig } from './catalog.config';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
 
@@ -104,7 +105,7 @@ export function App() {
 
   return (
     <main className="page-shell">
-      <section className="welcome-card" aria-labelledby="page-title">
+      <section className={`welcome-card${activeUser ? ' catalog-page' : ''}`} aria-labelledby="page-title">
         <div className="brand-mark" aria-hidden="true">P</div>
         <p className="eyebrow">Project Management Office</p>
         <h1 id="page-title">Welcome to PMO Hub</h1>
@@ -168,12 +169,46 @@ export function App() {
         )}
 
         {activeUser && (
-          <div className="entry-panel home-panel" aria-live="polite">
-            <p className="eyebrow">Your local profile</p>
-            <h2>Welcome, {activeUser.displayName}</h2>
-            <p className="helper-text">Your Hub profile is ready.</p>
-            <button className="button button-secondary" type="button" onClick={changeProfile}>Change profile</button>
-          </div>
+          <>
+            <div className="profile-bar" aria-live="polite">
+              <div>
+                <p className="eyebrow">Your local profile</p>
+                <h2>Welcome, {activeUser.displayName}</h2>
+              </div>
+              <button className="button button-secondary" type="button" onClick={changeProfile}>Change profile</button>
+            </div>
+
+            <section className="module-catalog" aria-labelledby="catalog-title">
+              <div className="catalog-header">
+                <h2 id="catalog-title">Module catalog</h2>
+                <p className="helper-text">Explore the modules available through PMO Hub.</p>
+              </div>
+              <ul className="module-grid">
+                {hubCatalogConfig.map((module) => (
+                  <li key={module.code} className="module-card">
+                    <article aria-labelledby={`catalog-${module.code}-title`}>
+                      <h3 id={`catalog-${module.code}-title`}>{module.name}</h3>
+                      <p>{module.description}</p>
+                      {module.enabled ? (
+                        <a className="button button-primary module-action" href={module.route}>
+                          Open {module.name}
+                        </a>
+                      ) : (
+                        <button
+                          className="button button-secondary module-action"
+                          type="button"
+                          disabled
+                          aria-label={`${module.name}: Coming soon`}
+                        >
+                          Coming soon
+                        </button>
+                      )}
+                    </article>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </>
         )}
       </section>
       <footer>PMO Hub · Local development</footer>
