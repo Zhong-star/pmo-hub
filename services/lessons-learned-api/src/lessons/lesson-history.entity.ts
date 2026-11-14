@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
+import type { LessonStatus } from './lesson-domain.constants';
 
 @Entity({ name: 'lesson_history' })
 @Index('lesson_history_lesson_id_id_idx', ['lessonId', 'id'])
@@ -16,10 +17,10 @@ export class LessonHistory {
   eventType!: 'Created' | 'Submitted' | 'Cancelled';
 
   @Column({ name: 'previous_status', type: 'varchar', length: 32, nullable: true })
-  previousStatus!: 'Open' | 'PMOEvaluation' | 'Approved' | 'Closed' | 'Archived' | null;
+  previousStatus!: LessonStatus | null;
 
   @Column({ name: 'new_status', type: 'varchar', length: 32 })
-  newStatus!: 'Open' | 'PMOEvaluation' | 'Approved' | 'Closed' | 'Archived';
+  newStatus!: LessonStatus;
 
   @Column({ type: 'varchar', length: 1000, nullable: true })
   reason!: string | null;

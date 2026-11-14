@@ -1,9 +1,7 @@
 import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
-import { lessonTypes } from './lesson-fields-request.dto';
-
-export const lessonStatuses = ['Open', 'PMOEvaluation', 'Approved', 'Closed', 'Archived'] as const;
+import { LESSON_STATUSES, LESSON_TYPES, type LessonStatus, type LessonType } from './lesson-domain.constants';
 
 export class LessonSubmissionsQuery {
   @ApiPropertyOptional({ type: String, description: 'A title prefix or an exact numeric lesson ID.' })
@@ -25,15 +23,15 @@ export class LessonSubmissionsQuery {
   @IsBoolean()
   withoutProject?: boolean;
 
-  @ApiPropertyOptional({ enum: lessonTypes })
+  @ApiPropertyOptional({ enum: LESSON_TYPES })
   @IsOptional()
-  @IsIn(lessonTypes)
-  lessonType?: typeof lessonTypes[number];
+  @IsIn(LESSON_TYPES)
+  lessonType?: LessonType;
 
-  @ApiPropertyOptional({ enum: lessonStatuses })
+  @ApiPropertyOptional({ enum: LESSON_STATUSES })
   @IsOptional()
-  @IsIn(lessonStatuses)
-  status?: typeof lessonStatuses[number];
+  @IsIn(LESSON_STATUSES)
+  status?: LessonStatus;
 }
 
 export class PmoDraftsQuery extends LessonSubmissionsQuery {

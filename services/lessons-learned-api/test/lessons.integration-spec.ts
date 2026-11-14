@@ -5,12 +5,14 @@ import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Test } from '@nestjs/testing';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntitySubscriberInterface } from 'typeorm';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../src/database/database.module';
+import { Lesson } from '../src/lessons/lesson.entity';
+import { LessonHistory } from '../src/lessons/lesson-history.entity';
 
 describe('Lessons Learned draft registration', () => {
   let container: StartedPostgreSqlContainer | undefined;
@@ -400,24 +402,67 @@ describe('Lessons Learned draft registration', () => {
       .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([aboveIntegerLimit.body.id]));
   });
 
-  it('reads an owned lesson and its history in a repeatable-read transaction', async () => {
+  it('returns a lesson state with the lifecycle history for that state', async () => {
     const server = request(app!.getHttpServer());
     const created = await server
       .post('/api/lessons-learned/v1/lessons')
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .send({ title: 'Read a consistent lesson snapshot' })
       .expect(201);
-    const transaction = vi.spyOn(dataSource!, 'transaction');
 
-    await server
-      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
-      .set('X-PMO-Local-User-ID', 'local-contributor')
-      .expect(200)
-      .expect(({ body }) => expect(body.history.map(({ eventType }: { eventType: string }) => eventType))
-        .toEqual(['Created']));
+    let transitionCommitted = false;
+    const transitionAfterFirstRead: EntitySubscriberInterface<Lesson> = {
+      listenTo: () => Lesson,
+      async afterLoad(lesson) {
+        if (lesson.id !== created.body.id || transitionCommitted) return;
+        transitionCommitted = true;
+        await dataSource!.transaction(async (manager) => {
+          await manager.getRepository(Lesson).update(lesson.id, {
+            status: 'PMOEvaluation',
+            updatedBy: 'local-contributor',
+            version: lesson.version + 1,
+          });
+          await manager.getRepository(LessonHistory).save({
+            lessonId: lesson.id,
+            actorId: 'local-contributor',
+            eventType: 'Submitted',
+            previousStatus: 'Open',
+            newStatus: 'PMOEvaluation',
+            reason: null,
+          });
+        });
+      },
+    };
+    dataSource!.subscribers.push(transitionAfterFirstRead);
 
-    expect(transaction).toHaveBeenCalledWith('REPEATABLE READ', expect.any(Function));
-    transaction.mockRestore();
+    try {
+      const firstSnapshot = await server
+        .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .expect(200);
+
+      expect(transitionCommitted).toBe(true);
+      expect(firstSnapshot.body.status).toBe('Open');
+      expect(firstSnapshot.body.history).toMatchObject([
+        { eventType: 'Created', previousStatus: null, newStatus: 'Open' },
+      ]);
+
+      await server
+        .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.status).toBe('PMOEvaluation');
+          expect(body.history).toMatchObject([
+            { eventType: 'Created', previousStatus: null, newStatus: 'Open' },
+            { eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation' },
+          ]);
+          expect(body.history[body.history.length - 1]?.newStatus).toBe(body.status);
+        });
+    } finally {
+      const subscriberIndex = dataSource!.subscribers.indexOf(transitionAfterFirstRead);
+      if (subscriberIndex !== -1) dataSource!.subscribers.splice(subscriberIndex, 1);
+    }
   });
 
   it('distinguishes a project whose ID is none from lessons without a project', async () => {

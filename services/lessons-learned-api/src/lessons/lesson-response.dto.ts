@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { LESSON_STATUSES, LESSON_TYPES, type LessonStatus, type LessonType } from './lesson-domain.constants';
 
-export type LessonStatus = 'Open' | 'PMOEvaluation' | 'Approved' | 'Closed' | 'Archived';
+export type { LessonStatus } from './lesson-domain.constants';
 
 export class LessonDraftResponse {
   @ApiProperty({ type: Number, example: 1 })
@@ -15,7 +16,7 @@ export class LessonDraftResponse {
   @ApiProperty({ type: String, example: 'local-contributor' })
   updatedBy!: string;
 
-  @ApiProperty({ type: String, enum: ['Open', 'PMOEvaluation', 'Approved', 'Closed', 'Archived'], example: 'Open' })
+  @ApiProperty({ type: String, enum: LESSON_STATUSES, example: 'Open' })
   status!: LessonStatus;
 
   @ApiProperty({ type: Number, minimum: 1, example: 1 })
@@ -45,10 +46,10 @@ export class LessonDraftResponse {
 
   @ApiProperty({
     type: String,
-    enum: ['Future Prevention', 'Success to Repeat', 'Risk Avoided', 'Communication'],
+    enum: LESSON_TYPES,
     nullable: true,
   })
-  lessonType!: 'Future Prevention' | 'Success to Repeat' | 'Risk Avoided' | 'Communication' | null;
+  lessonType!: LessonType | null;
 
   @ApiProperty({ type: String, nullable: true, maxLength: 4000 })
   impact!: string | null;
@@ -76,10 +77,10 @@ export class LessonHistoryEventResponse {
   @ApiProperty({ type: String, enum: ['Created', 'Submitted', 'Cancelled'] })
   eventType!: 'Created' | 'Submitted' | 'Cancelled';
 
-  @ApiProperty({ type: String, enum: ['Open', 'PMOEvaluation', 'Approved', 'Closed', 'Archived'], nullable: true })
+  @ApiProperty({ type: String, enum: LESSON_STATUSES, nullable: true })
   previousStatus!: LessonStatus | null;
 
-  @ApiProperty({ type: String, enum: ['Open', 'PMOEvaluation', 'Approved', 'Closed', 'Archived'] })
+  @ApiProperty({ type: String, enum: LESSON_STATUSES })
   newStatus!: LessonStatus;
 
   @ApiProperty({ type: String, nullable: true, maxLength: 1000 })

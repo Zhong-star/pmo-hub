@@ -1,7 +1,8 @@
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
-import { lessonTypes, projectCategories, projectPhases } from './lesson-fields-request.dto';
+import { projectCategories, projectPhases } from './lesson-fields-request.dto';
+import { LESSON_TYPES } from './lesson-domain.constants';
 
 export class SubmitLessonRequest {
   @ApiProperty({ type: Number, minimum: 1, example: 2 })
@@ -50,9 +51,9 @@ export class SubmitLessonRequest {
   @MaxLength(4000)
   rootCause?: string | null;
 
-  @ApiProperty({ enum: lessonTypes, example: 'Future Prevention' })
-  @IsIn(lessonTypes)
-  lessonType!: typeof lessonTypes[number];
+  @ApiProperty({ enum: LESSON_TYPES, example: 'Future Prevention' })
+  @IsIn(LESSON_TYPES)
+  lessonType!: typeof LESSON_TYPES[number];
 
   @ApiProperty({ type: String, maxLength: 4000 })
   @IsString()

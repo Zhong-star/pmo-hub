@@ -230,6 +230,88 @@ describe('Lessons Learned access check', () => {
     expect(within(editor).queryByRole('button', { name: 'Submit for PMO Review' })).not.toBeInTheDocument();
   });
 
+  it('asks before internal navigation closes a dirty editor and keeps its text when navigation is cancelled', async () => {
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoDrafts).mockResolvedValue([lessonDraft()]);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const user = userEvent.setup();
+    renderScreen('local-pmo');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'PMO Drafts' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit Improve release handover' }));
+    const editor = screen.getByRole('dialog', { name: 'Edit lesson' });
+    const situation = within(editor).getByRole('textbox', { name: 'Situation observed' });
+    await user.type(situation, 'Unsaved navigation draft');
+
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+
+    expect(confirm).toHaveBeenCalledWith('Discard your unsaved changes?');
+    expect(screen.getByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
+    expect(situation).toHaveValue('Unsaved navigation draft');
+    expect(screen.getByRole('heading', { name: 'PMO Drafts' })).toBeInTheDocument();
+  });
+
+  it('opens current detail and history after LESSON_NOT_OPEN without losing the editor text', async () => {
+    const draft = lessonDraft({ id: 48, title: 'Concurrent lesson update' });
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoDrafts).mockResolvedValue([draft]);
+    vi.mocked(updateLessonDraft).mockRejectedValueOnce(apiError(409, 'LESSON_NOT_OPEN'));
+    vi.mocked(getLessonDetails).mockResolvedValue(lessonDetails({
+      ...draft,
+      status: 'PMOEvaluation',
+      version: 2,
+      updatedBy: 'local-contributor',
+      history: [
+        { id: 1, actorId: 'local-contributor', eventType: 'Created', previousStatus: null, newStatus: 'Open', reason: null, occurredAt: draft.createdAt },
+        { id: 2, actorId: 'local-contributor', eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation', reason: null, occurredAt: draft.updatedAt },
+      ],
+    }));
+    const user = userEvent.setup();
+    renderScreen('local-pmo');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'PMO Drafts' }));
+    await user.click(await screen.findByRole('button', { name: `Edit ${draft.title}` }));
+    const editor = screen.getByRole('dialog', { name: 'Edit lesson' });
+    const title = within(editor).getByRole('textbox', { name: 'Title' });
+    await user.clear(title);
+    await user.type(title, 'Unsaved title remains visible');
+    await user.click(within(editor).getByRole('button', { name: 'Save Draft' }));
+
+    expect(await within(editor).findByRole('alert')).toHaveTextContent('no longer Open');
+    await user.click(within(editor).getByRole('button', { name: 'View current lesson details and history' }));
+    const details = screen.getByRole('dialog', { name: 'Lesson details' });
+    expect(await within(details).findByText('PMOEvaluation')).toBeInTheDocument();
+    expect(within(details).getByText('Submitted')).toBeInTheDocument();
+    expect(title).toHaveValue('Unsaved title remains visible');
+    await user.click(within(details).getByRole('button', { name: 'Close details' }));
+    expect(screen.getByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
+    expect(title).toHaveValue('Unsaved title remains visible');
+  });
+
+  it('restores the Open status filter after switching profiles on PMO Drafts', async () => {
+    const openDraft = lessonDraft({ id: 41, title: 'PMO open draft' });
+    const closedDraft = lessonDraft({ id: 42, title: 'PMO closed lesson', status: 'Closed' });
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoDrafts).mockImplementation(async (_profileId, filters = {}) => (
+      filters.status === 'Open' ? [openDraft] : [openDraft, closedDraft]
+    ));
+    const user = userEvent.setup();
+    renderScreen('local-pmo');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'PMO Drafts' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), '');
+    await screen.findByRole('row', { name: /PMO closed lesson/ });
+
+    window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo-next');
+    act(() => window.dispatchEvent(new StorageEvent('storage', {
+      key: 'pmo-hub.local-user-id',
+      newValue: 'local-pmo-next',
+    })));
+
+    expect(await screen.findByRole('combobox', { name: 'Status' })).toHaveValue('Open');
+    await waitFor(() => expect(getPmoDrafts).toHaveBeenCalledWith('local-pmo-next', { status: 'Open' }));
+  });
+
   it('confirms PMO cancellation of a third-party Open draft and refreshes PMO Drafts', async () => {
     const openDraft = lessonDraft({ id: 45, title: 'Draft PMO is closing' });
     const archivedDraft = lessonDraft({ ...openDraft, status: 'Archived', updatedBy: 'local-pmo', version: 2 });

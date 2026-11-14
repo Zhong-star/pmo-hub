@@ -80,7 +80,8 @@ test('Contributor creates a title-only lesson and completes it from the edit mod
 
   await page.getByRole('link', { name: 'My Submissions' }).click();
   await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
-  await page.getByRole('button', { name: 'Create lesson' }).click();
+  const createLessonButton = page.getByRole('button', { name: 'Create lesson' });
+  await createLessonButton.click();
   await expect(page.getByRole('dialog', { name: 'Create lesson' })).toBeVisible();
   await page.getByRole('textbox', { name: 'Title' }).fill(title);
   await page.getByRole('button', { name: 'Save Draft' }).click();
@@ -88,6 +89,7 @@ test('Contributor creates a title-only lesson and completes it from the edit mod
   await expect(page.getByRole('dialog', { name: 'Edit lesson' })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Close$/ })).toBeVisible();
   await page.getByRole('button', { name: /^Close$/ }).click();
+  await expect(createLessonButton).toBeFocused();
 
   await page.reload();
   await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
@@ -113,6 +115,7 @@ test('Contributor creates a title-only lesson and completes it from the edit mod
   await expect(page.getByRole('button', { name: 'Submit for PMO Review' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Close editor' }).click();
   const viewButton = page.getByRole('button', { name: `View ${title}` });
+  await expect(viewButton).toBeFocused();
   await viewButton.click();
   const details = page.getByRole('dialog', { name: 'Lesson details' });
   await expect(details.getByText('PMOEvaluation', { exact: true })).toBeVisible();
@@ -120,6 +123,52 @@ test('Contributor creates a title-only lesson and completes it from the edit mod
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
   await expect(viewButton).toBeFocused();
+});
+
+test('browser Back and Forward confirm dirty editor navigation and do not restore closed overlays', async ({ page }) => {
+  expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
+  const title = `Issue 25 history guard ${Date.now()}`;
+
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-pmo');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await page.getByRole('link', { name: 'My Submissions' }).click();
+  await page.getByRole('button', { name: 'Create lesson' }).click();
+  await page.getByRole('textbox', { name: 'Title' }).fill(title);
+  await page.getByRole('button', { name: 'Save Draft' }).click();
+  await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /^Close$/ }).click();
+  await page.getByRole('link', { name: 'PMO Drafts' }).click();
+  await page.evaluate(() => window.history.back());
+  await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
+  await page.getByRole('button', { name: `Reopen ${title}` }).click();
+  const editor = page.getByRole('dialog', { name: 'Edit lesson' });
+  const situation = editor.getByRole('textbox', { name: 'Situation observed' });
+  await situation.fill('Unsaved history text stays in the editor.');
+
+  for (const direction of ['forward', 'back'] as const) {
+    const dialogPromise = page.waitForEvent('dialog');
+    await page.evaluate((historyDirection) => window.history[historyDirection](), direction);
+    const dialog = await dialogPromise;
+    expect(dialog.type()).toBe('confirm');
+    expect(dialog.message()).toBe('Discard your unsaved changes?');
+    await dialog.dismiss();
+    await expect(editor).toBeVisible();
+    await expect(situation).toHaveValue('Unsaved history text stays in the editor.');
+    await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
+  }
+
+  const acceptedBack = page.waitForEvent('dialog');
+  await page.evaluate(() => window.history.back());
+  await (await acceptedBack).accept();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(editor).toHaveCount(0);
+
+  await page.evaluate(() => window.history.forward());
+  await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
 test('Contributor cancels an Open lesson with a reason and can reopen its Archived details after reload', async ({ page }) => {

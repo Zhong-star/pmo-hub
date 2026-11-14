@@ -1,10 +1,10 @@
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { LESSON_TYPES } from './lesson-domain.constants';
 
 export const projectCategories = ['Technology', 'Business', 'Infrastructure', 'Data'] as const;
 export const projectPhases = ['Initiation', 'Planning', 'Execution', 'Closure', 'Not Applicable'] as const;
-export const lessonTypes = ['Future Prevention', 'Success to Repeat', 'Risk Avoided', 'Communication'] as const;
 
 export class LessonDraftFieldsRequest {
   @ApiProperty({ type: String, maxLength: 150, example: 'Improve release handover' })
@@ -49,10 +49,10 @@ export class LessonDraftFieldsRequest {
   @MaxLength(4000)
   rootCause?: string | null;
 
-  @ApiPropertyOptional({ enum: lessonTypes, nullable: true })
+  @ApiPropertyOptional({ enum: LESSON_TYPES, nullable: true })
   @IsOptional()
-  @IsIn(lessonTypes)
-  lessonType?: typeof lessonTypes[number] | null;
+  @IsIn(LESSON_TYPES)
+  lessonType?: typeof LESSON_TYPES[number] | null;
 
   @ApiPropertyOptional({ type: String, maxLength: 4000, nullable: true })
   @IsOptional()

@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import type { LessonStatus, LessonType } from './lesson-domain.constants';
 
 @Entity({ name: 'lessons' })
 export class Lesson {
@@ -15,7 +16,7 @@ export class Lesson {
   updatedBy!: string;
 
   @Column({ type: 'varchar', length: 32, default: 'Open' })
-  status!: 'Open' | 'PMOEvaluation' | 'Approved' | 'Closed' | 'Archived';
+  status!: LessonStatus;
 
   @Column({ type: 'integer', default: 1 })
   version!: number;
@@ -39,7 +40,7 @@ export class Lesson {
   rootCause!: string | null;
 
   @Column({ name: 'lesson_type', type: 'varchar', length: 32, nullable: true })
-  lessonType!: 'Future Prevention' | 'Success to Repeat' | 'Risk Avoided' | 'Communication' | null;
+  lessonType!: LessonType | null;
 
   @Column({ type: 'varchar', length: 4000, nullable: true })
   impact!: string | null;

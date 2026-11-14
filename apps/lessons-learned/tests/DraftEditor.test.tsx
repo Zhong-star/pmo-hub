@@ -36,6 +36,7 @@ function renderEditor(overrides: Partial<{
   onSave: (input: UpdateLessonDraftBody, draftId: number | null) => Promise<LessonDraft>;
   onSubmit: (input: UpdateLessonDraftBody, draftId: number) => Promise<LessonDraft>;
   onReload: (draftId: number) => Promise<LessonDraft>;
+  onViewCurrent?: (draftId: number) => void;
   onClose: () => void;
 }> = {}) {
   const startingDraft = Object.hasOwn(overrides, 'draft') ? overrides.draft ?? null : draft;
@@ -334,6 +335,72 @@ describe('Lessons Learned draft editor', () => {
     await waitFor(() => expect(situation).toHaveFocus());
     expect(situation).toBeEnabled();
     expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it('preserves submitted fields and blocks writes when the lesson is no longer Open', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValueOnce(apiError(409, 'LESSON_NOT_OPEN'));
+    const onViewCurrent = vi.fn();
+    renderEditor({
+      draft: {
+        ...draft,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The handover omitted the current runbook.',
+        lessonType: 'Communication',
+        impact: 'Operations repeated verification.',
+        recommendation: 'Share the current runbook.',
+        applicability: 'Use for releases with operations handover.',
+      },
+      onSubmit,
+      onViewCurrent,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Submit for PMO Review' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('no longer Open');
+    expect(screen.getByRole('textbox', { name: 'Situation observed' })).toHaveValue('The handover omitted the current runbook.');
+    expect(screen.getByRole('button', { name: 'Save Draft' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Submit for PMO Review' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'View current lesson details and history' }));
+    expect(onViewCurrent).toHaveBeenCalledWith(draft.id);
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a failed Save Draft available and blocks retries after LESSON_NOT_OPEN', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockRejectedValueOnce(apiError(409, 'LESSON_NOT_OPEN'));
+    renderEditor({ onSave });
+    const title = screen.getByRole('textbox', { name: 'Title' });
+    await user.clear(title);
+    await user.type(title, 'Title kept after the lesson closes');
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('no longer Open');
+    expect(title).toHaveValue('Title kept after the lesson closes');
+    expect(screen.getByRole('button', { name: 'Save Draft' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Submit for PMO Review' })).toBeDisabled();
+    expect(onSave).toHaveBeenCalledOnce();
+  });
+
+  it('offers current lesson details when a reload after a stale version finds a final status', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const onSave = vi.fn().mockRejectedValueOnce(apiError(409, 'STALE_LESSON_VERSION'));
+    const onReload = vi.fn().mockRejectedValueOnce(apiError(409, 'LESSON_NOT_OPEN'));
+    const onViewCurrent = vi.fn();
+    renderEditor({ onSave, onReload, onViewCurrent });
+    const title = screen.getByRole('textbox', { name: 'Title' });
+    await user.clear(title);
+    await user.type(title, 'My unsaved title stays available');
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+    await user.click(await screen.findByRole('button', { name: 'Reload latest version' }));
+    await user.click(screen.getByRole('button', { name: 'View current lesson details and history' }));
+
+    expect(title).toHaveValue('My unsaved title stays available');
+    expect(title).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Save Draft' })).toBeDisabled();
+    expect(onViewCurrent).toHaveBeenCalledWith(draft.id);
   });
 
   it('submits a complete lesson with No project and becomes read-only after success', async () => {

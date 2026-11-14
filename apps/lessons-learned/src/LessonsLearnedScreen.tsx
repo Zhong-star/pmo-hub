@@ -25,6 +25,7 @@ import { DraftEditor } from './DraftEditor';
 import { LessonSubmissionDetailsDialog, CancelLessonDialog } from './SubmissionDialogs';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
+const HISTORY_POSITION_KEY = '__pmoHubLessonsLearnedHistoryPosition';
 
 function readSelectedProfileId(): string | null {
   try {
@@ -72,6 +73,19 @@ function readModulePage(): ModulePage {
   if (page === 'my-submissions') return 'my-submissions';
   if (page === 'pmo-drafts') return 'pmo-drafts';
   return 'home';
+}
+
+function getHistoryPosition(state: unknown): number | null {
+  if (typeof state !== 'object' || state === null || !(HISTORY_POSITION_KEY in state)) return null;
+  const position = (state as Record<string, unknown>)[HISTORY_POSITION_KEY];
+  return typeof position === 'number' ? position : null;
+}
+
+function withHistoryPosition(state: unknown, position: number): Record<string, unknown> {
+  return {
+    ...(typeof state === 'object' && state !== null ? state : {}),
+    [HISTORY_POSITION_KEY]: position,
+  };
 }
 
 function formatUpdatedAt(timestamp: string): string {
@@ -139,11 +153,38 @@ export function LessonsLearnedScreen() {
     () => readModulePage() === 'pmo-drafts' ? 'Open' : '',
   );
   const [submissionAuthorFilter, setSubmissionAuthorFilter] = useState('');
+  const navigationCloseRequestRef = useRef<(() => boolean) | null>(null);
+  const currentHistoryPositionRef = useRef(0);
+  const pendingHistoryDeltaRef = useRef<number | null>(null);
+  const isRevertingHistoryRef = useRef(false);
+  const isResumingHistoryRef = useRef(false);
   const selectedProfileIdRef = useRef(selectedProfileId);
   const selectionGenerationRef = useRef(selectionGeneration);
   const pendingCreateProfilesRef = useRef(new Set<string>());
   const [pendingCreateProfiles, setPendingCreateProfiles] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
+  const resetSubmissionFilters = useCallback((destination: ModulePage) => {
+    setSubmissionSearch('');
+    setSubmissionProjectFilter({ kind: 'any' });
+    setSubmissionLessonType('');
+    setSubmissionStatus(destination === 'pmo-drafts' ? 'Open' : '');
+    setSubmissionAuthorFilter('');
+  }, []);
+
+  const applyPageFromLocation = useCallback(() => {
+    const page = readModulePage();
+    setModulePage(page);
+    resetSubmissionFilters(page);
+    setSelectedDraft(null);
+    setIsCreateFormOpen(false);
+    setSelectedCancellationDraft(null);
+    setSelectedSubmissionId(null);
+    setIsModuleMenuOpen(false);
+  }, [resetSubmissionFilters]);
+
+  const registerNavigationCloseRequest = useCallback((requestClose: (() => boolean) | null) => {
+    navigationCloseRequestRef.current = requestClose;
+  }, []);
   const homeQuery = useQuery({
     queryKey: ['lessons-learned-home', selectedProfileId, selectionGeneration],
     queryFn: async () => {
@@ -254,12 +295,8 @@ export function LessonsLearnedScreen() {
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
     setSelectedSubmissionId(null);
-    setSubmissionSearch('');
-    setSubmissionProjectFilter({ kind: 'any' });
-    setSubmissionLessonType('');
-    setSubmissionStatus('');
-    setSubmissionAuthorFilter('');
-  }, []);
+    resetSubmissionFilters(modulePage);
+  }, [modulePage, resetSubmissionFilters]);
 
   const isSavingCurrentDraft = selectedProfileId !== null && pendingCreateProfiles.has(selectedProfileId);
   const projectsQuery = useQuery({
@@ -381,37 +418,74 @@ export function LessonsLearnedScreen() {
   }, [updateSelectedProfile]);
 
   useEffect(() => {
-    function restorePageFromUrl() {
-      const page = readModulePage();
-      setModulePage(page);
-      setSubmissionSearch('');
-      setSubmissionProjectFilter({ kind: 'any' });
-      setSubmissionLessonType('');
-      setSubmissionStatus(page === 'pmo-drafts' ? 'Open' : '');
-      setSubmissionAuthorFilter('');
-      setSelectedDraft(null);
-      setIsCreateFormOpen(false);
+    const initialPosition = getHistoryPosition(window.history.state);
+    if (initialPosition === null) {
+      currentHistoryPositionRef.current = 0;
+      window.history.replaceState(withHistoryPosition(window.history.state, 0), '', window.location.href);
+    } else {
+      currentHistoryPositionRef.current = initialPosition;
     }
 
-    window.addEventListener('popstate', restorePageFromUrl);
-    return () => window.removeEventListener('popstate', restorePageFromUrl);
-  }, []);
+    function handlePopState(event: PopStateEvent) {
+      if (isResumingHistoryRef.current) {
+        isResumingHistoryRef.current = false;
+        const resumedPosition = getHistoryPosition(event.state);
+        if (resumedPosition !== null) currentHistoryPositionRef.current = resumedPosition;
+        applyPageFromLocation();
+        return;
+      }
 
-  function navigateTo(page: ModulePage, event: MouseEvent<HTMLAnchorElement>) {
-    event.preventDefault();
+      if (isRevertingHistoryRef.current) {
+        isRevertingHistoryRef.current = false;
+        const delta = pendingHistoryDeltaRef.current;
+        pendingHistoryDeltaRef.current = null;
+        if (delta === null) return;
+        if (navigationCloseRequestRef.current?.() ?? true) {
+          isResumingHistoryRef.current = true;
+          window.history.go(delta);
+        }
+        return;
+      }
+
+      const destinationPosition = getHistoryPosition(event.state);
+      const delta = destinationPosition === null
+        ? -1
+        : destinationPosition - currentHistoryPositionRef.current;
+      if (navigationCloseRequestRef.current && delta !== 0) {
+        pendingHistoryDeltaRef.current = delta;
+        isRevertingHistoryRef.current = true;
+        window.history.go(-delta);
+        return;
+      }
+
+      if (destinationPosition !== null) currentHistoryPositionRef.current = destinationPosition;
+      applyPageFromLocation();
+    }
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [applyPageFromLocation]);
+
+  function navigateModulePage(page: ModulePage) {
     const path = page === 'home'
       ? '/lessons-learned/'
       : `/lessons-learned/?page=${page}`;
-    window.history.pushState(null, '', path);
+    const nextPosition = currentHistoryPositionRef.current + 1;
+    window.history.pushState(withHistoryPosition(window.history.state, nextPosition), '', path);
+    currentHistoryPositionRef.current = nextPosition;
     setModulePage(page);
-    setSubmissionSearch('');
-    setSubmissionProjectFilter({ kind: 'any' });
-    setSubmissionLessonType('');
-    setSubmissionStatus(page === 'pmo-drafts' ? 'Open' : '');
-    setSubmissionAuthorFilter('');
+    resetSubmissionFilters(page);
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
+    setSelectedCancellationDraft(null);
+    setSelectedSubmissionId(null);
     setIsModuleMenuOpen(false);
+  }
+
+  function navigateTo(page: ModulePage, event: MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    if (navigationCloseRequestRef.current && !navigationCloseRequestRef.current()) return;
+    navigateModulePage(page);
   }
 
   function changeProfile() {
@@ -704,6 +778,7 @@ export function LessonsLearnedScreen() {
                                   type="button"
                                   onClick={() => setSelectedSubmissionId(draft.id)}
                                   aria-label={`View ${draft.title}`}
+                                  data-lesson-view-id={draft.id}
                                 >
                                   {draft.title}
                                 </button>
@@ -781,6 +856,7 @@ export function LessonsLearnedScreen() {
                                 type="button"
                                 onClick={() => setSelectedSubmissionId(draft.id)}
                                 aria-label={`View ${draft.title}`}
+                                data-lesson-view-id={draft.id}
                               >
                                 View
                               </button>
@@ -791,6 +867,7 @@ export function LessonsLearnedScreen() {
                               type="button"
                               onClick={() => setSelectedSubmissionId(draft.id)}
                               aria-label={`View ${draft.title}`}
+                              data-lesson-view-id={draft.id}
                             >
                               View
                             </button>
@@ -813,6 +890,17 @@ export function LessonsLearnedScreen() {
                       onSave={saveDraftFields}
                       onSubmit={submitDraft}
                       onReload={reloadDraftFields}
+                      onViewCurrent={(lessonId) => {
+                        queryClient.removeQueries({
+                          queryKey: ['lessons-learned-submission-details', selectedProfileId, lessonId],
+                          exact: true,
+                        });
+                        setSelectedSubmissionId(lessonId);
+                      }}
+                      getReturnFocusTarget={(lessonId) => lessonId === null
+                        ? null
+                        : document.querySelector<HTMLElement>(`[data-lesson-view-id="${lessonId}"]`)}
+                      onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
                       onClose={() => {
                         setSelectedDraft(null);
                         setIsCreateFormOpen(false);
@@ -825,6 +913,7 @@ export function LessonsLearnedScreen() {
                       onReload={reloadDraftFields}
                       onConfirm={cancelDraft}
                       onClose={() => setSelectedCancellationDraft(null)}
+                      onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
                     />
                   )}
                   {selectedSubmissionId !== null && (

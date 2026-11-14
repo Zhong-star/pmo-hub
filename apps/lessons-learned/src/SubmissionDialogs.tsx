@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { CancelLessonBody, LessonDetails, LessonDraft } from './api';
+import { useDialogFocus } from './useDialogFocus';
 import './DraftEditor.css';
 
 type CancelLessonDialogProps = {
@@ -8,47 +9,8 @@ type CancelLessonDialogProps = {
   onClose: () => void;
   onReload: (lessonId: number) => Promise<LessonDraft>;
   onConfirm: (lessonId: number, input: CancelLessonBody) => Promise<LessonDraft>;
+  onRegisterNavigationCloseRequest?: (requestClose: (() => boolean) | null) => void;
 };
-
-function useDialogFocus(dialogRef: RefObject<HTMLDialogElement | null>, initialFocusRef: RefObject<HTMLElement | null>) {
-  useEffect(() => {
-    const activeElement = document.activeElement;
-    const returnFocus = activeElement instanceof HTMLElement ? activeElement : null;
-    const dialog = dialogRef.current;
-    const appShell = document.querySelector<HTMLElement>('.app-shell');
-    function trapDialogTab(event: KeyboardEvent) {
-      if (event.key !== 'Tab' || !dialog) return;
-      const focusableElements = [...dialog.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      )];
-      const firstElement = focusableElements[0];
-      const lastElement = focusableElements[focusableElements.length - 1];
-      if (!firstElement || !lastElement) return;
-
-      const isFocusOutsideDialog = !dialog.contains(document.activeElement);
-      if (event.shiftKey && (document.activeElement === firstElement || isFocusOutsideDialog)) {
-        event.preventDefault();
-        lastElement.focus();
-      } else if (!event.shiftKey && (document.activeElement === lastElement || isFocusOutsideDialog)) {
-        event.preventDefault();
-        firstElement.focus();
-      }
-    }
-    if (appShell) appShell.setAttribute('inert', '');
-    if (dialog && typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal();
-    else dialog?.setAttribute('open', '');
-    dialog?.addEventListener('keydown', trapDialogTab);
-    initialFocusRef.current?.focus();
-    return () => {
-      dialog?.removeEventListener('keydown', trapDialogTab);
-      if (dialog?.open && typeof dialog.close === 'function') dialog.close();
-      else dialog?.removeAttribute('open');
-      if (appShell) appShell.removeAttribute('inert');
-      if (returnFocus?.isConnected) returnFocus.focus();
-      else document.querySelector<HTMLElement>('#page-title')?.focus();
-    };
-  }, [dialogRef, initialFocusRef]);
-}
 
 function getReasonFieldError(error: unknown): string | null {
   if (typeof error !== 'object' || error === null || !('response' in error)) return null;
@@ -84,7 +46,7 @@ function formatTimestampUtc(value: string): string {
   return `${formatted} UTC`;
 }
 
-export function CancelLessonDialog({ draft, onClose, onReload, onConfirm }: CancelLessonDialogProps) {
+export function CancelLessonDialog({ draft, onClose, onReload, onConfirm, onRegisterNavigationCloseRequest }: CancelLessonDialogProps) {
   const [currentDraft, setCurrentDraft] = useState(draft);
   const [version, setVersion] = useState(draft.version);
   const [reason, setReason] = useState('');
@@ -104,11 +66,17 @@ export function CancelLessonDialog({ draft, onClose, onReload, onConfirm }: Canc
     if (completedReloads > 0 && !isReloading) reasonRef.current?.focus();
   }, [completedReloads, isReloading]);
 
-  function requestClose() {
-    if (isCancelling || isReloading) return;
-    if (reason.length > 0 && !window.confirm('Discard your cancellation reason?')) return;
+  const requestClose = useCallback(() => {
+    if (isCancelling || isReloading) return false;
+    if (reason.length > 0 && !window.confirm('Discard your cancellation reason?')) return false;
     onClose();
-  }
+    return true;
+  }, [isCancelling, isReloading, onClose, reason]);
+
+  useEffect(() => {
+    onRegisterNavigationCloseRequest?.(requestClose);
+    return () => onRegisterNavigationCloseRequest?.(null);
+  }, [onRegisterNavigationCloseRequest, requestClose]);
 
   async function reloadCurrentDraft() {
     if (isReloading || isCancelling) return;

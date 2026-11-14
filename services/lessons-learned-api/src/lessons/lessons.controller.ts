@@ -46,6 +46,7 @@ import { LessonProjectResponse } from './project-response.dto';
 import { SubmitLessonRequest } from './submit-lesson-request.dto';
 import { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import { LessonSubmissionsQuery, PmoDraftsQuery } from './lesson-submissions-query.dto';
+import { LESSON_STATUSES, LESSON_TYPES } from './lesson-domain.constants';
 
 @ApiTags('Lessons')
 @ApiExtraModels(LocalAccessProblem)
@@ -103,8 +104,8 @@ export class LessonsController {
   @Header('Cache-Control', 'no-store')
   @ApiOperation({ summary: 'List the selected profile’s own submissions across all statuses' })
   @ApiSecurity(localProfileScheme)
-  @ApiQuery({ name: 'status', required: false, enum: ['Open', 'PMOEvaluation', 'Approved', 'Closed', 'Archived'] })
-  @ApiQuery({ name: 'lessonType', required: false, enum: ['Future Prevention', 'Success to Repeat', 'Risk Avoided', 'Communication'] })
+  @ApiQuery({ name: 'status', required: false, enum: LESSON_STATUSES })
+  @ApiQuery({ name: 'lessonType', required: false, enum: LESSON_TYPES })
   @ApiQuery({ name: 'projectId', required: false, type: String, description: 'Project snapshot ID.' })
   @ApiQuery({ name: 'withoutProject', required: false, type: Boolean, description: 'Filter to lessons without a project.' })
   @ApiQuery({ name: 'search', required: false, type: String, description: 'Title prefix or exact numeric lesson ID.' })
@@ -125,8 +126,8 @@ export class LessonsController {
   @ApiOperation({ summary: 'List module lessons for PMO Drafts, optionally filtered by author, project, type, status, and search' })
   @ApiSecurity(localProfileScheme)
   @ApiQuery({ name: 'authorId', required: false, type: String, description: 'Author profile ID.' })
-  @ApiQuery({ name: 'status', required: false, enum: ['Open', 'PMOEvaluation', 'Approved', 'Closed', 'Archived'] })
-  @ApiQuery({ name: 'lessonType', required: false, enum: ['Future Prevention', 'Success to Repeat', 'Risk Avoided', 'Communication'] })
+  @ApiQuery({ name: 'status', required: false, enum: LESSON_STATUSES })
+  @ApiQuery({ name: 'lessonType', required: false, enum: LESSON_TYPES })
   @ApiQuery({ name: 'projectId', required: false, type: String, description: 'Project snapshot ID.' })
   @ApiQuery({ name: 'withoutProject', required: false, type: Boolean, description: 'Filter to lessons without a project.' })
   @ApiQuery({ name: 'search', required: false, type: String, description: 'Title prefix or exact numeric lesson ID.' })

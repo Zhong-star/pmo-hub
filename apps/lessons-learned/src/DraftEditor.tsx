@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { LessonDraft, LessonProject, SubmitLessonBody, UpdateLessonDraftBody } from './api';
+import { useDialogFocus } from './useDialogFocus';
 import './DraftEditor.css';
 
 type DraftFields = Required<Omit<UpdateLessonDraftBody, 'version'>>;
@@ -15,6 +16,9 @@ type DraftEditorProps = {
   onRetryHomeCheck?: () => void;
   canSubmit?: boolean;
   onClose: () => void;
+  onViewCurrent?: (draftId: number) => void;
+  getReturnFocusTarget?: (draftId: number | null) => HTMLElement | null;
+  onRegisterNavigationCloseRequest?: (requestClose: (() => boolean) | null) => void;
   onSave: (input: UpdateLessonDraftBody, draftId: number | null) => Promise<LessonDraft>;
   onSubmit: (input: SubmitLessonBody, draftId: number) => Promise<LessonDraft>;
   onReload: (draftId: number) => Promise<LessonDraft>;
@@ -128,6 +132,9 @@ export function DraftEditor({
   onRetryHomeCheck,
   canSubmit = true,
   onClose,
+  onViewCurrent,
+  getReturnFocusTarget,
+  onRegisterNavigationCloseRequest,
   onSave,
   onSubmit,
   onReload,
@@ -144,11 +151,11 @@ export function DraftEditor({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
   const [hasConflict, setHasConflict] = useState(false);
+  const [isLessonNotOpen, setIsLessonNotOpen] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const projectRef = useRef<HTMLSelectElement>(null);
-  const returnFocusRef = useRef<HTMLElement | null>(null);
   const savingRef = useRef(false);
   const pendingSubmissionFocusRef = useRef<keyof DraftFields | null>(null);
 
@@ -185,49 +192,24 @@ export function DraftEditor({
       : []),
   ];
 
-  useEffect(() => {
-    const activeElement = document.activeElement;
-    returnFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
-    const dialog = dialogRef.current;
-    const appShell = document.querySelector<HTMLElement>('.app-shell');
-    if (appShell) appShell.setAttribute('inert', '');
-    if (dialog && typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal();
-    else dialog?.setAttribute('open', '');
-    titleRef.current?.focus();
-    return () => {
-      if (dialog?.open && typeof dialog.close === 'function') dialog.close();
-      else dialog?.removeAttribute('open');
-      if (appShell) appShell.removeAttribute('inert');
-      returnFocusRef.current?.focus();
-    };
-  }, []);
+  useDialogFocus(dialogRef, titleRef, () => getReturnFocusTarget?.(draftId) ?? null);
 
-  function requestClose() {
-    if (isSaving || isReloading) return;
-    if (isDirty && !window.confirm('Discard your unsaved changes?')) return;
+  const requestClose = useCallback(() => {
+    if (isSaving || isReloading) return false;
+    if (isDirty && !window.confirm('Discard your unsaved changes?')) return false;
     onClose();
-  }
+    return true;
+  }, [isDirty, isReloading, isSaving, onClose]);
+
+  useEffect(() => {
+    onRegisterNavigationCloseRequest?.(requestClose);
+    return () => onRegisterNavigationCloseRequest?.(null);
+  }, [onRegisterNavigationCloseRequest, requestClose]);
 
   function handleKeyDown(event: KeyboardEvent<HTMLDialogElement>) {
     if (event.key === 'Escape') {
       event.preventDefault();
       requestClose();
-      return;
-    }
-
-    if (event.key !== 'Tab') return;
-    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
-    if (!focusable?.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
     }
   }
 
@@ -241,7 +223,7 @@ export function DraftEditor({
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (savingRef.current || isSubmitted) return;
+    if (savingRef.current || isSubmitted || isLessonNotOpen) return;
     const title = fields.title.trim();
     if (!title) {
       setTitleError('Enter a title to save this draft.');
@@ -277,6 +259,10 @@ export function DraftEditor({
       if (getApiErrorCode(saveError) === 'STALE_LESSON_VERSION') {
         setHasConflict(true);
         setError('This draft changed after you opened it. Your edits are still here; reload the latest version to continue.');
+      } else if (getApiErrorCode(saveError) === 'LESSON_NOT_OPEN') {
+        setIsLessonNotOpen(true);
+        setHasConflict(false);
+        setError('This lesson is no longer Open. Your changes are still here; saving and submitting are disabled. View its current status and history below.');
       } else {
         setError('The draft could not be saved. Your changes are still here; try again.');
       }
@@ -287,7 +273,7 @@ export function DraftEditor({
   }
 
   async function submit() {
-    if (!canSubmit || savingRef.current || isSubmitted) return;
+    if (!canSubmit || savingRef.current || isSubmitted || isLessonNotOpen) return;
     const title = fields.title.trim();
     const fieldErrors: SubmissionFieldErrors = {};
     if (!title) fieldErrors.title = 'Title is required.';
@@ -365,6 +351,10 @@ export function DraftEditor({
       } else if (getApiErrorCode(submitError) === 'STALE_LESSON_VERSION') {
         setHasConflict(true);
         setError('This draft changed after you opened it. Your edits are still here; reload the latest version to continue.');
+      } else if (getApiErrorCode(submitError) === 'LESSON_NOT_OPEN') {
+        setIsLessonNotOpen(true);
+        setHasConflict(false);
+        setError('This lesson is no longer Open. Your changes are still here; saving and submitting are disabled. View its current status and history below.');
       } else {
         setError('The lesson could not be submitted. Your changes are still here; try again.');
       }
@@ -389,8 +379,14 @@ export function DraftEditor({
       setError(null);
       setHasConflict(false);
       setIsSaved(false);
-    } catch {
-      setError('The latest version could not be loaded. Your edits are still here; try again.');
+    } catch (reloadError) {
+      if (getApiErrorCode(reloadError) === 'LESSON_NOT_OPEN') {
+        setIsLessonNotOpen(true);
+        setHasConflict(false);
+        setError('This lesson is no longer Open. Your changes are still here; saving and submitting are disabled. View its current status and history below.');
+      } else {
+        setError('The latest version could not be loaded. Your edits are still here; try again.');
+      }
     } finally {
       setIsReloading(false);
     }
@@ -633,13 +629,18 @@ export function DraftEditor({
                 {isReloading ? 'Reloading…' : 'Reload latest version'}
               </button>
             )}
+            {isLessonNotOpen && draftId !== null && onViewCurrent && (
+              <button className="draft-editor-secondary" type="button" onClick={() => onViewCurrent(draftId)}>
+                View current lesson details and history
+              </button>
+            )}
             {!isSubmitted && (
               <>
-                <button className="draft-editor-primary" type="submit" disabled={isSaving || isReloading}>
+                <button className="draft-editor-primary" type="submit" disabled={isSaving || isReloading || isLessonNotOpen}>
                   {isSaving ? isSubmitting ? 'Submitting…' : 'Saving…' : 'Save Draft'}
                 </button>
                 {canSubmit && (
-                  <button className="draft-editor-primary" type="button" disabled={isSaving || isReloading} onClick={() => void submit()}>
+                  <button className="draft-editor-primary" type="button" disabled={isSaving || isReloading || isLessonNotOpen} onClick={() => void submit()}>
                     {isSubmitting ? 'Submitting…' : 'Submit for PMO Review'}
                   </button>
                 )}
