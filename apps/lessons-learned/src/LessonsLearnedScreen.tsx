@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { WorkspaceSidebar } from '../../shared-ui/src/WorkspaceSidebar';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { useThemePreference } from '../../shared-ui/src/theme';
 import {
@@ -139,6 +140,7 @@ export function LessonsLearnedScreen() {
   const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
   const [selectionGeneration, setSelectionGeneration] = useState(0);
   const [authorizedSelectionGeneration, setAuthorizedSelectionGeneration] = useState<number | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const [modulePage, setModulePage] = useState<ModulePage>(readModulePage);
   const { theme, selectTheme } = useThemePreference();
   const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
@@ -466,6 +468,10 @@ export function LessonsLearnedScreen() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [applyPageFromLocation]);
 
+  useEffect(() => {
+    if (panelRef.current) panelRef.current.scrollTop = 0;
+  }, [modulePage]);
+
   function navigateModulePage(page: ModulePage) {
     const path = page === 'home'
       ? '/lessons-learned/'
@@ -499,7 +505,7 @@ export function LessonsLearnedScreen() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={isHomePage ? 'app-shell workspace-shell' : 'app-shell'}>
       <HubHeader
         profileName={(authorizedSelectionGeneration === selectionGeneration ? homeQuery.data?.profile.displayName : undefined)
           ?? selectedProfileId ?? undefined}
@@ -507,9 +513,46 @@ export function LessonsLearnedScreen() {
         theme={theme}
         onThemeChange={selectTheme}
       />
-      <main className="page-shell">
+      <div className={isHomePage ? 'workspace-layout' : 'page-shell'}>
+        {isHomePage && (
+          <WorkspaceSidebar
+            label="Lessons Learned navigation"
+            navigationLabel="Lessons Learned"
+            navigationId="module-navigation"
+            open={isModuleMenuOpen}
+            onToggle={() => setIsModuleMenuOpen((open) => !open)}
+          >
+            {homeQuery.data.navigation.map((destination) => (
+              <a
+                key={destination.id}
+                href="/lessons-learned/"
+                aria-current={(modulePage === 'home' || (!isPmo && modulePage === 'pmo-drafts')) && destination.current ? 'page' : undefined}
+                onClick={(event) => navigateTo('home', event)}
+              >
+                {destination.label}
+              </a>
+            ))}
+            <a
+              href="/lessons-learned/?page=my-submissions"
+              aria-current={isMySubmissionsPage ? 'page' : undefined}
+              onClick={(event) => navigateTo('my-submissions', event)}
+            >
+              My Submissions
+            </a>
+            {isPmo && (
+              <a
+                href="/lessons-learned/?page=pmo-drafts"
+                aria-current={isPmoDraftsPage ? 'page' : undefined}
+                onClick={(event) => navigateTo('pmo-drafts', event)}
+              >
+                PMO Drafts
+              </a>
+            )}
+          </WorkspaceSidebar>
+        )}
+        <main ref={panelRef} className={isHomePage ? 'workspace-panel' : 'module-access'} tabIndex={isHomePage ? 0 : undefined}>
       <section
-        className={isHomePage ? 'module-card module-card-with-navigation' : 'module-card'}
+        className={isHomePage ? undefined : 'module-card'}
         aria-labelledby="page-title"
       >
         <p className="eyebrow">Lessons Learned</p>
@@ -591,51 +634,7 @@ export function LessonsLearnedScreen() {
         )}
 
         {isHomePage && (
-          <div className="module-layout">
-            <aside
-              className="module-sidebar"
-              aria-label="Lessons Learned navigation"
-              data-menu-open={isModuleMenuOpen}
-            >
-              <button
-                className="module-menu-toggle"
-                type="button"
-                aria-controls="module-navigation"
-                aria-expanded={isModuleMenuOpen}
-                onClick={() => setIsModuleMenuOpen((isOpen) => !isOpen)}
-              >
-                Module menu
-              </button>
-              <nav id="module-navigation" className="module-navigation" aria-label="Lessons Learned">
-                {homeQuery.data.navigation.map((destination) => (
-                  <a
-                    key={destination.id}
-                    href="/lessons-learned/"
-                    aria-current={(modulePage === 'home' || (!isPmo && modulePage === 'pmo-drafts')) && destination.current ? 'page' : undefined}
-                    onClick={(event) => navigateTo('home', event)}
-                  >
-                    {destination.label}
-                  </a>
-                ))}
-                <a
-                  href="/lessons-learned/?page=my-submissions"
-                  aria-current={isMySubmissionsPage ? 'page' : undefined}
-                  onClick={(event) => navigateTo('my-submissions', event)}
-                >
-                  My Submissions
-                </a>
-                {isPmo && (
-                  <a
-                    href="/lessons-learned/?page=pmo-drafts"
-                    aria-current={isPmoDraftsPage ? 'page' : undefined}
-                    onClick={(event) => navigateTo('pmo-drafts', event)}
-                  >
-                    PMO Drafts
-                  </a>
-                )}
-              </nav>
-            </aside>
-            <div className="module-content">
+          <>
               {modulePage === 'home' || (modulePage === 'pmo-drafts' && !isPmo) ? (
                 <>
                   <h1 id="page-title">Home</h1>
@@ -928,11 +927,11 @@ export function LessonsLearnedScreen() {
                   )}
                 </section>
               )}
-            </div>
-          </div>
+          </>
         )}
       </section>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
