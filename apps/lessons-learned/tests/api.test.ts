@@ -7,6 +7,7 @@ import {
   getMyOpenDrafts,
   getMySubmissions,
   getPmoDrafts,
+  getPmoEvaluationQueue,
   getLessonDetails,
   createLessonDraft,
   getLessonProjects,
@@ -20,6 +21,7 @@ import {
   LESSONS_LEARNED_SUBMIT_PATH,
   LESSONS_LEARNED_CANCEL_PATH,
   LESSONS_LEARNED_SUBMISSIONS_PATH,
+  LESSONS_LEARNED_EVALUATION_QUEUE_PATH,
   LESSONS_LEARNED_API_TIMEOUT_MS,
 } from '../src/api';
 
@@ -334,6 +336,31 @@ describe('lessons learned HTTP client', () => {
 
     expect(adapter).toHaveBeenCalledWith(expect.objectContaining({
       url: '/api/lessons-learned/v1/lessons/pmo-drafts',
+      method: 'get',
+      params: filters,
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-pmo' }),
+    }));
+  });
+
+  it('requests the PMO evaluation queue with its combined filters and moderator profile', async () => {
+    const filters = {
+      search: 'Operations',
+      projectId: 'LOCAL-PROJECT-001',
+      lessonType: 'Communication' as const,
+    };
+    const adapter = vi.fn().mockResolvedValue({
+      data: [],
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config: {},
+    });
+    api.defaults.adapter = adapter;
+
+    await expect(getPmoEvaluationQueue('local-pmo', filters)).resolves.toEqual([]);
+
+    expect(adapter).toHaveBeenCalledWith(expect.objectContaining({
+      url: LESSONS_LEARNED_EVALUATION_QUEUE_PATH,
       method: 'get',
       params: filters,
       headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-pmo' }),

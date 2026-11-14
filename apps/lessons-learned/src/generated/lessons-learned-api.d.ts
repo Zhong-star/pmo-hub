@@ -107,6 +107,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/lessons/evaluation-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List lessons awaiting PMO evaluation, oldest last submission first */
+        get: operations["LessonsController_getPmoEvaluationQueue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/lessons-learned/v1/lessons/{id}": {
         parameters: {
             query?: never;
@@ -655,6 +672,54 @@ export interface operations {
                 status?: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived";
                 /** @description Author profile ID. */
                 authorId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDraftResponse"][];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile is not a PMO moderator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LessonsController_getPmoEvaluationQueue: {
+        parameters: {
+            query?: {
+                /** @description Title prefix or exact numeric lesson ID. */
+                search?: string;
+                /** @description Project snapshot ID. */
+                projectId?: string;
+                /** @description Filter to lessons without a project. */
+                withoutProject?: boolean;
+                lessonType?: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication";
             };
             header?: never;
             path?: never;

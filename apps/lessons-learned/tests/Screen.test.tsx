@@ -12,6 +12,7 @@ import {
   getMyOpenDrafts,
   getMySubmissions,
   getPmoDrafts,
+  getPmoEvaluationQueue,
   updateLessonDraft,
   type LessonDraft,
   type LessonDetails,
@@ -27,6 +28,7 @@ vi.mock('../src/api', () => ({
   getMyOpenDrafts: vi.fn(),
   getMySubmissions: vi.fn(),
   getPmoDrafts: vi.fn(),
+  getPmoEvaluationQueue: vi.fn(),
   updateLessonDraft: vi.fn(),
 }));
 
@@ -81,7 +83,7 @@ function lessonDetails(overrides: Partial<LessonDetails> = {}): LessonDetails {
   };
 }
 
-function renderScreen(localUserId?: string, gcTime = 0, page?: 'my-submissions' | 'pmo-drafts') {
+function renderScreen(localUserId?: string, gcTime = 0, page?: 'my-submissions' | 'pmo-drafts' | 'evaluation-queue') {
   window.localStorage.clear();
   window.history.replaceState(null, '', page ? `/lessons-learned/?page=${page}` : '/lessons-learned/');
   if (localUserId) window.localStorage.setItem('pmo-hub.local-user-id', localUserId);
@@ -111,6 +113,7 @@ beforeEach(() => {
   vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
   vi.mocked(getMySubmissions).mockImplementation((profileId) => getMyOpenDrafts(profileId));
   vi.mocked(getPmoDrafts).mockResolvedValue([]);
+  vi.mocked(getPmoEvaluationQueue).mockResolvedValue([]);
   vi.mocked(getLessonDetails).mockImplementation(async (_profileId, lessonId) => lessonDetails({ id: lessonId }));
   vi.mocked(updateLessonDraft).mockImplementation(async (_profileId, _draftId, input) => lessonDraft({
     ...input,
@@ -197,6 +200,97 @@ describe('Lessons Learned access check', () => {
     expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'PMO Drafts' })).not.toBeInTheDocument();
     expect(getPmoDrafts).not.toHaveBeenCalled();
+  });
+
+  it('shows the PMO evaluation queue and opens its history using the keyboard', async () => {
+    const oldestSubmission = lessonDraft({ id: 80, title: 'Oldest submitted lesson', status: 'PMOEvaluation' });
+    const newestSubmission = lessonDraft({ id: 81, title: 'Newest submitted lesson', status: 'PMOEvaluation' });
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoEvaluationQueue).mockResolvedValue([oldestSubmission, newestSubmission]);
+    vi.mocked(getLessonDetails).mockResolvedValue({
+      ...lessonDetails(oldestSubmission),
+      history: [
+        { id: 1, actorId: 'local-contributor', eventType: 'Created', previousStatus: null, newStatus: 'Open', reason: null, occurredAt: oldestSubmission.createdAt },
+        { id: 2, actorId: 'local-contributor', eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation', reason: null, occurredAt: oldestSubmission.updatedAt },
+      ],
+    });
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'Evaluation Queue' }));
+
+    expect(await screen.findByRole('heading', { name: 'Evaluation Queue' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Evaluation Queue' })).toHaveAttribute('aria-current', 'page');
+    expect(getPmoEvaluationQueue).toHaveBeenCalledWith('local-pmo', {});
+
+    const table = screen.getByRole('table', { name: 'Lessons awaiting PMO evaluation, oldest submission first' });
+    const rows = within(table).getAllByRole('row');
+    expect(rows[1]).toHaveTextContent('Oldest submitted lesson');
+    expect(rows[2]).toHaveTextContent('Newest submitted lesson');
+
+    const viewButton = within(rows[1]!).getByRole('button', { name: 'View Oldest submitted lesson' });
+    viewButton.focus();
+    await user.keyboard('{Enter}');
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    expect(within(details).getByText('Submitted')).toBeInTheDocument();
+    const closeButton = within(details).getByRole('button', { name: 'Close lesson details' });
+    await waitFor(() => expect(closeButton).toHaveFocus());
+    await user.keyboard('{Enter}');
+    expect(screen.queryByRole('dialog', { name: 'Lesson details' })).not.toBeInTheDocument();
+    expect(viewButton).toHaveFocus();
+  });
+
+  it('does not expose the evaluation queue or call its API for a Contributor deep link', async () => {
+    vi.mocked(getHome).mockResolvedValue(contributor);
+
+    renderScreen('local-contributor', 0, 'evaluation-queue');
+
+    expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Evaluation Queue' })).not.toBeInTheDocument();
+    expect(getPmoEvaluationQueue).not.toHaveBeenCalled();
+  });
+
+  it('shows an empty message when there are no lessons awaiting evaluation', async () => {
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoEvaluationQueue).mockResolvedValue([]);
+
+    renderScreen('local-pmo', 0, 'evaluation-queue');
+
+    expect(await screen.findByText('No lessons are awaiting PMO evaluation.')).toBeInTheDocument();
+  });
+
+  it('shows an error and retry control when the evaluation queue cannot be loaded', async () => {
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoEvaluationQueue).mockImplementation(async (_profileId, filters) => {
+      if (filters === undefined) return [];
+      throw apiError(503, 'SERVICE_UNAVAILABLE');
+    });
+
+    renderScreen('local-pmo', 0, 'evaluation-queue');
+
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText('The evaluation queue could not be loaded.')).toBeInTheDocument();
+    expect(within(alert).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  it('combines evaluation queue search, project, and lesson type filters', async () => {
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoEvaluationQueue).mockResolvedValue([]);
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo', 0, 'evaluation-queue');
+    await screen.findByRole('heading', { name: 'Evaluation Queue' });
+    await user.type(screen.getByRole('searchbox', { name: 'Search title or ID' }), 'Operations');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }), 'project:LOCAL-PROJECT-001');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Lesson type' }), 'Communication');
+
+    await waitFor(() => expect(getPmoEvaluationQueue).toHaveBeenCalledWith('local-pmo', {
+      search: 'Operations',
+      projectId: 'LOCAL-PROJECT-001',
+      lessonType: 'Communication',
+    }));
+    expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
   });
 
   it('lets PMO edit a third-party Open draft without Submit and preserves edits after a stale-version conflict', async () => {

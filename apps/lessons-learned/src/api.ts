@@ -5,6 +5,7 @@ export {
   getMyOpenDrafts,
   getMySubmissions,
   getPmoDrafts,
+  getPmoEvaluationQueue,
   getLessonDetails,
   createLessonDraft,
   cancelLesson,
@@ -19,6 +20,7 @@ export {
   LESSONS_LEARNED_DRAFT_PATH,
   LESSONS_LEARNED_SUBMIT_PATH,
   LESSONS_LEARNED_SUBMISSIONS_PATH,
+  LESSONS_LEARNED_EVALUATION_QUEUE_PATH,
   LESSONS_LEARNED_CANCEL_PATH,
 } from './generated/lessons-learned-api-client';
 
@@ -29,6 +31,7 @@ export type {
   LessonHistoryEvent,
   LessonSubmissionsFilters,
   PmoDraftsFilters,
+  PmoEvaluationQueueFilters,
   LessonProject,
   UpdateLessonDraftBody,
   SubmitLessonBody,

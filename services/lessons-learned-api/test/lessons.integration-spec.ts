@@ -1236,6 +1236,169 @@ describe('Lessons Learned draft registration', () => {
       .expect(404);
   });
 
+  it('lets PMO read only the evaluation queue in order of last submission, even after later edits', async () => {
+    const server = request(app!.getHttpServer());
+    const submitCompleteLesson = async (title: string) => {
+      const created = await server
+        .post('/api/lessons-learned/v1/lessons')
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ title })
+        .expect(201);
+
+      return server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          version: created.body.version,
+          title,
+          projectId: null,
+          projectName: null,
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The release handover omitted the current runbook.',
+          rootCause: 'No checklist owner had been assigned.',
+          lessonType: 'Future Prevention',
+          impact: 'The release team repeated verification work.',
+          recommendation: 'Assign an owner to review the checklist.',
+          applicability: 'Use for releases with shared operational ownership.',
+        })
+        .expect(200);
+    };
+
+    const oldestSubmission = await submitCompleteLesson('Oldest evaluation');
+    const middleSubmission = await submitCompleteLesson('Middle evaluation');
+    const newestSubmission = await submitCompleteLesson('Newest evaluation');
+    const stillOpen = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Not submitted for evaluation' })
+      .expect(201);
+
+    const timestamps = [
+      [oldestSubmission.body.id, '2026-11-14T09:00:00Z', '2026-11-14T10:30:00Z'],
+      [middleSubmission.body.id, '2026-11-14T09:30:00Z', '2026-11-14T09:00:00Z'],
+      [newestSubmission.body.id, '2026-11-14T10:00:00Z', '2026-11-14T10:15:00Z'],
+    ] as const;
+
+    for (const [lessonId, submittedAt, updatedAt] of timestamps) {
+      await dataSource!.query(
+        "UPDATE lesson_history SET occurred_at = $2 WHERE lesson_id = $1 AND event_type = 'Submitted'",
+        [lessonId, submittedAt],
+      );
+      await dataSource!.query('UPDATE lessons SET updated_at = $2 WHERE id = $1', [lessonId, updatedAt]);
+    }
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/evaluation-queue')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(403);
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/evaluation-queue')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.map(({ id, status }: { id: number; status: string }) => [id, status])).toEqual([
+          [oldestSubmission.body.id, 'PMOEvaluation'],
+          [middleSubmission.body.id, 'PMOEvaluation'],
+          [newestSubmission.body.id, 'PMOEvaluation'],
+        ]);
+        expect(body.some(({ id }: { id: number }) => id === stillOpen.body.id)).toBe(false);
+      });
+  });
+
+  it('searches the evaluation queue by title prefix or exact ID, combines project and type filters, and opens history', async () => {
+    const server = request(app!.getHttpServer());
+    const submitCompleteLesson = async (title: string, projectId: string, projectName: string, lessonType: string) => {
+      const created = await server
+        .post('/api/lessons-learned/v1/lessons')
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ title, projectId, projectName })
+        .expect(201);
+
+      return server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          version: created.body.version,
+          title,
+          projectId,
+          projectName,
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The release handover omitted the current runbook.',
+          rootCause: 'No checklist owner had been assigned.',
+          lessonType,
+          impact: 'The release team repeated verification work.',
+          recommendation: 'Assign an owner to review the checklist.',
+          applicability: 'Use for releases with shared operational ownership.',
+        })
+        .expect(200);
+    };
+
+    const handover = await submitCompleteLesson(
+      'Operations handover lesson',
+      'LOCAL-PROJECT-001',
+      'Fictional Atlas Modernization',
+      'Communication',
+    );
+    const roadmap = await submitCompleteLesson(
+      'Operations roadmap lesson',
+      'LOCAL-PROJECT-001',
+      'Fictional Atlas Modernization',
+      'Communication',
+    );
+    await submitCompleteLesson(
+      'Operations risk lesson',
+      'LOCAL-PROJECT-002',
+      'Fictional Harbor Migration',
+      'Future Prevention',
+    );
+    await submitCompleteLesson(
+      'Database backup lesson',
+      'LOCAL-PROJECT-001',
+      'Fictional Atlas Modernization',
+      'Communication',
+    );
+
+    const queue = '/api/lessons-learned/v1/lessons/evaluation-queue';
+    await server
+      .get(queue)
+      .query({ search: 'Operations', projectId: 'LOCAL-PROJECT-001', lessonType: 'Communication' })
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([
+        handover.body.id,
+        roadmap.body.id,
+      ]));
+
+    await server
+      .get(queue)
+      .query({ search: 'Operations handover' })
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([handover.body.id]));
+
+    await server
+      .get(queue)
+      .query({ search: String(handover.body.id) })
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([handover.body.id]));
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${handover.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ id: handover.body.id, title: 'Operations handover lesson' });
+        expect(body.history).toMatchObject([
+          { eventType: 'Created', newStatus: 'Open' },
+          { eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation' },
+        ]);
+      });
+  });
+
   it('lets PMO list lessons across authors and statuses with combined filters while denying Contributors', async () => {
     const server = request(app!.getHttpServer());
     const create = async (profileId: string, title: string, lessonType: string, project: boolean) => server
