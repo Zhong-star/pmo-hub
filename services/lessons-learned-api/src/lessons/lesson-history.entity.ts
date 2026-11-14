@@ -14,7 +14,7 @@ export class LessonHistory {
   actorId!: string;
 
   @Column({ name: 'event_type', type: 'varchar', length: 32 })
-  eventType!: 'Created' | 'Submitted' | 'Cancelled';
+  eventType!: 'Created' | 'Submitted' | 'Cancelled' | 'Rejected';
 
   @Column({ name: 'previous_status', type: 'varchar', length: 32, nullable: true })
   previousStatus!: LessonStatus | null;

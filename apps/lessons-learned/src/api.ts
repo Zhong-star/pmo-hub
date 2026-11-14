@@ -9,6 +9,7 @@ export {
   getLessonDetails,
   createLessonDraft,
   cancelLesson,
+  rejectLesson,
   getLessonProjects,
   updateLessonDraft,
   submitLesson,
@@ -22,6 +23,7 @@ export {
   LESSONS_LEARNED_SUBMISSIONS_PATH,
   LESSONS_LEARNED_EVALUATION_QUEUE_PATH,
   LESSONS_LEARNED_CANCEL_PATH,
+  LESSONS_LEARNED_REJECT_PATH,
 } from './generated/lessons-learned-api-client';
 
 export type {
@@ -36,4 +38,5 @@ export type {
   UpdateLessonDraftBody,
   SubmitLessonBody,
   CancelLessonBody,
+  RejectLessonBody,
 } from './generated/lessons-learned-api-client';

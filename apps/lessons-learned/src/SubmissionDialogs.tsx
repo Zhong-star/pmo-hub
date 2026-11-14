@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import type { CancelLessonBody, LessonDetails, LessonDraft } from './api';
+import type { CancelLessonBody, LessonDetails, LessonDraft, RejectLessonBody } from './api';
 import { useDialogFocus } from './useDialogFocus';
 import './DraftEditor.css';
 
@@ -197,6 +197,173 @@ export function CancelLessonDialog({ draft, onClose, onReload, onConfirm, onRegi
           <button className="draft-editor-secondary" type="button" disabled={isCancelling || isReloading} onClick={requestClose}>Keep draft</button>
           <button className="draft-editor-primary" type="submit" disabled={isCancelling || isReloading || hasVersionConflict || !isDraftOpen}>
             {isCancelling ? 'Cancelling…' : 'Confirm cancellation'}
+          </button>
+        </div>
+      </form>
+    </dialog>,
+    document.body,
+  );
+}
+
+type RejectLessonDialogProps = {
+  draft: LessonDraft;
+  onClose: () => void;
+  onReload: (lessonId: number) => Promise<LessonDraft>;
+  onConfirm: (lessonId: number, input: RejectLessonBody) => Promise<LessonDraft>;
+  onRegisterNavigationCloseRequest?: (requestClose: (() => boolean) | null) => void;
+};
+
+export function RejectLessonDialog({ draft, onClose, onReload, onConfirm, onRegisterNavigationCloseRequest }: RejectLessonDialogProps) {
+  const [currentDraft, setCurrentDraft] = useState(draft);
+  const [version, setVersion] = useState(draft.version);
+  const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [hasVersionConflict, setHasVersionConflict] = useState(false);
+  const [isAwaitingEvaluation, setIsAwaitingEvaluation] = useState(true);
+  const [isReloading, setIsReloading] = useState(false);
+  const [completedReloads, setCompletedReloads] = useState(0);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+
+  useDialogFocus(dialogRef, reasonRef);
+
+  useEffect(() => {
+    if (completedReloads > 0 && !isReloading) reasonRef.current?.focus();
+  }, [completedReloads, isReloading]);
+
+  const requestClose = useCallback(() => {
+    if (isRejecting || isReloading) return false;
+    if (reason.length > 0 && !window.confirm('Discard your rejection reason?')) return false;
+    onClose();
+    return true;
+  }, [isRejecting, isReloading, onClose, reason]);
+
+  useEffect(() => {
+    onRegisterNavigationCloseRequest?.(requestClose);
+    return () => onRegisterNavigationCloseRequest?.(null);
+  }, [onRegisterNavigationCloseRequest, requestClose]);
+
+  async function reloadCurrentEvaluation() {
+    if (isReloading || isRejecting) return;
+    setIsReloading(true);
+    setRequestError(null);
+    try {
+      const latest = await onReload(currentDraft.id);
+      setCurrentDraft(latest);
+      setVersion(latest.version);
+      setHasVersionConflict(false);
+      setIsAwaitingEvaluation(true);
+      setRequestError('Review the current lesson and confirm rejection again. Your reason is still here.');
+    } catch (error) {
+      if (getApiErrorCode(error) === 'LESSON_NOT_AWAITING_EVALUATION') {
+        setIsAwaitingEvaluation(false);
+        setRequestError('This lesson no longer awaits PMO evaluation and cannot be rejected. Your reason is still here.');
+      } else {
+        setRequestError('The latest evaluation could not be loaded. Your reason is still here; try reloading again.');
+      }
+    } finally {
+      setIsReloading(false);
+      setCompletedReloads((reloads) => reloads + 1);
+    }
+  }
+
+  async function confirmRejection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isRejecting || isReloading || hasVersionConflict || !isAwaitingEvaluation) return;
+    if (!reason.trim()) {
+      setReasonError('Enter a reason for rejecting this lesson.');
+      setRequestError(null);
+      reasonRef.current?.focus();
+      return;
+    }
+
+    setIsRejecting(true);
+    setReasonError(null);
+    setRequestError(null);
+    try {
+      await onConfirm(currentDraft.id, { version, reason });
+      onClose();
+    } catch (error) {
+      setReasonError(getReasonFieldError(error));
+      const errorCode = getApiErrorCode(error);
+      if (errorCode === 'STALE_LESSON_VERSION') {
+        setHasVersionConflict(true);
+        setRequestError('This lesson changed after you opened it. Reload the current version before confirming again. Your reason is still here.');
+      } else if (errorCode === 'LESSON_NOT_AWAITING_EVALUATION') {
+        setIsAwaitingEvaluation(false);
+        setRequestError('This lesson no longer awaits PMO evaluation and cannot be rejected. Your reason is still here.');
+      } else {
+        setRequestError('The lesson could not be rejected. Your reason is still here; try again.');
+      }
+    } finally {
+      setIsRejecting(false);
+    }
+  }
+
+  return createPortal(
+    <dialog
+      ref={dialogRef}
+      className="draft-editor-dialog"
+      aria-modal="true"
+      aria-labelledby="reject-lesson-title"
+      aria-describedby="reject-lesson-explanation"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          requestClose();
+        }
+      }}
+      onCancel={(event) => {
+        event.preventDefault();
+        requestClose();
+      }}
+    >
+      <form className="draft-editor-form" noValidate onSubmit={(event) => void confirmRejection(event)}>
+        <div className="draft-editor-heading">
+          <div>
+            <p className="draft-editor-eyebrow">Lesson #{currentDraft.id} · PMO Evaluation</p>
+            <h2 id="reject-lesson-title">Reject lesson</h2>
+          </div>
+          <button className="draft-editor-close" type="button" aria-label="Close rejection" disabled={isRejecting || isReloading} onClick={requestClose}>
+            ×
+          </button>
+        </div>
+        <p id="reject-lesson-explanation">This will archive “{currentDraft.title}”. The author can read the reason in My Submissions.</p>
+        <div className="draft-editor-field">
+          <label htmlFor="lesson-rejection-reason">Reason for rejection</label>
+          <textarea
+            ref={reasonRef}
+            id="lesson-rejection-reason"
+            required
+            maxLength={1000}
+            value={reason}
+            aria-invalid={reasonError ? 'true' : undefined}
+            aria-describedby={reasonError ? 'lesson-rejection-reason-error' : 'lesson-rejection-reason-count'}
+            disabled={isRejecting || isReloading}
+            onChange={(event) => {
+              setReason(event.target.value);
+              setReasonError(null);
+              setRequestError(null);
+            }}
+          />
+          {reasonError ? (
+            <p id="lesson-rejection-reason-error" className="draft-editor-error" role="alert">{reasonError}</p>
+          ) : (
+            <p id="lesson-rejection-reason-count" className="draft-editor-counter">{reason.length}/1,000 characters</p>
+          )}
+        </div>
+        {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
+        {hasVersionConflict && isAwaitingEvaluation && (
+          <button className="draft-editor-secondary" type="button" disabled={isRejecting || isReloading} onClick={() => void reloadCurrentEvaluation()}>
+            {isReloading ? 'Reloading…' : 'Reload current version'}
+          </button>
+        )}
+        <div className="draft-editor-actions">
+          <button className="draft-editor-secondary" type="button" disabled={isRejecting || isReloading} onClick={requestClose}>Keep review</button>
+          <button className="draft-editor-primary" type="submit" disabled={isRejecting || isReloading || hasVersionConflict || !isAwaitingEvaluation}>
+            {isRejecting ? 'Rejecting…' : 'Confirm rejection'}
           </button>
         </div>
       </form>

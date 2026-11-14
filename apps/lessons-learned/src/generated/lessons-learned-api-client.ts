@@ -12,6 +12,7 @@ export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '/api/lessons-learned/v1/le
 export const LESSONS_LEARNED_DRAFT_PATH = '/api/lessons-learned/v1/lessons/{id}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMIT_PATH = '/api/lessons-learned/v1/lessons/{id}/submit' satisfies keyof paths;
 export const LESSONS_LEARNED_CANCEL_PATH = '/api/lessons-learned/v1/lessons/{id}/cancel' satisfies keyof paths;
+export const LESSONS_LEARNED_REJECT_PATH = '/api/lessons-learned/v1/lessons/{id}/reject' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
@@ -25,6 +26,7 @@ export type LessonProject = paths[typeof LESSONS_LEARNED_PROJECTS_PATH]['get']['
 export type UpdateLessonDraftBody = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['patch']['requestBody']['content']['application/json'];
 export type SubmitLessonBody = paths[typeof LESSONS_LEARNED_SUBMIT_PATH]['post']['requestBody']['content']['application/json'];
 export type CancelLessonBody = paths[typeof LESSONS_LEARNED_CANCEL_PATH]['post']['requestBody']['content']['application/json'];
+export type RejectLessonBody = paths[typeof LESSONS_LEARNED_REJECT_PATH]['post']['requestBody']['content']['application/json'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -156,6 +158,19 @@ export async function cancelLesson(
   input: CancelLessonBody,
 ): Promise<LessonDraft> {
   const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_CANCEL_PATH.replace('{id}', String(lessonId)), input, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function rejectLesson(
+  localUserId: string,
+  lessonId: number,
+  input: RejectLessonBody,
+): Promise<LessonDraft> {
+  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_REJECT_PATH.replace('{id}', String(lessonId)), input, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });

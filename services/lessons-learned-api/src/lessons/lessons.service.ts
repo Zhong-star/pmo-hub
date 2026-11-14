@@ -16,6 +16,7 @@ import { LessonHistory } from './lesson-history.entity';
 import { Lesson } from './lesson.entity';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
 import type { CancelLessonRequest } from './cancel-lesson-request.dto';
+import type { RejectLessonRequest } from './reject-lesson-request.dto';
 import { ProjectCatalogService, type LessonProject } from './project-catalog.service';
 import type { SubmitLessonRequest } from './submit-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
@@ -244,6 +245,59 @@ export class LessonsService {
       }));
 
       return this.toResponse(cancelled);
+    });
+  }
+
+  async rejectEvaluation(
+    localUserId: string | undefined,
+    lessonId: number,
+    input: RejectLessonRequest,
+  ): Promise<LessonDraftResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    if (profile.role !== 'LESSONS_MODERATOR') {
+      throw new ForbiddenException('PMO moderator access is required to reject a lesson.');
+    }
+
+    const dataSource = this.requireDataSource();
+    const reason = input.reason.trim();
+    if (!reason || reason.length > 1000) {
+      const message = 'Enter a rejection reason of 1 to 1,000 characters.';
+      throw new BadRequestException({
+        code: 'INVALID_LESSON_REJECTION',
+        message,
+        fieldErrors: { reason: message },
+      });
+    }
+
+    return dataSource.transaction(async (manager) => {
+      const lessons = manager.getRepository(Lesson);
+      const current = await lessons.findOne({
+        where: { id: lessonId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!current) throw new NotFoundException('Lesson not found.');
+      if (current.status !== 'PMOEvaluation') {
+        throw new ConflictException({
+          code: 'LESSON_NOT_AWAITING_EVALUATION',
+          message: 'Only lessons awaiting PMO evaluation can be rejected.',
+        });
+      }
+      if (current.version !== input.version) throw this.staleVersionConflict();
+
+      current.status = 'Archived';
+      current.updatedBy = profile.id;
+      current.version += 1;
+      const rejected = await lessons.save(current);
+      await manager.getRepository(LessonHistory).save(manager.getRepository(LessonHistory).create({
+        lessonId: rejected.id,
+        actorId: profile.id,
+        eventType: 'Rejected',
+        previousStatus: 'PMOEvaluation',
+        newStatus: 'Archived',
+        reason,
+      }));
+
+      return this.toResponse(rejected);
     });
   }
 
