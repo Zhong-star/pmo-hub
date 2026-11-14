@@ -4,11 +4,26 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
+import type { OpenAPIObject } from '@nestjs/swagger';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
+
+function sortOperationParameters(document: OpenAPIObject): OpenAPIObject {
+  for (const path of Object.values(document.paths)) {
+    for (const operation of [path.get, path.post, path.patch]) {
+      operation?.parameters?.sort((left, right) => {
+        const parameterKey = (parameter: typeof left) => '$ref' in parameter
+          ? parameter.$ref
+          : `${parameter.in}:${parameter.name}`;
+        return parameterKey(left).localeCompare(parameterKey(right));
+      });
+    }
+  }
+  return document;
+}
 
 type OpenApiContract = {
   paths: Record<
@@ -89,7 +104,9 @@ describe('Lessons Learned health API', () => {
       .get('/api/lessons-learned/v1/docs-json')
       .expect(200)
       .expect('Content-Type', /application\/json/);
-    expect(published.body).toEqual(contract);
+    expect(sortOperationParameters(published.body)).toEqual(
+      sortOperationParameters(contract as unknown as OpenAPIObject),
+    );
 
     const responseSchemaRef =
       contract.paths['/api/lessons-learned/v1/health']?.get?.responses?.['200']?.content?.[
