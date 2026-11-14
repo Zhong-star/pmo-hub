@@ -210,6 +210,8 @@ type LessonSubmissionDetailsDialogProps = {
   details?: LessonDetails;
   isLoading: boolean;
   hasError: boolean;
+  canEdit?: boolean;
+  onEdit?: () => void;
   onRetry: () => void;
   onClose: () => void;
   onReturn?: (lesson: LessonDetails) => void;
@@ -222,6 +224,8 @@ export function LessonSubmissionDetailsDialog({
   details: lessonData,
   isLoading,
   hasError,
+  canEdit = false,
+  onEdit,
   onRetry,
   onClose,
   onReturn,
@@ -317,6 +321,9 @@ export function LessonSubmissionDetailsDialog({
             <button className="draft-editor-primary" type="button" onClick={() => onApprove(lesson)}>
               Approve and publish
             </button>
+          )}
+          {canEdit && onEdit && (
+            <button className="draft-editor-primary" type="button" onClick={onEdit}>Edit lesson</button>
           )}
           <button className="draft-editor-secondary" type="button" onClick={onClose}>Close details</button>
         </div>

@@ -624,7 +624,14 @@
             }
           },
           "400": {
-            "description": "The draft fields or project selection are invalid."
+            "description": "The lesson fields or project selection are invalid; fieldErrors identifies fields to correct.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonEditValidationResponse"
+                }
+              }
+            }
           },
           "401": {
             "description": "A local Hub profile must be selected."
@@ -654,7 +661,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Update an Open lesson draft owned by the selected profile or managed by a PMO",
+        "summary": "Update an Open lesson draft or a PMO evaluation while preserving its lifecycle state",
         "tags": [
           "Lessons"
         ]
@@ -1643,6 +1650,30 @@
           "version"
         ]
       },
+      "LessonEditValidationResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "INVALID_LESSON_EDIT"
+          },
+          "message": {
+            "type": "string",
+            "example": "Correct the indicated fields before saving."
+          },
+          "fieldErrors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "fieldErrors"
+        ]
+      },
       "LessonConflictResponse": {
         "type": "object",
         "properties": {
@@ -1651,7 +1682,8 @@
             "enum": [
               "STALE_LESSON_VERSION",
               "LESSON_NOT_OPEN",
-              "LESSON_NOT_AWAITING_EVALUATION"
+              "LESSON_NOT_AWAITING_EVALUATION",
+              "LESSON_NOT_IN_EVALUATION"
             ]
           },
           "message": {
