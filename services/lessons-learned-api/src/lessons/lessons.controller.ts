@@ -11,6 +11,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseFilters,
   ValidationPipe,
 } from '@nestjs/common';
@@ -23,6 +24,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiSecurity,
   ApiTags,
@@ -35,7 +37,7 @@ import {
 } from '../local-access-problem';
 import { CreateLessonRequest } from './create-lesson-request.dto';
 import { CancelLessonRequest } from './cancel-lesson-request.dto';
-import { LessonDraftResponse } from './lesson-response.dto';
+import { LessonDetailsResponse, LessonDraftResponse } from './lesson-response.dto';
 import { LessonConflictResponse } from './lesson-conflict-response.dto';
 import { LessonSubmissionValidationResponse } from './lesson-submission-validation-response.dto';
 import { LessonCancellationValidationResponse } from './lesson-cancellation-validation-response.dto';
@@ -43,6 +45,7 @@ import { LessonsService } from './lessons.service';
 import { LessonProjectResponse } from './project-response.dto';
 import { SubmitLessonRequest } from './submit-lesson-request.dto';
 import { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
+import { LessonSubmissionsQuery } from './lesson-submissions-query.dto';
 
 @ApiTags('Lessons')
 @ApiExtraModels(LocalAccessProblem)
@@ -98,16 +101,39 @@ export class LessonsController {
 
   @Get('mine')
   @Header('Cache-Control', 'no-store')
-  @ApiOperation({ summary: 'List the selected profile’s Open and Archived own submissions' })
+  @ApiOperation({ summary: 'List the selected profile’s own submissions across all statuses' })
   @ApiSecurity(localProfileScheme)
+  @ApiQuery({ name: 'status', required: false, enum: ['Open', 'PMOEvaluation', 'Approved', 'Closed', 'Archived'] })
+  @ApiQuery({ name: 'lessonType', required: false, enum: ['Future Prevention', 'Success to Repeat', 'Risk Avoided', 'Communication'] })
+  @ApiQuery({ name: 'projectId', required: false, type: String, description: 'Project ID, or "none" for no project.' })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'Title prefix or exact numeric lesson ID.' })
   @ApiOkResponse({ type: LessonDraftResponse, isArray: true })
   @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
   @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
   @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
   getMySubmissions(
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Query(new ValidationPipe({ transform: true, whitelist: true, expectedType: LessonSubmissionsQuery }))
+    filters: LessonSubmissionsQuery,
   ): Promise<LessonDraftResponse[]> {
-    return this.lessons.getMySubmissions(typeof header === 'string' ? header : undefined);
+    return this.lessons.getMySubmissions(typeof header === 'string' ? header : undefined, filters);
+  }
+
+  @Get(':id')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Get an author-owned lesson and its lifecycle history' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson.' })
+  @ApiOkResponse({ type: LessonDetailsResponse })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not owned by the selected profile.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  getOwnLessonDetails(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParseIntPipe) lessonId: number,
+  ): Promise<LessonDetailsResponse> {
+    return this.lessons.getOwnLessonDetails(typeof header === 'string' ? header : undefined, lessonId);
   }
 
   @Patch(':id')

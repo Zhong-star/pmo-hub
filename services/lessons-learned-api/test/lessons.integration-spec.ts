@@ -231,6 +231,141 @@ describe('Lessons Learned draft registration', () => {
     )).toEqual([{ event_type: 'Created' }, { event_type: 'Cancelled' }]);
   });
 
+  it('filters My Submissions across every status without exposing another profile’s lessons and returns own detail history', async () => {
+    const server = request(app!.getHttpServer());
+    const create = async (profileId: string, title: string, project: boolean, lessonType: string) => server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', profileId)
+      .send({
+        title,
+        ...(project ? { projectId: 'LOCAL-PROJECT-001', projectName: 'Fictional Atlas Modernization' } : {}),
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: `Observed ${title}`,
+        rootCause: 'A handover checklist was not shared.',
+        lessonType,
+        impact: 'The team repeated verification work.',
+        recommendation: 'Share the checklist before release.',
+        applicability: 'Use for software releases.',
+      })
+      .expect(201);
+
+    const open = await create('local-contributor', 'Zebra release checklist', false, 'Communication');
+    const submitted = await create('local-contributor', 'Alpha release handover', true, 'Future Prevention');
+    const approved = await create('local-contributor', 'Bravo deployment lesson', true, 'Communication');
+    const closed = await create('local-contributor', 'Charlie migration lesson', false, 'Risk Avoided');
+    const archived = await create('local-contributor', 'Delta cancelled lesson', false, 'Communication');
+    const privateLesson = await create('local-pmo', 'Zebra private release checklist', false, 'Communication');
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${submitted.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: submitted.body.version,
+        title: submitted.body.title,
+        projectId: submitted.body.projectId,
+        projectName: submitted.body.projectName,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: submitted.body.situationObserved,
+        rootCause: submitted.body.rootCause,
+        lessonType: 'Future Prevention',
+        impact: submitted.body.impact,
+        recommendation: submitted.body.recommendation,
+        applicability: submitted.body.applicability,
+      })
+      .expect(200);
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${archived.body.id}/cancel`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: archived.body.version, reason: 'The project scope changed.' })
+      .expect(200);
+    await dataSource!.query('UPDATE lessons SET status = $2 WHERE id = $1', [approved.body.id, 'Approved']);
+    await dataSource!.query('UPDATE lessons SET status = $2 WHERE id = $1', [closed.body.id, 'Closed']);
+
+    const ownSubmissions = await server
+      .get('/api/lessons-learned/v1/lessons/mine')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200);
+    expect(ownSubmissions.body.map(({ status }: { status: string }) => status).sort()).toEqual([
+      'Approved', 'Archived', 'Closed', 'Open', 'PMOEvaluation',
+    ]);
+    expect(ownSubmissions.body.every(({ authorId }: { authorId: string }) => authorId === 'local-contributor')).toBe(true);
+    expect(ownSubmissions.body.map(({ updatedAt }: { updatedAt: string }) => Date.parse(updatedAt))).toEqual(
+      [...ownSubmissions.body.map(({ updatedAt }: { updatedAt: string }) => Date.parse(updatedAt))]
+        .sort((left, right) => right - left),
+    );
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine?search=Zebra&projectId=none&lessonType=Communication&status=Open')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([open.body.id]));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/mine?search=${submitted.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([submitted.body.id]));
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine?search=Alpha&projectId=LOCAL-PROJECT-001&lessonType=Future%20Prevention&status=PMOEvaluation')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([submitted.body.id]));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/mine?search=${encodeURIComponent(privateLesson.body.title)}&projectId=none&status=Open`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body).toEqual([]));
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([privateLesson.body.id]));
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${archived.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          id: archived.body.id,
+          title: archived.body.title,
+          status: 'Archived',
+          authorId: 'local-contributor',
+          updatedBy: 'local-contributor',
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: archived.body.situationObserved,
+          rootCause: 'A handover checklist was not shared.',
+          lessonType: 'Communication',
+          impact: 'The team repeated verification work.',
+          recommendation: 'Share the checklist before release.',
+          applicability: 'Use for software releases.',
+          history: [
+            { actorId: 'local-contributor', eventType: 'Created', previousStatus: null, newStatus: 'Open', reason: null },
+            { actorId: 'local-contributor', eventType: 'Cancelled', previousStatus: 'Open', newStatus: 'Archived', reason: 'The project scope changed.' },
+          ],
+        });
+        expect(body.createdAt).toBeTruthy();
+        expect(body.updatedAt).toBeTruthy();
+        expect(body.history[0].occurredAt).toBeTruthy();
+      });
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${privateLesson.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(404);
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${submitted.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.history.map(({ eventType }: { eventType: string }) => eventType))
+        .toEqual(['Created', 'Submitted']));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${privateLesson.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200);
+  });
+
   it('rejects invalid cancellation reasons without changing the draft or history', async () => {
     const server = request(app!.getHttpServer());
     const created = await server

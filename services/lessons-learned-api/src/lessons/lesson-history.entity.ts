@@ -16,10 +16,10 @@ export class LessonHistory {
   eventType!: 'Created' | 'Submitted' | 'Cancelled';
 
   @Column({ name: 'previous_status', type: 'varchar', length: 32, nullable: true })
-  previousStatus!: 'Open' | null;
+  previousStatus!: 'Open' | 'PMOEvaluation' | 'Approved' | 'Closed' | 'Archived' | null;
 
   @Column({ name: 'new_status', type: 'varchar', length: 32 })
-  newStatus!: 'Open' | 'PMOEvaluation' | 'Archived';
+  newStatus!: 'Open' | 'PMOEvaluation' | 'Approved' | 'Closed' | 'Archived';
 
   @Column({ type: 'varchar', length: 1000, nullable: true })
   reason!: string | null;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import type { CancelLessonBody, LessonDraft } from './api';
+import type { CancelLessonBody, LessonDetails, LessonDraft } from './api';
 import './DraftEditor.css';
 
 type CancelLessonDialogProps = {
@@ -53,6 +53,15 @@ function getApiErrorCode(error: unknown): string | null {
     }
   }
   return 'code' in error && typeof error.code === 'string' ? error.code : null;
+}
+
+function formatTimestampUtc(value: string): string {
+  const formatted = new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(value));
+  return `${formatted} UTC`;
 }
 
 export function CancelLessonDialog({ draft, onClose, onReload, onConfirm }: CancelLessonDialogProps) {
@@ -208,38 +217,52 @@ export function CancelLessonDialog({ draft, onClose, onReload, onConfirm }: Canc
   );
 }
 
-type ArchivedSubmissionDetailsDialogProps = {
-  draft: LessonDraft;
+type LessonSubmissionDetailsDialogProps = {
+  lessonId: number;
+  details?: LessonDetails;
+  isLoading: boolean;
+  hasError: boolean;
+  onRetry: () => void;
   onClose: () => void;
 };
 
-export function ArchivedSubmissionDetailsDialog({ draft, onClose }: ArchivedSubmissionDetailsDialogProps) {
+export function LessonSubmissionDetailsDialog({
+  lessonId,
+  details: lesson,
+  isLoading,
+  hasError,
+  onRetry,
+  onClose,
+}: LessonSubmissionDetailsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useDialogFocus(dialogRef, closeRef);
 
-  const details: Array<[string, string]> = [
-    ['Title', draft.title],
-    ['Author', draft.authorId],
-    ['Status', draft.status],
-    ['Project', draft.projectName ?? 'No project'],
-    ['Project category', draft.projectCategory ?? 'Not provided'],
-    ['Project phase', draft.projectPhase ?? 'Not provided'],
-    ['Situation observed', draft.situationObserved ?? 'Not provided'],
-    ['Root cause', draft.rootCause ?? 'Not provided'],
-    ['Lesson type', draft.lessonType ?? 'Not provided'],
-    ['Impact', draft.impact ?? 'Not provided'],
-    ['Recommendation', draft.recommendation ?? 'Not provided'],
-    ['Applicability', draft.applicability ?? 'Not provided'],
-  ];
+  const fields: Array<[string, string]> = lesson ? [
+    ['Title', lesson.title],
+    ['Author', lesson.authorId],
+    ['Updated by', lesson.updatedBy],
+    ['Status', lesson.status],
+    ['Project', lesson.projectName ?? 'No project'],
+    ['Project category', lesson.projectCategory ?? 'Not provided'],
+    ['Project phase', lesson.projectPhase ?? 'Not provided'],
+    ['Situation observed', lesson.situationObserved ?? 'Not provided'],
+    ['Root cause', lesson.rootCause ?? 'Not provided'],
+    ['Lesson type', lesson.lessonType ?? 'Not provided'],
+    ['Impact', lesson.impact ?? 'Not provided'],
+    ['Recommendation', lesson.recommendation ?? 'Not provided'],
+    ['Applicability', lesson.applicability ?? 'Not provided'],
+    ['Created', formatTimestampUtc(lesson.createdAt)],
+    ['Last updated', formatTimestampUtc(lesson.updatedAt)],
+  ] : [];
 
   return createPortal(
     <dialog
       ref={dialogRef}
       className="draft-editor-dialog"
       aria-modal="true"
-      aria-labelledby="archived-lesson-title"
+      aria-labelledby="lesson-details-title"
       onCancel={(event) => {
         event.preventDefault();
         onClose();
@@ -248,21 +271,48 @@ export function ArchivedSubmissionDetailsDialog({ draft, onClose }: ArchivedSubm
       <div className="draft-editor-form">
         <div className="draft-editor-heading">
           <div>
-            <p className="draft-editor-eyebrow">Lesson #{draft.id} · Archived</p>
-            <h2 id="archived-lesson-title">Lesson details</h2>
+            <p className="draft-editor-eyebrow">Lesson #{lesson?.id ?? lessonId}{lesson ? ` · ${lesson.status}` : ''}</p>
+            <h2 id="lesson-details-title">Lesson details</h2>
           </div>
           <button ref={closeRef} className="draft-editor-close" type="button" aria-label="Close lesson details" onClick={onClose}>
             ×
           </button>
         </div>
-        <dl className="submission-detail-list">
-          {details.map(([label, value]) => (
-            <div key={label}>
-              <dt>{label}</dt>
-              <dd>{value}</dd>
-            </div>
-          ))}
-        </dl>
+        {isLoading && <p role="status">Loading lesson details…</p>}
+        {hasError && (
+          <div className="draft-error" role="alert">
+            <p>Lesson details and history could not be loaded.</p>
+            <button className="draft-cancel" type="button" onClick={onRetry}>Retry</button>
+          </div>
+        )}
+        {lesson && (
+          <>
+            <dl className="submission-detail-list">
+              {fields.map(([label, value]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <section className="submission-history" aria-labelledby="lesson-history-title">
+              <h3 id="lesson-history-title">History</h3>
+              {lesson.history.length === 0 ? (
+                <p>No history recorded.</p>
+              ) : (
+                <ol>
+                  {lesson.history.map((event) => (
+                    <li key={event.id}>
+                      <p><strong>{event.eventType}</strong> · {event.previousStatus ? `${event.previousStatus} → ` : ''}{event.newStatus}</p>
+                      <p>{event.actorId} · <time dateTime={event.occurredAt}>{formatTimestampUtc(event.occurredAt)}</time></p>
+                      {event.reason && <p>Cancellation reason: {event.reason}</p>}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+          </>
+        )}
         <div className="draft-editor-actions">
           <button className="draft-editor-secondary" type="button" onClick={onClose}>Close details</button>
         </div>

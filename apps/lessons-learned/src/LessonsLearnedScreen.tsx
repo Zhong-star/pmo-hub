@@ -6,18 +6,20 @@ import {
   cancelLesson as cancelLessonRequest,
   createLessonDraft,
   getHome,
+  getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
   getMySubmissions,
   submitLesson as submitLessonRequest,
   updateLessonDraft,
   type LessonDraft,
+  type LessonSubmissionsFilters,
   type CancelLessonBody,
   type SubmitLessonBody,
   type UpdateLessonDraftBody,
 } from './api';
 import { DraftEditor } from './DraftEditor';
-import { ArchivedSubmissionDetailsDialog, CancelLessonDialog } from './SubmissionDialogs';
+import { LessonSubmissionDetailsDialog, CancelLessonDialog } from './SubmissionDialogs';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
 
@@ -78,7 +80,11 @@ export function LessonsLearnedScreen() {
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [selectedDraft, setSelectedDraft] = useState<LessonDraft | null>(null);
   const [selectedCancellationDraft, setSelectedCancellationDraft] = useState<LessonDraft | null>(null);
-  const [selectedArchivedSubmission, setSelectedArchivedSubmission] = useState<LessonDraft | null>(null);
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<number | null>(null);
+  const [submissionSearch, setSubmissionSearch] = useState('');
+  const [submissionProjectId, setSubmissionProjectId] = useState('');
+  const [submissionLessonType, setSubmissionLessonType] = useState<NonNullable<LessonDraft['lessonType']> | ''>('');
+  const [submissionStatus, setSubmissionStatus] = useState<LessonDraft['status'] | ''>('');
   const selectedProfileIdRef = useRef(selectedProfileId);
   const selectionGenerationRef = useRef(selectionGeneration);
   const pendingCreateProfilesRef = useRef(new Set<string>());
@@ -127,13 +133,28 @@ export function LessonsLearnedScreen() {
   const isHomePage = selectedProfileId !== null && hasUsableHomeData;
   const showHomeRecheckError = isHomePage && homeQuery.isError && !homeQuery.isFetching;
   const isEditorOpen = isCreateFormOpen || selectedDraft !== null;
+  const submissionsFilters: LessonSubmissionsFilters = {
+    ...(submissionSearch.trim() ? { search: submissionSearch.trim() } : {}),
+    ...(submissionProjectId ? { projectId: submissionProjectId } : {}),
+    ...(submissionLessonType ? { lessonType: submissionLessonType } : {}),
+    ...(submissionStatus ? { status: submissionStatus } : {}),
+  };
   const submissionsQuery = useQuery({
-    queryKey: ['lessons-learned-my-submissions', selectedProfileId],
-    queryFn: () => getMySubmissions(selectedProfileId ?? ''),
+    queryKey: ['lessons-learned-my-submissions', selectedProfileId, submissionsFilters],
+    queryFn: () => Object.keys(submissionsFilters).length
+      ? getMySubmissions(selectedProfileId ?? '', submissionsFilters)
+      : getMySubmissions(selectedProfileId ?? ''),
     enabled: isHomePage && modulePage === 'my-submissions',
     networkMode: 'always',
     retry: false,
     refetchOnWindowFocus: true,
+  });
+  const submissionDetailsQuery = useQuery({
+    queryKey: ['lessons-learned-submission-details', selectedProfileId, selectedSubmissionId],
+    queryFn: () => getLessonDetails(selectedProfileId ?? '', selectedSubmissionId ?? 0),
+    enabled: isHomePage && modulePage === 'my-submissions' && selectedSubmissionId !== null,
+    networkMode: 'always',
+    retry: false,
   });
   function markCreatePending(profileId: string, isPending: boolean) {
     const nextPendingProfiles = new Set(pendingCreateProfilesRef.current);
@@ -153,14 +174,14 @@ export function LessonsLearnedScreen() {
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
-    setSelectedArchivedSubmission(null);
+    setSelectedSubmissionId(null);
   }, []);
 
   const isSavingCurrentDraft = selectedProfileId !== null && pendingCreateProfiles.has(selectedProfileId);
   const projectsQuery = useQuery({
     queryKey: ['lessons-learned-projects', selectedProfileId],
     queryFn: () => getLessonProjects(selectedProfileId ?? ''),
-    enabled: isHomePage && modulePage === 'my-submissions' && (isCreateFormOpen || selectedDraft !== null),
+    enabled: isHomePage && modulePage === 'my-submissions',
     networkMode: 'always',
     retry: false,
   });
@@ -173,7 +194,7 @@ export function LessonsLearnedScreen() {
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
-    setSelectedArchivedSubmission(null);
+    setSelectedSubmissionId(null);
   }, [isDefinitiveAccessFailure]);
 
   async function saveDraftFields(input: UpdateLessonDraftBody, draftId: number | null): Promise<LessonDraft> {
@@ -447,15 +468,63 @@ export function LessonsLearnedScreen() {
                     </button>
                   </div>
 
-                  {submissionsQuery.isPending && <p role="status">Loading your drafts…</p>}
+                  <div className="submission-filters" role="group" aria-label="Filter My Submissions">
+                    <div className="draft-editor-field">
+                      <label htmlFor="submission-search">Search title or ID</label>
+                      <input
+                        id="submission-search"
+                        type="search"
+                        value={submissionSearch}
+                        placeholder="Title prefix or exact ID"
+                        onChange={(event) => setSubmissionSearch(event.target.value)}
+                      />
+                    </div>
+                    <div className="draft-editor-field">
+                      <label htmlFor="submission-project">Project</label>
+                      <select id="submission-project" value={submissionProjectId} onChange={(event) => setSubmissionProjectId(event.target.value)}>
+                        <option value="">Any project</option>
+                        <option value="none">No project</option>
+                        {(projectsQuery.data ?? []).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="draft-editor-field">
+                      <label htmlFor="submission-type">Lesson type</label>
+                      <select id="submission-type" value={submissionLessonType} onChange={(event) => setSubmissionLessonType(event.target.value as NonNullable<LessonDraft['lessonType']> | '')}>
+                        <option value="">Any type</option>
+                        <option value="Future Prevention">Future Prevention</option>
+                        <option value="Success to Repeat">Success to Repeat</option>
+                        <option value="Risk Avoided">Risk Avoided</option>
+                        <option value="Communication">Communication</option>
+                      </select>
+                    </div>
+                    <div className="draft-editor-field">
+                      <label htmlFor="submission-status">Status</label>
+                      <select id="submission-status" value={submissionStatus} onChange={(event) => setSubmissionStatus(event.target.value as LessonDraft['status'] | '')}>
+                        <option value="">Any status</option>
+                        <option value="Open">Open</option>
+                        <option value="PMOEvaluation">PMO Evaluation</option>
+                        <option value="Approved">Approved</option>
+                        <option value="Closed">Closed</option>
+                        <option value="Archived">Archived</option>
+                      </select>
+                    </div>
+                  </div>
+                  {projectsQuery.isError && !projectsQuery.isFetching && (
+                    <div className="draft-error" role="alert">
+                      <p>The project filter options could not be loaded.</p>
+                      <button className="draft-cancel" type="button" onClick={() => void projectsQuery.refetch()}>Retry projects</button>
+                    </div>
+                  )}
+
+                  {submissionsQuery.isPending && <p role="status">Loading your submissions…</p>}
                   {submissionsQuery.isError && (
                     <div className="draft-error" role="alert">
-                      <p>Your drafts could not be loaded.</p>
+                      <p>Your submissions could not be loaded.</p>
                       <button className="draft-cancel" type="button" onClick={() => void submissionsQuery.refetch()}>Retry</button>
                     </div>
                   )}
                   {submissionsQuery.isSuccess && submissionsQuery.data.length === 0 && (
-                    <p className="draft-empty">You have no submissions yet.</p>
+                    <p className="draft-empty">{Object.keys(submissionsFilters).length ? 'No submissions match these filters.' : 'You have no submissions yet.'}</p>
                   )}
                   {submissionsQuery.isSuccess && submissionsQuery.data.length > 0 && (
                     <ul className="draft-list">
@@ -486,12 +555,20 @@ export function LessonsLearnedScreen() {
                               >
                                 Reopen
                               </button>
+                              <button
+                                className="draft-cancel"
+                                type="button"
+                                onClick={() => setSelectedSubmissionId(draft.id)}
+                                aria-label={`View ${draft.title}`}
+                              >
+                                View
+                              </button>
                             </div>
                           ) : (
                             <button
                               className="draft-cancel"
                               type="button"
-                              onClick={() => setSelectedArchivedSubmission(draft)}
+                              onClick={() => setSelectedSubmissionId(draft.id)}
                               aria-label={`View ${draft.title}`}
                             >
                               View
@@ -528,10 +605,14 @@ export function LessonsLearnedScreen() {
                       onClose={() => setSelectedCancellationDraft(null)}
                     />
                   )}
-                  {selectedArchivedSubmission && (
-                    <ArchivedSubmissionDetailsDialog
-                      draft={selectedArchivedSubmission}
-                      onClose={() => setSelectedArchivedSubmission(null)}
+                  {selectedSubmissionId !== null && (
+                    <LessonSubmissionDetailsDialog
+                      lessonId={selectedSubmissionId}
+                      details={submissionDetailsQuery.data}
+                      isLoading={submissionDetailsQuery.isLoading}
+                      hasError={submissionDetailsQuery.isError}
+                      onRetry={() => void submissionDetailsQuery.refetch()}
+                      onClose={() => setSelectedSubmissionId(null)}
                     />
                   )}
                 </section>

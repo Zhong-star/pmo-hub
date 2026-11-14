@@ -7,11 +7,13 @@ import {
   cancelLesson,
   createLessonDraft,
   getHome,
+  getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
   getMySubmissions,
   updateLessonDraft,
   type LessonDraft,
+  type LessonDetails,
   type UpdateLessonDraftBody,
 } from '../src/api';
 
@@ -19,6 +21,7 @@ vi.mock('../src/api', () => ({
   cancelLesson: vi.fn(),
   createLessonDraft: vi.fn(),
   getHome: vi.fn(),
+  getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
   getMySubmissions: vi.fn(),
@@ -59,6 +62,23 @@ function lessonDraft(overrides: Partial<LessonDraft> = {}): LessonDraft {
   };
 }
 
+function lessonDetails(overrides: Partial<LessonDetails> = {}): LessonDetails {
+  const draft = lessonDraft(overrides);
+  return {
+    ...draft,
+    history: [{
+      id: 1,
+      actorId: draft.authorId,
+      eventType: 'Created',
+      previousStatus: null,
+      newStatus: 'Open',
+      reason: null,
+      occurredAt: draft.createdAt,
+    }],
+    ...overrides,
+  };
+}
+
 function renderScreen(localUserId?: string, gcTime = 0) {
   window.localStorage.clear();
   window.history.replaceState(null, '', '/lessons-learned/');
@@ -88,6 +108,7 @@ beforeEach(() => {
   ]);
   vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
   vi.mocked(getMySubmissions).mockImplementation((profileId) => getMyOpenDrafts(profileId));
+  vi.mocked(getLessonDetails).mockImplementation(async (_profileId, lessonId) => lessonDetails({ id: lessonId }));
   vi.mocked(updateLessonDraft).mockImplementation(async (_profileId, _draftId, input) => lessonDraft({
     ...input,
     updatedBy: 'local-contributor',
@@ -130,12 +151,120 @@ describe('Lessons Learned access check', () => {
     expect(getMySubmissions).toHaveBeenCalledWith('local-contributor');
   });
 
+  it('shows all own submission states, applies combined filters, and restores focus and filter state after details', async () => {
+    const open = lessonDraft({ id: 10, title: 'Open release checklist' });
+    const submitted = lessonDraft({ id: 11, title: 'Submitted release handover', status: 'PMOEvaluation', lessonType: 'Future Prevention' });
+    const approved = lessonDraft({ id: 12, title: 'Approved deployment lesson', status: 'Approved' });
+    const closed = lessonDraft({ id: 13, title: 'Closed migration lesson', status: 'Closed' });
+    const archived = lessonDraft({
+      id: 14,
+      title: 'Archived cancelled lesson',
+      status: 'Archived',
+      updatedBy: 'local-contributor',
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      situationObserved: 'The release handover omitted its runbook.',
+      rootCause: 'The checklist had no owner.',
+      lessonType: 'Communication',
+      impact: 'Operators repeated the checks.',
+      recommendation: 'Assign a checklist owner.',
+      applicability: 'Use for releases with an operations handover.',
+    });
+    const rows = [open, submitted, approved, closed, archived];
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMySubmissions).mockImplementation(async (_profileId, filters) => {
+      if (filters?.status === 'Archived') return [archived];
+      if (filters?.status === 'PMOEvaluation') return [submitted];
+      return rows;
+    });
+    vi.mocked(getLessonDetails).mockImplementation(async (_profileId, lessonId) => lessonDetails(
+      lessonId === archived.id
+        ? {
+            ...archived,
+            history: [
+              { id: 1, actorId: archived.authorId, eventType: 'Created', previousStatus: null, newStatus: 'Open', reason: null, occurredAt: archived.createdAt },
+              { id: 2, actorId: archived.authorId, eventType: 'Cancelled', previousStatus: 'Open', newStatus: 'Archived', reason: 'The project scope changed.', occurredAt: archived.updatedAt },
+            ],
+          }
+        : {
+            ...submitted,
+            history: [
+              { id: 3, actorId: submitted.authorId, eventType: 'Created', previousStatus: null, newStatus: 'Open', reason: null, occurredAt: submitted.createdAt },
+              { id: 4, actorId: submitted.authorId, eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation', reason: null, occurredAt: submitted.updatedAt },
+            ],
+          },
+    ));
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+
+    for (const row of rows) expect(await screen.findByText(`${row.status === 'Open' ? 'Draft' : 'Lesson'} #${row.id} · ${row.status}`)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Reopen ${open.title}` })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `View ${submitted.title}` })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: `Reopen ${submitted.title}` })).not.toBeInTheDocument();
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search title or ID' }), 'Archived');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }), 'none');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Lesson type' }), 'Communication');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'Archived');
+    await vi.waitFor(() => expect(getMySubmissions).toHaveBeenLastCalledWith('local-contributor', {
+      search: 'Archived',
+      projectId: 'none',
+      lessonType: 'Communication',
+      status: 'Archived',
+    }));
+
+    const archivedView = await screen.findByRole('button', { name: `View ${archived.title}` });
+    await user.click(archivedView);
+    const details = screen.getByRole('dialog', { name: 'Lesson details' });
+    expect(await within(details).findByText('Cancellation reason: The project scope changed.')).toBeInTheDocument();
+    expect(within(details).getByText('Archived cancelled lesson')).toBeInTheDocument();
+    expect(within(details).getByText('Technology')).toBeInTheDocument();
+    expect(within(details).getByText('Execution')).toBeInTheDocument();
+    expect(within(details).getByText('The release handover omitted its runbook.')).toBeInTheDocument();
+    expect(within(details).getByText('The checklist had no owner.')).toBeInTheDocument();
+    expect(within(details).getByText('Communication')).toBeInTheDocument();
+    expect(within(details).getByText('Operators repeated the checks.')).toBeInTheDocument();
+    expect(within(details).getByText('Assign a checklist owner.')).toBeInTheDocument();
+    expect(within(details).getByText('Use for releases with an operations handover.')).toBeInTheDocument();
+    expect(within(details).getByText('Last updated')).toBeInTheDocument();
+    expect(within(details).getAllByText(/UTC$/).length).toBeGreaterThanOrEqual(4);
+    expect(within(details).getAllByText('local-contributor').length).toBeGreaterThan(1);
+    expect(within(details).getAllByText('Created').length).toBeGreaterThan(1);
+    expect(within(details).getByText('Cancelled')).toBeInTheDocument();
+    await user.click(within(details).getByRole('button', { name: 'Close details' }));
+    expect(archivedView).toHaveFocus();
+    expect(screen.getByRole('searchbox', { name: 'Search title or ID' })).toHaveValue('Archived');
+    expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue('none');
+    expect(screen.getByRole('combobox', { name: 'Lesson type' })).toHaveValue('Communication');
+    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('Archived');
+
+    await user.clear(screen.getByRole('searchbox', { name: 'Search title or ID' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }), '');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Lesson type' }), '');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'PMOEvaluation');
+    const submittedView = await screen.findByRole('button', { name: `View ${submitted.title}` });
+    await user.click(submittedView);
+    const submittedDetails = screen.getByRole('dialog', { name: 'Lesson details' });
+    expect(await within(submittedDetails).findByText('PMOEvaluation')).toBeInTheDocument();
+    expect(within(submittedDetails).getByText('Submitted')).toBeInTheDocument();
+  });
+
   it('requires an explicit reason before cancelling and keeps the Archived lesson in read-only submissions', async () => {
     const openDraft = lessonDraft({ title: 'Cancel the outdated rollout lesson' });
     const archivedDraft = lessonDraft({ title: openDraft.title, status: 'Archived', version: 2 });
     vi.mocked(getHome).mockResolvedValue(contributor);
     vi.mocked(getMySubmissions).mockResolvedValueOnce([openDraft]).mockResolvedValueOnce([archivedDraft]);
     vi.mocked(cancelLesson).mockResolvedValue(archivedDraft);
+    vi.mocked(getLessonDetails).mockResolvedValue(lessonDetails({
+      ...archivedDraft,
+      history: [
+        { id: 1, actorId: archivedDraft.authorId, eventType: 'Created', previousStatus: null, newStatus: 'Open', reason: null, occurredAt: archivedDraft.createdAt },
+        { id: 2, actorId: archivedDraft.authorId, eventType: 'Cancelled', previousStatus: 'Open', newStatus: 'Archived', reason: 'The project scope changed.', occurredAt: archivedDraft.updatedAt },
+      ],
+    }));
     const user = userEvent.setup();
 
     renderScreen('local-contributor');
@@ -163,10 +292,16 @@ describe('Lessons Learned access check', () => {
     await user.click(viewButton);
 
     const details = screen.getByRole('dialog', { name: 'Lesson details' });
-    expect(within(details).getByText('Archived')).toBeInTheDocument();
+    expect(await within(details).findByText('Archived')).toBeInTheDocument();
     expect(within(details).getByText('No project')).toBeInTheDocument();
+    expect(within(details).getByRole('heading', { name: 'History' })).toBeInTheDocument();
+    expect(within(details).getByText('Cancelled')).toBeInTheDocument();
+    expect(within(details).getByText('Cancellation reason: The project scope changed.')).toBeInTheDocument();
     expect(within(details).queryByRole('button', { name: /^Cancel / })).not.toBeInTheDocument();
     expect(within(details).queryByRole('button', { name: /^Reopen / })).not.toBeInTheDocument();
+    await user.click(within(details).getByRole('button', { name: 'Close details' }));
+    expect(viewButton).toHaveFocus();
+    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('');
   });
 
   it('keeps the cancellation reason and Open draft visible when the API fails', async () => {
@@ -355,7 +490,7 @@ describe('Lessons Learned access check', () => {
     await act(async () => { rejectProjects(new Error('Catalog unavailable')); });
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Project options could not be loaded');
     expect(dialog).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue('');
+    expect(within(dialog).getByRole('combobox', { name: 'Project' })).toHaveValue('');
 
     await user.click(within(dialog).getByRole('button', { name: 'Retry project options' }));
     await vi.waitFor(() => expect(getLessonProjects).toHaveBeenCalledTimes(2));
@@ -388,7 +523,7 @@ describe('Lessons Learned access check', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Edit lesson' });
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Project options could not be loaded');
-    expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue(JSON.stringify([
+    expect(within(dialog).getByRole('combobox', { name: 'Project' })).toHaveValue(JSON.stringify([
       'LEGACY-PROJECT-001', 'Removed fictional project',
     ]));
     await user.click(screen.getByRole('button', { name: 'Save Draft' }));
@@ -417,7 +552,7 @@ describe('Lessons Learned access check', () => {
     await user.click(screen.getByRole('button', { name: 'Create lesson' }));
     await screen.findByRole('dialog', { name: 'Create lesson' });
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Complete project lesson');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }),
+    await user.selectOptions(within(screen.getByRole('dialog', { name: 'Create lesson' })).getByRole('combobox', { name: 'Project' }),
       JSON.stringify(['LOCAL-PROJECT-001', 'Fictional Atlas Modernization']));
     await user.selectOptions(screen.getByRole('combobox', { name: 'Project category' }), 'Technology');
     await user.type(screen.getByRole('textbox', { name: 'Situation observed' }),

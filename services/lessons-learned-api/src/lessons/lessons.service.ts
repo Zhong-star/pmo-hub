@@ -8,7 +8,7 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { DataSource, In } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { LocalAccessService } from '../local-access.service';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../database/database.module';
 import { LessonHistory } from './lesson-history.entity';
@@ -18,7 +18,8 @@ import type { CancelLessonRequest } from './cancel-lesson-request.dto';
 import { ProjectCatalogService, type LessonProject } from './project-catalog.service';
 import type { SubmitLessonRequest } from './submit-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
-import type { LessonDraftResponse } from './lesson-response.dto';
+import type { LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse } from './lesson-response.dto';
+import type { LessonSubmissionsFilter } from './lesson-submissions-query.dto';
 
 @Injectable()
 export class LessonsService {
@@ -77,13 +78,59 @@ export class LessonsService {
     return lessons.map((lesson) => this.toResponse(lesson));
   }
 
-  async getMySubmissions(localUserId: string | undefined): Promise<LessonDraftResponse[]> {
+  async getMySubmissions(
+    localUserId: string | undefined,
+    filters: LessonSubmissionsFilter = {},
+  ): Promise<LessonDraftResponse[]> {
     const profile = this.localAccess.getProfile(localUserId);
-    const lessons = await this.requireDataSource().getRepository(Lesson).find({
-      where: { authorId: profile.id, status: In(['Open', 'Archived']) },
-      order: { updatedAt: 'DESC', id: 'DESC' },
-    });
+    const query = this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
+      .where('lesson.author_id = :authorId', { authorId: profile.id });
+
+    if (filters.search) {
+      if (/^\d+$/.test(filters.search)) {
+        const lessonId = Number(filters.search);
+        if (Number.isSafeInteger(lessonId) && lessonId <= 2_147_483_647) {
+          query.andWhere('lesson.id = :lessonId', { lessonId });
+        } else {
+          query.andWhere('1 = 0');
+        }
+      } else {
+        query.andWhere(
+          'LOWER(SUBSTRING(lesson.title, 1, LENGTH(:titlePrefix))) = LOWER(:titlePrefix)',
+          { titlePrefix: filters.search },
+        );
+      }
+    }
+    if (filters.projectId === 'none') query.andWhere('lesson.project_id IS NULL');
+    else if (filters.projectId) query.andWhere('lesson.project_id = :projectId', { projectId: filters.projectId });
+    if (filters.lessonType) query.andWhere('lesson.lesson_type = :lessonType', { lessonType: filters.lessonType });
+    if (filters.status) query.andWhere('lesson.status = :status', { status: filters.status });
+
+    const lessons = await query.orderBy('lesson.updated_at', 'DESC').addOrderBy('lesson.id', 'DESC').getMany();
     return lessons.map((lesson) => this.toResponse(lesson));
+  }
+
+  async getOwnLessonDetails(localUserId: string | undefined, lessonId: number): Promise<LessonDetailsResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    const dataSource = this.requireDataSource();
+    const lesson = await dataSource.getRepository(Lesson).findOne({ where: { id: lessonId, authorId: profile.id } });
+    if (!lesson) throw new NotFoundException('Lesson not found.');
+
+    const history = await dataSource.getRepository(LessonHistory).find({
+      where: { lessonId },
+      order: { occurredAt: 'ASC', id: 'ASC' },
+    });
+    const historyResponse: LessonHistoryEventResponse[] = history.map((event) => ({
+      id: event.id,
+      actorId: event.actorId,
+      eventType: event.eventType,
+      previousStatus: event.previousStatus,
+      newStatus: event.newStatus,
+      reason: event.reason ?? null,
+      occurredAt: event.occurredAt,
+    }));
+
+    return { ...this.toResponse(lesson), history: historyResponse };
   }
 
   async cancelOwnOpenDraft(

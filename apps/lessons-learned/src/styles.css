@@ -286,6 +286,13 @@ h1 {
 
 .module-content > .submissions-page { max-width: 720px; }
 
+.submission-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 4px 0 22px;
+}
+
 .submissions-header {
   display: flex;
   align-items: flex-start;
@@ -375,6 +382,7 @@ h1 {
 
 @media (max-width: 520px) {
   .submissions-header { flex-direction: column; }
+  .submission-filters { grid-template-columns: minmax(0, 1fr); }
   .draft-list li { align-items: flex-start; flex-direction: column; }
 }
 

@@ -6,6 +6,7 @@ import {
   getHome,
   getMyOpenDrafts,
   getMySubmissions,
+  getLessonDetails,
   createLessonDraft,
   getLessonProjects,
   updateLessonDraft,
@@ -250,6 +251,63 @@ describe('lessons learned HTTP client', () => {
       url: LESSONS_LEARNED_CANCEL_PATH.replace('{id}', '7'),
       method: 'post',
       data: JSON.stringify(body),
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
+    }));
+  });
+
+  it('serializes combined My Submissions filters and retrieves detail history through the protected lesson route', async () => {
+    const filters = {
+      search: 'Improve',
+      projectId: 'none',
+      lessonType: 'Communication' as const,
+      status: 'Archived' as const,
+    };
+    const details = {
+      id: 9,
+      title: 'Improve release handover',
+      authorId: 'local-contributor',
+      updatedBy: 'local-contributor',
+      status: 'Archived' as const,
+      version: 2,
+      projectId: null,
+      projectName: null,
+      projectCategory: 'Technology' as const,
+      projectPhase: 'Execution' as const,
+      situationObserved: 'The release handover lacked the latest runbook.',
+      rootCause: null,
+      lessonType: 'Communication' as const,
+      impact: 'Operators repeated verification work.',
+      recommendation: 'Share the runbook before release.',
+      applicability: 'Use for releases with an operations handover.',
+      createdAt: '2026-11-13T12:00:00.000Z',
+      updatedAt: '2026-11-13T12:05:00.000Z',
+      history: [{
+        id: 1,
+        actorId: 'local-contributor',
+        eventType: 'Cancelled' as const,
+        previousStatus: 'Open' as const,
+        newStatus: 'Archived' as const,
+        reason: 'The project scope changed.',
+        occurredAt: '2026-11-13T12:05:00.000Z',
+      }],
+    };
+    const adapter = vi.fn()
+      .mockResolvedValueOnce({ data: [details], status: 200, statusText: 'OK', headers: {}, config: {} })
+      .mockResolvedValueOnce({ data: details, status: 200, statusText: 'OK', headers: {}, config: {} });
+    api.defaults.adapter = adapter;
+
+    await expect(getMySubmissions('local-contributor', filters)).resolves.toEqual([details]);
+    await expect(getLessonDetails('local-contributor', 9)).resolves.toEqual(details);
+
+    expect(adapter).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      url: LESSONS_LEARNED_SUBMISSIONS_PATH,
+      method: 'get',
+      params: filters,
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
+    }));
+    expect(adapter).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      url: LESSONS_LEARNED_DRAFT_PATH.replace('{id}', '9'),
+      method: 'get',
       headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
     }));
   });

@@ -4,6 +4,7 @@ export {
   getHome,
   getMyOpenDrafts,
   getMySubmissions,
+  getLessonDetails,
   createLessonDraft,
   cancelLesson,
   getLessonProjects,
@@ -23,6 +24,9 @@ export {
 export type {
   CreateLessonDraftBody,
   LessonDraft,
+  LessonDetails,
+  LessonHistoryEvent,
+  LessonSubmissionsFilters,
   LessonProject,
   UpdateLessonDraftBody,
   SubmitLessonBody,

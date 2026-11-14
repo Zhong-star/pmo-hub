@@ -80,7 +80,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the selected profile’s Open and Archived own submissions */
+        /** List the selected profile’s own submissions across all statuses */
         get: operations["LessonsController_getMySubmissions"];
         put?: never;
         post?: never;
@@ -97,7 +97,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get an author-owned lesson and its lifecycle history */
+        get: operations["LessonsController_getOwnLessonDetails"];
         put?: never;
         post?: never;
         delete?: never;
@@ -215,7 +216,7 @@ export interface components {
              * @example Open
              * @enum {string}
              */
-            status: "Open" | "PMOEvaluation" | "Archived";
+            status: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived";
             /** @example 1 */
             version: number;
             projectId: string | null;
@@ -241,6 +242,54 @@ export interface components {
             id: string;
             /** @example Fictional Atlas Modernization */
             name: string;
+        };
+        LessonHistoryEventResponse: {
+            id: number;
+            actorId: string;
+            /** @enum {string} */
+            eventType: "Created" | "Submitted" | "Cancelled";
+            /** @enum {string|null} */
+            previousStatus: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived" | null;
+            /** @enum {string} */
+            newStatus: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived";
+            reason: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+        };
+        LessonDetailsResponse: {
+            /** @example 1 */
+            id: number;
+            /** @example Improve release handover */
+            title: string;
+            /** @example local-contributor */
+            authorId: string;
+            /** @example local-contributor */
+            updatedBy: string;
+            /**
+             * @example Open
+             * @enum {string}
+             */
+            status: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived";
+            /** @example 1 */
+            version: number;
+            projectId: string | null;
+            projectName: string | null;
+            /** @enum {string|null} */
+            projectCategory: "Technology" | "Business" | "Infrastructure" | "Data" | null;
+            /** @enum {string|null} */
+            projectPhase: "Initiation" | "Planning" | "Execution" | "Closure" | "Not Applicable" | null;
+            situationObserved: string | null;
+            rootCause: string | null;
+            /** @enum {string|null} */
+            lessonType: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication" | null;
+            impact: string | null;
+            recommendation: string | null;
+            applicability: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            history: components["schemas"]["LessonHistoryEventResponse"][];
         };
         UpdateLessonDraftRequest: {
             /** @example Improve release handover */
@@ -529,7 +578,14 @@ export interface operations {
     };
     LessonsController_getMySubmissions: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Title prefix or exact numeric lesson ID. */
+                search?: string;
+                /** @description Project ID, or "none" for no project. */
+                projectId?: string;
+                lessonType?: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication";
+                status?: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -553,6 +609,56 @@ export interface operations {
             };
             /** @description The selected profile has no active Lessons Learned access. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LessonsController_getOwnLessonDetails: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric ID of the lesson. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDetailsResponse"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson does not exist or is not owned by the selected profile. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

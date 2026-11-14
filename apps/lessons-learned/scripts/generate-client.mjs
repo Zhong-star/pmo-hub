@@ -27,6 +27,8 @@ const projectsOperation = contract.paths?.[projectsPath]?.get;
 const projectsResponseSchema = projectsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const submissionsOperation = contract.paths?.[submissionsPath]?.get;
 const submissionsResponseSchema = submissionsOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const detailsOperation = contract.paths?.[draftPath]?.get;
+const detailsResponseSchema = detailsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const updateLessonOperation = contract.paths?.[draftPath]?.patch;
 const updateLessonRequestSchema = updateLessonOperation?.requestBody?.content?.['application/json']?.schema;
 const updateLessonResponseSchema = updateLessonOperation?.responses?.['200']?.content?.['application/json']?.schema;
@@ -65,6 +67,10 @@ if (!submissionsOperation || submissionsResponseSchema?.type !== 'array' ||
   throw new Error(`Expected GET ${submissionsPath} with an array of LessonDraftResponse in ${contractPath}`);
 }
 
+if (!detailsOperation || detailsResponseSchema?.$ref !== '#/components/schemas/LessonDetailsResponse') {
+  throw new Error(`Expected GET ${draftPath} with LessonDetailsResponse in ${contractPath}`);
+}
+
 if (!updateLessonOperation || updateLessonRequestSchema?.$ref !== '#/components/schemas/UpdateLessonDraftRequest' ||
   updateLessonResponseSchema?.$ref !== '#/components/schemas/LessonDraftResponse') {
   throw new Error(`Expected PATCH ${draftPath} with UpdateLessonDraftRequest and LessonDraftResponse in ${contractPath}`);
@@ -95,6 +101,9 @@ export const LESSONS_LEARNED_CANCEL_PATH = '${cancelPath}' satisfies keyof paths
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
+export type LessonDetails = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['get']['responses'][200]['content']['application/json'];
+export type LessonHistoryEvent = LessonDetails['history'][number];
+export type LessonSubmissionsFilters = NonNullable<paths[typeof LESSONS_LEARNED_SUBMISSIONS_PATH]['get']['parameters']['query']>;
 export type CreateLessonDraftBody = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['post']['requestBody']['content']['application/json'];
 export type LessonProject = paths[typeof LESSONS_LEARNED_PROJECTS_PATH]['get']['responses'][200]['content']['application/json'][number];
 export type UpdateLessonDraftBody = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['patch']['requestBody']['content']['application/json'];
@@ -135,8 +144,18 @@ export async function getMyOpenDrafts(localUserId: string): Promise<LessonDraft[
   return data;
 }
 
-export async function getMySubmissions(localUserId: string): Promise<LessonDraft[]> {
+export async function getMySubmissions(localUserId: string, filters: LessonSubmissionsFilters = {}): Promise<LessonDraft[]> {
   const { data } = await api.get<LessonDraft[]>(LESSONS_LEARNED_SUBMISSIONS_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+    params: filters,
+  });
+
+  return data;
+}
+
+export async function getLessonDetails(localUserId: string, lessonId: number): Promise<LessonDetails> {
+  const { data } = await api.get<LessonDetails>(LESSONS_LEARNED_DRAFT_PATH.replace('{id}', String(lessonId)), {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });

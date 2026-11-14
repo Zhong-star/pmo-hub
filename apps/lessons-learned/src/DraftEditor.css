@@ -119,6 +119,13 @@
 .submission-detail-list dt { color: var(--muted); font-size: 13px; font-weight: 700; }
 .submission-detail-list dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 
+.submission-history { border-top: 1px solid var(--surface-border); padding-top: 16px; }
+.submission-history h3 { margin: 0 0 12px; font-size: 18px; }
+.submission-history ol { display: grid; gap: 12px; margin: 0; padding-left: 22px; }
+.submission-history li { padding-left: 4px; }
+.submission-history li p { margin: 4px 0; overflow-wrap: anywhere; }
+.submission-history li p + p { color: var(--muted); font-size: 13px; }
+
 .submission-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
 @media (max-width: 560px) {
