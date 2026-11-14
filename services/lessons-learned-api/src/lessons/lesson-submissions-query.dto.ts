@@ -36,7 +36,17 @@ export class LessonSubmissionsQuery {
   status?: typeof lessonStatuses[number];
 }
 
+export class PmoDraftsQuery extends LessonSubmissionsQuery {
+  @ApiPropertyOptional({ type: String, description: 'Author profile ID.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  authorId?: string;
+}
+
 export type LessonSubmissionsFilter = Pick<
   LessonSubmissionsQuery,
   'search' | 'projectId' | 'withoutProject' | 'lessonType' | 'status'
 >;
+
+export type PmoDraftsFilter = LessonSubmissionsFilter & Pick<PmoDraftsQuery, 'authorId'>;

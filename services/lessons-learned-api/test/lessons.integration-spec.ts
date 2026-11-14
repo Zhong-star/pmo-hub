@@ -475,11 +475,11 @@ describe('Lessons Learned draft registration', () => {
       .toEqual([{ event_type: 'Created' }]);
   });
 
-  it('does not let another profile cancel the author’s draft', async () => {
+  it('does not let a Contributor cancel another profile’s draft', async () => {
     const server = request(app!.getHttpServer());
     const created = await server
       .post('/api/lessons-learned/v1/lessons')
-      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
       .send({ title: 'Keep another profile’s draft private' })
       .expect(201);
 
@@ -489,12 +489,12 @@ describe('Lessons Learned draft registration', () => {
       .expect(401);
     await server
       .post(`/api/lessons-learned/v1/lessons/${created.body.id}/cancel`)
-      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
       .send({ version: 1, reason: 'Unauthorized cancel attempt.' })
       .expect(404);
 
-    expect(await dataSource?.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
-      .toEqual([{ status: 'Open', version: 1 }]);
+    expect(await dataSource?.query('SELECT status, version, updated_by FROM lessons WHERE id = $1', [created.body.id]))
+      .toEqual([{ status: 'Open', version: 1, updated_by: 'local-pmo' }]);
     expect(await dataSource?.query('SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id', [created.body.id]))
       .toEqual([{ event_type: 'Created' }]);
   });
@@ -1189,5 +1189,148 @@ describe('Lessons Learned draft registration', () => {
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .send({ version: created.body.version, title: 'Unauthorized edit' })
       .expect(404);
+  });
+
+  it('lets PMO list lessons across authors and statuses with combined filters while denying Contributors', async () => {
+    const server = request(app!.getHttpServer());
+    const create = async (profileId: string, title: string, lessonType: string, project: boolean) => server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', profileId)
+      .send({
+        title,
+        lessonType,
+        ...(project ? { projectId: 'LOCAL-PROJECT-001', projectName: 'Fictional Atlas Modernization' } : {}),
+      })
+      .expect(201);
+
+    const contributorDraft = await create('local-contributor', 'PMO handover checklist', 'Communication', true);
+    const pmoDraft = await create('local-pmo', 'PMO own review', 'Future Prevention', false);
+    const otherDraft = await create('local-contributor', 'Database migration review', 'Risk Avoided', false);
+    await dataSource!.query('UPDATE lessons SET status = $2 WHERE id = $1', [otherDraft.body.id, 'Closed']);
+    await dataSource!.query('UPDATE lessons SET updated_at = CURRENT_TIMESTAMP - INTERVAL \'2 seconds\' WHERE id = $1', [contributorDraft.body.id]);
+    await dataSource!.query('UPDATE lessons SET updated_at = CURRENT_TIMESTAMP - INTERVAL \'1 second\' WHERE id = $1', [pmoDraft.body.id]);
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/pmo-drafts')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(403);
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/pmo-drafts')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.map(({ id }: { id: number }) => id)).toEqual([
+          otherDraft.body.id,
+          pmoDraft.body.id,
+          contributorDraft.body.id,
+        ]);
+        expect(body.map(({ updatedAt }: { updatedAt: string }) => Date.parse(updatedAt))).toEqual(
+          [...body.map(({ updatedAt }: { updatedAt: string }) => Date.parse(updatedAt))]
+            .sort((left, right) => right - left),
+        );
+      });
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/pmo-drafts?search=PMO&authorId=local-contributor&projectId=LOCAL-PROJECT-001&lessonType=Communication&status=Open')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([contributorDraft.body.id]));
+  });
+
+  it('lets PMO inspect, edit, and cancel Open lessons without changing authorship or duplicating history', async () => {
+    const server = request(app!.getHttpServer());
+    const create = (title: string) => server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title })
+      .expect(201);
+
+    const editedDraft = await create('Contributor draft for PMO help');
+    const cancelledDraft = await create('Contributor draft for PMO cancellation');
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${editedDraft.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.history).toMatchObject([
+        { actorId: 'local-contributor', eventType: 'Created', newStatus: 'Open' },
+      ]));
+
+    const saved = await server
+      .patch(`/api/lessons-learned/v1/lessons/${editedDraft.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: editedDraft.body.version, title: 'PMO assisted lesson' })
+      .expect(200);
+    expect(saved.body).toMatchObject({
+      id: editedDraft.body.id,
+      title: 'PMO assisted lesson',
+      authorId: 'local-contributor',
+      updatedBy: 'local-pmo',
+      version: editedDraft.body.version + 1,
+      status: 'Open',
+    });
+
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${editedDraft.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: editedDraft.body.version, title: 'Stale PMO edit must not replace this' })
+      .expect(409)
+      .expect(({ body }) => expect(body.code).toBe('STALE_LESSON_VERSION'));
+
+    const cancelled = await server
+      .post(`/api/lessons-learned/v1/lessons/${cancelledDraft.body.id}/cancel`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: cancelledDraft.body.version, reason: 'The author asked PMO to close this draft.' })
+      .expect(200);
+    expect(cancelled.body).toMatchObject({
+      authorId: 'local-contributor',
+      updatedBy: 'local-pmo',
+      status: 'Archived',
+    });
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${cancelledDraft.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.history).toMatchObject([
+        { actorId: 'local-contributor', eventType: 'Created', previousStatus: null, newStatus: 'Open', reason: null },
+        { actorId: 'local-pmo', eventType: 'Cancelled', previousStatus: 'Open', newStatus: 'Archived', reason: 'The author asked PMO to close this draft.' },
+      ]));
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${cancelledDraft.body.id}/cancel`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: cancelled.body.version, reason: 'A repeated cancel must not add history.' })
+      .expect(409);
+    expect(await dataSource!.query('SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id', [cancelledDraft.body.id]))
+      .toEqual([{ event_type: 'Created' }, { event_type: 'Cancelled' }]);
+  });
+
+  it('does not let PMO submit an Open lesson on behalf of its author', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        title: 'A complete lesson remains author controlled',
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'A required test was missed.',
+        rootCause: 'The checklist was outdated.',
+        lessonType: 'Future Prevention',
+        impact: 'The release needed extra work.',
+        recommendation: 'Update the release checklist.',
+        applicability: 'Apply to every release.',
+      })
+      .expect(201);
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ ...created.body })
+      .expect(404);
+    expect(await dataSource!.query('SELECT status FROM lessons WHERE id = $1', [created.body.id]))
+      .toEqual([{ status: 'Open' }]);
+    expect(await dataSource!.query('SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id', [created.body.id]))
+      .toEqual([{ event_type: 'Created' }]);
   });
 });

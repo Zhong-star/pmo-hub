@@ -7,6 +7,7 @@ export const LESSONS_LEARNED_HOME_PATH = '/api/lessons-learned/v1/home' satisfie
 export const LESSONS_LEARNED_LESSONS_PATH = '/api/lessons-learned/v1/lessons' satisfies keyof paths;
 export const LESSONS_LEARNED_PROJECTS_PATH = '/api/lessons-learned/v1/lessons/projects' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMISSIONS_PATH = '/api/lessons-learned/v1/lessons/mine' satisfies keyof paths;
+export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '/api/lessons-learned/v1/lessons/pmo-drafts' satisfies keyof paths;
 export const LESSONS_LEARNED_DRAFT_PATH = '/api/lessons-learned/v1/lessons/{id}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMIT_PATH = '/api/lessons-learned/v1/lessons/{id}/submit' satisfies keyof paths;
 export const LESSONS_LEARNED_CANCEL_PATH = '/api/lessons-learned/v1/lessons/{id}/cancel' satisfies keyof paths;
@@ -16,6 +17,7 @@ export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['res
 export type LessonDetails = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonHistoryEvent = LessonDetails['history'][number];
 export type LessonSubmissionsFilters = NonNullable<paths[typeof LESSONS_LEARNED_SUBMISSIONS_PATH]['get']['parameters']['query']>;
+export type PmoDraftsFilters = NonNullable<paths[typeof LESSONS_LEARNED_PMO_DRAFTS_PATH]['get']['parameters']['query']>;
 export type CreateLessonDraftBody = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['post']['requestBody']['content']['application/json'];
 export type LessonProject = paths[typeof LESSONS_LEARNED_PROJECTS_PATH]['get']['responses'][200]['content']['application/json'][number];
 export type UpdateLessonDraftBody = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['patch']['requestBody']['content']['application/json'];
@@ -58,6 +60,16 @@ export async function getMyOpenDrafts(localUserId: string): Promise<LessonDraft[
 
 export async function getMySubmissions(localUserId: string, filters: LessonSubmissionsFilters = {}): Promise<LessonDraft[]> {
   const { data } = await api.get<LessonDraft[]>(LESSONS_LEARNED_SUBMISSIONS_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+    params: filters,
+  });
+
+  return data;
+}
+
+export async function getPmoDrafts(localUserId: string, filters: PmoDraftsFilters = {}): Promise<LessonDraft[]> {
+  const { data } = await api.get<LessonDraft[]>(LESSONS_LEARNED_PMO_DRAFTS_PATH, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
     params: filters,

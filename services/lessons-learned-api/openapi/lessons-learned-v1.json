@@ -316,9 +316,114 @@
         ]
       }
     },
+    "/api/lessons-learned/v1/lessons/pmo-drafts": {
+      "get": {
+        "operationId": "LessonsController_getPmoDrafts",
+        "parameters": [
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Title prefix or exact numeric lesson ID.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectId",
+            "required": false,
+            "in": "query",
+            "description": "Project snapshot ID.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "withoutProject",
+            "required": false,
+            "in": "query",
+            "description": "Filter to lessons without a project.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "lessonType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "Future Prevention",
+                "Success to Repeat",
+                "Risk Avoided",
+                "Communication"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "Open",
+                "PMOEvaluation",
+                "Approved",
+                "Closed",
+                "Archived"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "authorId",
+            "required": false,
+            "in": "query",
+            "description": "Author profile ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LessonDraftResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected."
+          },
+          "403": {
+            "description": "The selected profile is not a PMO moderator."
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable."
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List module lessons for PMO Drafts, optionally filtered by author, project, type, status, and search",
+        "tags": [
+          "Lessons"
+        ]
+      }
+    },
     "/api/lessons-learned/v1/lessons/{id}": {
       "get": {
-        "operationId": "LessonsController_getOwnLessonDetails",
+        "operationId": "LessonsController_getLessonDetails",
         "parameters": [
           {
             "name": "id",
@@ -348,7 +453,7 @@
             "description": "The selected profile has no active Lessons Learned access."
           },
           "404": {
-            "description": "The lesson does not exist or is not owned by the selected profile."
+            "description": "The lesson does not exist or is not visible to the selected profile."
           },
           "503": {
             "description": "Lessons Learned persistence is unavailable."
@@ -359,13 +464,13 @@
             "localProfile": []
           }
         ],
-        "summary": "Get an author-owned lesson and its lifecycle history",
+        "summary": "Get an author-owned or PMO-accessible lesson and its lifecycle history",
         "tags": [
           "Lessons"
         ]
       },
       "patch": {
-        "operationId": "LessonsController_updateOwnOpenDraft",
+        "operationId": "LessonsController_updateOpenDraft",
         "parameters": [
           {
             "name": "id",
@@ -408,7 +513,7 @@
             "description": "The selected profile has no active Lessons Learned access."
           },
           "404": {
-            "description": "The lesson does not exist or is not owned by the selected profile."
+            "description": "The lesson does not exist or is not editable by the selected profile."
           },
           "409": {
             "description": "The draft changed after it was loaded or is no longer Open.",
@@ -429,7 +534,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Update an author-owned Open lesson draft using its expected version",
+        "summary": "Update an Open lesson draft owned by the selected profile or managed by a PMO",
         "tags": [
           "Lessons"
         ]
@@ -516,7 +621,7 @@
     },
     "/api/lessons-learned/v1/lessons/{id}/cancel": {
       "post": {
-        "operationId": "LessonsController_cancelOwnOpenDraft",
+        "operationId": "LessonsController_cancelOpenDraft",
         "parameters": [
           {
             "name": "id",
@@ -566,7 +671,7 @@
             "description": "The selected profile has no active Lessons Learned access."
           },
           "404": {
-            "description": "The lesson does not exist or is not owned by the selected profile."
+            "description": "The lesson does not exist or is not cancellable by the selected profile."
           },
           "409": {
             "description": "The lesson is no longer Open or the cancelled version is stale.",
@@ -587,7 +692,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Cancel an author-owned Open lesson with a reason",
+        "summary": "Cancel an Open lesson owned by the selected profile or managed by a PMO",
         "tags": [
           "Lessons"
         ]

@@ -1,5 +1,5 @@
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsLearnedScreen } from '../src/LessonsLearnedScreen';
@@ -11,6 +11,7 @@ import {
   getLessonProjects,
   getMyOpenDrafts,
   getMySubmissions,
+  getPmoDrafts,
   updateLessonDraft,
   type LessonDraft,
   type LessonDetails,
@@ -25,6 +26,7 @@ vi.mock('../src/api', () => ({
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
   getMySubmissions: vi.fn(),
+  getPmoDrafts: vi.fn(),
   updateLessonDraft: vi.fn(),
 }));
 
@@ -79,9 +81,9 @@ function lessonDetails(overrides: Partial<LessonDetails> = {}): LessonDetails {
   };
 }
 
-function renderScreen(localUserId?: string, gcTime = 0) {
+function renderScreen(localUserId?: string, gcTime = 0, page?: 'my-submissions' | 'pmo-drafts') {
   window.localStorage.clear();
-  window.history.replaceState(null, '', '/lessons-learned/');
+  window.history.replaceState(null, '', page ? `/lessons-learned/?page=${page}` : '/lessons-learned/');
   if (localUserId) window.localStorage.setItem('pmo-hub.local-user-id', localUserId);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime } },
@@ -108,6 +110,7 @@ beforeEach(() => {
   ]);
   vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
   vi.mocked(getMySubmissions).mockImplementation((profileId) => getMyOpenDrafts(profileId));
+  vi.mocked(getPmoDrafts).mockResolvedValue([]);
   vi.mocked(getLessonDetails).mockImplementation(async (_profileId, lessonId) => lessonDetails({ id: lessonId }));
   vi.mocked(updateLessonDraft).mockImplementation(async (_profileId, _draftId, input) => lessonDraft({
     ...input,
@@ -149,6 +152,111 @@ describe('Lessons Learned access check', () => {
     expect(screen.getByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Improve release handover');
     expect(getMySubmissions).toHaveBeenCalledWith('local-contributor');
+  });
+
+  it('shows PMO Drafts with an Open default and rows that identify each lesson', async () => {
+    const openDraft = lessonDraft({
+      id: 41,
+      title: 'PMO review handover',
+      projectName: 'Fictional Atlas Modernization',
+      projectId: 'LOCAL-PROJECT-001',
+      lessonType: 'Communication',
+      updatedAt: '2026-11-13T15:30:00.000Z',
+    });
+    const closedDraft = lessonDraft({ id: 42, title: 'PMO closed lesson', status: 'Closed' });
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoDrafts).mockImplementation(async (_profileId, filters = {}) => (
+      filters.status === 'Open' ? [openDraft] : [openDraft, closedDraft]
+    ));
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'PMO Drafts' }));
+
+    expect(await screen.findByRole('heading', { name: 'PMO Drafts' })).toBeInTheDocument();
+    expect(getPmoDrafts).toHaveBeenCalledWith('local-pmo', { status: 'Open' });
+    const row = screen.getByRole('row', { name: /PMO review handover/ });
+    expect(within(row).getByText('#41')).toBeInTheDocument();
+    expect(within(row).getByText('local-contributor')).toBeInTheDocument();
+    expect(within(row).getByText('Fictional Atlas Modernization')).toBeInTheDocument();
+    expect(within(row).getByText('Communication')).toBeInTheDocument();
+    expect(within(row).getByText('Open')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'View PMO review handover' })).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), '');
+    await screen.findByRole('row', { name: /PMO closed lesson/ });
+    expect(getPmoDrafts).toHaveBeenCalledWith('local-pmo', {});
+  });
+
+  it('does not expose PMO Drafts or request the private list for a Contributor deep link', async () => {
+    vi.mocked(getHome).mockResolvedValue(contributor);
+
+    renderScreen('local-contributor', 0, 'pmo-drafts');
+
+    expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'PMO Drafts' })).not.toBeInTheDocument();
+    expect(getPmoDrafts).not.toHaveBeenCalled();
+  });
+
+  it('lets PMO edit a third-party Open draft without Submit and preserves edits after a stale-version conflict', async () => {
+    const draft = lessonDraft({ id: 44, title: 'Author draft for PMO assistance' });
+    let latest = draft;
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoDrafts).mockImplementation(async () => [latest]);
+    vi.mocked(updateLessonDraft).mockRejectedValueOnce(apiError(409, 'STALE_LESSON_VERSION'));
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'PMO Drafts' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit Author draft for PMO assistance' }));
+
+    const editor = screen.getByRole('dialog', { name: 'Edit lesson' });
+    expect(within(editor).queryByRole('button', { name: 'Submit for PMO Review' })).not.toBeInTheDocument();
+    const title = within(editor).getByRole('textbox', { name: 'Title' });
+    await user.clear(title);
+    await user.type(title, 'PMO changes stay in the form');
+    await user.click(within(editor).getByRole('button', { name: 'Save Draft' }));
+    expect(await within(editor).findByRole('alert')).toHaveTextContent('Your edits are still here');
+    expect(title).toHaveValue('PMO changes stay in the form');
+    expect(within(editor).getByRole('button', { name: 'Reload latest version' })).toBeInTheDocument();
+
+    latest = lessonDraft({ id: draft.id, title: 'Author saved a newer version', version: draft.version + 1 });
+    await user.click(within(editor).getByRole('button', { name: 'Reload latest version' }));
+    expect(confirm).toHaveBeenCalledWith('Reloading the latest version will discard your unsaved changes. Continue?');
+    await waitFor(() => expect(title).toHaveValue('Author saved a newer version'));
+    expect(within(editor).queryByRole('button', { name: 'Submit for PMO Review' })).not.toBeInTheDocument();
+  });
+
+  it('confirms PMO cancellation of a third-party Open draft and refreshes PMO Drafts', async () => {
+    const openDraft = lessonDraft({ id: 45, title: 'Draft PMO is closing' });
+    const archivedDraft = lessonDraft({ ...openDraft, status: 'Archived', updatedBy: 'local-pmo', version: 2 });
+    let isCancelled = false;
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoDrafts).mockImplementation(async (_profileId, filters = {}) => (
+      isCancelled && filters.status === 'Open' ? [] : [isCancelled ? archivedDraft : openDraft]
+    ));
+    vi.mocked(cancelLesson).mockImplementation(async () => {
+      isCancelled = true;
+      return { ...archivedDraft, updatedAt: new Date().toISOString() };
+    });
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'PMO Drafts' }));
+    await user.click(await screen.findByRole('button', { name: 'Cancel Draft PMO is closing' }));
+    const dialog = screen.getByRole('dialog', { name: 'Cancel lesson' });
+    await user.type(within(dialog).getByRole('textbox', { name: 'Reason for cancellation' }), 'The author approved closing it.');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }));
+
+    expect(cancelLesson).toHaveBeenCalledWith('local-pmo', openDraft.id, {
+      version: openDraft.version,
+      reason: 'The author approved closing it.',
+    });
+    expect(await screen.findByText('No lessons match these filters.')).toBeInTheDocument();
   });
 
   it('shows all own submission states, applies combined filters, and restores focus and filter state after details', async () => {

@@ -13,6 +13,7 @@ type DraftEditorProps = {
   onRetryProjects?: () => void;
   homeRecheckError?: boolean;
   onRetryHomeCheck?: () => void;
+  canSubmit?: boolean;
   onClose: () => void;
   onSave: (input: UpdateLessonDraftBody, draftId: number | null) => Promise<LessonDraft>;
   onSubmit: (input: SubmitLessonBody, draftId: number) => Promise<LessonDraft>;
@@ -125,6 +126,7 @@ export function DraftEditor({
   onRetryProjects,
   homeRecheckError = false,
   onRetryHomeCheck,
+  canSubmit = true,
   onClose,
   onSave,
   onSubmit,
@@ -285,7 +287,7 @@ export function DraftEditor({
   }
 
   async function submit() {
-    if (savingRef.current || isSubmitted) return;
+    if (!canSubmit || savingRef.current || isSubmitted) return;
     const title = fields.title.trim();
     const fieldErrors: SubmissionFieldErrors = {};
     if (!title) fieldErrors.title = 'Title is required.';
@@ -636,9 +638,11 @@ export function DraftEditor({
                 <button className="draft-editor-primary" type="submit" disabled={isSaving || isReloading}>
                   {isSaving ? isSubmitting ? 'Submitting…' : 'Saving…' : 'Save Draft'}
                 </button>
-                <button className="draft-editor-primary" type="button" disabled={isSaving || isReloading} onClick={() => void submit()}>
-                  {isSubmitting ? 'Submitting…' : 'Submit for PMO Review'}
-                </button>
+                {canSubmit && (
+                  <button className="draft-editor-primary" type="button" disabled={isSaving || isReloading} onClick={() => void submit()}>
+                    {isSubmitting ? 'Submitting…' : 'Submit for PMO Review'}
+                  </button>
+                )}
               </>
             )}
             <button className="draft-editor-secondary" type="button" disabled={isSaving || isReloading} onClick={requestClose}>Close</button>

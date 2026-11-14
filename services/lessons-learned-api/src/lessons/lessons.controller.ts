@@ -45,7 +45,7 @@ import { LessonsService } from './lessons.service';
 import { LessonProjectResponse } from './project-response.dto';
 import { SubmitLessonRequest } from './submit-lesson-request.dto';
 import { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
-import { LessonSubmissionsQuery } from './lesson-submissions-query.dto';
+import { LessonSubmissionsQuery, PmoDraftsQuery } from './lesson-submissions-query.dto';
 
 @ApiTags('Lessons')
 @ApiExtraModels(LocalAccessProblem)
@@ -120,26 +120,48 @@ export class LessonsController {
     return this.lessons.getMySubmissions(typeof header === 'string' ? header : undefined, filters);
   }
 
+  @Get('pmo-drafts')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'List module lessons for PMO Drafts, optionally filtered by author, project, type, status, and search' })
+  @ApiSecurity(localProfileScheme)
+  @ApiQuery({ name: 'authorId', required: false, type: String, description: 'Author profile ID.' })
+  @ApiQuery({ name: 'status', required: false, enum: ['Open', 'PMOEvaluation', 'Approved', 'Closed', 'Archived'] })
+  @ApiQuery({ name: 'lessonType', required: false, enum: ['Future Prevention', 'Success to Repeat', 'Risk Avoided', 'Communication'] })
+  @ApiQuery({ name: 'projectId', required: false, type: String, description: 'Project snapshot ID.' })
+  @ApiQuery({ name: 'withoutProject', required: false, type: Boolean, description: 'Filter to lessons without a project.' })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'Title prefix or exact numeric lesson ID.' })
+  @ApiOkResponse({ type: LessonDraftResponse, isArray: true })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile is not a PMO moderator.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  getPmoDrafts(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Query(new ValidationPipe({ transform: true, whitelist: true, expectedType: PmoDraftsQuery }))
+    filters: PmoDraftsQuery,
+  ): Promise<LessonDraftResponse[]> {
+    return this.lessons.getPmoDrafts(typeof header === 'string' ? header : undefined, filters);
+  }
+
   @Get(':id')
   @Header('Cache-Control', 'no-store')
-  @ApiOperation({ summary: 'Get an author-owned lesson and its lifecycle history' })
+  @ApiOperation({ summary: 'Get an author-owned or PMO-accessible lesson and its lifecycle history' })
   @ApiSecurity(localProfileScheme)
   @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson.' })
   @ApiOkResponse({ type: LessonDetailsResponse })
   @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
   @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
-  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not owned by the selected profile.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not visible to the selected profile.' })
   @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
-  getOwnLessonDetails(
+  getLessonDetails(
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
     @Param('id', ParseIntPipe) lessonId: number,
   ): Promise<LessonDetailsResponse> {
-    return this.lessons.getOwnLessonDetails(typeof header === 'string' ? header : undefined, lessonId);
+    return this.lessons.getLessonDetails(typeof header === 'string' ? header : undefined, lessonId);
   }
 
   @Patch(':id')
   @Header('Cache-Control', 'no-store')
-  @ApiOperation({ summary: 'Update an author-owned Open lesson draft using its expected version' })
+  @ApiOperation({ summary: 'Update an Open lesson draft owned by the selected profile or managed by a PMO' })
   @ApiSecurity(localProfileScheme)
   @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson draft.' })
   @ApiBody({ type: UpdateLessonDraftRequest })
@@ -147,19 +169,19 @@ export class LessonsController {
   @ApiResponse({ status: 400, description: 'The draft fields or project selection are invalid.' })
   @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
   @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
-  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not owned by the selected profile.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not editable by the selected profile.' })
   @ApiConflictResponse({
     type: LessonConflictResponse,
     description: 'The draft changed after it was loaded or is no longer Open.',
   })
   @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
-  updateOwnOpenDraft(
+  updateOpenDraft(
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
     @Param('id', ParseIntPipe) lessonId: number,
     @Body(new ValidationPipe({ transform: true, whitelist: true, expectedType: UpdateLessonDraftRequest }))
     input: UpdateLessonDraftRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.updateOwnOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input);
+    return this.lessons.updateOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input);
   }
 
   @Post(':id/submit')
@@ -206,7 +228,7 @@ export class LessonsController {
   @Post(':id/cancel')
   @HttpCode(200)
   @Header('Cache-Control', 'no-store')
-  @ApiOperation({ summary: 'Cancel an author-owned Open lesson with a reason' })
+  @ApiOperation({ summary: 'Cancel an Open lesson owned by the selected profile or managed by a PMO' })
   @ApiSecurity(localProfileScheme)
   @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson draft.' })
   @ApiBody({ type: CancelLessonRequest })
@@ -217,13 +239,13 @@ export class LessonsController {
   })
   @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
   @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
-  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not owned by the selected profile.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not cancellable by the selected profile.' })
   @ApiConflictResponse({
     type: LessonConflictResponse,
     description: 'The lesson is no longer Open or the cancelled version is stale.',
   })
   @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
-  cancelOwnOpenDraft(
+  cancelOpenDraft(
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
     @Param('id', ParseIntPipe) lessonId: number,
     @Body(new ValidationPipe({
@@ -241,6 +263,6 @@ export class LessonsController {
     }))
     input: CancelLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.cancelOwnOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input);
+    return this.lessons.cancelOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input);
   }
 }

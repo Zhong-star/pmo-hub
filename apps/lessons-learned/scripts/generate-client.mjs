@@ -10,6 +10,7 @@ const homePath = '/api/lessons-learned/v1/home';
 const lessonsPath = '/api/lessons-learned/v1/lessons';
 const projectsPath = `${lessonsPath}/projects`;
 const submissionsPath = `${lessonsPath}/mine`;
+const pmoDraftsPath = `${lessonsPath}/pmo-drafts`;
 const draftPath = `${lessonsPath}/{id}`;
 const submitPath = `${draftPath}/submit`;
 const cancelPath = `${draftPath}/cancel`;
@@ -27,6 +28,8 @@ const projectsOperation = contract.paths?.[projectsPath]?.get;
 const projectsResponseSchema = projectsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const submissionsOperation = contract.paths?.[submissionsPath]?.get;
 const submissionsResponseSchema = submissionsOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const pmoDraftsOperation = contract.paths?.[pmoDraftsPath]?.get;
+const pmoDraftsResponseSchema = pmoDraftsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const detailsOperation = contract.paths?.[draftPath]?.get;
 const detailsResponseSchema = detailsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const updateLessonOperation = contract.paths?.[draftPath]?.patch;
@@ -67,6 +70,11 @@ if (!submissionsOperation || submissionsResponseSchema?.type !== 'array' ||
   throw new Error(`Expected GET ${submissionsPath} with an array of LessonDraftResponse in ${contractPath}`);
 }
 
+if (!pmoDraftsOperation || pmoDraftsResponseSchema?.type !== 'array' ||
+  pmoDraftsResponseSchema.items?.$ref !== '#/components/schemas/LessonDraftResponse') {
+  throw new Error(`Expected GET ${pmoDraftsPath} with an array of LessonDraftResponse in ${contractPath}`);
+}
+
 if (!detailsOperation || detailsResponseSchema?.$ref !== '#/components/schemas/LessonDetailsResponse') {
   throw new Error(`Expected GET ${draftPath} with LessonDetailsResponse in ${contractPath}`);
 }
@@ -95,6 +103,7 @@ export const LESSONS_LEARNED_HOME_PATH = '${homePath}' satisfies keyof paths;
 export const LESSONS_LEARNED_LESSONS_PATH = '${lessonsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_PROJECTS_PATH = '${projectsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMISSIONS_PATH = '${submissionsPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '${pmoDraftsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_DRAFT_PATH = '${draftPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMIT_PATH = '${submitPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_CANCEL_PATH = '${cancelPath}' satisfies keyof paths;
@@ -104,6 +113,7 @@ export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['res
 export type LessonDetails = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonHistoryEvent = LessonDetails['history'][number];
 export type LessonSubmissionsFilters = NonNullable<paths[typeof LESSONS_LEARNED_SUBMISSIONS_PATH]['get']['parameters']['query']>;
+export type PmoDraftsFilters = NonNullable<paths[typeof LESSONS_LEARNED_PMO_DRAFTS_PATH]['get']['parameters']['query']>;
 export type CreateLessonDraftBody = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['post']['requestBody']['content']['application/json'];
 export type LessonProject = paths[typeof LESSONS_LEARNED_PROJECTS_PATH]['get']['responses'][200]['content']['application/json'][number];
 export type UpdateLessonDraftBody = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['patch']['requestBody']['content']['application/json'];
@@ -146,6 +156,16 @@ export async function getMyOpenDrafts(localUserId: string): Promise<LessonDraft[
 
 export async function getMySubmissions(localUserId: string, filters: LessonSubmissionsFilters = {}): Promise<LessonDraft[]> {
   const { data } = await api.get<LessonDraft[]>(LESSONS_LEARNED_SUBMISSIONS_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+    params: filters,
+  });
+
+  return data;
+}
+
+export async function getPmoDrafts(localUserId: string, filters: PmoDraftsFilters = {}): Promise<LessonDraft[]> {
+  const { data } = await api.get<LessonDraft[]>(LESSONS_LEARNED_PMO_DRAFTS_PATH, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
     params: filters,

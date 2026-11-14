@@ -6,6 +6,7 @@ import {
   getHome,
   getMyOpenDrafts,
   getMySubmissions,
+  getPmoDrafts,
   getLessonDetails,
   createLessonDraft,
   getLessonProjects,
@@ -309,6 +310,33 @@ describe('lessons learned HTTP client', () => {
       url: LESSONS_LEARNED_DRAFT_PATH.replace('{id}', '9'),
       method: 'get',
       headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
+    }));
+  });
+
+  it('requests PMO Drafts with its combined filters and moderator profile', async () => {
+    const filters = {
+      search: 'Deploy',
+      authorId: 'local-contributor',
+      projectId: 'LOCAL-PROJECT-001',
+      lessonType: 'Communication' as const,
+      status: 'Open' as const,
+    };
+    const adapter = vi.fn().mockResolvedValue({
+      data: [],
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config: {},
+    });
+    api.defaults.adapter = adapter;
+
+    await expect(getPmoDrafts('local-pmo', filters)).resolves.toEqual([]);
+
+    expect(adapter).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/api/lessons-learned/v1/lessons/pmo-drafts',
+      method: 'get',
+      params: filters,
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-pmo' }),
     }));
   });
 });

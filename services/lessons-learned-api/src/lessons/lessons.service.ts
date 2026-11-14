@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   InternalServerErrorException,
   Injectable,
@@ -19,7 +20,7 @@ import { ProjectCatalogService, type LessonProject } from './project-catalog.ser
 import type { SubmitLessonRequest } from './submit-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import type { LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse } from './lesson-response.dto';
-import type { LessonSubmissionsFilter } from './lesson-submissions-query.dto';
+import type { LessonSubmissionsFilter, PmoDraftsFilter } from './lesson-submissions-query.dto';
 
 @Injectable()
 export class LessonsService {
@@ -83,9 +84,27 @@ export class LessonsService {
     filters: LessonSubmissionsFilter = {},
   ): Promise<LessonDraftResponse[]> {
     const profile = this.localAccess.getProfile(localUserId);
-    const query = this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
-      .where('lesson.author_id = :authorId', { authorId: profile.id });
+    return this.listSubmissions(filters, profile.id);
+  }
 
+  async getPmoDrafts(
+    localUserId: string | undefined,
+    filters: PmoDraftsFilter = {},
+  ): Promise<LessonDraftResponse[]> {
+    const profile = this.localAccess.getProfile(localUserId);
+    if (profile.role !== 'LESSONS_MODERATOR') {
+      throw new ForbiddenException('PMO moderator access is required to list module lessons.');
+    }
+    return this.listSubmissions(filters);
+  }
+
+  private async listSubmissions(
+    filters: PmoDraftsFilter,
+    onlyAuthorId?: string,
+  ): Promise<LessonDraftResponse[]> {
+    const query = this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
+      .where(onlyAuthorId ? 'lesson.author_id = :onlyAuthorId' : '1 = 1', onlyAuthorId ? { onlyAuthorId } : {});
+    if (filters.authorId) query.andWhere('lesson.author_id = :authorId', { authorId: filters.authorId });
     if (filters.search) {
       if (/^\d+$/.test(filters.search)) {
         const lessonId = Number(filters.search);
@@ -116,14 +135,14 @@ export class LessonsService {
     return lessons.map((lesson) => this.toResponse(lesson));
   }
 
-  async getOwnLessonDetails(localUserId: string | undefined, lessonId: number): Promise<LessonDetailsResponse> {
+  async getLessonDetails(localUserId: string | undefined, lessonId: number): Promise<LessonDetailsResponse> {
     const profile = this.localAccess.getProfile(localUserId);
     const dataSource = this.requireDataSource();
     return dataSource.transaction('REPEATABLE READ', async (manager) => {
-      const lesson = await manager.getRepository(Lesson).findOne({
-        where: { id: lessonId, authorId: profile.id },
-      });
-      if (!lesson) throw new NotFoundException('Lesson not found.');
+      const lesson = await manager.getRepository(Lesson).findOne({ where: { id: lessonId } });
+      if (!lesson || (profile.role !== 'LESSONS_MODERATOR' && lesson.authorId !== profile.id)) {
+        throw new NotFoundException('Lesson not found.');
+      }
 
       const history = await manager.getRepository(LessonHistory).find({
         where: { lessonId },
@@ -143,7 +162,7 @@ export class LessonsService {
     });
   }
 
-  async cancelOwnOpenDraft(
+  async cancelOpenDraft(
     localUserId: string | undefined,
     lessonId: number,
     input: CancelLessonRequest,
@@ -154,10 +173,12 @@ export class LessonsService {
     return dataSource.transaction(async (manager) => {
       const lessons = manager.getRepository(Lesson);
       const current = await lessons.findOne({
-        where: { id: lessonId, authorId: profile.id },
+        where: { id: lessonId },
         lock: { mode: 'pessimistic_write' },
       });
-      if (!current) throw new NotFoundException('Lesson not found.');
+      if (!current || (profile.role !== 'LESSONS_MODERATOR' && current.authorId !== profile.id)) {
+        throw new NotFoundException('Lesson not found.');
+      }
       if (current.status !== 'Open') {
         throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be cancelled.' });
       }
@@ -194,15 +215,17 @@ export class LessonsService {
     return this.projectCatalog.list();
   }
 
-  async updateOwnOpenDraft(
+  async updateOpenDraft(
     localUserId: string | undefined,
     lessonId: number,
     input: UpdateLessonDraftRequest,
   ): Promise<LessonDraftResponse> {
     const profile = this.localAccess.getProfile(localUserId);
     const repository = this.requireDataSource().getRepository(Lesson);
-    const current = await repository.findOne({ where: { id: lessonId, authorId: profile.id } });
-    if (!current) throw new NotFoundException('Lesson not found.');
+    const current = await repository.findOne({ where: { id: lessonId } });
+    if (!current || (profile.role !== 'LESSONS_MODERATOR' && current.authorId !== profile.id)) {
+      throw new NotFoundException('Lesson not found.');
+    }
     if (current.status !== 'Open') {
       throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
     }
@@ -212,7 +235,7 @@ export class LessonsService {
     const projectName = input.projectName === undefined ? current.projectName : input.projectName;
     this.validateProjectSelection(current, projectId, projectName);
 
-    const result = await repository.createQueryBuilder()
+    const update = repository.createQueryBuilder()
       .update(Lesson)
       .set({
         title: input.title,
@@ -230,18 +253,19 @@ export class LessonsService {
         version: () => '"version" + 1',
         updatedAt: () => 'CURRENT_TIMESTAMP',
       })
-      .where('id = :lessonId AND author_id = :authorId AND status = :status AND version = :version', {
+      .where('id = :lessonId AND status = :status AND version = :version', {
         lessonId,
-        authorId: profile.id,
         status: 'Open',
         version: input.version,
-      })
-      .returning('*')
-      .execute();
+      });
+    if (profile.role !== 'LESSONS_MODERATOR') update.andWhere('author_id = :authorId', { authorId: profile.id });
+    const result = await update.returning('*').execute();
 
     if (!result.affected) {
-      const latest = await repository.findOne({ where: { id: lessonId, authorId: profile.id } });
-      if (!latest) throw new NotFoundException('Lesson not found.');
+      const latest = await repository.findOne({ where: { id: lessonId } });
+      if (!latest || (profile.role !== 'LESSONS_MODERATOR' && latest.authorId !== profile.id)) {
+        throw new NotFoundException('Lesson not found.');
+      }
       if (latest.status !== 'Open') {
         throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
       }
