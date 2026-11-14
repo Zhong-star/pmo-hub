@@ -4,9 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsLearnedScreen } from '../src/LessonsLearnedScreen';
 import {
+  approveLesson,
   cancelLesson,
   createLessonDraft,
   getHome,
+  getLibrary,
   getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
@@ -20,9 +22,11 @@ import {
 } from '../src/api';
 
 vi.mock('../src/api', () => ({
+  approveLesson: vi.fn(),
   cancelLesson: vi.fn(),
   createLessonDraft: vi.fn(),
   getHome: vi.fn(),
+  getLibrary: vi.fn(),
   getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
@@ -62,6 +66,7 @@ function lessonDraft(overrides: Partial<LessonDraft> = {}): LessonDraft {
     applicability: null,
     createdAt: '2026-11-13T12:00:00.000Z',
     updatedAt: '2026-11-13T12:00:00.000Z',
+    approvedAt: null,
     ...overrides,
   };
 }
@@ -83,7 +88,7 @@ function lessonDetails(overrides: Partial<LessonDetails> = {}): LessonDetails {
   };
 }
 
-function renderScreen(localUserId?: string, gcTime = 0, page?: 'my-submissions' | 'pmo-drafts' | 'evaluation-queue') {
+function renderScreen(localUserId?: string, gcTime = 0, page?: 'my-submissions' | 'pmo-drafts' | 'evaluation-queue' | 'library') {
   window.localStorage.clear();
   window.history.replaceState(null, '', page ? `/lessons-learned/?page=${page}` : '/lessons-learned/');
   if (localUserId) window.localStorage.setItem('pmo-hub.local-user-id', localUserId);
@@ -114,6 +119,7 @@ beforeEach(() => {
   vi.mocked(getMySubmissions).mockImplementation((profileId) => getMyOpenDrafts(profileId));
   vi.mocked(getPmoDrafts).mockResolvedValue([]);
   vi.mocked(getPmoEvaluationQueue).mockResolvedValue([]);
+  vi.mocked(getLibrary).mockResolvedValue([]);
   vi.mocked(getLessonDetails).mockImplementation(async (_profileId, lessonId) => lessonDetails({ id: lessonId }));
   vi.mocked(updateLessonDraft).mockImplementation(async (_profileId, _draftId, input) => lessonDraft({
     ...input,
@@ -249,6 +255,103 @@ describe('Lessons Learned access check', () => {
     expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Evaluation Queue' })).not.toBeInTheDocument();
     expect(getPmoEvaluationQueue).not.toHaveBeenCalled();
+  });
+
+  it('shows the initial Library to Contributors and opens published content without full history', async () => {
+    const published = lessonDraft({
+      id: 91,
+      title: 'Published release verification',
+      status: 'Approved',
+      approvedAt: '2026-11-14T15:30:00.000Z',
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      situationObserved: 'The handover omitted the current runbook.',
+    });
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getLibrary).mockResolvedValue([published]);
+    vi.mocked(getLessonDetails).mockResolvedValue({ ...lessonDetails(published), history: [] });
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor', 0, 'library');
+
+    expect(await screen.findByRole('heading', { name: 'Lessons Library' })).toBeInTheDocument();
+    expect(getLibrary).toHaveBeenCalledWith('local-contributor');
+    expect(screen.getByRole('link', { name: 'Lessons Library' })).toHaveAttribute('aria-current', 'page');
+    const table = await screen.findByRole('table', { name: 'Published lessons, newest approval first' });
+    const row = within(table).getByRole('row', { name: /Published release verification/ });
+    expect(within(row).getByText('Approved')).toBeInTheDocument();
+    await user.click(within(row).getByRole('button', { name: 'View Published release verification' }));
+
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    expect(within(details).getByText('The handover omitted the current runbook.')).toBeInTheDocument();
+    expect(within(details).queryByRole('heading', { name: 'History' })).not.toBeInTheDocument();
+  });
+
+  it('lets PMO approve the exact version shown in lesson details after explicit confirmation', async () => {
+    const submitted = lessonDraft({
+      id: 92,
+      title: 'Approval review lesson',
+      status: 'PMOEvaluation',
+      version: 6,
+    });
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoEvaluationQueue).mockResolvedValue([submitted]);
+    vi.mocked(getLessonDetails).mockResolvedValue(lessonDetails(submitted));
+    vi.mocked(approveLesson).mockResolvedValue(lessonDraft({
+      ...submitted,
+      status: 'Approved',
+      version: 7,
+      updatedBy: 'local-pmo',
+      approvedAt: '2026-11-14T15:30:00.000Z',
+    }));
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo', 0, 'evaluation-queue');
+    await screen.findByRole('heading', { name: 'Evaluation Queue' });
+    await user.click(screen.getByRole('button', { name: 'View Approval review lesson' }));
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    await user.click(within(details).getByRole('button', { name: 'Approve and publish' }));
+
+    const confirmation = await screen.findByRole('dialog', { name: 'Approve lesson' });
+    expect(within(confirmation).getByText(/version 6 of “Approval review lesson”/)).toBeInTheDocument();
+    await user.click(within(confirmation).getByRole('button', { name: 'Confirm approval' }));
+
+    await waitFor(() => expect(approveLesson).toHaveBeenCalledWith('local-pmo', 92, { version: 6 }));
+    expect(await screen.queryByRole('dialog', { name: 'Approve lesson' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Lesson details' })).not.toBeInTheDocument();
+  });
+
+  it('requires reloading current details after an approval version conflict', async () => {
+    const submitted = lessonDraft({ id: 93, title: 'Changed approval lesson', status: 'PMOEvaluation', version: 2 });
+    const latest = lessonDetails({ ...submitted, version: 3, title: 'Changed approval lesson, current version' });
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoEvaluationQueue).mockResolvedValue([submitted]);
+    vi.mocked(getLessonDetails)
+      .mockResolvedValueOnce(lessonDetails(submitted))
+      .mockResolvedValueOnce(latest);
+    vi.mocked(approveLesson).mockRejectedValue(apiError(409, 'STALE_LESSON_VERSION'));
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo', 0, 'evaluation-queue');
+    await screen.findByRole('heading', { name: 'Evaluation Queue' });
+    await user.click(screen.getByRole('button', { name: 'View Changed approval lesson' }));
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    await user.click(within(details).getByRole('button', { name: 'Approve and publish' }));
+    const confirmation = await screen.findByRole('dialog', { name: 'Approve lesson' });
+    await user.click(within(confirmation).getByRole('button', { name: 'Confirm approval' }));
+
+    const alert = await within(confirmation).findByRole('alert');
+    expect(alert).toHaveTextContent('Reload the current version before deciding again.');
+    expect(within(confirmation).getByRole('button', { name: 'Confirm approval' })).toBeDisabled();
+    await user.click(within(confirmation).getByRole('button', { name: 'Reload current version' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Approve lesson' })).not.toBeInTheDocument());
+    expect(getLessonDetails).toHaveBeenCalledTimes(2);
+    const refreshedDetails = await screen.findByRole('dialog', { name: 'Lesson details' });
+    expect(within(refreshedDetails).getByText('Changed approval lesson, current version')).toBeInTheDocument();
+    await user.click(within(refreshedDetails).getByRole('button', { name: 'Approve and publish' }));
+    expect(await screen.findByText(/version 3 of “Changed approval lesson, current version”/)).toBeInTheDocument();
+    expect(approveLesson).toHaveBeenCalledTimes(1);
   });
 
   it('shows an empty message when there are no lessons awaiting evaluation', async () => {

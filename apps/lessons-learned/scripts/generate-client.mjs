@@ -12,9 +12,11 @@ const projectsPath = `${lessonsPath}/projects`;
 const submissionsPath = `${lessonsPath}/mine`;
 const pmoDraftsPath = `${lessonsPath}/pmo-drafts`;
 const evaluationQueuePath = `${lessonsPath}/evaluation-queue`;
+const libraryPath = `${lessonsPath}/library`;
 const draftPath = `${lessonsPath}/{id}`;
 const submitPath = `${draftPath}/submit`;
 const cancelPath = `${draftPath}/cancel`;
+const approvePath = `${draftPath}/approve`;
 const contract = JSON.parse(await readFile(contractPath, 'utf8'));
 const operation = contract.paths?.[healthPath]?.get;
 const responseSchema = operation?.responses?.['200']?.content?.['application/json']?.schema;
@@ -33,6 +35,8 @@ const pmoDraftsOperation = contract.paths?.[pmoDraftsPath]?.get;
 const pmoDraftsResponseSchema = pmoDraftsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const evaluationQueueOperation = contract.paths?.[evaluationQueuePath]?.get;
 const evaluationQueueResponseSchema = evaluationQueueOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const libraryOperation = contract.paths?.[libraryPath]?.get;
+const libraryResponseSchema = libraryOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const detailsOperation = contract.paths?.[draftPath]?.get;
 const detailsResponseSchema = detailsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const updateLessonOperation = contract.paths?.[draftPath]?.patch;
@@ -44,6 +48,9 @@ const submitLessonResponseSchema = submitLessonOperation?.responses?.['200']?.co
 const cancelLessonOperation = contract.paths?.[cancelPath]?.post;
 const cancelLessonRequestSchema = cancelLessonOperation?.requestBody?.content?.['application/json']?.schema;
 const cancelLessonResponseSchema = cancelLessonOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const approveLessonOperation = contract.paths?.[approvePath]?.post;
+const approveLessonRequestSchema = approveLessonOperation?.requestBody?.content?.['application/json']?.schema;
+const approveLessonResponseSchema = approveLessonOperation?.responses?.['200']?.content?.['application/json']?.schema;
 
 if (!operation || responseSchema?.$ref !== '#/components/schemas/HealthResponse') {
   throw new Error(`Expected GET ${healthPath} with a HealthResponse schema in ${contractPath}`);
@@ -83,6 +90,11 @@ if (!evaluationQueueOperation || evaluationQueueResponseSchema?.type !== 'array'
   throw new Error(`Expected GET ${evaluationQueuePath} with an array of LessonDraftResponse in ${contractPath}`);
 }
 
+if (!libraryOperation || libraryResponseSchema?.type !== 'array' ||
+  libraryResponseSchema.items?.$ref !== '#/components/schemas/LessonDraftResponse') {
+  throw new Error(`Expected GET ${libraryPath} with an array of LessonDraftResponse in ${contractPath}`);
+}
+
 if (!detailsOperation || detailsResponseSchema?.$ref !== '#/components/schemas/LessonDetailsResponse') {
   throw new Error(`Expected GET ${draftPath} with LessonDetailsResponse in ${contractPath}`);
 }
@@ -102,6 +114,11 @@ if (!cancelLessonOperation || cancelLessonRequestSchema?.$ref !== '#/components/
   throw new Error(`Expected POST ${cancelPath} with CancelLessonRequest and LessonDraftResponse in ${contractPath}`);
 }
 
+if (!approveLessonOperation || approveLessonRequestSchema?.$ref !== '#/components/schemas/ApproveLessonRequest' ||
+  approveLessonResponseSchema?.$ref !== '#/components/schemas/LessonDraftResponse') {
+  throw new Error(`Expected POST ${approvePath} with ApproveLessonRequest and LessonDraftResponse in ${contractPath}`);
+}
+
 const generatedClient = `/* This file is generated from services/lessons-learned-api/openapi/lessons-learned-v1.json. Do not edit directly. */
 import axios from 'axios';
 import type { paths } from './lessons-learned-api';
@@ -113,9 +130,11 @@ export const LESSONS_LEARNED_PROJECTS_PATH = '${projectsPath}' satisfies keyof p
 export const LESSONS_LEARNED_SUBMISSIONS_PATH = '${submissionsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '${pmoDraftsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '${evaluationQueuePath}' satisfies keyof paths;
+export const LESSONS_LEARNED_LIBRARY_PATH = '${libraryPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_DRAFT_PATH = '${draftPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMIT_PATH = '${submitPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_CANCEL_PATH = '${cancelPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_APPROVE_PATH = '${approvePath}' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
@@ -129,6 +148,7 @@ export type LessonProject = paths[typeof LESSONS_LEARNED_PROJECTS_PATH]['get']['
 export type UpdateLessonDraftBody = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['patch']['requestBody']['content']['application/json'];
 export type SubmitLessonBody = paths[typeof LESSONS_LEARNED_SUBMIT_PATH]['post']['requestBody']['content']['application/json'];
 export type CancelLessonBody = paths[typeof LESSONS_LEARNED_CANCEL_PATH]['post']['requestBody']['content']['application/json'];
+export type ApproveLessonBody = paths[typeof LESSONS_LEARNED_APPROVE_PATH]['post']['requestBody']['content']['application/json'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -197,6 +217,15 @@ export async function getPmoEvaluationQueue(
   return data;
 }
 
+export async function getLibrary(localUserId: string): Promise<LessonDraft[]> {
+  const { data } = await api.get<LessonDraft[]>(LESSONS_LEARNED_LIBRARY_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
 export async function getLessonDetails(localUserId: string, lessonId: number): Promise<LessonDetails> {
   const { data } = await api.get<LessonDetails>(LESSONS_LEARNED_DRAFT_PATH.replace('{id}', String(lessonId)), {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
@@ -260,6 +289,19 @@ export async function cancelLesson(
   input: CancelLessonBody,
 ): Promise<LessonDraft> {
   const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_CANCEL_PATH.replace('{id}', String(lessonId)), input, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function approveLesson(
+  localUserId: string,
+  lessonId: number,
+  input: ApproveLessonBody,
+): Promise<LessonDraft> {
+  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_APPROVE_PATH.replace('{id}', String(lessonId)), input, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });

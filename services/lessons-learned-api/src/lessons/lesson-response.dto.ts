@@ -65,6 +65,9 @@ export class LessonDraftResponse {
 
   @ApiProperty({ type: String, format: 'date-time' })
   updatedAt!: Date;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  approvedAt!: Date | null;
 }
 
 export class LessonHistoryEventResponse {
@@ -74,8 +77,8 @@ export class LessonHistoryEventResponse {
   @ApiProperty({ type: String })
   actorId!: string;
 
-  @ApiProperty({ type: String, enum: ['Created', 'Submitted', 'Cancelled'] })
-  eventType!: 'Created' | 'Submitted' | 'Cancelled';
+  @ApiProperty({ type: String, enum: ['Created', 'Submitted', 'Cancelled', 'Approved'] })
+  eventType!: 'Created' | 'Submitted' | 'Cancelled' | 'Approved';
 
   @ApiProperty({ type: String, enum: LESSON_STATUSES, nullable: true })
   previousStatus!: LessonStatus | null;

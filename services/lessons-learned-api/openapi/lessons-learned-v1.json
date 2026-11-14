@@ -502,6 +502,45 @@
         ]
       }
     },
+    "/api/lessons-learned/v1/lessons/library": {
+      "get": {
+        "operationId": "LessonsController_getLibrary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LessonDraftResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected."
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access."
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable."
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List published lessons by most recent approval date",
+        "tags": [
+          "Lessons"
+        ]
+      }
+    },
     "/api/lessons-learned/v1/lessons/{id}": {
       "get": {
         "operationId": "LessonsController_getLessonDetails",
@@ -774,6 +813,78 @@
           }
         ],
         "summary": "Cancel an Open lesson owned by the selected profile or managed by a PMO",
+        "tags": [
+          "Lessons"
+        ]
+      }
+    },
+    "/api/lessons-learned/v1/lessons/{id}/approve": {
+      "post": {
+        "operationId": "LessonsController_approveEvaluatedLesson",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The numeric ID of the lesson under evaluation.",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveLessonRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonDraftResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The lesson is incomplete and cannot be approved."
+          },
+          "401": {
+            "description": "A local Hub profile must be selected."
+          },
+          "403": {
+            "description": "The selected profile is not a PMO moderator."
+          },
+          "404": {
+            "description": "The lesson does not exist."
+          },
+          "409": {
+            "description": "The lesson is no longer awaiting evaluation or its version is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonConflictResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable."
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Approve and publish the version reviewed by a PMO moderator",
         "tags": [
           "Lessons"
         ]
@@ -1103,6 +1214,11 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         },
         "required": [
@@ -1123,7 +1239,8 @@
           "recommendation",
           "applicability",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "approvedAt"
         ]
       },
       "LessonProjectResponse": {
@@ -1157,7 +1274,8 @@
             "enum": [
               "Created",
               "Submitted",
-              "Cancelled"
+              "Cancelled",
+              "Approved"
             ]
           },
           "previousStatus": {
@@ -1311,6 +1429,11 @@
             "type": "string",
             "format": "date-time"
           },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
           "history": {
             "type": "array",
             "items": {
@@ -1337,6 +1460,7 @@
           "applicability",
           "createdAt",
           "updatedAt",
+          "approvedAt",
           "history"
         ]
       },
@@ -1432,7 +1556,8 @@
             "type": "string",
             "enum": [
               "STALE_LESSON_VERSION",
-              "LESSON_NOT_OPEN"
+              "LESSON_NOT_OPEN",
+              "LESSON_NOT_AWAITING_EVALUATION"
             ]
           },
           "message": {
@@ -1599,6 +1724,19 @@
           "code",
           "message",
           "fieldErrors"
+        ]
+      },
+      "ApproveLessonRequest": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "minimum": 1,
+            "example": 4
+          }
+        },
+        "required": [
+          "version"
         ]
       }
     }

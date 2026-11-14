@@ -212,6 +212,8 @@ type LessonSubmissionDetailsDialogProps = {
   hasError: boolean;
   onRetry: () => void;
   onClose: () => void;
+  canApprove?: boolean;
+  onApprove?: (lesson: LessonDetails) => void;
 };
 
 export function LessonSubmissionDetailsDialog({
@@ -221,6 +223,8 @@ export function LessonSubmissionDetailsDialog({
   hasError,
   onRetry,
   onClose,
+  canApprove = false,
+  onApprove,
 }: LessonSubmissionDetailsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -244,6 +248,7 @@ export function LessonSubmissionDetailsDialog({
     ['Applicability', lesson.applicability ?? 'Not provided'],
     ['Created', formatTimestampUtc(lesson.createdAt)],
     ['Last updated', formatTimestampUtc(lesson.updatedAt)],
+    ...(lesson.approvedAt ? [['Approved', formatTimestampUtc(lesson.approvedAt)] as [string, string]] : []),
   ] : [];
 
   return createPortal(
@@ -284,11 +289,9 @@ export function LessonSubmissionDetailsDialog({
                 </div>
               ))}
             </dl>
-            <section className="submission-history" aria-labelledby="lesson-history-title">
-              <h3 id="lesson-history-title">History</h3>
-              {lesson.history.length === 0 ? (
-                <p>No history recorded.</p>
-              ) : (
+            {lesson.history.length > 0 && (
+              <section className="submission-history" aria-labelledby="lesson-history-title">
+                <h3 id="lesson-history-title">History</h3>
                 <ol>
                   {lesson.history.map((event) => (
                     <li key={event.id}>
@@ -298,11 +301,16 @@ export function LessonSubmissionDetailsDialog({
                     </li>
                   ))}
                 </ol>
-              )}
-            </section>
+              </section>
+            )}
           </>
         )}
         <div className="draft-editor-actions">
+          {canApprove && lesson?.status === 'PMOEvaluation' && onApprove && (
+            <button className="draft-editor-primary" type="button" onClick={() => onApprove(lesson)}>
+              Approve and publish
+            </button>
+          )}
           <button className="draft-editor-secondary" type="button" onClick={onClose}>Close details</button>
         </div>
       </div>

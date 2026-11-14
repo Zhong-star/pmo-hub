@@ -15,6 +15,7 @@ import { LESSONS_LEARNED_DATA_SOURCE } from '../database/database.module';
 import { LessonHistory } from './lesson-history.entity';
 import { Lesson } from './lesson.entity';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
+import type { ApproveLessonRequest } from './approve-lesson-request.dto';
 import type { CancelLessonRequest } from './cancel-lesson-request.dto';
 import { ProjectCatalogService, type LessonProject } from './project-catalog.service';
 import type { SubmitLessonRequest } from './submit-lesson-request.dto';
@@ -131,6 +132,17 @@ export class LessonsService {
     return lessons.map((lesson) => this.toResponse(lesson));
   }
 
+  async getLibrary(localUserId: string | undefined): Promise<LessonDraftResponse[]> {
+    this.localAccess.getProfile(localUserId);
+    const lessons = await this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
+      .where('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
+      .andWhere('lesson.approved_at IS NOT NULL')
+      .orderBy('lesson.approvedAt', 'DESC')
+      .addOrderBy('lesson.id', 'DESC')
+      .getMany();
+    return lessons.map((lesson) => this.toResponse(lesson));
+  }
+
   private async listSubmissions(
     filters: PmoDraftsFilter,
     onlyAuthorId?: string,
@@ -177,14 +189,20 @@ export class LessonsService {
     const dataSource = this.requireDataSource();
     return dataSource.transaction('REPEATABLE READ', async (manager) => {
       const lesson = await manager.getRepository(Lesson).findOne({ where: { id: lessonId } });
-      if (!lesson || (profile.role !== 'LESSONS_MODERATOR' && lesson.authorId !== profile.id)) {
+      const isPmo = profile.role === 'LESSONS_MODERATOR';
+      const isAuthor = lesson?.authorId === profile.id;
+      const isPublished = lesson?.approvedAt !== null &&
+        (lesson?.status === 'Approved' || lesson?.status === 'Closed');
+      if (!lesson || (!isPmo && !isAuthor && !isPublished)) {
         throw new NotFoundException('Lesson not found.');
       }
 
-      const history = await manager.getRepository(LessonHistory).find({
-        where: { lessonId },
-        order: { occurredAt: 'ASC', id: 'ASC' },
-      });
+      const history = isPmo || isAuthor
+        ? await manager.getRepository(LessonHistory).find({
+          where: { lessonId },
+          order: { occurredAt: 'ASC', id: 'ASC' },
+        })
+        : [];
       const historyResponse: LessonHistoryEventResponse[] = history.map((event) => ({
         id: event.id,
         actorId: event.actorId,
@@ -244,6 +262,52 @@ export class LessonsService {
       }));
 
       return this.toResponse(cancelled);
+    });
+  }
+
+  async approveEvaluatedLesson(
+    localUserId: string | undefined,
+    lessonId: number,
+    input: ApproveLessonRequest,
+  ): Promise<LessonDraftResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    if (profile.role !== 'LESSONS_MODERATOR') {
+      throw new ForbiddenException('PMO moderator access is required to approve lessons.');
+    }
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction(async (manager) => {
+      const lessons = manager.getRepository(Lesson);
+      const current = await lessons.findOne({
+        where: { id: lessonId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!current) throw new NotFoundException('Lesson not found.');
+      if (current.status !== 'PMOEvaluation') {
+        throw new ConflictException({
+          code: 'LESSON_NOT_AWAITING_EVALUATION',
+          message: 'This lesson is no longer awaiting PMO evaluation. Reload the current queue before deciding again.',
+        });
+      }
+      if (current.version !== input.version) throw this.staleVersionConflict();
+      this.validateLessonForApproval(current);
+
+      current.status = 'Approved';
+      current.updatedBy = profile.id;
+      current.version += 1;
+      current.approvedAt = new Date();
+      const approved = await lessons.save(current);
+
+      const history = manager.getRepository(LessonHistory);
+      await history.save(history.create({
+        lessonId: approved.id,
+        actorId: profile.id,
+        eventType: 'Approved',
+        previousStatus: 'PMOEvaluation',
+        newStatus: 'Approved',
+      }));
+
+      return this.toResponse(approved);
     });
   }
 
@@ -421,6 +485,38 @@ export class LessonsService {
     }
   }
 
+  private validateLessonForApproval(lesson: Lesson): void {
+    const fieldErrors: Record<string, string> = {};
+    const requireText = (field: string, value: string | null, label: string) => {
+      if (!value?.trim()) fieldErrors[field] = `${label} is required.`;
+    };
+
+    requireText('title', lesson.title, 'Title');
+    if (!['Technology', 'Business', 'Infrastructure', 'Data'].includes(lesson.projectCategory ?? '')) {
+      fieldErrors.projectCategory = 'Choose a project category.';
+    }
+    if (!['Initiation', 'Planning', 'Execution', 'Closure', 'Not Applicable'].includes(lesson.projectPhase ?? '')) {
+      fieldErrors.projectPhase = 'Choose a project phase.';
+    }
+    requireText('situationObserved', lesson.situationObserved, 'Situation observed');
+    if (!['Future Prevention', 'Success to Repeat', 'Risk Avoided', 'Communication'].includes(lesson.lessonType ?? '')) {
+      fieldErrors.lessonType = 'Choose a lesson type.';
+    }
+    requireText('impact', lesson.impact, 'Impact');
+    requireText('recommendation', lesson.recommendation, 'Recommendation');
+    requireText('applicability', lesson.applicability, 'Applicability');
+    if (lesson.lessonType === 'Future Prevention') requireText('rootCause', lesson.rootCause, 'Root cause');
+
+    if (Object.keys(fieldErrors).length > 0) {
+      throw new BadRequestException({
+        code: 'INVALID_LESSON_APPROVAL',
+        message: 'Complete the required lesson fields before approving.',
+        fieldErrors,
+      });
+    }
+    this.validateProjectSelection(lesson, lesson.projectId, lesson.projectName);
+  }
+
   private staleVersionConflict(): ConflictException {
     return new ConflictException({
       code: 'STALE_LESSON_VERSION',
@@ -453,6 +549,7 @@ export class LessonsService {
       impact: lesson.impact ?? null,
       recommendation: lesson.recommendation ?? null,
       applicability: lesson.applicability ?? null,
+      approvedAt: lesson.approvedAt ?? null,
       createdAt: lesson.createdAt,
       updatedAt: lesson.updatedAt,
     };
@@ -476,6 +573,7 @@ export class LessonsService {
       impact: (row.impact as string | null) ?? null,
       recommendation: (row.recommendation as string | null) ?? null,
       applicability: (row.applicability as string | null) ?? null,
+      approvedAt: (row.approved_at as Date | null) ?? null,
       createdAt: row.created_at as Date,
       updatedAt: row.updated_at as Date,
     };
