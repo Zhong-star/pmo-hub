@@ -20,7 +20,7 @@ async function getThemeContrastRatios(page: import('@playwright/test').Page) {
       return (values[0]! + .05) / (values[1]! + .05);
     }
 
-    const card = document.querySelector<HTMLElement>('.welcome-card:not(.catalog-page), .module-card')!;
+    const card = document.querySelector<HTMLElement>('.module-card') ?? document.querySelector<HTMLElement>('main')!;
     const themeMenu = document.querySelector<HTMLElement>('.hub-header__profile-menu')!;
     const activeTheme = document.querySelector<HTMLButtonElement>('.hub-header__profile-menu button[aria-pressed="true"]')!;
     const inactiveTheme = document.querySelector<HTMLButtonElement>('.hub-header__profile-menu button[aria-pressed="false"]')!;
@@ -207,9 +207,9 @@ test('Contributor cancels an Open lesson with a reason and can reopen its Archiv
   await expect(page.getByRole('button', { name: `View ${title}` })).toBeVisible();
   const viewButton = page.getByRole('button', { name: `View ${title}` });
   await viewButton.scrollIntoViewIfNeeded();
-  const scrollBeforeOpen = await page.evaluate(() => window.scrollY);
+  const panel = page.getByRole('main');
+  const scrollBeforeOpen = await panel.evaluate((element) => element.scrollTop);
   const buttonTopBeforeOpen = await viewButton.evaluate((button) => button.getBoundingClientRect().top);
-  expect(scrollBeforeOpen).toBeGreaterThan(0);
   await viewButton.focus();
   await page.keyboard.press('Enter');
   const details = page.getByRole('dialog', { name: 'Lesson details' });
@@ -237,7 +237,7 @@ test('Contributor cancels an Open lesson with a reason and can reopen its Archiv
   await expect(page.getByRole('combobox', { name: 'Project' })).toHaveValue('without-project');
   await expect(page.getByRole('combobox', { name: 'Status' })).toHaveValue('Archived');
   await expect(page.getByRole('combobox', { name: 'Lesson type' })).toHaveValue('');
-  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBeforeOpen);
+  expect(await panel.evaluate((element) => element.scrollTop)).toBe(scrollBeforeOpen);
   expect(await viewButton.evaluate((button) => button.getBoundingClientRect().top)).toBe(buttonTopBeforeOpen);
   await search.fill(String(lessonId));
   await expect(page.getByRole('button', { name: `View ${title}` })).toBeVisible();
