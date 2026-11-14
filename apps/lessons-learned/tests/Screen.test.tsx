@@ -292,7 +292,7 @@ describe('Lessons Learned access check', () => {
     expect(await screen.findByText(historicalSubmission.title)).toBeInTheDocument();
 
     const projectFilter = screen.getByRole('combobox', { name: 'Project' });
-    const historicalProject = within(projectFilter).getByRole('option', { name: 'Contributor A archived project' });
+    const historicalProject = await within(projectFilter).findByRole('option', { name: 'Contributor A archived project' });
     expect(historicalProject).toHaveValue('project:LEGACY-PROJECT-A');
     await user.selectOptions(projectFilter, 'project:LEGACY-PROJECT-A');
     await user.type(screen.getByRole('searchbox', { name: 'Search title or ID' }), 'historical');
@@ -349,7 +349,7 @@ describe('Lessons Learned access check', () => {
     expect(await screen.findByText('Past project filter options could not be loaded.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry project filters' })).toBeVisible();
     const projectFilter = screen.getByRole('combobox', { name: 'Project' });
-    expect(within(projectFilter).getByRole('option', { name: 'Fictional Atlas Modernization' })).toBeInTheDocument();
+    expect(await within(projectFilter).findByRole('option', { name: 'Fictional Atlas Modernization' })).toBeInTheDocument();
 
     await user.selectOptions(projectFilter, 'project:LOCAL-PROJECT-001');
     await vi.waitFor(() => expect(getMySubmissions).toHaveBeenCalledWith('local-contributor', {
@@ -359,7 +359,7 @@ describe('Lessons Learned access check', () => {
 
     await user.click(screen.getByRole('button', { name: 'Retry project filters' }));
     await vi.waitFor(() => expect(getMySubmissions).toHaveBeenCalledTimes(4));
-    expect(within(projectFilter).getByRole('option', { name: 'Contributor A archived project' }))
+    expect(await within(projectFilter).findByRole('option', { name: 'Contributor A archived project' }))
       .toHaveValue('project:LEGACY-PROJECT-A');
   });
 
