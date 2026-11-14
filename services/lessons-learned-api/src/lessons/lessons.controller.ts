@@ -45,7 +45,11 @@ import { LessonsService } from './lessons.service';
 import { LessonProjectResponse } from './project-response.dto';
 import { SubmitLessonRequest } from './submit-lesson-request.dto';
 import { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
-import { LessonSubmissionsQuery, PmoDraftsQuery } from './lesson-submissions-query.dto';
+import {
+  LessonSubmissionsQuery,
+  PmoDraftsQuery,
+  PmoEvaluationQueueQuery,
+} from './lesson-submissions-query.dto';
 import { LESSON_STATUSES, LESSON_TYPES } from './lesson-domain.constants';
 
 @ApiTags('Lessons')
@@ -141,6 +145,26 @@ export class LessonsController {
     filters: PmoDraftsQuery,
   ): Promise<LessonDraftResponse[]> {
     return this.lessons.getPmoDrafts(typeof header === 'string' ? header : undefined, filters);
+  }
+
+  @Get('evaluation-queue')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'List lessons awaiting PMO evaluation, oldest last submission first' })
+  @ApiSecurity(localProfileScheme)
+  @ApiQuery({ name: 'lessonType', required: false, enum: LESSON_TYPES })
+  @ApiQuery({ name: 'projectId', required: false, type: String, description: 'Project snapshot ID.' })
+  @ApiQuery({ name: 'withoutProject', required: false, type: Boolean, description: 'Filter to lessons without a project.' })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'Title prefix or exact numeric lesson ID.' })
+  @ApiOkResponse({ type: LessonDraftResponse, isArray: true })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile is not a PMO moderator.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  getPmoEvaluationQueue(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Query(new ValidationPipe({ transform: true, whitelist: true, expectedType: PmoEvaluationQueueQuery }))
+    filters: PmoEvaluationQueueQuery,
+  ): Promise<LessonDraftResponse[]> {
+    return this.lessons.getPmoEvaluationQueue(typeof header === 'string' ? header : undefined, filters);
   }
 
   @Get(':id')

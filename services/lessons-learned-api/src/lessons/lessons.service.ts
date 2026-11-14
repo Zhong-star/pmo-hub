@@ -9,7 +9,7 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, type SelectQueryBuilder } from 'typeorm';
 import { LocalAccessService } from '../local-access.service';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../database/database.module';
 import { LessonHistory } from './lesson-history.entity';
@@ -20,7 +20,12 @@ import { ProjectCatalogService, type LessonProject } from './project-catalog.ser
 import type { SubmitLessonRequest } from './submit-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import type { LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse } from './lesson-response.dto';
-import type { LessonSubmissionsFilter, PmoDraftsFilter } from './lesson-submissions-query.dto';
+import type {
+  LessonSearchFilters,
+  LessonSubmissionsFilter,
+  PmoDraftsFilter,
+  PmoEvaluationQueueFilter,
+} from './lesson-submissions-query.dto';
 
 @Injectable()
 export class LessonsService {
@@ -98,6 +103,34 @@ export class LessonsService {
     return this.listSubmissions(filters);
   }
 
+  async getPmoEvaluationQueue(
+    localUserId: string | undefined,
+    filters: PmoEvaluationQueueFilter = {},
+  ): Promise<LessonDraftResponse[]> {
+    const profile = this.localAccess.getProfile(localUserId);
+    if (profile.role !== 'LESSONS_MODERATOR') {
+      throw new ForbiddenException('PMO moderator access is required to list the evaluation queue.');
+    }
+
+    const query = this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
+      .where('lesson.status = :queueStatus', { queueStatus: 'PMOEvaluation' });
+    this.applySearchFilters(query, filters);
+
+    const lessons = await query
+      .addSelect(
+        `(SELECT MAX(queue_history.occurred_at)
+          FROM lesson_history queue_history
+          WHERE queue_history.lesson_id = lesson.id
+            AND queue_history.event_type = 'Submitted'
+            AND queue_history.new_status = 'PMOEvaluation')`,
+        'last_evaluation_submission_at',
+      )
+      .orderBy('last_evaluation_submission_at', 'ASC')
+      .addOrderBy('lesson.id', 'ASC')
+      .getMany();
+    return lessons.map((lesson) => this.toResponse(lesson));
+  }
+
   private async listSubmissions(
     filters: PmoDraftsFilter,
     onlyAuthorId?: string,
@@ -105,6 +138,14 @@ export class LessonsService {
     const query = this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
       .where(onlyAuthorId ? 'lesson.author_id = :onlyAuthorId' : '1 = 1', onlyAuthorId ? { onlyAuthorId } : {});
     if (filters.authorId) query.andWhere('lesson.author_id = :authorId', { authorId: filters.authorId });
+    this.applySearchFilters(query, filters);
+    if (filters.status) query.andWhere('lesson.status = :status', { status: filters.status });
+
+    const lessons = await query.orderBy('lesson.updated_at', 'DESC').addOrderBy('lesson.id', 'DESC').getMany();
+    return lessons.map((lesson) => this.toResponse(lesson));
+  }
+
+  private applySearchFilters(query: SelectQueryBuilder<Lesson>, filters: LessonSearchFilters): void {
     if (filters.search) {
       if (/^\d+$/.test(filters.search)) {
         const lessonId = Number(filters.search);
@@ -129,10 +170,6 @@ export class LessonsService {
     if (filters.withoutProject) query.andWhere('lesson.project_id IS NULL');
     if (filters.projectId) query.andWhere('lesson.project_id = :projectId', { projectId: filters.projectId });
     if (filters.lessonType) query.andWhere('lesson.lesson_type = :lessonType', { lessonType: filters.lessonType });
-    if (filters.status) query.andWhere('lesson.status = :status', { status: filters.status });
-
-    const lessons = await query.orderBy('lesson.updated_at', 'DESC').addOrderBy('lesson.id', 'DESC').getMany();
-    return lessons.map((lesson) => this.toResponse(lesson));
   }
 
   async getLessonDetails(localUserId: string | undefined, lessonId: number): Promise<LessonDetailsResponse> {
