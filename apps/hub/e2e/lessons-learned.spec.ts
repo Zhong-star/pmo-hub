@@ -370,6 +370,96 @@ test('PMO Drafts lists, edits, and cancels Contributor lessons with their histor
   await expect(archivedDetails.getByText('Cancellation reason: The author approved closing this draft.')).toBeVisible();
 });
 
+test('Lessons Learned stage 3 returns, publishes and closes a lesson across profiles', async ({ page }) => {
+  expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
+  const title = `Stage 3 review ${Date.now()}`;
+  const guidance = 'Describe how the next team can verify the handover.';
+  const enterModule = async (profile: string, currentProfile?: string) => {
+    if (currentProfile) {
+      await page.getByRole('button', { name: currentProfile }).click();
+      await page.getByRole('button', { name: 'Change profile' }).click();
+    } else {
+      await page.goto('/');
+    }
+    await page.getByRole('combobox', { name: 'Local profile' }).selectOption(profile);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+    await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  };
+  const openEvaluation = async () => {
+    await page.getByRole('link', { name: 'Evaluation Queue' }).click();
+    await page.getByRole('button', { name: `View ${title}` }).click();
+  };
+  const details = page.getByRole('dialog', { name: 'Lesson details' });
+
+  await enterModule('local-developer');
+  await page.getByRole('link', { name: 'My Submissions' }).click();
+  await page.getByRole('button', { name: 'Create lesson' }).click();
+  await page.getByRole('textbox', { name: 'Title' }).fill(title);
+  await page.getByRole('button', { name: 'Save Draft' }).click();
+  const editor = page.getByRole('dialog', { name: 'Edit lesson' });
+  await editor.getByRole('combobox', { name: 'Project category' }).selectOption('Technology');
+  await editor.getByRole('combobox', { name: 'Project phase' }).selectOption('Execution');
+  await editor.getByRole('combobox', { name: 'Lesson type' }).selectOption('Success to Repeat');
+  await editor.getByRole('textbox', { name: 'Situation observed' }).fill('The team used a release checklist.');
+  await editor.getByRole('textbox', { name: 'Impact' }).fill('The handover had fewer omissions.');
+  await editor.getByRole('textbox', { name: 'Recommendation' }).fill('Repeat the release checklist.');
+  await editor.getByRole('textbox', { name: 'Applicability' }).fill('Use for software releases.');
+  await editor.getByRole('button', { name: 'Submit for PMO Review' }).click();
+  await expect(page.getByRole('status')).toContainText('Lesson submitted for PMO review.');
+  await page.getByRole('button', { name: 'Close editor' }).click();
+
+  await enterModule('local-pmo', 'Local Developer');
+  await openEvaluation();
+  await details.getByRole('button', { name: 'Return for changes' }).click();
+  await page.getByRole('textbox', { name: 'Guidance for author' }).fill(guidance);
+  await page.getByRole('button', { name: 'Confirm return' }).click();
+  await expect(page.getByRole('button', { name: `View ${title}` })).toHaveCount(0);
+
+  await enterModule('local-developer', 'Local PMO');
+  await page.getByRole('link', { name: 'My Submissions' }).click();
+  await expect(page.getByText(guidance, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: `Reopen ${title}` }).click();
+  await editor.getByRole('textbox', { name: 'Recommendation' }).fill('Ask the next team to sign off on the checklist.');
+  await editor.getByRole('button', { name: 'Submit for PMO Review' }).click();
+  await expect(page.getByRole('status')).toContainText('Lesson submitted for PMO review.');
+  await page.getByRole('button', { name: 'Close editor' }).click();
+
+  await enterModule('local-pmo', 'Local Developer');
+  await openEvaluation();
+  await details.getByRole('button', { name: 'Edit lesson', exact: true }).click();
+  await editor.getByRole('textbox', { name: 'Impact' }).fill('The checklist made handover steps explicit.');
+  await editor.getByRole('button', { name: 'Save Draft' }).click();
+  await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
+  await editor.getByRole('button', { name: /Close/ }).click();
+  if (!(await details.isVisible())) await page.getByRole('button', { name: `View ${title}` }).click();
+  await details.getByRole('button', { name: 'Approve and publish' }).click();
+  await page.getByRole('button', { name: 'Confirm approval' }).click();
+  await expect(page.getByRole('button', { name: `View ${title}` })).toHaveCount(0);
+
+  await enterModule('local-contributor', 'Local PMO');
+  await page.getByRole('link', { name: 'Lessons Library' }).click();
+  await page.getByRole('button', { name: `View ${title}` }).click();
+  await expect(details.getByText('Approved', { exact: true })).toBeVisible();
+  await expect(details.getByText('Ask the next team to sign off on the checklist.')).toBeVisible();
+  await expect(details.getByText('The checklist made handover steps explicit.')).toBeVisible();
+  await expect(details.getByRole('heading', { name: 'History' })).toHaveCount(0);
+  await details.getByRole('button', { name: 'Close lesson details' }).click();
+
+  await enterModule('local-pmo', 'Local Contributor');
+  await page.getByRole('link', { name: 'Lessons Library' }).click();
+  await page.getByRole('button', { name: `View ${title}` }).click();
+  await details.getByRole('button', { name: 'Close lesson', exact: true }).click();
+  await page.getByRole('button', { name: 'Confirm closure' }).click();
+  await expect(page.getByText('Closed', { exact: true })).toBeVisible();
+
+  await enterModule('local-contributor', 'Local PMO');
+  await page.getByRole('link', { name: 'Lessons Library' }).click();
+  await page.getByRole('button', { name: `View ${title}` }).click();
+  await expect(details.getByText('Closed', { exact: true })).toBeVisible();
+  await expect(details.getByRole('heading', { name: 'History' })).toHaveCount(0);
+});
+
 test('change profile from Lessons Learned returns to selection and browser history never restores a stale profile', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-pmo');
