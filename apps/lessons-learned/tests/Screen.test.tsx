@@ -265,6 +265,104 @@ describe('Lessons Learned access check', () => {
     expect(within(submittedDetails).getByText('Submitted')).toBeInTheDocument();
   });
 
+  it('clears My Submissions filters when switching to a profile without the selected historical project', async () => {
+    const historicalSubmission = lessonDraft({
+      title: 'Contributor A historical project lesson',
+      projectId: 'LEGACY-PROJECT-A',
+      projectName: 'Contributor A archived project',
+    });
+    const profileBSubmission = lessonDraft({
+      id: 22,
+      title: 'Contributor B current lesson',
+      authorId: 'local-pmo',
+      updatedBy: 'local-pmo',
+    });
+    vi.mocked(getHome).mockImplementation(async (profileId) => (
+      profileId === 'local-pmo' ? pmo : contributor
+    ));
+    vi.mocked(getMySubmissions).mockImplementation(async (profileId, filters) => {
+      if (profileId === 'local-pmo') return Object.keys(filters ?? {}).length ? [] : [profileBSubmission];
+      return [historicalSubmission];
+    });
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    expect(await screen.findByText(historicalSubmission.title)).toBeInTheDocument();
+
+    const projectFilter = screen.getByRole('combobox', { name: 'Project' });
+    const historicalProject = within(projectFilter).getByRole('option', { name: 'Contributor A archived project' });
+    expect(historicalProject).toHaveValue('project:LEGACY-PROJECT-A');
+    await user.selectOptions(projectFilter, 'project:LEGACY-PROJECT-A');
+    await user.type(screen.getByRole('searchbox', { name: 'Search title or ID' }), 'historical');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Lesson type' }), 'Communication');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'Open');
+    await vi.waitFor(() => expect(getMySubmissions).toHaveBeenCalledWith('local-contributor', expect.objectContaining({
+      projectId: 'LEGACY-PROJECT-A',
+      search: 'historical',
+      lessonType: 'Communication',
+      status: 'Open',
+    })));
+
+    act(() => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'pmo-hub.local-user-id', newValue: 'local-pmo' }));
+    });
+
+    expect(await screen.findByRole('button', { name: 'Local PMO' })).toBeInTheDocument();
+    expect(await screen.findByText(profileBSubmission.title)).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search title or ID' })).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: 'Lesson type' })).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('');
+    expect(within(screen.getByRole('combobox', { name: 'Project' })).queryByRole('option', {
+      name: 'Contributor A archived project',
+    })).not.toBeInTheDocument();
+    expect(getMySubmissions).toHaveBeenCalledWith('local-pmo');
+    expect(vi.mocked(getMySubmissions).mock.calls.filter(([profileId]) => profileId === 'local-pmo').every(([, filters]) => (
+      filters?.projectId !== 'LEGACY-PROJECT-A'
+    ))).toBe(true);
+  });
+
+  it('shows a retry for failed historical project options while keeping submissions usable', async () => {
+    const ownSubmission = lessonDraft({
+      title: 'Submission remains available without historical filters',
+      projectId: 'LEGACY-PROJECT-A',
+      projectName: 'Contributor A archived project',
+    });
+    let unfilteredCalls = 0;
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMySubmissions).mockImplementation(async (_profileId, filters) => {
+      if (Object.keys(filters ?? {}).length) return [ownSubmission];
+      unfilteredCalls += 1;
+      if (unfilteredCalls === 2) throw new Error('Historical project options unavailable');
+      return [ownSubmission];
+    });
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+
+    expect(await screen.findByText(ownSubmission.title)).toBeInTheDocument();
+    expect(await screen.findByText('Past project filter options could not be loaded.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry project filters' })).toBeVisible();
+    const projectFilter = screen.getByRole('combobox', { name: 'Project' });
+    expect(within(projectFilter).getByRole('option', { name: 'Fictional Atlas Modernization' })).toBeInTheDocument();
+
+    await user.selectOptions(projectFilter, 'project:LOCAL-PROJECT-001');
+    await vi.waitFor(() => expect(getMySubmissions).toHaveBeenCalledWith('local-contributor', {
+      projectId: 'LOCAL-PROJECT-001',
+    }));
+    expect(screen.getByText(ownSubmission.title)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry project filters' }));
+    await vi.waitFor(() => expect(getMySubmissions).toHaveBeenCalledTimes(4));
+    expect(within(projectFilter).getByRole('option', { name: 'Contributor A archived project' }))
+      .toHaveValue('project:LEGACY-PROJECT-A');
+  });
+
   it('requires an explicit reason before cancelling and keeps the Archived lesson in read-only submissions', async () => {
     const openDraft = lessonDraft({ title: 'Cancel the outdated rollout lesson' });
     const archivedDraft = lessonDraft({ title: openDraft.title, status: 'Archived', version: 2 });

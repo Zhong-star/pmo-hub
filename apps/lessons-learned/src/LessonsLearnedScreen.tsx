@@ -223,6 +223,10 @@ export function LessonsLearnedScreen() {
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
     setSelectedSubmissionId(null);
+    setSubmissionSearch('');
+    setSubmissionProjectFilter({ kind: 'any' });
+    setSubmissionLessonType('');
+    setSubmissionStatus('');
   }, []);
 
   const isSavingCurrentDraft = selectedProfileId !== null && pendingCreateProfiles.has(selectedProfileId);
@@ -575,6 +579,14 @@ export function LessonsLearnedScreen() {
                     <div className="draft-error" role="alert">
                       <p>The project filter options could not be loaded.</p>
                       <button className="draft-cancel" type="button" onClick={() => void projectsQuery.refetch()}>Retry projects</button>
+                    </div>
+                  )}
+                  {projectOptionsQuery.isError && !projectOptionsQuery.isFetching && (
+                    <div className="draft-error" role="alert">
+                      <p>Past project filter options could not be loaded.</p>
+                      <button className="draft-cancel" type="button" onClick={() => void projectOptionsQuery.refetch()}>
+                        Retry project filters
+                      </button>
                     </div>
                   )}
 
