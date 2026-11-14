@@ -4,9 +4,9 @@ import { isAbsolute, resolve } from 'node:path';
 import { LessonsLearnedHomeResponse } from './home-response.dto';
 import { LocalAccessException } from './local-access-problem';
 
-type LessonsLearnedRole = 'LESSONS_USER' | 'LESSONS_MODERATOR';
+export type LessonsLearnedRole = 'LESSONS_USER' | 'LESSONS_MODERATOR';
 
-interface LocalProfile {
+export interface LocalProfile {
   id: string;
   displayName: string;
   role: LessonsLearnedRole;
@@ -26,6 +26,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 @Injectable()
 export class LocalAccessService {
   getHome(localUserId: string | undefined): LessonsLearnedHomeResponse {
+    const profile = this.getProfile(localUserId);
+
+    return {
+      profile: {
+        id: profile.id,
+        displayName: profile.displayName,
+        role: profile.role,
+      },
+      navigation: [{ id: 'home', label: 'Home', current: true }],
+    };
+  }
+
+  getProfile(localUserId: string | undefined): LocalProfile {
     if (!this.isLocalSimulationEnabled()) {
       throw new LocalAccessException(
         'LOCAL_AUTH_DISABLED', 'Local access disabled', 503,
@@ -46,14 +59,7 @@ export class LocalAccessService {
     if (matches.length > 1) throw configurationError();
     const [profile] = matches;
 
-    return {
-      profile: {
-        id: profile.id,
-        displayName: profile.displayName,
-        role: profile.role,
-      },
-      navigation: [{ id: 'home', label: 'Home', current: true }],
-    };
+    return profile;
   }
 
   private isLocalSimulationEnabled(): boolean {

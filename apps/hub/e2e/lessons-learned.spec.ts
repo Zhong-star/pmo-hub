@@ -67,6 +67,188 @@ test('direct Lessons Learned URL works before profile selection and can return t
   await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
 });
 
+test('Contributor creates a title-only lesson and completes it from the edit modal after reload', async ({ page }) => {
+  expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
+  const title = `Issue 20 draft ${Date.now()}`;
+
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'My Submissions' }).click();
+  await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
+  const createLessonButton = page.getByRole('button', { name: 'Create lesson' });
+  await createLessonButton.click();
+  await expect(page.getByRole('dialog', { name: 'Create lesson' })).toBeVisible();
+  await page.getByRole('textbox', { name: 'Title' }).fill(title);
+  await page.getByRole('button', { name: 'Save Draft' }).click();
+  await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Edit lesson' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Close$/ })).toBeVisible();
+  await page.getByRole('button', { name: /^Close$/ }).click();
+  await expect(createLessonButton).toBeFocused();
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
+  await page.getByRole('button', { name: `Reopen ${title}` }).click();
+  await expect(page.getByRole('dialog', { name: 'Edit lesson' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue(title);
+  await page.getByRole('combobox', { name: 'Project category' }).selectOption('Technology');
+  await page.getByRole('combobox', { name: 'Project phase' }).selectOption('Execution');
+  await page.getByRole('textbox', { name: 'Situation observed' }).fill('The release handover did not include the latest runbook.');
+  await page.getByRole('textbox', { name: 'Root cause' }).fill('The team had no shared release checklist.');
+  await page.getByRole('dialog', { name: 'Edit lesson' }).getByRole('combobox', { name: 'Lesson type' }).selectOption('Future Prevention');
+  await page.getByRole('textbox', { name: 'Impact' }).fill('Operators spent extra time locating the current procedure.');
+  await page.getByRole('textbox', { name: 'Recommendation' }).fill('Review the runbook before each release.');
+  await page.getByRole('textbox', { name: 'Applicability' }).fill('Apply to software releases with an on-call handover.');
+  await page.getByRole('button', { name: 'Save Draft' }).click();
+  await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Root cause' })).toHaveValue('The team had no shared release checklist.');
+
+  await page.getByRole('button', { name: 'Submit for PMO Review' }).click();
+  await expect(page.getByRole('status')).toContainText('Lesson submitted for PMO review.');
+  await expect(page.getByRole('textbox', { name: 'Title' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Save Draft' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Submit for PMO Review' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Close editor' }).click();
+  const viewButton = page.getByRole('button', { name: `View ${title}` });
+  await expect(viewButton).toBeFocused();
+  await viewButton.click();
+  const details = page.getByRole('dialog', { name: 'Lesson details' });
+  await expect(details.getByText('PMOEvaluation', { exact: true })).toBeVisible();
+  await expect(details.getByText('Submitted', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(details).toHaveCount(0);
+  await expect(viewButton).toBeFocused();
+});
+
+test('browser Back and Forward confirm dirty editor navigation and do not restore closed overlays', async ({ page }) => {
+  expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
+  const title = `Issue 25 history guard ${Date.now()}`;
+
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-pmo');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await page.getByRole('link', { name: 'My Submissions' }).click();
+  await page.getByRole('button', { name: 'Create lesson' }).click();
+  await page.getByRole('textbox', { name: 'Title' }).fill(title);
+  await page.getByRole('button', { name: 'Save Draft' }).click();
+  await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /^Close$/ }).click();
+  await page.getByRole('link', { name: 'PMO Drafts' }).click();
+  await page.evaluate(() => window.history.back());
+  await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
+  await page.getByRole('button', { name: `Reopen ${title}` }).click();
+  const editor = page.getByRole('dialog', { name: 'Edit lesson' });
+  const situation = editor.getByRole('textbox', { name: 'Situation observed' });
+  await situation.fill('Unsaved history text stays in the editor.');
+
+  for (const direction of ['forward', 'back'] as const) {
+    const dialogPromise = page.waitForEvent('dialog');
+    await page.evaluate((historyDirection) => window.history[historyDirection](), direction);
+    const dialog = await dialogPromise;
+    expect(dialog.type()).toBe('confirm');
+    expect(dialog.message()).toBe('Discard your unsaved changes?');
+    await dialog.dismiss();
+    await expect(editor).toBeVisible();
+    await expect(situation).toHaveValue('Unsaved history text stays in the editor.');
+    await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
+  }
+
+  const acceptedBack = page.waitForEvent('dialog');
+  await page.evaluate(() => window.history.back());
+  await (await acceptedBack).accept();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(editor).toHaveCount(0);
+
+  await page.evaluate(() => window.history.forward());
+  await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('Contributor cancels an Open lesson with a reason and can reopen its Archived details after reload', async ({ page }) => {
+  expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
+  const title = `Issue 23 cancelled lesson ${Date.now()}`;
+  await page.setViewportSize({ width: 1280, height: 480 });
+
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await page.getByRole('link', { name: 'My Submissions' }).click();
+
+  await page.getByRole('button', { name: 'Create lesson' }).click();
+  await page.getByRole('textbox', { name: 'Title' }).fill(title);
+  await page.getByRole('button', { name: 'Save Draft' }).click();
+  await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
+  const draftRow = page.getByRole('listitem').filter({ hasText: title });
+  const draftIdText = await draftRow.locator('.draft-meta').textContent();
+  const lessonId = Number(draftIdText?.match(/#(\d+)/)?.[1]);
+  expect(lessonId).toBeGreaterThan(0);
+  await page.getByRole('button', { name: /^Close editor$/ }).click();
+
+  await page.getByRole('button', { name: `Cancel ${title}` }).click();
+  const cancelDialog = page.getByRole('dialog', { name: 'Cancel lesson' });
+  await expect(cancelDialog).toBeVisible();
+  await cancelDialog.getByRole('textbox', { name: 'Reason for cancellation' }).fill('The project scope changed.');
+  await cancelDialog.getByRole('button', { name: 'Confirm cancellation' }).click();
+
+  await expect(page.getByText(`Lesson #${lessonId} · Archived`)).toBeVisible();
+  const search = page.getByRole('searchbox', { name: 'Search title or ID' });
+  await search.fill(title.slice(0, 18));
+  await page.getByRole('combobox', { name: 'Project' }).selectOption('without-project');
+  await page.getByRole('combobox', { name: 'Status' }).selectOption('Archived');
+  await expect(page.getByRole('button', { name: `View ${title}` })).toBeVisible();
+  const viewButton = page.getByRole('button', { name: `View ${title}` });
+  await viewButton.scrollIntoViewIfNeeded();
+  const scrollBeforeOpen = await page.evaluate(() => window.scrollY);
+  const buttonTopBeforeOpen = await viewButton.evaluate((button) => button.getBoundingClientRect().top);
+  expect(scrollBeforeOpen).toBeGreaterThan(0);
+  await viewButton.focus();
+  await page.keyboard.press('Enter');
+  const details = page.getByRole('dialog', { name: 'Lesson details' });
+  await expect(details.getByText('Archived', { exact: true })).toBeVisible();
+  await expect(details.getByText(title, { exact: true })).toBeVisible();
+  const history = details.locator('.submission-history');
+  await expect(history.getByRole('heading', { name: 'History' })).toBeVisible();
+  await expect(history.getByText('Created', { exact: true })).toBeVisible();
+  await expect(history.getByText('Cancelled', { exact: true })).toBeVisible();
+  await expect(history.getByText('Cancellation reason: The project scope changed.')).toBeVisible();
+  await expect(details.getByRole('button', { name: /^Reopen / })).toHaveCount(0);
+  const closeIcon = details.getByRole('button', { name: 'Close lesson details' });
+  const closeDetails = details.getByRole('button', { name: 'Close details' });
+  await expect(closeIcon).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(closeDetails).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(closeIcon).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(details).toHaveCount(0);
+  await expect(viewButton).toBeFocused();
+  await expect(page.getByRole('listitem').filter({ hasText: title })).toBeVisible();
+  await expect(viewButton).toHaveText('View');
+  await expect(search).toHaveValue(title.slice(0, 18));
+  await expect(page.getByRole('combobox', { name: 'Project' })).toHaveValue('without-project');
+  await expect(page.getByRole('combobox', { name: 'Status' })).toHaveValue('Archived');
+  await expect(page.getByRole('combobox', { name: 'Lesson type' })).toHaveValue('');
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBeforeOpen);
+  expect(await viewButton.evaluate((button) => button.getBoundingClientRect().top)).toBe(buttonTopBeforeOpen);
+  await search.fill(String(lessonId));
+  await expect(page.getByRole('button', { name: `View ${title}` })).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
+  await expect(page.getByText(`Lesson #${lessonId} · Archived`)).toBeVisible();
+  await page.getByRole('button', { name: `View ${title}` }).click();
+  await expect(page.getByRole('dialog', { name: 'Lesson details' }).getByText('Archived', { exact: true })).toBeVisible();
+});
+
 test('catalog link opens in the same tab and reload, back, and module return preserve the profile', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
@@ -111,6 +293,81 @@ test('PMO can enter the module catalog and open Lessons Learned with the PMO rol
   await expect(page.getByRole('button', { name: 'Local PMO' })).toBeVisible();
   await expect(page.getByText('Welcome, Local PMO')).toBeVisible();
   await expect(page.getByText('PMO', { exact: true })).toBeVisible();
+});
+
+test('PMO Drafts lists, edits, and cancels Contributor lessons with their history', async ({ page }) => {
+  expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
+  const editedTitle = `Issue 25 PMO edit ${Date.now()}`;
+  const cancelledTitle = `Issue 25 PMO cancel ${Date.now()}`;
+  const assistedTitle = `${editedTitle} assisted`;
+
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await page.getByRole('link', { name: 'My Submissions' }).click();
+
+  for (const title of [editedTitle, cancelledTitle]) {
+    await page.getByRole('button', { name: 'Create lesson' }).click();
+    await page.getByRole('textbox', { name: 'Title' }).fill(title);
+    await page.getByRole('button', { name: 'Save Draft' }).click();
+    await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: /^Close$/ }).click();
+  }
+
+  await page.getByRole('button', { name: 'Local Developer' }).click();
+  await page.getByRole('button', { name: 'Change profile' }).click();
+  await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-pmo');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await page.getByRole('link', { name: 'PMO Drafts' }).click();
+  await expect(page.getByRole('heading', { name: 'PMO Drafts' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Status' })).toHaveValue('Open');
+
+  const editedRow = page.getByRole('row', { name: new RegExp(editedTitle) });
+  await expect(editedRow.getByText('local-developer')).toBeVisible();
+  await expect(editedRow.getByText('No project')).toBeVisible();
+  await expect(editedRow.getByText('Not specified')).toBeVisible();
+  await editedRow.getByRole('button', { name: `View ${editedTitle}` }).click();
+  const firstDetails = page.getByRole('dialog', { name: 'Lesson details' });
+  await expect(firstDetails.getByText(editedTitle, { exact: true })).toBeVisible();
+  await expect(firstDetails.getByText('Author', { exact: true }).locator('..')).toContainText('local-developer');
+  await expect(firstDetails.getByRole('region', { name: 'History' }).getByText('Created', { exact: true })).toBeVisible();
+  await firstDetails.getByRole('button', { name: 'Close details' }).click();
+
+  await page.getByRole('button', { name: `Edit ${editedTitle}` }).click();
+  const editor = page.getByRole('dialog', { name: 'Edit lesson' });
+  await expect(editor.getByRole('button', { name: 'Submit for PMO Review' })).toHaveCount(0);
+  await editor.getByRole('textbox', { name: 'Title' }).fill(assistedTitle);
+  await editor.getByRole('button', { name: 'Save Draft' }).click();
+  await expect(editor.getByText('Draft saved.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('row', { name: new RegExp(assistedTitle) })).toBeVisible();
+  await editor.getByRole('button', { name: /^Close$/ }).click();
+  await page.getByRole('button', { name: `View ${assistedTitle}` }).click();
+  const assistedDetails = page.getByRole('dialog', { name: 'Lesson details' });
+  await expect(assistedDetails.getByText('Author', { exact: true }).locator('..')).toContainText('local-developer');
+  await expect(assistedDetails.getByText('Updated by', { exact: true }).locator('..')).toContainText('local-pmo');
+  await assistedDetails.getByRole('button', { name: 'Close details' }).click();
+
+  await page.getByRole('button', { name: `Cancel ${cancelledTitle}` }).click();
+  const cancellation = page.getByRole('dialog', { name: 'Cancel lesson' });
+  await cancellation.getByRole('textbox', { name: 'Reason for cancellation' }).fill('The author approved closing this draft.');
+  await cancellation.getByRole('button', { name: 'Confirm cancellation' }).click();
+  await expect(page.getByRole('button', { name: `Cancel ${cancelledTitle}` })).toHaveCount(0);
+
+  await page.getByRole('combobox', { name: 'Status' }).selectOption('');
+  const archivedRow = page.getByRole('row', { name: new RegExp(cancelledTitle) });
+  await expect(archivedRow.getByText('Archived')).toBeVisible();
+  await expect(archivedRow.getByRole('button', { name: `Edit ${cancelledTitle}` })).toHaveCount(0);
+  await expect(archivedRow.getByRole('button', { name: `Cancel ${cancelledTitle}` })).toHaveCount(0);
+  await archivedRow.getByRole('button', { name: `View ${cancelledTitle}` }).click();
+  const archivedDetails = page.getByRole('dialog', { name: 'Lesson details' });
+  await expect(archivedDetails.getByText('Archived', { exact: true })).toBeVisible();
+  await expect(archivedDetails.getByText('Cancelled', { exact: true })).toBeVisible();
+  await expect(archivedDetails.getByText('Cancellation reason: The author approved closing this draft.')).toBeVisible();
 });
 
 test('change profile from Lessons Learned returns to selection and browser history never restores a stale profile', async ({ page }) => {

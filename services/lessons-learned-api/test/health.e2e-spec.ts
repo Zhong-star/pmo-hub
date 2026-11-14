@@ -18,10 +18,28 @@ type OpenApiContract = {
         security?: Record<string, string[]>[];
         responses?: Record<string, { content?: Record<string, { schema?: { $ref?: string } }> }>;
       };
+      post?: {
+        security?: Record<string, string[]>[];
+        requestBody?: { content?: Record<string, { schema?: { $ref?: string } }> };
+        responses?: Record<string, { content?: Record<string, { schema?: { $ref?: string; type?: string; items?: { $ref?: string } } }> }>;
+      };
+      patch?: {
+        security?: Record<string, string[]>[];
+        requestBody?: { content?: Record<string, { schema?: { $ref?: string } }> };
+        responses?: Record<string, { content?: Record<string, { schema?: { $ref?: string } }> }>;
+      };
     }
   >;
   components?: {
-    schemas?: Record<string, { properties?: Record<string, { enum?: string[] }> }>;
+    schemas?: Record<string, {
+      required?: string[];
+      properties?: Record<string, {
+        enum?: string[];
+        maxLength?: number;
+        minimum?: number;
+        type?: string;
+      }>;
+    }>;
   };
 };
 
@@ -84,6 +102,39 @@ describe('Lessons Learned health API', () => {
     expect(home?.security).toEqual([{ localProfile: [] }]);
     expect(home?.responses?.['401']?.content?.['application/problem+json']?.schema?.$ref)
       .toBe('#/components/schemas/LocalAccessProblem');
+
+    const lessons = contract.paths['/api/lessons-learned/v1/lessons'];
+    expect(lessons?.get?.security).toEqual([{ localProfile: [] }]);
+    expect(lessons?.get?.responses?.['200']?.content?.['application/json']?.schema)
+      .toMatchObject({ type: 'array', items: { $ref: '#/components/schemas/LessonDraftResponse' } });
+    expect(lessons?.post?.security).toEqual([{ localProfile: [] }]);
+    expect(lessons?.post?.requestBody?.content?.['application/json']?.schema?.$ref)
+      .toBe('#/components/schemas/CreateLessonRequest');
+    expect(lessons?.post?.responses?.['201']?.content?.['application/json']?.schema?.$ref)
+      .toBe('#/components/schemas/LessonDraftResponse');
+
+    const projects = contract.paths['/api/lessons-learned/v1/lessons/projects']?.get;
+    expect(projects?.security).toEqual([{ localProfile: [] }]);
+    expect(projects?.responses?.['200']?.content?.['application/json']?.schema)
+      .toMatchObject({ type: 'array', items: { $ref: '#/components/schemas/LessonProjectResponse' } });
+
+    const updateDraft = contract.paths['/api/lessons-learned/v1/lessons/{id}']?.patch;
+    expect(updateDraft?.security).toEqual([{ localProfile: [] }]);
+    expect(updateDraft?.requestBody?.content?.['application/json']?.schema?.$ref)
+      .toBe('#/components/schemas/UpdateLessonDraftRequest');
+    expect(updateDraft?.responses?.['200']?.content?.['application/json']?.schema?.$ref)
+      .toBe('#/components/schemas/LessonDraftResponse');
+    expect(updateDraft?.responses?.['409']?.content?.['application/json']?.schema?.$ref)
+      .toBe('#/components/schemas/LessonConflictResponse');
+    expect(contract.components?.schemas?.LessonConflictResponse?.required).toEqual(['code', 'message']);
+    expect(contract.components?.schemas?.LessonConflictResponse?.properties?.code?.enum)
+      .toEqual(['STALE_LESSON_VERSION', 'LESSON_NOT_OPEN']);
+    expect(contract.components?.schemas?.LessonConflictResponse?.properties?.message?.type).toBe('string');
+    expect(contract.components?.schemas?.UpdateLessonDraftRequest?.properties?.situationObserved?.maxLength)
+      .toBe(4000);
+    expect(contract.components?.schemas?.UpdateLessonDraftRequest?.properties?.projectCategory?.enum)
+      .toEqual(['Technology', 'Business', 'Infrastructure', 'Data']);
+    expect(contract.components?.schemas?.LessonDraftResponse?.properties?.version?.minimum).toBe(1);
 
     await request(app.getHttpServer())
       .get('/api/lessons-learned/v1/health')
