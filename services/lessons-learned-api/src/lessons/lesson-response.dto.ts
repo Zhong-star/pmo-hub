@@ -65,6 +65,9 @@ export class LessonDraftResponse {
 
   @ApiProperty({ type: String, format: 'date-time' })
   updatedAt!: Date;
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 1000, description: 'Most recent PMO return guidance while the lesson is Open.' })
+  latestReviewGuidance!: string | null;
 }
 
 export class LessonHistoryEventResponse {
@@ -74,8 +77,8 @@ export class LessonHistoryEventResponse {
   @ApiProperty({ type: String })
   actorId!: string;
 
-  @ApiProperty({ type: String, enum: ['Created', 'Submitted', 'Cancelled'] })
-  eventType!: 'Created' | 'Submitted' | 'Cancelled';
+  @ApiProperty({ type: String, enum: ['Created', 'Submitted', 'Cancelled', 'Returned'] })
+  eventType!: 'Created' | 'Submitted' | 'Cancelled' | 'Returned';
 
   @ApiProperty({ type: String, enum: LESSON_STATUSES, nullable: true })
   previousStatus!: LessonStatus | null;

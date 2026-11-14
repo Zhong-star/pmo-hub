@@ -12,6 +12,7 @@ export {
   getLessonProjects,
   updateLessonDraft,
   submitLesson,
+  returnLesson,
   LESSONS_LEARNED_API_TIMEOUT_MS,
   LESSONS_LEARNED_HEALTH_PATH,
   LESSONS_LEARNED_HOME_PATH,
@@ -19,6 +20,7 @@ export {
   LESSONS_LEARNED_PROJECTS_PATH,
   LESSONS_LEARNED_DRAFT_PATH,
   LESSONS_LEARNED_SUBMIT_PATH,
+  LESSONS_LEARNED_RETURN_PATH,
   LESSONS_LEARNED_SUBMISSIONS_PATH,
   LESSONS_LEARNED_EVALUATION_QUEUE_PATH,
   LESSONS_LEARNED_CANCEL_PATH,
@@ -35,5 +37,6 @@ export type {
   LessonProject,
   UpdateLessonDraftBody,
   SubmitLessonBody,
+  ReturnLessonBody,
   CancelLessonBody,
 } from './generated/lessons-learned-api-client';

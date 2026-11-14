@@ -159,6 +159,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/lessons/{id}/return": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Return a lesson awaiting PMO evaluation to its author with required guidance */
+        post: operations["LessonsController_returnForChanges"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/lessons-learned/v1/lessons/{id}/cancel": {
         parameters: {
             query?: never;
@@ -270,6 +287,8 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            /** @description Most recent PMO return guidance while the lesson is Open. */
+            latestReviewGuidance: string | null;
         };
         LessonProjectResponse: {
             /** @example LOCAL-PROJECT-001 */
@@ -281,7 +300,7 @@ export interface components {
             id: number;
             actorId: string;
             /** @enum {string} */
-            eventType: "Created" | "Submitted" | "Cancelled";
+            eventType: "Created" | "Submitted" | "Cancelled" | "Returned";
             /** @enum {string|null} */
             previousStatus: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived" | null;
             /** @enum {string} */
@@ -323,6 +342,8 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            /** @description Most recent PMO return guidance while the lesson is Open. */
+            latestReviewGuidance: string | null;
             history: components["schemas"]["LessonHistoryEventResponse"][];
         };
         UpdateLessonDraftRequest: {
@@ -346,7 +367,7 @@ export interface components {
         };
         LessonConflictResponse: {
             /** @enum {string} */
-            code: "STALE_LESSON_VERSION" | "LESSON_NOT_OPEN";
+            code: "STALE_LESSON_VERSION" | "LESSON_NOT_OPEN" | "LESSON_NOT_AWAITING_EVALUATION";
             /** @example This draft changed after you opened it. Reload the current version before saving again. */
             message: string;
         };
@@ -382,6 +403,21 @@ export interface components {
             /** @example INVALID_LESSON_SUBMISSION */
             code: string;
             /** @example Correct the indicated fields before submitting. */
+            message: string;
+            fieldErrors: {
+                [key: string]: string;
+            };
+        };
+        ReturnLessonRequest: {
+            /** @example 3 */
+            version: number;
+            /** @example Please add the missing project context. */
+            guidance: string;
+        };
+        LessonReturnValidationResponse: {
+            /** @example INVALID_LESSON_RETURN */
+            code: string;
+            /** @example Enter guidance for the author. */
             message: string;
             fieldErrors: {
                 [key: string]: string;
@@ -933,6 +969,78 @@ export interface operations {
                 content?: never;
             };
             /** @description The lesson is no longer Open or the submitted version is stale. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonConflictResponse"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LessonsController_returnForChanges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric ID of the lesson awaiting evaluation. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnLessonRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDraftResponse"];
+                };
+            };
+            /** @description Return guidance must contain non-whitespace text and be no longer than 1000 characters. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonReturnValidationResponse"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile is not a PMO moderator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson is no longer awaiting evaluation or the supplied version is stale. */
             409: {
                 headers: {
                     [name: string]: unknown;
