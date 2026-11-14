@@ -241,6 +241,103 @@ describe('Lessons Learned access check', () => {
     expect(viewButton).toHaveFocus();
   });
 
+  it('lets PMO edit an evaluation from its details without offering another submission', async () => {
+    const evaluation = lessonDraft({
+      id: 82,
+      title: 'Evaluation awaiting PMO edits',
+      authorId: 'local-contributor',
+      status: 'PMOEvaluation',
+      version: 4,
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      situationObserved: 'The release handover omitted the current runbook.',
+      rootCause: 'No checklist owner had been assigned.',
+      lessonType: 'Future Prevention',
+      impact: 'The release team repeated verification work.',
+      recommendation: 'Assign an owner to review the checklist.',
+      applicability: 'Use for releases with shared operational ownership.',
+    });
+    const saved = lessonDraft({ ...evaluation, title: 'Evaluation corrected by PMO', updatedBy: 'local-pmo', version: 5 });
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoEvaluationQueue).mockResolvedValue([evaluation]);
+    vi.mocked(getLessonDetails).mockResolvedValue(lessonDetails(evaluation));
+    vi.mocked(updateLessonDraft).mockResolvedValue(saved);
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'Evaluation Queue' }));
+    await user.click(await screen.findByRole('button', { name: `View ${evaluation.title}` }));
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    await user.click(within(details).getByRole('button', { name: 'Edit lesson' }));
+
+    const editor = await screen.findByRole('dialog', { name: 'Edit lesson' });
+    expect(within(editor).queryByRole('button', { name: 'Submit for PMO Review' })).not.toBeInTheDocument();
+    await user.clear(within(editor).getByRole('textbox', { name: 'Title' }));
+    await user.type(within(editor).getByRole('textbox', { name: 'Title' }), 'Evaluation corrected by PMO');
+    await user.click(within(editor).getByRole('button', { name: 'Save Draft' }));
+
+    expect(await within(editor).findByText('Draft saved.', { exact: true })).toBeInTheDocument();
+    expect(updateLessonDraft).toHaveBeenCalledWith('local-pmo', evaluation.id, expect.objectContaining({
+      version: evaluation.version,
+      title: 'Evaluation corrected by PMO',
+      situationObserved: evaluation.situationObserved,
+    } satisfies Partial<UpdateLessonDraftBody>));
+  });
+
+  it('keeps PMO evaluation edits in the editor and shows API field errors after validation fails', async () => {
+    const evaluation = lessonDraft({
+      id: 83,
+      title: 'Evaluation validation keeps entered edits',
+      status: 'PMOEvaluation',
+      version: 2,
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      situationObserved: 'The release handover omitted the current runbook.',
+      rootCause: null,
+      lessonType: 'Communication',
+      impact: 'The release team repeated verification work.',
+      recommendation: 'Assign an owner to review the checklist.',
+      applicability: 'Use for releases with shared operational ownership.',
+    });
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoEvaluationQueue).mockResolvedValue([evaluation]);
+    vi.mocked(getLessonDetails).mockResolvedValue(lessonDetails(evaluation));
+    vi.mocked(updateLessonDraft).mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: {
+          code: 'INVALID_LESSON_EDIT',
+          message: 'Correct the indicated fields before saving.',
+          fieldErrors: { impact: 'Impact is required.' },
+        },
+      },
+    });
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'Evaluation Queue' }));
+    await user.click(await screen.findByRole('button', { name: `View ${evaluation.title}` }));
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    await user.click(within(details).getByRole('button', { name: 'Edit lesson' }));
+
+    const editor = await screen.findByRole('dialog', { name: 'Edit lesson' });
+    const title = within(editor).getByRole('textbox', { name: 'Title' });
+    await user.clear(title);
+    await user.type(title, 'PMO typed corrections remain after rejection');
+    const situation = within(editor).getByRole('textbox', { name: 'Situation observed' });
+    await user.clear(situation);
+    await user.type(situation, 'The approved runbook was absent from the handover.');
+    await user.click(within(editor).getByRole('button', { name: 'Save Draft' }));
+
+    expect(await within(editor).findByText('Correct the indicated fields before saving. Your changes are still here.'))
+      .toBeInTheDocument();
+    expect(title).toHaveValue('PMO typed corrections remain after rejection');
+    expect(situation).toHaveValue('The approved runbook was absent from the handover.');
+    expect(within(editor).getByText('Impact is required.')).toBeInTheDocument();
+  });
+
   it('does not expose the evaluation queue or call its API for a Contributor deep link', async () => {
     vi.mocked(getHome).mockResolvedValue(contributor);
 

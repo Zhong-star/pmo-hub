@@ -138,7 +138,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Update an Open lesson draft owned by the selected profile or managed by a PMO */
+        /** Update an Open lesson draft or a PMO evaluation while preserving its lifecycle state */
         patch: operations["LessonsController_updateOpenDraft"];
         trace?: never;
     };
@@ -344,9 +344,18 @@ export interface components {
             /** @example 1 */
             version: number;
         };
+        LessonEditValidationResponse: {
+            /** @example INVALID_LESSON_EDIT */
+            code: string;
+            /** @example Correct the indicated fields before saving. */
+            message: string;
+            fieldErrors: {
+                [key: string]: string;
+            };
+        };
         LessonConflictResponse: {
             /** @enum {string} */
-            code: "STALE_LESSON_VERSION" | "LESSON_NOT_OPEN";
+            code: "STALE_LESSON_VERSION" | "LESSON_NOT_OPEN" | "LESSON_NOT_IN_EVALUATION";
             /** @example This draft changed after you opened it. Reload the current version before saving again. */
             message: string;
         };
@@ -832,12 +841,14 @@ export interface operations {
                     "application/json": components["schemas"]["LessonDraftResponse"];
                 };
             };
-            /** @description The draft fields or project selection are invalid. */
+            /** @description The lesson fields or project selection are invalid; fieldErrors identifies fields to correct. */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["LessonEditValidationResponse"];
+                };
             };
             /** @description A local Hub profile must be selected. */
             401: {

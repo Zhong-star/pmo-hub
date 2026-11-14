@@ -1057,7 +1057,7 @@ describe('Lessons Learned draft registration', () => {
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .send({ title: 'Submitted draft' })
       .expect(201);
-    await dataSource.query('UPDATE lessons SET status = $2 WHERE id = $1', [created.body.id, 'PMOEvaluation']);
+    await dataSource.query('UPDATE lessons SET status = $2 WHERE id = $1', [created.body.id, 'Approved']);
 
     await request(app!.getHttpServer())
       .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
@@ -1065,6 +1065,207 @@ describe('Lessons Learned draft registration', () => {
       .send({ version: created.body.version, title: 'Cannot edit submitted draft' })
       .expect(409)
       .expect({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
+  });
+
+  it('lets PMO edit a complete evaluation while preserving authorship, status, queue position, and transition history', async () => {
+    const server = request(app!.getHttpServer());
+    const submitCompleteLesson = async (title: string) => {
+      const created = await server
+        .post('/api/lessons-learned/v1/lessons')
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ title })
+        .expect(201);
+
+      return server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          version: created.body.version,
+          title,
+          projectId: null,
+          projectName: null,
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The release handover omitted the current runbook.',
+          rootCause: 'No checklist owner had been assigned.',
+          lessonType: 'Future Prevention',
+          impact: 'The release team repeated verification work.',
+          recommendation: 'Assign an owner to review the checklist.',
+          applicability: 'Use for releases with shared operational ownership.',
+        })
+        .expect(200);
+    };
+
+    const first = await submitCompleteLesson('First evaluation');
+    const second = await submitCompleteLesson('Second evaluation');
+    const originalOrder = await server
+      .get('/api/lessons-learned/v1/lessons/evaluation-queue')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .then(({ body }) => body.map(({ id }: { id: number }) => id));
+
+    const edited = await server
+      .patch(`/api/lessons-learned/v1/lessons/${first.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({
+        version: first.body.version,
+        title: 'First evaluation with PMO corrections',
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the approved runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+
+    expect(edited.body).toMatchObject({
+      title: 'First evaluation with PMO corrections',
+      authorId: 'local-contributor',
+      updatedBy: 'local-pmo',
+      status: 'PMOEvaluation',
+      version: first.body.version + 1,
+    });
+    const currentOrder = await server
+      .get('/api/lessons-learned/v1/lessons/evaluation-queue')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .then(({ body }) => body.map(({ id }: { id: number }) => id));
+    expect(originalOrder).toEqual([first.body.id, second.body.id]);
+    expect(currentOrder).toEqual(originalOrder);
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${first.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.history.map(({ eventType }: { eventType: string }) => eventType))
+        .toEqual(['Created', 'Submitted']));
+  });
+
+  it('blocks evaluation edits from Contributors, rejects stale versions, and stops edits after evaluation', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Evaluation edit permissions' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the current runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+    const completeEdit = {
+      title: 'Evaluation title edited by PMO',
+      projectId: null,
+      projectName: null,
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      situationObserved: 'The release handover omitted the approved runbook.',
+      rootCause: 'No checklist owner had been assigned.',
+      lessonType: 'Future Prevention',
+      impact: 'The release team repeated verification work.',
+      recommendation: 'Assign an owner to review the checklist.',
+      applicability: 'Use for releases with shared operational ownership.',
+    };
+
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: submitted.body.version, ...completeEdit })
+      .expect(403);
+
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version, ...completeEdit })
+      .expect(200);
+
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version, ...completeEdit, title: 'Stale evaluation edit' })
+      .expect(409)
+      .expect({
+        code: 'STALE_LESSON_VERSION',
+        message: 'This draft changed after you opened it. Reload the current version before saving again.',
+      });
+
+    await dataSource!.query('UPDATE lessons SET status = $2 WHERE id = $1', [created.body.id, 'Approved']);
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version + 1, ...completeEdit })
+      .expect(409)
+      .expect({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
+  });
+
+  it('keeps a lesson in evaluation unchanged when PMO edit validation fails', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Evaluation content stays complete' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the current runbook.',
+        rootCause: null,
+        lessonType: 'Communication',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({
+        version: submitted.body.version,
+        title: 'A corrected title that must stay unsaved',
+        projectCategory: null,
+      })
+      .expect(400)
+      .expect(({ body }) => expect(body).toMatchObject({
+        code: 'INVALID_LESSON_EDIT',
+        fieldErrors: { projectCategory: 'Project category is required.' },
+      }));
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body).toMatchObject({
+        title: 'Evaluation content stays complete',
+        authorId: 'local-contributor',
+        status: 'PMOEvaluation',
+        version: submitted.body.version,
+      }));
   });
 
   it('returns the row written by a version-checked update when a later writer changes it immediately', async () => {

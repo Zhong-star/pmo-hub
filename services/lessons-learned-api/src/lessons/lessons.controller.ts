@@ -40,6 +40,7 @@ import { CancelLessonRequest } from './cancel-lesson-request.dto';
 import { LessonDetailsResponse, LessonDraftResponse } from './lesson-response.dto';
 import { LessonConflictResponse } from './lesson-conflict-response.dto';
 import { LessonSubmissionValidationResponse } from './lesson-submission-validation-response.dto';
+import { LessonEditValidationResponse } from './lesson-edit-validation-response.dto';
 import { LessonCancellationValidationResponse } from './lesson-cancellation-validation-response.dto';
 import { LessonsService } from './lessons.service';
 import { LessonProjectResponse } from './project-response.dto';
@@ -186,12 +187,15 @@ export class LessonsController {
 
   @Patch(':id')
   @Header('Cache-Control', 'no-store')
-  @ApiOperation({ summary: 'Update an Open lesson draft owned by the selected profile or managed by a PMO' })
+  @ApiOperation({ summary: 'Update an Open lesson draft or a PMO evaluation while preserving its lifecycle state' })
   @ApiSecurity(localProfileScheme)
   @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson draft.' })
   @ApiBody({ type: UpdateLessonDraftRequest })
   @ApiOkResponse({ type: LessonDraftResponse })
-  @ApiResponse({ status: 400, description: 'The draft fields or project selection are invalid.' })
+  @ApiBadRequestResponse({
+    type: LessonEditValidationResponse,
+    description: 'The lesson fields or project selection are invalid; fieldErrors identifies fields to correct.',
+  })
   @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
   @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
   @ApiResponse({ status: 404, description: 'The lesson does not exist or is not editable by the selected profile.' })
@@ -203,7 +207,19 @@ export class LessonsController {
   updateOpenDraft(
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
     @Param('id', ParseIntPipe) lessonId: number,
-    @Body(new ValidationPipe({ transform: true, whitelist: true, expectedType: UpdateLessonDraftRequest }))
+    @Body(new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      expectedType: UpdateLessonDraftRequest,
+      exceptionFactory: (errors) => new BadRequestException({
+        code: 'INVALID_LESSON_EDIT',
+        message: 'Correct the indicated fields before saving.',
+        fieldErrors: Object.fromEntries(errors.map((error) => [
+          error.property,
+          Object.values(error.constraints ?? {})[0] ?? 'Invalid value.',
+        ])),
+      }),
+    }))
     input: UpdateLessonDraftRequest,
   ): Promise<LessonDraftResponse> {
     return this.lessons.updateOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input);

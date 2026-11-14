@@ -349,6 +349,7 @@ export function LessonsLearnedScreen() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-my-submissions', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-pmo-drafts', profileId] }),
+      queryClient.invalidateQueries({ queryKey: ['lessons-learned-evaluation-queue', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-project-options', profileId] }),
     ]);
   }
@@ -400,12 +401,14 @@ export function LessonsLearnedScreen() {
   async function reloadDraftFields(draftId: number): Promise<LessonDraft> {
     const profileId = selectedProfileIdRef.current;
     if (!profileId) throw new Error('Select a profile before reloading a lesson.');
+    const isEvaluationEdit = selectedDraft?.id === draftId && selectedDraft.status === 'PMOEvaluation';
     const drafts = homeQuery.data?.profile.role === 'LESSONS_MODERATOR'
-      ? await getPmoDrafts(profileId, { status: 'Open' })
+      ? isEvaluationEdit ? await getPmoEvaluationQueue(profileId) : await getPmoDrafts(profileId, { status: 'Open' })
       : await getMyOpenDrafts(profileId);
     const latest = drafts.find((draft) => draft.id === draftId);
     if (!latest) {
-      throw Object.assign(new Error('This lesson is no longer an Open draft.'), { code: 'LESSON_NOT_OPEN' });
+      const code = isEvaluationEdit ? 'LESSON_NOT_IN_EVALUATION' : 'LESSON_NOT_OPEN';
+      throw Object.assign(new Error('This lesson is no longer editable in its current state.'), { code });
     }
     return latest;
   }
@@ -933,7 +936,10 @@ export function LessonsLearnedScreen() {
                     <DraftEditor
                       key={selectedDraft?.id ?? 'new'}
                       draft={selectedDraft}
-                      canSubmit={selectedDraft === null || selectedDraft.authorId === selectedProfileId}
+                      canEditEvaluation={isPmoEvaluationQueuePage && selectedDraft?.status === 'PMOEvaluation'}
+                      canSubmit={selectedDraft === null || (
+                        selectedDraft.status !== 'PMOEvaluation' && selectedDraft.authorId === selectedProfileId
+                      )}
                       projects={projectsQuery.data ?? []}
                       projectsLoading={projectsQuery.isFetching}
                       projectsError={projectsQuery.isError && !projectsQuery.isFetching}
@@ -975,6 +981,13 @@ export function LessonsLearnedScreen() {
                       details={submissionDetailsQuery.data}
                       isLoading={submissionDetailsQuery.isLoading}
                       hasError={submissionDetailsQuery.isError}
+                      canEdit={isPmoEvaluationQueuePage && submissionDetailsQuery.data?.status === 'PMOEvaluation'}
+                      onEdit={() => {
+                        const details = submissionDetailsQuery.data;
+                        if (!isPmoEvaluationQueuePage || details?.status !== 'PMOEvaluation') return;
+                        setSelectedDraft(details);
+                        setSelectedSubmissionId(null);
+                      }}
                       onRetry={() => void submissionDetailsQuery.refetch()}
                       onClose={() => setSelectedSubmissionId(null)}
                     />

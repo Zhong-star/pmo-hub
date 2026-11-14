@@ -263,36 +263,59 @@ export class LessonsService {
     if (!current || (profile.role !== 'LESSONS_MODERATOR' && current.authorId !== profile.id)) {
       throw new NotFoundException('Lesson not found.');
     }
-    if (current.status !== 'Open') {
+    if (current.status === 'PMOEvaluation' && profile.role !== 'LESSONS_MODERATOR') {
+      throw new ForbiddenException('PMO moderator access is required to edit a lesson during evaluation.');
+    }
+    if (current.status !== 'Open' && current.status !== 'PMOEvaluation') {
       throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
     }
     if (current.version !== input.version) throw this.staleVersionConflict();
 
     const projectId = input.projectId === undefined ? current.projectId : input.projectId;
     const projectName = input.projectName === undefined ? current.projectName : input.projectName;
-    this.validateProjectSelection(current, projectId, projectName);
+    try {
+      this.validateProjectSelection(current, projectId, projectName);
+    } catch (error) {
+      const response = error instanceof BadRequestException ? error.getResponse() : null;
+      if (
+        typeof response === 'object' && response !== null &&
+        'code' in response && response.code === 'INVALID_PROJECT_SELECTION'
+      ) {
+        const message = 'Choose a current project or No project before saving.';
+        throw new BadRequestException({
+          code: 'INVALID_LESSON_EDIT',
+          message: 'Correct the indicated fields before saving.',
+          fieldErrors: { projectId: message },
+        });
+      }
+      throw error;
+    }
+    const fields = {
+      title: input.title,
+      projectId,
+      projectName,
+      projectCategory: input.projectCategory === undefined ? current.projectCategory : input.projectCategory,
+      projectPhase: input.projectPhase === undefined ? current.projectPhase : input.projectPhase,
+      situationObserved: input.situationObserved === undefined ? current.situationObserved : input.situationObserved,
+      rootCause: input.rootCause === undefined ? current.rootCause : input.rootCause,
+      lessonType: input.lessonType === undefined ? current.lessonType : input.lessonType,
+      impact: input.impact === undefined ? current.impact : input.impact,
+      recommendation: input.recommendation === undefined ? current.recommendation : input.recommendation,
+      applicability: input.applicability === undefined ? current.applicability : input.applicability,
+    };
+    if (current.status === 'PMOEvaluation') this.validateEvaluationCompleteness(fields);
 
     const update = repository.createQueryBuilder()
       .update(Lesson)
       .set({
-        title: input.title,
-        projectId,
-        projectName,
-        projectCategory: input.projectCategory === undefined ? current.projectCategory : input.projectCategory,
-        projectPhase: input.projectPhase === undefined ? current.projectPhase : input.projectPhase,
-        situationObserved: input.situationObserved === undefined ? current.situationObserved : input.situationObserved,
-        rootCause: input.rootCause === undefined ? current.rootCause : input.rootCause,
-        lessonType: input.lessonType === undefined ? current.lessonType : input.lessonType,
-        impact: input.impact === undefined ? current.impact : input.impact,
-        recommendation: input.recommendation === undefined ? current.recommendation : input.recommendation,
-        applicability: input.applicability === undefined ? current.applicability : input.applicability,
+        ...fields,
         updatedBy: profile.id,
         version: () => '"version" + 1',
         updatedAt: () => 'CURRENT_TIMESTAMP',
       })
       .where('id = :lessonId AND status = :status AND version = :version', {
         lessonId,
-        status: 'Open',
+        status: current.status,
         version: input.version,
       });
     if (profile.role !== 'LESSONS_MODERATOR') update.andWhere('author_id = :authorId', { authorId: profile.id });
@@ -303,7 +326,13 @@ export class LessonsService {
       if (!latest || (profile.role !== 'LESSONS_MODERATOR' && latest.authorId !== profile.id)) {
         throw new NotFoundException('Lesson not found.');
       }
-      if (latest.status !== 'Open') {
+      if (latest.status !== current.status) {
+        if (current.status === 'PMOEvaluation') {
+          throw new ConflictException({
+            code: 'LESSON_NOT_IN_EVALUATION',
+            message: 'This lesson is no longer in PMO evaluation. Reload its current status before saving again.',
+          });
+        }
         throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
       }
       throw this.staleVersionConflict();
@@ -426,6 +455,38 @@ export class LessonsService {
       code: 'STALE_LESSON_VERSION',
       message: 'This draft changed after you opened it. Reload the current version before saving again.',
     });
+  }
+
+  private validateEvaluationCompleteness(fields: {
+    title: string;
+    projectCategory: Lesson['projectCategory'];
+    projectPhase: Lesson['projectPhase'];
+    situationObserved: Lesson['situationObserved'];
+    rootCause: Lesson['rootCause'];
+    lessonType: Lesson['lessonType'];
+    impact: Lesson['impact'];
+    recommendation: Lesson['recommendation'];
+    applicability: Lesson['applicability'];
+  }): void {
+    const fieldErrors: Record<string, string> = {};
+    if (!fields.title.trim()) fieldErrors.title = 'Title is required.';
+    if (!fields.projectCategory) fieldErrors.projectCategory = 'Project category is required.';
+    if (!fields.projectPhase) fieldErrors.projectPhase = 'Project phase is required.';
+    if (!fields.situationObserved?.trim()) fieldErrors.situationObserved = 'Situation observed is required.';
+    if (!fields.lessonType) fieldErrors.lessonType = 'Lesson type is required.';
+    if (!fields.impact?.trim()) fieldErrors.impact = 'Impact is required.';
+    if (!fields.recommendation?.trim()) fieldErrors.recommendation = 'Recommendation is required.';
+    if (!fields.applicability?.trim()) fieldErrors.applicability = 'Applicability is required.';
+    if (fields.lessonType === 'Future Prevention' && !fields.rootCause?.trim()) {
+      fieldErrors.rootCause = 'Root cause is required for Future Prevention.';
+    }
+    if (Object.keys(fieldErrors).length > 0) {
+      throw new BadRequestException({
+        code: 'INVALID_LESSON_EDIT',
+        message: 'Correct the indicated fields before saving.',
+        fieldErrors,
+      });
+    }
   }
 
   private requireDataSource(): DataSource {
