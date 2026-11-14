@@ -51,6 +51,9 @@ export class Lesson {
   @Column({ type: 'varchar', length: 4000, nullable: true })
   applicability!: string | null;
 
+  @Column({ name: 'approved_at', type: 'timestamptz', nullable: true })
+  approvedAt!: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

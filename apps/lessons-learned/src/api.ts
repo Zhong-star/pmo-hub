@@ -1,7 +1,9 @@
 export {
   api,
+  approveLesson,
   getHealth,
   getHome,
+  getLibrary,
   getMyOpenDrafts,
   getMySubmissions,
   getPmoDrafts,
@@ -23,7 +25,9 @@ export {
   LESSONS_LEARNED_RETURN_PATH,
   LESSONS_LEARNED_SUBMISSIONS_PATH,
   LESSONS_LEARNED_EVALUATION_QUEUE_PATH,
+  LESSONS_LEARNED_LIBRARY_PATH,
   LESSONS_LEARNED_CANCEL_PATH,
+  LESSONS_LEARNED_APPROVE_PATH,
 } from './generated/lessons-learned-api-client';
 
 export type {
@@ -39,4 +43,5 @@ export type {
   SubmitLessonBody,
   ReturnLessonBody,
   CancelLessonBody,
+  ApproveLessonBody,
 } from './generated/lessons-learned-api-client';

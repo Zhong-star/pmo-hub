@@ -9,10 +9,12 @@ export const LESSONS_LEARNED_PROJECTS_PATH = '/api/lessons-learned/v1/lessons/pr
 export const LESSONS_LEARNED_SUBMISSIONS_PATH = '/api/lessons-learned/v1/lessons/mine' satisfies keyof paths;
 export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '/api/lessons-learned/v1/lessons/pmo-drafts' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '/api/lessons-learned/v1/lessons/evaluation-queue' satisfies keyof paths;
+export const LESSONS_LEARNED_LIBRARY_PATH = '/api/lessons-learned/v1/lessons/library' satisfies keyof paths;
 export const LESSONS_LEARNED_DRAFT_PATH = '/api/lessons-learned/v1/lessons/{id}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMIT_PATH = '/api/lessons-learned/v1/lessons/{id}/submit' satisfies keyof paths;
 export const LESSONS_LEARNED_RETURN_PATH = '/api/lessons-learned/v1/lessons/{id}/return' satisfies keyof paths;
 export const LESSONS_LEARNED_CANCEL_PATH = '/api/lessons-learned/v1/lessons/{id}/cancel' satisfies keyof paths;
+export const LESSONS_LEARNED_APPROVE_PATH = '/api/lessons-learned/v1/lessons/{id}/approve' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
@@ -27,6 +29,7 @@ export type UpdateLessonDraftBody = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['pa
 export type SubmitLessonBody = paths[typeof LESSONS_LEARNED_SUBMIT_PATH]['post']['requestBody']['content']['application/json'];
 export type ReturnLessonBody = paths[typeof LESSONS_LEARNED_RETURN_PATH]['post']['requestBody']['content']['application/json'];
 export type CancelLessonBody = paths[typeof LESSONS_LEARNED_CANCEL_PATH]['post']['requestBody']['content']['application/json'];
+export type ApproveLessonBody = paths[typeof LESSONS_LEARNED_APPROVE_PATH]['post']['requestBody']['content']['application/json'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -90,6 +93,15 @@ export async function getPmoEvaluationQueue(
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
     params: filters,
+  });
+
+  return data;
+}
+
+export async function getLibrary(localUserId: string): Promise<LessonDraft[]> {
+  const { data } = await api.get<LessonDraft[]>(LESSONS_LEARNED_LIBRARY_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
   });
 
   return data;
@@ -171,6 +183,19 @@ export async function cancelLesson(
   input: CancelLessonBody,
 ): Promise<LessonDraft> {
   const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_CANCEL_PATH.replace('{id}', String(lessonId)), input, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function approveLesson(
+  localUserId: string,
+  lessonId: number,
+  input: ApproveLessonBody,
+): Promise<LessonDraft> {
+  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_APPROVE_PATH.replace('{id}', String(lessonId)), input, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });

@@ -124,6 +124,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/lessons/library": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List published lessons by most recent approval date */
+        get: operations["LessonsController_getLibrary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/lessons-learned/v1/lessons/{id}": {
         parameters: {
             query?: never;
@@ -187,6 +204,23 @@ export interface paths {
         put?: never;
         /** Cancel an Open lesson owned by the selected profile or managed by a PMO */
         post: operations["LessonsController_cancelOpenDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lessons-learned/v1/lessons/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve and publish the version reviewed by a PMO moderator */
+        post: operations["LessonsController_approveEvaluatedLesson"];
         delete?: never;
         options?: never;
         head?: never;
@@ -289,6 +323,8 @@ export interface components {
             updatedAt: string;
             /** @description Most recent PMO return guidance while the lesson is Open. */
             latestReviewGuidance: string | null;
+            /** Format: date-time */
+            approvedAt: string | null;
         };
         LessonProjectResponse: {
             /** @example LOCAL-PROJECT-001 */
@@ -300,7 +336,7 @@ export interface components {
             id: number;
             actorId: string;
             /** @enum {string} */
-            eventType: "Created" | "Submitted" | "Cancelled" | "Returned";
+            eventType: "Created" | "Submitted" | "Cancelled" | "Returned" | "Approved";
             /** @enum {string|null} */
             previousStatus: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived" | null;
             /** @enum {string} */
@@ -344,6 +380,8 @@ export interface components {
             updatedAt: string;
             /** @description Most recent PMO return guidance while the lesson is Open. */
             latestReviewGuidance: string | null;
+            /** Format: date-time */
+            approvedAt: string | null;
             history: components["schemas"]["LessonHistoryEventResponse"][];
         };
         UpdateLessonDraftRequest: {
@@ -437,6 +475,10 @@ export interface components {
             fieldErrors: {
                 [key: string]: string;
             };
+        };
+        ApproveLessonRequest: {
+            /** @example 4 */
+            version: number;
         };
     };
     responses: never;
@@ -794,6 +836,46 @@ export interface operations {
             };
         };
     };
+    LessonsController_getLibrary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDraftResponse"][];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     LessonsController_getLessonDetails: {
         parameters: {
             query?: never;
@@ -1113,6 +1195,76 @@ export interface operations {
                 content?: never;
             };
             /** @description The lesson is no longer Open or the cancelled version is stale. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonConflictResponse"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LessonsController_approveEvaluatedLesson: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric ID of the lesson under evaluation. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApproveLessonRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDraftResponse"];
+                };
+            };
+            /** @description The lesson is incomplete and cannot be approved. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile is not a PMO moderator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson is no longer awaiting evaluation or its version is stale. */
             409: {
                 headers: {
                     [name: string]: unknown;
