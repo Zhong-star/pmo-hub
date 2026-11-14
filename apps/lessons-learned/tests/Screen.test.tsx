@@ -75,7 +75,10 @@ function renderScreen(localUserId?: string, gcTime = 0) {
 }
 
 function apiError(status: number, code: string) {
-  return Object.assign(new Error('Request failed'), { response: { status, data: { code } } });
+  return Object.assign(new Error('Request failed'), {
+    code: 'ERR_BAD_REQUEST',
+    response: { status, data: { code } },
+  });
 }
 
 beforeEach(() => {
@@ -219,6 +222,7 @@ describe('Lessons Learned access check', () => {
     expect(await within(dialog).findByText(/Review the current lesson and confirm cancellation again/)).toBeInTheDocument();
     expect(within(dialog).getByText(`Draft #${latestDraft.id} · Open`)).toBeInTheDocument();
     expect(reason).toHaveValue('This is still the intended reason.');
+    expect(reason).toHaveFocus();
     await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }));
 
     expect(cancelLesson).toHaveBeenNthCalledWith(2, 'local-contributor', openDraft.id, {
@@ -226,6 +230,32 @@ describe('Lessons Learned access check', () => {
       reason: 'This is still the intended reason.',
     });
     expect(await screen.findByText(`Lesson #${archivedDraft.id} · Archived`)).toBeInTheDocument();
+  });
+
+  it('stops cancellation when the draft is no longer Open after a version conflict', async () => {
+    const openDraft = lessonDraft({ title: 'Do not cancel after a state change' });
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMySubmissions).mockResolvedValue([openDraft]);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
+    vi.mocked(cancelLesson).mockRejectedValueOnce(apiError(409, 'STALE_LESSON_VERSION'));
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(await screen.findByRole('button', { name: `Cancel ${openDraft.title}` }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Cancel lesson' });
+    const reason = within(dialog).getByRole('textbox', { name: 'Reason for cancellation' });
+    await user.type(reason, 'This reason should not be lost.');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Reload current version' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('no longer Open and cannot be cancelled');
+    expect(reason).toHaveValue('This reason should not be lost.');
+    expect(reason).toHaveFocus();
+    expect(within(dialog).getByRole('button', { name: 'Confirm cancellation' })).toBeDisabled();
+    expect(cancelLesson).toHaveBeenCalledOnce();
   });
 
   it('confirms discarding a cancellation reason and restores focus to the opener', async () => {

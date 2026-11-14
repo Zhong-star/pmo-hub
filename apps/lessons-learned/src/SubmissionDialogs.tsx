@@ -42,12 +42,17 @@ function getReasonFieldError(error: unknown): string | null {
 }
 
 function getApiErrorCode(error: unknown): string | null {
-  if (typeof error !== 'object' || error === null || !('response' in error)) return null;
-  const response = error.response;
-  if (typeof response !== 'object' || response === null || !('data' in response)) return null;
-  const data = response.data;
-  if (typeof data !== 'object' || data === null || !('code' in data)) return null;
-  return typeof data.code === 'string' ? data.code : null;
+  if (typeof error !== 'object' || error === null) return null;
+  if ('response' in error) {
+    const response = error.response;
+    if (typeof response === 'object' && response !== null && 'data' in response) {
+      const data = response.data;
+      if (typeof data === 'object' && data !== null && 'code' in data && typeof data.code === 'string') {
+        return data.code;
+      }
+    }
+  }
+  return 'code' in error && typeof error.code === 'string' ? error.code : null;
 }
 
 export function CancelLessonDialog({ draft, onClose, onReload, onConfirm }: CancelLessonDialogProps) {
@@ -59,11 +64,16 @@ export function CancelLessonDialog({ draft, onClose, onReload, onConfirm }: Canc
   const [hasVersionConflict, setHasVersionConflict] = useState(false);
   const [isDraftOpen, setIsDraftOpen] = useState(true);
   const [isReloading, setIsReloading] = useState(false);
+  const [completedReloads, setCompletedReloads] = useState(0);
   const [isCancelling, setIsCancelling] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
 
   useDialogFocus(dialogRef, reasonRef);
+
+  useEffect(() => {
+    if (completedReloads > 0 && !isReloading) reasonRef.current?.focus();
+  }, [completedReloads, isReloading]);
 
   function requestClose() {
     if (isCancelling || isReloading) return;
@@ -91,6 +101,7 @@ export function CancelLessonDialog({ draft, onClose, onReload, onConfirm }: Canc
       }
     } finally {
       setIsReloading(false);
+      setCompletedReloads((reloads) => reloads + 1);
     }
   }
 

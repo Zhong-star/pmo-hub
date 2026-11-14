@@ -218,7 +218,9 @@ export function LessonsLearnedScreen() {
     if (!profileId) throw new Error('Select a profile before reloading a lesson.');
     const drafts = await getMyOpenDrafts(profileId);
     const latest = drafts.find((draft) => draft.id === draftId);
-    if (!latest) throw new Error('This lesson is no longer an Open draft.');
+    if (!latest) {
+      throw Object.assign(new Error('This lesson is no longer an Open draft.'), { code: 'LESSON_NOT_OPEN' });
+    }
     return latest;
   }
 
