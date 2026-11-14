@@ -9,7 +9,7 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { DataSource, type SelectQueryBuilder } from 'typeorm';
+import { DataSource, In, type SelectQueryBuilder } from 'typeorm';
 import { LocalAccessService } from '../local-access.service';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../database/database.module';
 import { LessonHistory } from './lesson-history.entity';
@@ -18,6 +18,7 @@ import type { CreateLessonRequest } from './create-lesson-request.dto';
 import type { CancelLessonRequest } from './cancel-lesson-request.dto';
 import { ProjectCatalogService, type LessonProject } from './project-catalog.service';
 import type { SubmitLessonRequest } from './submit-lesson-request.dto';
+import type { ReturnLessonRequest } from './return-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import type { LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse } from './lesson-response.dto';
 import type {
@@ -81,7 +82,7 @@ export class LessonsService {
       where: { authorId: profile.id, status: 'Open' },
       order: { updatedAt: 'DESC', id: 'DESC' },
     });
-    return lessons.map((lesson) => this.toResponse(lesson));
+    return this.includeLatestReviewGuidance(lessons.map((lesson) => this.toResponse(lesson)));
   }
 
   async getMySubmissions(
@@ -131,6 +132,26 @@ export class LessonsService {
     return lessons.map((lesson) => this.toResponse(lesson));
   }
 
+  private async includeLatestReviewGuidance(submissions: LessonDraftResponse[]): Promise<LessonDraftResponse[]> {
+    const openLessonIds = submissions.filter((submission) => submission.status === 'Open').map(({ id }) => id);
+    if (openLessonIds.length === 0) return submissions;
+
+    const returnEvents = await this.requireDataSource().getRepository(LessonHistory).find({
+      where: { lessonId: In(openLessonIds), eventType: 'Returned', newStatus: 'Open' },
+      order: { occurredAt: 'DESC', id: 'DESC' },
+    });
+    const latestGuidanceByLesson = new Map<number, string>();
+    for (const event of returnEvents) {
+      if (event.reason && !latestGuidanceByLesson.has(event.lessonId)) {
+        latestGuidanceByLesson.set(event.lessonId, event.reason);
+      }
+    }
+    return submissions.map((submission) => ({
+      ...submission,
+      latestReviewGuidance: latestGuidanceByLesson.get(submission.id) ?? null,
+    }));
+  }
+
   private async listSubmissions(
     filters: PmoDraftsFilter,
     onlyAuthorId?: string,
@@ -142,7 +163,7 @@ export class LessonsService {
     if (filters.status) query.andWhere('lesson.status = :status', { status: filters.status });
 
     const lessons = await query.orderBy('lesson.updated_at', 'DESC').addOrderBy('lesson.id', 'DESC').getMany();
-    return lessons.map((lesson) => this.toResponse(lesson));
+    return this.includeLatestReviewGuidance(lessons.map((lesson) => this.toResponse(lesson)));
   }
 
   private applySearchFilters(query: SelectQueryBuilder<Lesson>, filters: LessonSearchFilters): void {
@@ -195,7 +216,10 @@ export class LessonsService {
         occurredAt: event.occurredAt,
       }));
 
-      return { ...this.toResponse(lesson), history: historyResponse };
+      const latestReviewGuidance = lesson.status === 'Open'
+        ? [...history].reverse().find((event) => event.eventType === 'Returned' && event.newStatus === 'Open')?.reason ?? null
+        : null;
+      return { ...this.toResponse(lesson), latestReviewGuidance, history: historyResponse };
     });
   }
 
@@ -311,7 +335,7 @@ export class LessonsService {
 
     const updated = result.raw[0] as Record<string, unknown> | undefined;
     if (!updated) throw new InternalServerErrorException('The updated draft could not be returned.');
-    return this.toResponseFromDatabaseRow(updated);
+    return (await this.includeLatestReviewGuidance([this.toResponseFromDatabaseRow(updated)]))[0]!;
   }
 
   async submitOwnOpenDraft(
@@ -390,6 +414,64 @@ export class LessonsService {
     });
   }
 
+  async returnForChanges(
+    localUserId: string | undefined,
+    lessonId: number,
+    input: ReturnLessonRequest,
+  ): Promise<LessonDraftResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    if (profile.role !== 'LESSONS_MODERATOR') {
+      throw new ForbiddenException('PMO moderator access is required to return a lesson for changes.');
+    }
+
+    return this.requireDataSource().transaction(async (manager) => {
+      const lessons = manager.getRepository(Lesson);
+      const current = await lessons.findOne({
+        where: { id: lessonId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!current) throw new NotFoundException('Lesson not found.');
+      if (current.status !== 'PMOEvaluation') {
+        throw new ConflictException({
+          code: 'LESSON_NOT_AWAITING_EVALUATION',
+          message: 'This lesson is no longer awaiting evaluation. Reload the current version before deciding.',
+        });
+      }
+      if (current.version !== input.version) throw this.staleVersionConflict();
+      if (typeof input.guidance !== 'string' || !input.guidance.trim()) {
+        const message = 'Enter guidance for the author.';
+        throw new BadRequestException({
+          code: 'INVALID_LESSON_RETURN',
+          message,
+          fieldErrors: { guidance: message },
+        });
+      }
+      if (input.guidance.length > 1000) {
+        const message = 'Guidance must be 1000 characters or fewer.';
+        throw new BadRequestException({
+          code: 'INVALID_LESSON_RETURN',
+          message,
+          fieldErrors: { guidance: message },
+        });
+      }
+
+      current.status = 'Open';
+      current.updatedBy = profile.id;
+      current.version += 1;
+      const returned = await lessons.save(current);
+      const history = manager.getRepository(LessonHistory);
+      await history.save(history.create({
+        lessonId: returned.id,
+        actorId: profile.id,
+        eventType: 'Returned',
+        previousStatus: 'PMOEvaluation',
+        newStatus: 'Open',
+        reason: input.guidance.trim(),
+      }));
+      return { ...this.toResponse(returned), latestReviewGuidance: input.guidance.trim() };
+    });
+  }
+
   private validateProjectSelection(
     current: Lesson | null,
     projectId: string | null,
@@ -455,6 +537,7 @@ export class LessonsService {
       applicability: lesson.applicability ?? null,
       createdAt: lesson.createdAt,
       updatedAt: lesson.updatedAt,
+      latestReviewGuidance: null,
     };
   }
 
@@ -478,6 +561,7 @@ export class LessonsService {
       applicability: (row.applicability as string | null) ?? null,
       createdAt: row.created_at as Date,
       updatedAt: row.updated_at as Date,
+      latestReviewGuidance: null,
     };
   }
 }

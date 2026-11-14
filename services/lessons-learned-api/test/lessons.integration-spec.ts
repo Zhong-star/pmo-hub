@@ -1541,4 +1541,275 @@ describe('Lessons Learned draft registration', () => {
     expect(await dataSource!.query('SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id', [created.body.id]))
       .toEqual([{ event_type: 'Created' }]);
   });
+
+  it('lets only PMO return a submitted lesson with required guidance of at most 1000 characters', async () => {
+    const server = request(app!.getHttpServer());
+    const title = 'A returned lesson can be corrected and resubmitted';
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the current runbook.',
+        rootCause: null,
+        lessonType: 'Communication',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+
+    const returnPath = `/api/lessons-learned/v1/lessons/${created.body.id}/return`;
+    await server
+      .post(returnPath)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: submitted.body.version, guidance: 'Please add the missing context.' })
+      .expect(403);
+
+    for (const guidance of [undefined, '', '   ', 'x'.repeat(1001)]) {
+      const payload = { version: submitted.body.version, ...(guidance === undefined ? {} : { guidance }) };
+      await server
+        .post(returnPath)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send(payload)
+        .expect(400);
+    }
+
+    await server
+      .post(returnPath)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version - 1, guidance: 'This decision is stale.' })
+      .expect(409)
+      .expect(({ body }) => expect(body.code).toBe('STALE_LESSON_VERSION'));
+
+    const guidance = 'Please add the missing context. ' + 'x'.repeat(1000 - 'Please add the missing context. '.length);
+    const returned = await server
+      .post(returnPath)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version, guidance })
+      .expect(200);
+
+    expect(returned.body).toMatchObject({
+      id: created.body.id,
+      authorId: 'local-contributor',
+      updatedBy: 'local-pmo',
+      status: 'Open',
+      version: submitted.body.version + 1,
+      latestReviewGuidance: guidance,
+    });
+    await server
+      .get('/api/lessons-learned/v1/lessons/evaluation-queue')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.some(({ id }: { id: number }) => id === created.body.id)).toBe(false));
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body[0]).toMatchObject({
+        id: created.body.id,
+        status: 'Open',
+        latestReviewGuidance: guidance,
+      }));
+    await server
+      .get('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body[0].latestReviewGuidance).toBe(guidance));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.latestReviewGuidance).toBe(guidance);
+        expect(body.history).toMatchObject([
+          { eventType: 'Created', newStatus: 'Open', reason: null },
+          { eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation', reason: null },
+          { actorId: 'local-pmo', eventType: 'Returned', previousStatus: 'PMOEvaluation', newStatus: 'Open', reason: guidance },
+        ]);
+      });
+  });
+
+  it('keeps every return in history, shows the latest guidance, and allows only the author to resubmit', async () => {
+    const server = request(app!.getHttpServer());
+    const title = 'Repeated return keeps each instruction';
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title })
+      .expect(201);
+    const submissionInput = (version: number, submissionTitle = title) => ({
+      version,
+      title: submissionTitle,
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      situationObserved: 'The release handover omitted the current runbook.',
+      rootCause: null,
+      lessonType: 'Communication',
+      impact: 'The release team repeated verification work.',
+      recommendation: 'Assign an owner to review the checklist.',
+      applicability: 'Use for releases with shared operational ownership.',
+    });
+    const firstSubmission = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send(submissionInput(created.body.version))
+      .expect(200);
+    const firstGuidance = 'Please include the date of the project decision.';
+    const firstReturn = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/return`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: firstSubmission.body.version, guidance: firstGuidance })
+      .expect(200);
+
+    const submitPath = `/api/lessons-learned/v1/lessons/${created.body.id}/submit`;
+    await server
+      .post(submitPath)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send(submissionInput(firstReturn.body.version))
+      .expect(404);
+
+    const revisedTitle = `${title} after author changes`;
+    const edited = await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: firstReturn.body.version, title: revisedTitle })
+      .expect(200);
+    expect(edited.body.latestReviewGuidance).toBe(firstGuidance);
+    await server
+      .post(submitPath)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ ...submissionInput(edited.body.version), lessonType: 'Future Prevention', rootCause: '   ' })
+      .expect(400);
+    const secondSubmission = await server
+      .post(submitPath)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send(submissionInput(edited.body.version, revisedTitle))
+      .expect(200);
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body[0]).toMatchObject({
+        id: created.body.id,
+        status: 'PMOEvaluation',
+        latestReviewGuidance: null,
+      }));
+
+    const secondGuidance = 'Please explain why the proposed mitigation addresses the cause.';
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/return`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: secondSubmission.body.version, guidance: secondGuidance })
+      .expect(200);
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/return`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: firstReturn.body.version, guidance: 'This version is stale.' })
+      .expect(409)
+      .expect(({ body }) => expect(body.code).toBe('LESSON_NOT_AWAITING_EVALUATION'));
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body[0]).toMatchObject({
+        id: created.body.id,
+        status: 'Open',
+        latestReviewGuidance: secondGuidance,
+      }));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.history).toMatchObject([
+        { eventType: 'Created', previousStatus: null, newStatus: 'Open' },
+        { eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation' },
+        { eventType: 'Returned', previousStatus: 'PMOEvaluation', newStatus: 'Open', reason: firstGuidance },
+        { eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation' },
+        { eventType: 'Returned', previousStatus: 'PMOEvaluation', newStatus: 'Open', reason: secondGuidance },
+      ]));
+  });
+
+  it('rolls back a return when history fails and permits only one concurrent PMO decision', async () => {
+    if (!dataSource) throw new Error('The PostgreSQL test database did not start.');
+    const server = request(app!.getHttpServer());
+    const title = 'Return decisions are atomic';
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the current runbook.',
+        rootCause: null,
+        lessonType: 'Communication',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+    await dataSource.query(`
+      CREATE FUNCTION reject_return_history() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.event_type = 'Returned' THEN RAISE EXCEPTION 'return history write intentionally rejected'; END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER reject_return_history_insert
+      BEFORE INSERT ON lesson_history FOR EACH ROW EXECUTE FUNCTION reject_return_history();
+    `);
+
+    try {
+      await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/return`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, guidance: 'The failed event must roll back.' })
+        .expect(500);
+
+      expect(await dataSource.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
+        .toEqual([{ status: 'PMOEvaluation', version: submitted.body.version }]);
+      expect(await dataSource.query(
+        "SELECT event_type FROM lesson_history WHERE lesson_id = $1 AND event_type = 'Returned'",
+        [created.body.id],
+      )).toEqual([]);
+    } finally {
+      await dataSource.query('DROP TRIGGER IF EXISTS reject_return_history_insert ON lesson_history');
+      await dataSource.query('DROP FUNCTION IF EXISTS reject_return_history()');
+    }
+
+    const returnPath = `/api/lessons-learned/v1/lessons/${created.body.id}/return`;
+    const decisions = await Promise.all([
+      server.post(returnPath)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, guidance: 'Add a current support owner.' }),
+      server.post(returnPath)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, guidance: 'Add a current support contact.' }),
+    ]);
+    expect(decisions.map(({ status }) => status).sort()).toEqual([200, 409]);
+    const conflict = decisions.find(({ status }) => status === 409);
+    expect(conflict?.body.code).toBe('LESSON_NOT_AWAITING_EVALUATION');
+    expect(await dataSource.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
+      .toEqual([{ status: 'Open', version: submitted.body.version + 1 }]);
+    expect(await dataSource.query(
+      "SELECT actor_id, event_type FROM lesson_history WHERE lesson_id = $1 AND event_type = 'Returned'",
+      [created.body.id],
+    )).toEqual([{ actor_id: 'local-pmo', event_type: 'Returned' }]);
+  });
 });

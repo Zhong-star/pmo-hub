@@ -212,6 +212,7 @@ type LessonSubmissionDetailsDialogProps = {
   hasError: boolean;
   onRetry: () => void;
   onClose: () => void;
+  onReturn?: (lesson: LessonDetails) => void;
 };
 
 export function LessonSubmissionDetailsDialog({
@@ -221,6 +222,7 @@ export function LessonSubmissionDetailsDialog({
   hasError,
   onRetry,
   onClose,
+  onReturn,
 }: LessonSubmissionDetailsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -294,7 +296,7 @@ export function LessonSubmissionDetailsDialog({
                     <li key={event.id}>
                       <p><strong>{event.eventType}</strong> · {event.previousStatus ? `${event.previousStatus} → ` : ''}{event.newStatus}</p>
                       <p>{event.actorId} · <time dateTime={event.occurredAt}>{formatTimestampUtc(event.occurredAt)}</time></p>
-                      {event.reason && <p>Cancellation reason: {event.reason}</p>}
+                      {event.reason && <p>{getHistoryReasonLabel(event.eventType)}: {event.reason}</p>}
                     </li>
                   ))}
                 </ol>
@@ -303,10 +305,24 @@ export function LessonSubmissionDetailsDialog({
           </>
         )}
         <div className="draft-editor-actions">
+          {lesson && lesson.status === 'PMOEvaluation' && onReturn && (
+            <button className="draft-editor-secondary" type="button" onClick={() => onReturn(lesson)}>
+              Return for changes
+            </button>
+          )}
           <button className="draft-editor-secondary" type="button" onClick={onClose}>Close details</button>
         </div>
       </div>
     </dialog>,
     document.body,
   );
+}
+
+function getHistoryReasonLabel(eventType: string): string {
+  switch (eventType) {
+    case 'Cancelled': return 'Cancellation reason';
+    case 'Returned': return 'PMO guidance';
+    case 'Rejected': return 'Rejection reason';
+    default: return 'Reason';
+  }
 }

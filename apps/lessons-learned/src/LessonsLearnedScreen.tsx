@@ -13,19 +13,23 @@ import {
   getMySubmissions,
   getPmoDrafts,
   getPmoEvaluationQueue,
+  returnLesson as returnLessonRequest,
   submitLesson as submitLessonRequest,
   updateLessonDraft,
   type LessonDraft,
+  type LessonDetails,
   type LessonProject,
   type LessonSubmissionsFilters,
   type PmoDraftsFilters,
   type PmoEvaluationQueueFilters,
   type CancelLessonBody,
   type SubmitLessonBody,
+  type ReturnLessonBody,
   type UpdateLessonDraftBody,
 } from './api';
 import { DraftEditor } from './DraftEditor';
 import { LessonSubmissionDetailsDialog, CancelLessonDialog } from './SubmissionDialogs';
+import { ReturnLessonDialog } from './ReturnLessonDialog';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
 const HISTORY_POSITION_KEY = '__pmoHubLessonsLearnedHistoryPosition';
@@ -150,6 +154,7 @@ export function LessonsLearnedScreen() {
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [selectedDraft, setSelectedDraft] = useState<LessonDraft | null>(null);
   const [selectedCancellationDraft, setSelectedCancellationDraft] = useState<LessonDraft | null>(null);
+  const [selectedReturnLesson, setSelectedReturnLesson] = useState<LessonDetails | null>(null);
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<number | null>(null);
   const [submissionSearch, setSubmissionSearch] = useState('');
   const [submissionProjectFilter, setSubmissionProjectFilter] = useState<SubmissionProjectFilter>({ kind: 'any' });
@@ -183,6 +188,7 @@ export function LessonsLearnedScreen() {
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
+    setSelectedReturnLesson(null);
     setSelectedSubmissionId(null);
     setIsModuleMenuOpen(false);
   }, [resetSubmissionFilters]);
@@ -349,6 +355,7 @@ export function LessonsLearnedScreen() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-my-submissions', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-pmo-drafts', profileId] }),
+      queryClient.invalidateQueries({ queryKey: ['lessons-learned-evaluation-queue', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-project-options', profileId] }),
     ]);
   }
@@ -361,6 +368,7 @@ export function LessonsLearnedScreen() {
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
+    setSelectedReturnLesson(null);
     setSelectedSubmissionId(null);
   }, [isDefinitiveAccessFailure]);
 
@@ -424,6 +432,20 @@ export function LessonsLearnedScreen() {
     const cancelled = await cancelLessonRequest(profileId, draftId, input);
     await refreshSubmissionQueries(profileId, draftId);
     return cancelled;
+  }
+
+  async function returnLesson(draftId: number, input: ReturnLessonBody): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before returning a lesson.');
+    const returned = await returnLessonRequest(profileId, draftId, input);
+    await refreshSubmissionQueries(profileId, draftId);
+    return returned;
+  }
+
+  async function reloadLessonDetails(lessonId: number): Promise<LessonDetails> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before reloading a lesson.');
+    return getLessonDetails(profileId, lessonId);
   }
 
   useEffect(() => {
@@ -510,6 +532,7 @@ export function LessonsLearnedScreen() {
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
+    setSelectedReturnLesson(null);
     setSelectedSubmissionId(null);
     setIsModuleMenuOpen(false);
   }
@@ -882,6 +905,12 @@ export function LessonsLearnedScreen() {
                           <div>
                             <p className="draft-title">{draft.title}</p>
                             <p className="draft-meta">{draft.status === 'Open' ? 'Draft' : 'Lesson'} #{draft.id} · {draft.status}</p>
+                            {draft.status === 'Open' && draft.latestReviewGuidance && (
+                              <p className="return-guidance-notice">
+                                <strong>Latest PMO guidance</strong>
+                                <span>{draft.latestReviewGuidance}</span>
+                              </p>
+                            )}
                           </div>
                           {draft.status === 'Open' ? (
                             <div className="submission-actions">
@@ -977,6 +1006,20 @@ export function LessonsLearnedScreen() {
                       hasError={submissionDetailsQuery.isError}
                       onRetry={() => void submissionDetailsQuery.refetch()}
                       onClose={() => setSelectedSubmissionId(null)}
+                      onReturn={isPmoEvaluationQueuePage ? setSelectedReturnLesson : undefined}
+                    />
+                  )}
+                  {selectedReturnLesson && (
+                    <ReturnLessonDialog
+                      lesson={selectedReturnLesson}
+                      onReload={reloadLessonDetails}
+                      onConfirm={returnLesson}
+                      onClose={() => setSelectedReturnLesson(null)}
+                      onComplete={() => {
+                        setSelectedReturnLesson(null);
+                        setSelectedSubmissionId(null);
+                      }}
+                      onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
                     />
                   )}
                 </section>

@@ -22,6 +22,7 @@ const draft: LessonDraft = {
   impact: null,
   recommendation: null,
   applicability: null,
+  latestReviewGuidance: null,
   createdAt: '2026-11-13T12:00:00.000Z',
   updatedAt: '2026-11-13T12:00:00.000Z',
 };

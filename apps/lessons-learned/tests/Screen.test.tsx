@@ -13,6 +13,7 @@ import {
   getMySubmissions,
   getPmoDrafts,
   getPmoEvaluationQueue,
+  returnLesson,
   updateLessonDraft,
   type LessonDraft,
   type LessonDetails,
@@ -29,6 +30,7 @@ vi.mock('../src/api', () => ({
   getMySubmissions: vi.fn(),
   getPmoDrafts: vi.fn(),
   getPmoEvaluationQueue: vi.fn(),
+  returnLesson: vi.fn(),
   updateLessonDraft: vi.fn(),
 }));
 
@@ -60,6 +62,7 @@ function lessonDraft(overrides: Partial<LessonDraft> = {}): LessonDraft {
     impact: null,
     recommendation: null,
     applicability: null,
+    latestReviewGuidance: null,
     createdAt: '2026-11-13T12:00:00.000Z',
     updatedAt: '2026-11-13T12:00:00.000Z',
     ...overrides,
@@ -114,6 +117,11 @@ beforeEach(() => {
   vi.mocked(getMySubmissions).mockImplementation((profileId) => getMyOpenDrafts(profileId));
   vi.mocked(getPmoDrafts).mockResolvedValue([]);
   vi.mocked(getPmoEvaluationQueue).mockResolvedValue([]);
+  vi.mocked(returnLesson).mockImplementation(async (_profileId, lessonId) => lessonDraft({
+    id: lessonId,
+    status: 'Open',
+    updatedBy: 'local-pmo',
+  }));
   vi.mocked(getLessonDetails).mockImplementation(async (_profileId, lessonId) => lessonDetails({ id: lessonId }));
   vi.mocked(updateLessonDraft).mockImplementation(async (_profileId, _draftId, input) => lessonDraft({
     ...input,
@@ -241,6 +249,32 @@ describe('Lessons Learned access check', () => {
     expect(viewButton).toHaveFocus();
   });
 
+  it('requires guidance before PMO confirms returning an evaluation queue lesson', async () => {
+    const lesson = lessonDraft({ id: 83, title: 'PMO return decision', status: 'PMOEvaluation' });
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoEvaluationQueue).mockResolvedValue([lesson]);
+    vi.mocked(getLessonDetails).mockResolvedValue(lessonDetails(lesson));
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo', 0, 'evaluation-queue');
+
+    await user.click(await screen.findByRole('button', { name: 'View PMO return decision' }));
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    await user.click(within(details).getByRole('button', { name: 'Return for changes' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Return lesson' });
+
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm return' }));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Enter guidance for the author.');
+
+    const guidance = 'Please link the revised checklist.';
+    await user.type(within(dialog).getByRole('textbox', { name: 'Guidance for author' }), guidance);
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm return' }));
+
+    expect(returnLesson).toHaveBeenCalledWith('local-pmo', lesson.id, { version: lesson.version, guidance });
+    expect(await screen.findByRole('heading', { name: 'Evaluation Queue' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Return lesson' })).not.toBeInTheDocument();
+  });
+
   it('does not expose the evaluation queue or call its API for a Contributor deep link', async () => {
     vi.mocked(getHome).mockResolvedValue(contributor);
 
@@ -258,6 +292,32 @@ describe('Lessons Learned access check', () => {
     renderScreen('local-pmo', 0, 'evaluation-queue');
 
     expect(await screen.findByText('No lessons are awaiting PMO evaluation.')).toBeInTheDocument();
+  });
+
+  it('highlights the latest PMO guidance on an Open returned submission and keeps it in history', async () => {
+    const guidance = 'Please include the decision date and link the updated checklist.';
+    const returnedLesson = lessonDraft({ id: 82, title: 'Returned release lesson', latestReviewGuidance: guidance });
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMySubmissions).mockResolvedValue([returnedLesson]);
+    vi.mocked(getLessonDetails).mockResolvedValue({
+      ...lessonDetails(returnedLesson),
+      history: [
+        { id: 1, actorId: 'local-contributor', eventType: 'Created', previousStatus: null, newStatus: 'Open', reason: null, occurredAt: returnedLesson.createdAt },
+        { id: 2, actorId: 'local-contributor', eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation', reason: null, occurredAt: returnedLesson.updatedAt },
+        { id: 3, actorId: 'local-pmo', eventType: 'Returned', previousStatus: 'PMOEvaluation', newStatus: 'Open', reason: guidance, occurredAt: returnedLesson.updatedAt },
+      ],
+    });
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor', 0, 'my-submissions');
+
+    expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
+    expect(await screen.findByText('Latest PMO guidance')).toBeInTheDocument();
+    expect(screen.getByText(guidance)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Returned release lesson' }));
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    expect(within(details).getByText('Returned', { exact: true })).toBeInTheDocument();
+    expect(within(details).getByText(`PMO guidance: ${guidance}`)).toBeInTheDocument();
   });
 
   it('shows an error and retry control when the evaluation queue cannot be loaded', async () => {

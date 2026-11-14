@@ -41,9 +41,11 @@ import { LessonDetailsResponse, LessonDraftResponse } from './lesson-response.dt
 import { LessonConflictResponse } from './lesson-conflict-response.dto';
 import { LessonSubmissionValidationResponse } from './lesson-submission-validation-response.dto';
 import { LessonCancellationValidationResponse } from './lesson-cancellation-validation-response.dto';
+import { LessonReturnValidationResponse } from './lesson-return-validation-response.dto';
 import { LessonsService } from './lessons.service';
 import { LessonProjectResponse } from './project-response.dto';
 import { SubmitLessonRequest } from './submit-lesson-request.dto';
+import { ReturnLessonRequest } from './return-lesson-request.dto';
 import { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import {
   LessonSubmissionsQuery,
@@ -248,6 +250,47 @@ export class LessonsController {
     input: SubmitLessonRequest,
   ): Promise<LessonDraftResponse> {
     return this.lessons.submitOwnOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input);
+  }
+
+  @Post(':id/return')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Return a lesson awaiting PMO evaluation to its author with required guidance' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson awaiting evaluation.' })
+  @ApiBody({ type: ReturnLessonRequest })
+  @ApiOkResponse({ type: LessonDraftResponse })
+  @ApiBadRequestResponse({
+    type: LessonReturnValidationResponse,
+    description: 'Return guidance must contain non-whitespace text and be no longer than 1000 characters.',
+  })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile is not a PMO moderator.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist.' })
+  @ApiConflictResponse({
+    type: LessonConflictResponse,
+    description: 'The lesson is no longer awaiting evaluation or the supplied version is stale.',
+  })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  returnForChanges(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParseIntPipe) lessonId: number,
+    @Body(new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      expectedType: ReturnLessonRequest,
+      exceptionFactory: (errors) => new BadRequestException({
+        code: 'INVALID_LESSON_RETURN',
+        message: 'Enter guidance for the author with no more than 1000 characters.',
+        fieldErrors: Object.fromEntries(errors.map((error) => [
+          error.property,
+          Object.values(error.constraints ?? {})[0] ?? 'Invalid value.',
+        ])),
+      }),
+    }))
+    input: ReturnLessonRequest,
+  ): Promise<LessonDraftResponse> {
+    return this.lessons.returnForChanges(typeof header === 'string' ? header : undefined, lessonId, input);
   }
 
   @Post(':id/cancel')
