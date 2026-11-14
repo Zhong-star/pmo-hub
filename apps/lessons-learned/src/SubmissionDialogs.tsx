@@ -16,11 +16,31 @@ function useDialogFocus(dialogRef: RefObject<HTMLDialogElement | null>, initialF
     const returnFocus = activeElement instanceof HTMLElement ? activeElement : null;
     const dialog = dialogRef.current;
     const appShell = document.querySelector<HTMLElement>('.app-shell');
+    function trapDialogTab(event: KeyboardEvent) {
+      if (event.key !== 'Tab' || !dialog) return;
+      const focusableElements = [...dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )];
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      if (!firstElement || !lastElement) return;
+
+      const isFocusOutsideDialog = !dialog.contains(document.activeElement);
+      if (event.shiftKey && (document.activeElement === firstElement || isFocusOutsideDialog)) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && (document.activeElement === lastElement || isFocusOutsideDialog)) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    }
     if (appShell) appShell.setAttribute('inert', '');
     if (dialog && typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal();
     else dialog?.setAttribute('open', '');
+    dialog?.addEventListener('keydown', trapDialogTab);
     initialFocusRef.current?.focus();
     return () => {
+      dialog?.removeEventListener('keydown', trapDialogTab);
       if (dialog?.open && typeof dialog.close === 'function') dialog.close();
       else dialog?.removeAttribute('open');
       if (appShell) appShell.removeAttribute('inert');
@@ -228,7 +248,7 @@ type LessonSubmissionDetailsDialogProps = {
 
 export function LessonSubmissionDetailsDialog({
   lessonId,
-  details: lesson,
+  details: lessonData,
   isLoading,
   hasError,
   onRetry,
@@ -236,6 +256,7 @@ export function LessonSubmissionDetailsDialog({
 }: LessonSubmissionDetailsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const lesson = hasError ? undefined : lessonData;
 
   useDialogFocus(dialogRef, closeRef);
 

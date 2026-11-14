@@ -1,6 +1,6 @@
 import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { lessonTypes } from './lesson-fields-request.dto';
 
 export const lessonStatuses = ['Open', 'PMOEvaluation', 'Approved', 'Closed', 'Archived'] as const;
@@ -13,11 +13,17 @@ export class LessonSubmissionsQuery {
   @MaxLength(150)
   search?: string;
 
-  @ApiPropertyOptional({ type: String, description: 'Project catalog ID, or "none" for lessons without a project.' })
+  @ApiPropertyOptional({ type: String, description: 'Project snapshot ID.' })
   @IsOptional()
   @IsString()
   @MaxLength(128)
   projectId?: string;
+
+  @ApiPropertyOptional({ type: Boolean, description: 'Filter to lessons without a project.' })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' ? true : value === 'false' ? false : value)
+  @IsBoolean()
+  withoutProject?: boolean;
 
   @ApiPropertyOptional({ enum: lessonTypes })
   @IsOptional()
@@ -30,4 +36,7 @@ export class LessonSubmissionsQuery {
   status?: typeof lessonStatuses[number];
 }
 
-export type LessonSubmissionsFilter = Pick<LessonSubmissionsQuery, 'search' | 'projectId' | 'lessonType' | 'status'>;
+export type LessonSubmissionsFilter = Pick<
+  LessonSubmissionsQuery,
+  'search' | 'projectId' | 'withoutProject' | 'lessonType' | 'status'
+>;

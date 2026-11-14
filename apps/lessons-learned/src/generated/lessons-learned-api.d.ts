@@ -581,8 +581,10 @@ export interface operations {
             query?: {
                 /** @description Title prefix or exact numeric lesson ID. */
                 search?: string;
-                /** @description Project ID, or "none" for no project. */
+                /** @description Project snapshot ID. */
                 projectId?: string;
+                /** @description Filter to lessons without a project. */
+                withoutProject?: boolean;
                 lessonType?: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication";
                 status?: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived";
             };

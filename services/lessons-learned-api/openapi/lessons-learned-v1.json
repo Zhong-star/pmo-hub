@@ -237,9 +237,18 @@
             "name": "projectId",
             "required": false,
             "in": "query",
-            "description": "Project ID, or \"none\" for no project.",
+            "description": "Project snapshot ID.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "withoutProject",
+            "required": false,
+            "in": "query",
+            "description": "Filter to lessons without a project.",
+            "schema": {
+              "type": "boolean"
             }
           },
           {

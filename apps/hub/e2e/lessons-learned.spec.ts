@@ -125,6 +125,7 @@ test('Contributor creates a title-only lesson and completes it from the edit mod
 test('Contributor cancels an Open lesson with a reason and can reopen its Archived details after reload', async ({ page }) => {
   expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
   const title = `Issue 23 cancelled lesson ${Date.now()}`;
+  await page.setViewportSize({ width: 1280, height: 480 });
 
   await page.goto('/');
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
@@ -152,11 +153,16 @@ test('Contributor cancels an Open lesson with a reason and can reopen its Archiv
   await expect(page.getByText(`Lesson #${lessonId} · Archived`)).toBeVisible();
   const search = page.getByRole('searchbox', { name: 'Search title or ID' });
   await search.fill(title.slice(0, 18));
-  await page.getByRole('combobox', { name: 'Project' }).selectOption('none');
+  await page.getByRole('combobox', { name: 'Project' }).selectOption('without-project');
   await page.getByRole('combobox', { name: 'Status' }).selectOption('Archived');
   await expect(page.getByRole('button', { name: `View ${title}` })).toBeVisible();
   const viewButton = page.getByRole('button', { name: `View ${title}` });
-  await viewButton.click();
+  await viewButton.scrollIntoViewIfNeeded();
+  const scrollBeforeOpen = await page.evaluate(() => window.scrollY);
+  const buttonTopBeforeOpen = await viewButton.evaluate((button) => button.getBoundingClientRect().top);
+  expect(scrollBeforeOpen).toBeGreaterThan(0);
+  await viewButton.focus();
+  await page.keyboard.press('Enter');
   const details = page.getByRole('dialog', { name: 'Lesson details' });
   await expect(details.getByText('Archived', { exact: true })).toBeVisible();
   await expect(details.getByText(title, { exact: true })).toBeVisible();
@@ -166,10 +172,24 @@ test('Contributor cancels an Open lesson with a reason and can reopen its Archiv
   await expect(history.getByText('Cancelled', { exact: true })).toBeVisible();
   await expect(history.getByText('Cancellation reason: The project scope changed.')).toBeVisible();
   await expect(details.getByRole('button', { name: /^Reopen / })).toHaveCount(0);
-  await details.getByRole('button', { name: 'Close details' }).click();
+  const closeIcon = details.getByRole('button', { name: 'Close lesson details' });
+  const closeDetails = details.getByRole('button', { name: 'Close details' });
+  await expect(closeIcon).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(closeDetails).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(closeIcon).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(details).toHaveCount(0);
   await expect(viewButton).toBeFocused();
+  await expect(page.getByRole('listitem').filter({ hasText: title })).toBeVisible();
+  await expect(viewButton).toHaveText('View');
   await expect(search).toHaveValue(title.slice(0, 18));
-  await expect(page.getByRole('combobox', { name: 'Project' })).toHaveValue('none');
+  await expect(page.getByRole('combobox', { name: 'Project' })).toHaveValue('without-project');
+  await expect(page.getByRole('combobox', { name: 'Status' })).toHaveValue('Archived');
+  await expect(page.getByRole('combobox', { name: 'Lesson type' })).toHaveValue('');
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBeforeOpen);
+  expect(await viewButton.evaluate((button) => button.getBoundingClientRect().top)).toBe(buttonTopBeforeOpen);
   await search.fill(String(lessonId));
   await expect(page.getByRole('button', { name: `View ${title}` })).toBeVisible();
 

@@ -13,6 +13,7 @@ import {
   submitLesson as submitLessonRequest,
   updateLessonDraft,
   type LessonDraft,
+  type LessonProject,
   type LessonSubmissionsFilters,
   type CancelLessonBody,
   type SubmitLessonBody,
@@ -70,6 +71,45 @@ function readModulePage(): ModulePage {
     : 'home';
 }
 
+type SubmissionProjectFilter =
+  | { kind: 'any' }
+  | { kind: 'without-project' }
+  | { kind: 'project'; id: string };
+
+function getProjectFilterOptionValue(filter: SubmissionProjectFilter): string {
+  if (filter.kind === 'without-project') return 'without-project';
+  if (filter.kind === 'project') return `project:${encodeURIComponent(filter.id)}`;
+  return '';
+}
+
+function readProjectFilterOptionValue(value: string): SubmissionProjectFilter {
+  if (value === 'without-project') return { kind: 'without-project' };
+  if (value.startsWith('project:')) {
+    try {
+      return { kind: 'project', id: decodeURIComponent(value.slice('project:'.length)) };
+    } catch {
+      return { kind: 'any' };
+    }
+  }
+  return { kind: 'any' };
+}
+
+function getProjectFilterOptions(
+  catalogProjects: LessonProject[],
+  submissions: LessonDraft[],
+): LessonProject[] {
+  const projectsById = new Map<string, LessonProject>();
+  for (const submission of submissions) {
+    if (submission.projectId && submission.projectName && !projectsById.has(submission.projectId)) {
+      projectsById.set(submission.projectId, { id: submission.projectId, name: submission.projectName });
+    }
+  }
+  for (const project of catalogProjects) {
+    if (!projectsById.has(project.id)) projectsById.set(project.id, project);
+  }
+  return [...projectsById.values()];
+}
+
 export function LessonsLearnedScreen() {
   const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
   const [selectionGeneration, setSelectionGeneration] = useState(0);
@@ -82,7 +122,7 @@ export function LessonsLearnedScreen() {
   const [selectedCancellationDraft, setSelectedCancellationDraft] = useState<LessonDraft | null>(null);
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<number | null>(null);
   const [submissionSearch, setSubmissionSearch] = useState('');
-  const [submissionProjectId, setSubmissionProjectId] = useState('');
+  const [submissionProjectFilter, setSubmissionProjectFilter] = useState<SubmissionProjectFilter>({ kind: 'any' });
   const [submissionLessonType, setSubmissionLessonType] = useState<NonNullable<LessonDraft['lessonType']> | ''>('');
   const [submissionStatus, setSubmissionStatus] = useState<LessonDraft['status'] | ''>('');
   const selectedProfileIdRef = useRef(selectedProfileId);
@@ -135,7 +175,8 @@ export function LessonsLearnedScreen() {
   const isEditorOpen = isCreateFormOpen || selectedDraft !== null;
   const submissionsFilters: LessonSubmissionsFilters = {
     ...(submissionSearch.trim() ? { search: submissionSearch.trim() } : {}),
-    ...(submissionProjectId ? { projectId: submissionProjectId } : {}),
+    ...(submissionProjectFilter.kind === 'project' ? { projectId: submissionProjectFilter.id } : {}),
+    ...(submissionProjectFilter.kind === 'without-project' ? { withoutProject: true } : {}),
     ...(submissionLessonType ? { lessonType: submissionLessonType } : {}),
     ...(submissionStatus ? { status: submissionStatus } : {}),
   };
@@ -148,6 +189,13 @@ export function LessonsLearnedScreen() {
     networkMode: 'always',
     retry: false,
     refetchOnWindowFocus: true,
+  });
+  const projectOptionsQuery = useQuery({
+    queryKey: ['lessons-learned-project-options', selectedProfileId],
+    queryFn: () => getMySubmissions(selectedProfileId ?? ''),
+    enabled: isHomePage && modulePage === 'my-submissions',
+    networkMode: 'always',
+    retry: false,
   });
   const submissionDetailsQuery = useQuery({
     queryKey: ['lessons-learned-submission-details', selectedProfileId, selectedSubmissionId],
@@ -185,6 +233,20 @@ export function LessonsLearnedScreen() {
     networkMode: 'always',
     retry: false,
   });
+  const projectFilterOptions = getProjectFilterOptions(projectsQuery.data ?? [], projectOptionsQuery.data ?? []);
+
+  async function refreshSubmissionQueries(profileId: string, lessonId?: number): Promise<void> {
+    if (lessonId !== undefined) {
+      queryClient.removeQueries({
+        queryKey: ['lessons-learned-submission-details', profileId, lessonId],
+        exact: true,
+      });
+    }
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['lessons-learned-my-submissions', profileId] }),
+      queryClient.invalidateQueries({ queryKey: ['lessons-learned-project-options', profileId] }),
+    ]);
+  }
 
   useEffect(() => {
     if (!isDefinitiveAccessFailure) return;
@@ -218,9 +280,7 @@ export function LessonsLearnedScreen() {
           applicability: input.applicability,
         };
         const created = await createLessonDraft(profileId, draftInput);
-        await queryClient.invalidateQueries({
-          queryKey: ['lessons-learned-my-submissions', profileId],
-        });
+        await refreshSubmissionQueries(profileId);
         return created;
       } finally {
         markCreatePending(profileId, false);
@@ -228,9 +288,7 @@ export function LessonsLearnedScreen() {
     }
 
     const updated = await updateLessonDraft(profileId, draftId, input);
-    await queryClient.invalidateQueries({
-      queryKey: ['lessons-learned-my-submissions', profileId],
-    });
+    await refreshSubmissionQueries(profileId, draftId);
     return updated;
   }
 
@@ -249,9 +307,7 @@ export function LessonsLearnedScreen() {
     const profileId = selectedProfileIdRef.current;
     if (!profileId) throw new Error('Select a profile before submitting a lesson.');
     const submitted = await submitLessonRequest(profileId, draftId, input);
-    await queryClient.invalidateQueries({
-      queryKey: ['lessons-learned-my-submissions', profileId],
-    });
+    await refreshSubmissionQueries(profileId, draftId);
     return submitted;
   }
 
@@ -259,9 +315,7 @@ export function LessonsLearnedScreen() {
     const profileId = selectedProfileIdRef.current;
     if (!profileId) throw new Error('Select a profile before cancelling a lesson.');
     const cancelled = await cancelLessonRequest(profileId, draftId, input);
-    await queryClient.invalidateQueries({
-      queryKey: ['lessons-learned-my-submissions', profileId],
-    });
+    await refreshSubmissionQueries(profileId, draftId);
     return cancelled;
   }
 
@@ -481,10 +535,18 @@ export function LessonsLearnedScreen() {
                     </div>
                     <div className="draft-editor-field">
                       <label htmlFor="submission-project">Project</label>
-                      <select id="submission-project" value={submissionProjectId} onChange={(event) => setSubmissionProjectId(event.target.value)}>
+                      <select
+                        id="submission-project"
+                        value={getProjectFilterOptionValue(submissionProjectFilter)}
+                        onChange={(event) => setSubmissionProjectFilter(readProjectFilterOptionValue(event.target.value))}
+                      >
                         <option value="">Any project</option>
-                        <option value="none">No project</option>
-                        {(projectsQuery.data ?? []).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                        <option value="without-project">No project</option>
+                        {projectFilterOptions.map((project) => (
+                          <option key={project.id} value={getProjectFilterOptionValue({ kind: 'project', id: project.id })}>
+                            {project.name}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="draft-editor-field">

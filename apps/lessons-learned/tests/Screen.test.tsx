@@ -154,7 +154,13 @@ describe('Lessons Learned access check', () => {
   it('shows all own submission states, applies combined filters, and restores focus and filter state after details', async () => {
     const open = lessonDraft({ id: 10, title: 'Open release checklist' });
     const submitted = lessonDraft({ id: 11, title: 'Submitted release handover', status: 'PMOEvaluation', lessonType: 'Future Prevention' });
-    const approved = lessonDraft({ id: 12, title: 'Approved deployment lesson', status: 'Approved' });
+    const approved = lessonDraft({
+      id: 12,
+      title: 'Approved deployment lesson',
+      status: 'Approved',
+      projectId: 'REMOVED-PROJECT-001',
+      projectName: 'Removed project snapshot',
+    });
     const closed = lessonDraft({ id: 13, title: 'Closed migration lesson', status: 'Closed' });
     const archived = lessonDraft({
       id: 14,
@@ -170,7 +176,8 @@ describe('Lessons Learned access check', () => {
       recommendation: 'Assign a checklist owner.',
       applicability: 'Use for releases with an operations handover.',
     });
-    const rows = [open, submitted, approved, closed, archived];
+    const projectIdNone = lessonDraft({ id: 15, title: 'Project ID none lesson', projectId: 'none', projectName: 'Project None' });
+    const rows = [open, submitted, approved, closed, archived, projectIdNone];
     vi.mocked(getHome).mockResolvedValue(contributor);
     vi.mocked(getMySubmissions).mockImplementation(async (_profileId, filters) => {
       if (filters?.status === 'Archived') return [archived];
@@ -206,15 +213,21 @@ describe('Lessons Learned access check', () => {
     expect(screen.queryByRole('button', { name: `Reopen ${submitted.title}` })).not.toBeInTheDocument();
 
     await user.type(screen.getByRole('searchbox', { name: 'Search title or ID' }), 'Archived');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }), 'none');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }), 'without-project');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Lesson type' }), 'Communication');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'Archived');
     await vi.waitFor(() => expect(getMySubmissions).toHaveBeenLastCalledWith('local-contributor', {
       search: 'Archived',
-      projectId: 'none',
+      withoutProject: true,
       lessonType: 'Communication',
       status: 'Archived',
     }));
+
+    const projectFilter = screen.getByRole('combobox', { name: 'Project' });
+    expect(within(projectFilter).getByRole('option', { name: 'Removed project snapshot' }))
+      .toHaveValue('project:REMOVED-PROJECT-001');
+    expect(within(projectFilter).getByRole('option', { name: 'Project None' })).toHaveValue('project:none');
+    expect(within(projectFilter).getByRole('option', { name: 'No project' })).toHaveValue('without-project');
 
     const archivedView = await screen.findByRole('button', { name: `View ${archived.title}` });
     await user.click(archivedView);
@@ -237,7 +250,7 @@ describe('Lessons Learned access check', () => {
     await user.click(within(details).getByRole('button', { name: 'Close details' }));
     expect(archivedView).toHaveFocus();
     expect(screen.getByRole('searchbox', { name: 'Search title or ID' })).toHaveValue('Archived');
-    expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue('none');
+    expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue('without-project');
     expect(screen.getByRole('combobox', { name: 'Lesson type' })).toHaveValue('Communication');
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('Archived');
 
@@ -255,9 +268,13 @@ describe('Lessons Learned access check', () => {
   it('requires an explicit reason before cancelling and keeps the Archived lesson in read-only submissions', async () => {
     const openDraft = lessonDraft({ title: 'Cancel the outdated rollout lesson' });
     const archivedDraft = lessonDraft({ title: openDraft.title, status: 'Archived', version: 2 });
+    let isCancelled = false;
     vi.mocked(getHome).mockResolvedValue(contributor);
-    vi.mocked(getMySubmissions).mockResolvedValueOnce([openDraft]).mockResolvedValueOnce([archivedDraft]);
-    vi.mocked(cancelLesson).mockResolvedValue(archivedDraft);
+    vi.mocked(getMySubmissions).mockImplementation(async () => [isCancelled ? archivedDraft : openDraft]);
+    vi.mocked(cancelLesson).mockImplementation(async () => {
+      isCancelled = true;
+      return archivedDraft;
+    });
     vi.mocked(getLessonDetails).mockResolvedValue(lessonDetails({
       ...archivedDraft,
       history: [
@@ -304,6 +321,43 @@ describe('Lessons Learned access check', () => {
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('');
   });
 
+  it('does not show cached details when reopening after cancellation and a failed refetch', async () => {
+    const openDraft = lessonDraft({ title: 'Refresh details after cancellation' });
+    const archivedDraft = lessonDraft({ ...openDraft, status: 'Archived', version: 2 });
+    let isCancelled = false;
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMySubmissions).mockImplementation(async () => [isCancelled ? archivedDraft : openDraft]);
+    vi.mocked(cancelLesson).mockImplementation(async () => {
+      isCancelled = true;
+      return archivedDraft;
+    });
+    vi.mocked(getLessonDetails)
+      .mockResolvedValueOnce(lessonDetails(openDraft))
+      .mockRejectedValueOnce(new Error('The details service is unavailable.'));
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor', 60_000);
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+
+    await user.click(await screen.findByRole('button', { name: `View ${openDraft.title}` }));
+    const firstDetails = screen.getByRole('dialog', { name: 'Lesson details' });
+    expect(await within(firstDetails).findByText('Open', { exact: true })).toBeInTheDocument();
+    await user.click(within(firstDetails).getByRole('button', { name: 'Close details' }));
+
+    await user.click(await screen.findByRole('button', { name: `Cancel ${openDraft.title}` }));
+    const cancelDialog = screen.getByRole('dialog', { name: 'Cancel lesson' });
+    await user.type(within(cancelDialog).getByRole('textbox', { name: 'Reason for cancellation' }), 'No longer needed.');
+    await user.click(within(cancelDialog).getByRole('button', { name: 'Confirm cancellation' }));
+    await screen.findByRole('button', { name: `View ${archivedDraft.title}` });
+
+    await user.click(screen.getByRole('button', { name: `View ${archivedDraft.title}` }));
+    const refreshedDetails = screen.getByRole('dialog', { name: 'Lesson details' });
+    expect(await within(refreshedDetails).findByRole('alert')).toHaveTextContent('could not be loaded');
+    expect(within(refreshedDetails).queryByText('Open', { exact: true })).not.toBeInTheDocument();
+    expect(within(refreshedDetails).queryByRole('heading', { name: 'History' })).not.toBeInTheDocument();
+  });
+
   it('keeps the cancellation reason and Open draft visible when the API fails', async () => {
     const openDraft = lessonDraft({ title: 'Preserve cancellation context' });
     vi.mocked(getHome).mockResolvedValue(contributor);
@@ -331,12 +385,16 @@ describe('Lessons Learned access check', () => {
     const openDraft = lessonDraft({ title: 'Cancel after another edit' });
     const latestDraft = lessonDraft({ title: 'Updated cancellation context', version: openDraft.version + 1 });
     const archivedDraft = lessonDraft({ title: latestDraft.title, status: 'Archived', version: latestDraft.version + 1 });
+    let isCancelled = false;
     vi.mocked(getHome).mockResolvedValue(contributor);
-    vi.mocked(getMySubmissions).mockResolvedValueOnce([openDraft]).mockResolvedValueOnce([archivedDraft]);
+    vi.mocked(getMySubmissions).mockImplementation(async () => [isCancelled ? archivedDraft : openDraft]);
     vi.mocked(getMyOpenDrafts).mockResolvedValue([latestDraft]);
     vi.mocked(cancelLesson)
       .mockRejectedValueOnce(apiError(409, 'STALE_LESSON_VERSION'))
-      .mockResolvedValueOnce(archivedDraft);
+      .mockImplementationOnce(async () => {
+        isCancelled = true;
+        return archivedDraft;
+      });
     const user = userEvent.setup();
 
     renderScreen('local-contributor');
@@ -1018,7 +1076,7 @@ describe('Lessons Learned access check', () => {
       window.dispatchEvent(new StorageEvent('storage', { key: 'pmo-hub.local-user-id', newValue: 'local-pmo' }));
     });
     expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
-    expect(getMyOpenDrafts).toHaveBeenCalledTimes(2);
+    expect(getMyOpenDrafts).toHaveBeenCalledTimes(4);
 
     act(() => {
       window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
@@ -1031,9 +1089,13 @@ describe('Lessons Learned access check', () => {
     expect(screen.queryByRole('button', { name: 'Create lesson' })).not.toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'Lessons Learned' })).not.toBeInTheDocument();
     expect(screen.queryByText('Private contributor draft')).not.toBeInTheDocument();
-    expect(getMyOpenDrafts).toHaveBeenCalledTimes(2);
-    expect(getMyOpenDrafts).toHaveBeenNthCalledWith(1, 'local-contributor');
-    expect(getMyOpenDrafts).toHaveBeenNthCalledWith(2, 'local-pmo');
+    expect(getMyOpenDrafts).toHaveBeenCalledTimes(4);
+    expect(vi.mocked(getMyOpenDrafts).mock.calls.map(([profileId]) => profileId)).toEqual([
+      'local-contributor',
+      'local-contributor',
+      'local-pmo',
+      'local-pmo',
+    ]);
     expect(vi.mocked(getHome).mock.calls.map(([profileId]) => profileId)).toEqual([
       'local-contributor',
       'local-pmo',
@@ -1044,6 +1106,7 @@ describe('Lessons Learned access check', () => {
     expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create lesson' })).toBeVisible();
     expect(screen.getByText('Private contributor draft')).toBeInTheDocument();
+    expect(getMyOpenDrafts).toHaveBeenCalledTimes(6);
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(document.querySelectorAll('#page-title')).toHaveLength(1);
   });

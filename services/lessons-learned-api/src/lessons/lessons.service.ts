@@ -90,9 +90,15 @@ export class LessonsService {
       if (/^\d+$/.test(filters.search)) {
         const lessonId = Number(filters.search);
         if (Number.isSafeInteger(lessonId) && lessonId <= 2_147_483_647) {
-          query.andWhere('lesson.id = :lessonId', { lessonId });
+          query.andWhere(
+            '(lesson.id = :lessonId OR LOWER(SUBSTRING(lesson.title, 1, LENGTH(:titlePrefix))) = LOWER(:titlePrefix))',
+            { lessonId, titlePrefix: filters.search },
+          );
         } else {
-          query.andWhere('1 = 0');
+          query.andWhere(
+            'LOWER(SUBSTRING(lesson.title, 1, LENGTH(:titlePrefix))) = LOWER(:titlePrefix)',
+            { titlePrefix: filters.search },
+          );
         }
       } else {
         query.andWhere(
@@ -101,8 +107,8 @@ export class LessonsService {
         );
       }
     }
-    if (filters.projectId === 'none') query.andWhere('lesson.project_id IS NULL');
-    else if (filters.projectId) query.andWhere('lesson.project_id = :projectId', { projectId: filters.projectId });
+    if (filters.withoutProject) query.andWhere('lesson.project_id IS NULL');
+    if (filters.projectId) query.andWhere('lesson.project_id = :projectId', { projectId: filters.projectId });
     if (filters.lessonType) query.andWhere('lesson.lesson_type = :lessonType', { lessonType: filters.lessonType });
     if (filters.status) query.andWhere('lesson.status = :status', { status: filters.status });
 
@@ -113,24 +119,28 @@ export class LessonsService {
   async getOwnLessonDetails(localUserId: string | undefined, lessonId: number): Promise<LessonDetailsResponse> {
     const profile = this.localAccess.getProfile(localUserId);
     const dataSource = this.requireDataSource();
-    const lesson = await dataSource.getRepository(Lesson).findOne({ where: { id: lessonId, authorId: profile.id } });
-    if (!lesson) throw new NotFoundException('Lesson not found.');
+    return dataSource.transaction('REPEATABLE READ', async (manager) => {
+      const lesson = await manager.getRepository(Lesson).findOne({
+        where: { id: lessonId, authorId: profile.id },
+      });
+      if (!lesson) throw new NotFoundException('Lesson not found.');
 
-    const history = await dataSource.getRepository(LessonHistory).find({
-      where: { lessonId },
-      order: { occurredAt: 'ASC', id: 'ASC' },
+      const history = await manager.getRepository(LessonHistory).find({
+        where: { lessonId },
+        order: { occurredAt: 'ASC', id: 'ASC' },
+      });
+      const historyResponse: LessonHistoryEventResponse[] = history.map((event) => ({
+        id: event.id,
+        actorId: event.actorId,
+        eventType: event.eventType,
+        previousStatus: event.previousStatus,
+        newStatus: event.newStatus,
+        reason: event.reason ?? null,
+        occurredAt: event.occurredAt,
+      }));
+
+      return { ...this.toResponse(lesson), history: historyResponse };
     });
-    const historyResponse: LessonHistoryEventResponse[] = history.map((event) => ({
-      id: event.id,
-      actorId: event.actorId,
-      eventType: event.eventType,
-      previousStatus: event.previousStatus,
-      newStatus: event.newStatus,
-      reason: event.reason ?? null,
-      occurredAt: event.occurredAt,
-    }));
-
-    return { ...this.toResponse(lesson), history: historyResponse };
   }
 
   async cancelOwnOpenDraft(

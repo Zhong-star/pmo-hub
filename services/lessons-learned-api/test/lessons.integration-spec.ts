@@ -7,7 +7,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../src/database/database.module';
@@ -74,6 +74,10 @@ describe('Lessons Learned draft registration', () => {
 
   beforeEach(async () => {
     await dataSource?.query('TRUNCATE lesson_history, lessons RESTART IDENTITY CASCADE');
+    writeFileSync(projectsPath, JSON.stringify([
+      { id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' },
+      { id: 'LOCAL-PROJECT-002', name: 'Fictional Harbor Migration' },
+    ]), 'utf8');
   });
 
   it.each(['local-contributor', 'local-pmo'])(
@@ -297,7 +301,7 @@ describe('Lessons Learned draft registration', () => {
     );
 
     await server
-      .get('/api/lessons-learned/v1/lessons/mine?search=Zebra&projectId=none&lessonType=Communication&status=Open')
+      .get('/api/lessons-learned/v1/lessons/mine?search=Zebra&withoutProject=true&lessonType=Communication&status=Open')
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .expect(200)
       .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([open.body.id]));
@@ -312,7 +316,7 @@ describe('Lessons Learned draft registration', () => {
       .expect(200)
       .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([submitted.body.id]));
     await server
-      .get(`/api/lessons-learned/v1/lessons/mine?search=${encodeURIComponent(privateLesson.body.title)}&projectId=none&status=Open`)
+      .get(`/api/lessons-learned/v1/lessons/mine?search=${encodeURIComponent(privateLesson.body.title)}&withoutProject=true&status=Open`)
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .expect(200)
       .expect(({ body }) => expect(body).toEqual([]));
@@ -364,6 +368,87 @@ describe('Lessons Learned draft registration', () => {
       .get(`/api/lessons-learned/v1/lessons/${privateLesson.body.id}`)
       .set('X-PMO-Local-User-ID', 'local-pmo')
       .expect(200);
+  });
+
+  it('matches numeric title prefixes and exact IDs within the selected author scope', async () => {
+    const server = request(app!.getHttpServer());
+    const create = async (profileId: string, title: string) => server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', profileId)
+      .send({ title })
+      .expect(201);
+
+    const ownNumericTitle = await create('local-contributor', '2026 deployment practices');
+    await create('local-pmo', '2026 deployment practices');
+    const exactIdMatch = await create('local-contributor', 'Improve the deployment handover');
+    const aboveIntegerLimit = await create('local-contributor', '2147483648 system migration');
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine?search=2026')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([ownNumericTitle.body.id]));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/mine?search=${exactIdMatch.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([exactIdMatch.body.id]));
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine?search=2147483648')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([aboveIntegerLimit.body.id]));
+  });
+
+  it('reads an owned lesson and its history in a repeatable-read transaction', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Read a consistent lesson snapshot' })
+      .expect(201);
+    const transaction = vi.spyOn(dataSource!, 'transaction');
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.history.map(({ eventType }: { eventType: string }) => eventType))
+        .toEqual(['Created']));
+
+    expect(transaction).toHaveBeenCalledWith('REPEATABLE READ', expect.any(Function));
+    transaction.mockRestore();
+  });
+
+  it('distinguishes a project whose ID is none from lessons without a project', async () => {
+    const projects = [
+      { id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' },
+      { id: 'LOCAL-PROJECT-002', name: 'Fictional Harbor Migration' },
+      { id: 'none', name: 'Project None' },
+    ];
+    writeFileSync(projectsPath, JSON.stringify(projects), 'utf8');
+    const server = request(app!.getHttpServer());
+    const projectLesson = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'A real project named none', projectId: 'none', projectName: 'Project None' })
+      .expect(201);
+    const noProjectLesson = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'A lesson without a project' })
+      .expect(201);
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine?projectId=none')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([projectLesson.body.id]));
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine?withoutProject=true')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([noProjectLesson.body.id]));
   });
 
   it('rejects invalid cancellation reasons without changing the draft or history', async () => {
