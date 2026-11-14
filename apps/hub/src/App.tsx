@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
+import { WorkspaceSidebar } from '../../shared-ui/src/WorkspaceSidebar';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { useThemePreference } from '../../shared-ui/src/theme';
 import { getHubStatus, getLocalUser, getLocalUsers, type LocalUser } from './api';
@@ -25,6 +26,7 @@ export function App() {
     defaultValues: { localUserId: '' },
   });
   const selectedId = useWatch({ control, name: 'localUserId' });
+  const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
   const [activeUser, setActiveUser] = useState<LocalUser | null>(null);
   const [savedUserId, setSavedUserId] = useState(readSavedUserId);
   const [resumeError, setResumeError] = useState<'missing' | 'unavailable' | null>(null);
@@ -113,6 +115,7 @@ export function App() {
   }
 
   function changeProfile() {
+    setIsModuleMenuOpen(false);
     shouldResumeOnStartup.current = false;
     setSwitching(true);
     setActiveUser(null);
@@ -126,14 +129,30 @@ export function App() {
   const loadError = statusQuery.error ?? usersQuery.error;
 
   return (
-    <div className="page-shell">
+    <div className={activeUser ? 'page-shell workspace-shell' : 'page-shell'}>
       <HubHeader
         profileName={activeUser?.displayName}
         onChangeProfile={activeUser ? changeProfile : undefined}
         theme={theme}
         onThemeChange={selectTheme}
       />
-      <main className="page-content">
+      <div className={activeUser ? 'workspace-layout' : 'entry-layout'}>
+        {activeUser && (
+          <WorkspaceSidebar
+            label="Hub navigation"
+            navigationLabel="Available modules"
+            navigationId="hub-module-navigation"
+            open={isModuleMenuOpen}
+            onToggle={() => setIsModuleMenuOpen((open) => !open)}
+          >
+            {hubCatalogConfig.filter((module) => module.enabled).map((module) => (
+              <a key={module.code} href={module.route} onClick={() => setIsModuleMenuOpen(false)}>
+                {module.name}
+              </a>
+            ))}
+          </WorkspaceSidebar>
+        )}
+        <main className={activeUser ? 'workspace-panel' : 'page-content'} tabIndex={activeUser ? 0 : undefined}>
         <section className={`welcome-card${activeUser ? ' catalog-page' : ''}`} aria-labelledby="page-title">
         <p className="eyebrow">Project Management Office</p>
         <h1 id="page-title">Welcome to PMO Hub</h1>
@@ -240,7 +259,8 @@ export function App() {
         )}
         </section>
         <footer>PMO Hub · Local development</footer>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

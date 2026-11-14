@@ -38,12 +38,33 @@ test('selecting a configured local profile opens the module catalog', async ({ p
   await expect(page.getByRole('link', { name: 'Open Tech Resource Allocation' })).toHaveCount(0);
   await expect(page.getByText('Hub available')).toBeVisible();
 
+  const navigation = page.getByRole('navigation', { name: 'Available modules' });
+  const sidebar = page.getByRole('complementary', { name: 'Hub navigation' });
+  const panel = page.getByRole('main');
+  await expect(navigation.getByRole('link', { name: 'Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
+  await expect(navigation.getByRole('link')).toHaveCount(1);
+  const sidebarBounds = (await sidebar.boundingBox())!;
+  const panelBounds = (await panel.boundingBox())!;
+  expect(sidebarBounds.x).toBe(0);
+  expect(sidebarBounds.y + sidebarBounds.height).toBe(900);
+  expect(panelBounds.x + panelBounds.width).toBe(1440);
+  expect(panelBounds.y + panelBounds.height).toBe(900);
+
   const moduleGrid = page.locator('.module-grid');
   const wideColumnCount = await moduleGrid.evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').length);
   expect(wideColumnCount).toBeGreaterThan(0);
   expect(wideColumnCount).toBeLessThanOrEqual(3);
 
   await page.setViewportSize({ width: 390, height: 844 });
+  const menu = page.getByRole('button', { name: 'Module menu' });
+  await expect(navigation).toBeHidden();
+  const closedTop = (await panel.boundingBox())!.y;
+  await menu.click();
+  await expect(navigation).toBeVisible();
+  expect((await panel.boundingBox())!.y).toBeGreaterThan(closedTop);
+  await menu.click();
+  await expect(navigation).toBeHidden();
+
   const narrowColumnCount = await moduleGrid.evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').length);
   expect(narrowColumnCount).toBe(1);
   await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 390);

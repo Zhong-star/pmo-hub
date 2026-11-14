@@ -59,6 +59,8 @@ button, select { font: inherit; }
   background: var(--page-background);
 }
 
+.entry-layout { display: flex; flex: 1; }
+
 .page-content {
   width: min(100%, 1248px);
   flex: 1;

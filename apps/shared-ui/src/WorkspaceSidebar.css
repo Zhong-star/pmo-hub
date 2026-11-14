@@ -1,0 +1,115 @@
+/* The header sits above the grid so only the two panels need to scroll. */
+#root > .workspace-shell {
+  height: 100dvh;
+  min-height: 0;
+}
+
+.workspace-shell > .hub-header {
+  flex-shrink: 0;
+  padding-inline: clamp(16px, 3vw, 36px);
+}
+
+.workspace-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.workspace-sidebar,
+.workspace-panel {
+  min-width: 0;
+  overflow: auto;
+}
+
+.workspace-sidebar {
+  padding: 24px 12px;
+  background: var(--rule);
+  border-inline-end: 1px solid var(--surface-border, var(--border));
+}
+
+.workspace-panel {
+  padding: clamp(20px, 3vw, 48px);
+  background: var(--surface);
+}
+
+.workspace-navigation {
+  display: grid;
+  gap: 4px;
+}
+
+.workspace-navigation a,
+.workspace-menu-toggle {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: var(--link);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.workspace-navigation a {
+  text-decoration: none;
+}
+
+.workspace-navigation a:hover,
+.workspace-navigation a[aria-current='page'] {
+  background: var(--surface);
+}
+
+.workspace-navigation a[aria-current='page'] {
+  box-shadow: inset 3px 0 var(--link);
+}
+
+.workspace-navigation a:focus-visible,
+.workspace-menu-toggle:focus-visible,
+.workspace-panel:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.workspace-menu-toggle {
+  display: none;
+  border: 1px solid var(--surface-border, var(--border));
+  background: var(--surface);
+  cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  #root > .workspace-shell {
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .workspace-layout {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .workspace-panel {
+    flex: 1;
+    overflow: visible;
+  }
+
+  .workspace-sidebar {
+    overflow: visible;
+    padding: 10px 16px;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--surface-border, var(--border));
+  }
+
+  .workspace-menu-toggle {
+    display: flex;
+  }
+
+  .workspace-navigation {
+    display: none;
+  }
+
+  .workspace-sidebar[data-menu-open='true'] .workspace-navigation {
+    display: grid;
+    margin-top: 8px;
+  }
+}
