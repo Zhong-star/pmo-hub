@@ -772,6 +772,13 @@ export interface operations {
                     "application/json": components["schemas"]["LessonConflictResponse"];
                 };
             };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
 }

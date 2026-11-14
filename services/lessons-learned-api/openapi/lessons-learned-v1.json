@@ -473,6 +473,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable."
           }
         },
         "security": [

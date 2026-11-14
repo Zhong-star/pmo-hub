@@ -195,6 +195,7 @@ export class LessonsController {
     type: LessonConflictResponse,
     description: 'The lesson is no longer Open or the cancelled version is stale.',
   })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
   cancelOwnOpenDraft(
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
     @Param('id', ParseIntPipe) lessonId: number,

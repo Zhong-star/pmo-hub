@@ -521,6 +521,7 @@ export function LessonsLearnedScreen() {
                   {selectedCancellationDraft && (
                     <CancelLessonDialog
                       draft={selectedCancellationDraft}
+                      onReload={reloadDraftFields}
                       onConfirm={cancelDraft}
                       onClose={() => setSelectedCancellationDraft(null)}
                     />

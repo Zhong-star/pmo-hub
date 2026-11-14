@@ -6,6 +6,7 @@ import './DraftEditor.css';
 type CancelLessonDialogProps = {
   draft: LessonDraft;
   onClose: () => void;
+  onReload: (lessonId: number) => Promise<LessonDraft>;
   onConfirm: (lessonId: number, input: CancelLessonBody) => Promise<LessonDraft>;
 };
 
@@ -40,19 +41,62 @@ function getReasonFieldError(error: unknown): string | null {
   return typeof fieldErrors.reason === 'string' ? fieldErrors.reason : null;
 }
 
-export function CancelLessonDialog({ draft, onClose, onConfirm }: CancelLessonDialogProps) {
+function getApiErrorCode(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return null;
+  const response = error.response;
+  if (typeof response !== 'object' || response === null || !('data' in response)) return null;
+  const data = response.data;
+  if (typeof data !== 'object' || data === null || !('code' in data)) return null;
+  return typeof data.code === 'string' ? data.code : null;
+}
+
+export function CancelLessonDialog({ draft, onClose, onReload, onConfirm }: CancelLessonDialogProps) {
+  const [currentDraft, setCurrentDraft] = useState(draft);
+  const [version, setVersion] = useState(draft.version);
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [hasVersionConflict, setHasVersionConflict] = useState(false);
+  const [isDraftOpen, setIsDraftOpen] = useState(true);
+  const [isReloading, setIsReloading] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
 
   useDialogFocus(dialogRef, reasonRef);
 
+  function requestClose() {
+    if (isCancelling || isReloading) return;
+    if (reason.length > 0 && !window.confirm('Discard your cancellation reason?')) return;
+    onClose();
+  }
+
+  async function reloadCurrentDraft() {
+    if (isReloading || isCancelling) return;
+    setIsReloading(true);
+    setRequestError(null);
+    try {
+      const latest = await onReload(currentDraft.id);
+      setCurrentDraft(latest);
+      setVersion(latest.version);
+      setHasVersionConflict(false);
+      setIsDraftOpen(true);
+      setRequestError('Review the current lesson and confirm cancellation again. Your reason is still here.');
+    } catch (error) {
+      if (getApiErrorCode(error) === 'LESSON_NOT_OPEN') {
+        setIsDraftOpen(false);
+        setRequestError('This lesson is no longer Open and cannot be cancelled. Your reason is still here.');
+      } else {
+        setRequestError('The latest draft could not be loaded. Your reason is still here; try reloading again.');
+      }
+    } finally {
+      setIsReloading(false);
+    }
+  }
+
   async function confirmCancellation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isCancelling) return;
+    if (isCancelling || isReloading || hasVersionConflict || !isDraftOpen) return;
     if (!reason.trim()) {
       setReasonError('Enter a reason for cancelling this lesson.');
       setRequestError(null);
@@ -64,11 +108,20 @@ export function CancelLessonDialog({ draft, onClose, onConfirm }: CancelLessonDi
     setReasonError(null);
     setRequestError(null);
     try {
-      await onConfirm(draft.id, { version: draft.version, reason });
+      await onConfirm(currentDraft.id, { version, reason });
       onClose();
     } catch (error) {
       setReasonError(getReasonFieldError(error));
-      setRequestError('The lesson could not be cancelled. Your reason is still here; try again.');
+      const errorCode = getApiErrorCode(error);
+      if (errorCode === 'STALE_LESSON_VERSION') {
+        setHasVersionConflict(true);
+        setRequestError('This draft changed after you opened it. Reload the current version before confirming again. Your reason is still here.');
+      } else if (errorCode === 'LESSON_NOT_OPEN') {
+        setIsDraftOpen(false);
+        setRequestError('This lesson is no longer Open and cannot be cancelled. Your reason is still here.');
+      } else {
+        setRequestError('The lesson could not be cancelled. Your reason is still here; try again.');
+      }
     } finally {
       setIsCancelling(false);
     }
@@ -81,22 +134,28 @@ export function CancelLessonDialog({ draft, onClose, onConfirm }: CancelLessonDi
       aria-modal="true"
       aria-labelledby="cancel-lesson-title"
       aria-describedby="cancel-lesson-explanation"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          requestClose();
+        }
+      }}
       onCancel={(event) => {
         event.preventDefault();
-        if (!isCancelling) onClose();
+        requestClose();
       }}
     >
       <form className="draft-editor-form" noValidate onSubmit={(event) => void confirmCancellation(event)}>
         <div className="draft-editor-heading">
           <div>
-            <p className="draft-editor-eyebrow">Draft #{draft.id} · Open</p>
+            <p className="draft-editor-eyebrow">Draft #{currentDraft.id} · Open</p>
             <h2 id="cancel-lesson-title">Cancel lesson</h2>
           </div>
-          <button className="draft-editor-close" type="button" aria-label="Close cancellation" disabled={isCancelling} onClick={onClose}>
+          <button className="draft-editor-close" type="button" aria-label="Close cancellation" disabled={isCancelling || isReloading} onClick={requestClose}>
             ×
           </button>
         </div>
-        <p id="cancel-lesson-explanation">This will archive “{draft.title}”. The lesson will stay in My Submissions as read-only.</p>
+        <p id="cancel-lesson-explanation">This will archive “{currentDraft.title}”. The lesson will stay in My Submissions as read-only.</p>
         <div className="draft-editor-field">
           <label htmlFor="lesson-cancellation-reason">Reason for cancellation</label>
           <textarea
@@ -107,7 +166,7 @@ export function CancelLessonDialog({ draft, onClose, onConfirm }: CancelLessonDi
             value={reason}
             aria-invalid={reasonError ? 'true' : undefined}
             aria-describedby={reasonError ? 'lesson-cancellation-reason-error' : 'lesson-cancellation-reason-count'}
-            disabled={isCancelling}
+            disabled={isCancelling || isReloading}
             onChange={(event) => {
               setReason(event.target.value);
               setReasonError(null);
@@ -121,9 +180,14 @@ export function CancelLessonDialog({ draft, onClose, onConfirm }: CancelLessonDi
           )}
         </div>
         {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
+        {hasVersionConflict && isDraftOpen && (
+          <button className="draft-editor-secondary" type="button" disabled={isCancelling || isReloading} onClick={() => void reloadCurrentDraft()}>
+            {isReloading ? 'Reloading…' : 'Reload current version'}
+          </button>
+        )}
         <div className="draft-editor-actions">
-          <button className="draft-editor-secondary" type="button" disabled={isCancelling} onClick={onClose}>Keep draft</button>
-          <button className="draft-editor-primary" type="submit" disabled={isCancelling}>
+          <button className="draft-editor-secondary" type="button" disabled={isCancelling || isReloading} onClick={requestClose}>Keep draft</button>
+          <button className="draft-editor-primary" type="submit" disabled={isCancelling || isReloading || hasVersionConflict || !isDraftOpen}>
             {isCancelling ? 'Cancelling…' : 'Confirm cancellation'}
           </button>
         </div>

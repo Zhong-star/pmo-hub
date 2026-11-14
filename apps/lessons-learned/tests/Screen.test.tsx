@@ -189,6 +189,72 @@ describe('Lessons Learned access check', () => {
     expect(screen.queryByText(`Lesson #${openDraft.id} · Archived`)).not.toBeInTheDocument();
   });
 
+  it('reloads a stale Open draft before retrying cancellation and preserves its reason', async () => {
+    const openDraft = lessonDraft({ title: 'Cancel after another edit' });
+    const latestDraft = lessonDraft({ title: 'Updated cancellation context', version: openDraft.version + 1 });
+    const archivedDraft = lessonDraft({ title: latestDraft.title, status: 'Archived', version: latestDraft.version + 1 });
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMySubmissions).mockResolvedValueOnce([openDraft]).mockResolvedValueOnce([archivedDraft]);
+    vi.mocked(getMyOpenDrafts).mockResolvedValue([latestDraft]);
+    vi.mocked(cancelLesson)
+      .mockRejectedValueOnce(apiError(409, 'STALE_LESSON_VERSION'))
+      .mockResolvedValueOnce(archivedDraft);
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(await screen.findByRole('button', { name: `Cancel ${openDraft.title}` }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Cancel lesson' });
+    const reason = within(dialog).getByRole('textbox', { name: 'Reason for cancellation' });
+    await user.type(reason, 'This is still the intended reason.');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('changed after you opened it');
+    expect(reason).toHaveValue('This is still the intended reason.');
+    const reload = within(dialog).getByRole('button', { name: 'Reload current version' });
+    await user.click(reload);
+
+    expect(await within(dialog).findByText(/Review the current lesson and confirm cancellation again/)).toBeInTheDocument();
+    expect(within(dialog).getByText(`Draft #${latestDraft.id} · Open`)).toBeInTheDocument();
+    expect(reason).toHaveValue('This is still the intended reason.');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }));
+
+    expect(cancelLesson).toHaveBeenNthCalledWith(2, 'local-contributor', openDraft.id, {
+      version: latestDraft.version,
+      reason: 'This is still the intended reason.',
+    });
+    expect(await screen.findByText(`Lesson #${archivedDraft.id} · Archived`)).toBeInTheDocument();
+  });
+
+  it('confirms discarding a cancellation reason and restores focus to the opener', async () => {
+    const openDraft = lessonDraft({ title: 'Confirm before discarding the reason' });
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMySubmissions).mockResolvedValue([openDraft]);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    const opener = await screen.findByRole('button', { name: `Cancel ${openDraft.title}` });
+    await user.click(opener);
+    const dialog = screen.getByRole('dialog', { name: 'Cancel lesson' });
+    await user.type(within(dialog).getByRole('textbox', { name: 'Reason for cancellation' }), 'Keep this reason unless confirmed.');
+
+    await user.keyboard('{Escape}');
+    expect(confirm).toHaveBeenCalledWith('Discard your cancellation reason?');
+    expect(screen.getByRole('dialog', { name: 'Cancel lesson' })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Keep draft' }));
+    expect(screen.getByRole('dialog', { name: 'Cancel lesson' })).toBeInTheDocument();
+
+    confirm.mockReturnValue(true);
+    await user.click(within(dialog).getByRole('button', { name: 'Close cancellation' }));
+    expect(screen.queryByRole('dialog', { name: 'Cancel lesson' })).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
   it('creates a title-only draft and keeps the entered title when saving fails', async () => {
     vi.mocked(getHome).mockResolvedValue(contributor);
     vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
