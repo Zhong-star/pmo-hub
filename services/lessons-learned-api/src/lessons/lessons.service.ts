@@ -8,12 +8,13 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { LocalAccessService } from '../local-access.service';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../database/database.module';
 import { LessonHistory } from './lesson-history.entity';
 import { Lesson } from './lesson.entity';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
+import type { CancelLessonRequest } from './cancel-lesson-request.dto';
 import { ProjectCatalogService, type LessonProject } from './project-catalog.service';
 import type { SubmitLessonRequest } from './submit-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
@@ -74,6 +75,61 @@ export class LessonsService {
       order: { updatedAt: 'DESC', id: 'DESC' },
     });
     return lessons.map((lesson) => this.toResponse(lesson));
+  }
+
+  async getMySubmissions(localUserId: string | undefined): Promise<LessonDraftResponse[]> {
+    const profile = this.localAccess.getProfile(localUserId);
+    const lessons = await this.requireDataSource().getRepository(Lesson).find({
+      where: { authorId: profile.id, status: In(['Open', 'Archived']) },
+      order: { updatedAt: 'DESC', id: 'DESC' },
+    });
+    return lessons.map((lesson) => this.toResponse(lesson));
+  }
+
+  async cancelOwnOpenDraft(
+    localUserId: string | undefined,
+    lessonId: number,
+    input: CancelLessonRequest,
+  ): Promise<LessonDraftResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction(async (manager) => {
+      const lessons = manager.getRepository(Lesson);
+      const current = await lessons.findOne({
+        where: { id: lessonId, authorId: profile.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!current) throw new NotFoundException('Lesson not found.');
+      if (current.status !== 'Open') {
+        throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be cancelled.' });
+      }
+      if (current.version !== input.version) throw this.staleVersionConflict();
+      if (!input.reason.trim()) {
+        const message = 'Enter a cancellation reason.';
+        throw new BadRequestException({
+          code: 'INVALID_LESSON_CANCELLATION',
+          message,
+          fieldErrors: { reason: message },
+        });
+      }
+
+      current.status = 'Archived';
+      current.updatedBy = profile.id;
+      current.version += 1;
+      const cancelled = await lessons.save(current);
+      const history = manager.getRepository(LessonHistory);
+      await history.save(history.create({
+        lessonId: cancelled.id,
+        actorId: profile.id,
+        eventType: 'Cancelled',
+        previousStatus: 'Open',
+        newStatus: 'Archived',
+        reason: input.reason.trim(),
+      }));
+
+      return this.toResponse(cancelled);
+    });
   }
 
   getProjects(localUserId: string | undefined): LessonProject[] {

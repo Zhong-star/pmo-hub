@@ -15,7 +15,7 @@ export class Lesson {
   updatedBy!: string;
 
   @Column({ type: 'varchar', length: 32, default: 'Open' })
-  status!: 'Open' | 'PMOEvaluation';
+  status!: 'Open' | 'PMOEvaluation' | 'Archived';
 
   @Column({ type: 'integer', default: 1 })
   version!: number;

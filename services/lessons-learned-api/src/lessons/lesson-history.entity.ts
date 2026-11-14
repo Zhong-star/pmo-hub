@@ -13,13 +13,16 @@ export class LessonHistory {
   actorId!: string;
 
   @Column({ name: 'event_type', type: 'varchar', length: 32 })
-  eventType!: 'Created' | 'Submitted';
+  eventType!: 'Created' | 'Submitted' | 'Cancelled';
 
   @Column({ name: 'previous_status', type: 'varchar', length: 32, nullable: true })
   previousStatus!: 'Open' | null;
 
   @Column({ name: 'new_status', type: 'varchar', length: 32 })
-  newStatus!: 'Open' | 'PMOEvaluation';
+  newStatus!: 'Open' | 'PMOEvaluation' | 'Archived';
+
+  @Column({ type: 'varchar', length: 1000, nullable: true })
+  reason!: string | null;
 
   @CreateDateColumn({ name: 'occurred_at', type: 'timestamptz' })
   occurredAt!: Date;

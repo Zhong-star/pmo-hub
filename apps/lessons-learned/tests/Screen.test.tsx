@@ -4,20 +4,24 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsLearnedScreen } from '../src/LessonsLearnedScreen';
 import {
+  cancelLesson,
   createLessonDraft,
   getHome,
   getLessonProjects,
   getMyOpenDrafts,
+  getMySubmissions,
   updateLessonDraft,
   type LessonDraft,
   type UpdateLessonDraftBody,
 } from '../src/api';
 
 vi.mock('../src/api', () => ({
+  cancelLesson: vi.fn(),
   createLessonDraft: vi.fn(),
   getHome: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
+  getMySubmissions: vi.fn(),
   updateLessonDraft: vi.fn(),
 }));
 
@@ -80,6 +84,7 @@ beforeEach(() => {
     { id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' },
   ]);
   vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
+  vi.mocked(getMySubmissions).mockImplementation((profileId) => getMyOpenDrafts(profileId));
   vi.mocked(updateLessonDraft).mockImplementation(async (_profileId, _draftId, input) => lessonDraft({
     ...input,
     updatedBy: 'local-contributor',
@@ -119,7 +124,69 @@ describe('Lessons Learned access check', () => {
     await user.click(screen.getByRole('button', { name: 'Reopen Improve release handover' }));
     expect(screen.getByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Improve release handover');
-    expect(getMyOpenDrafts).toHaveBeenCalledWith('local-contributor');
+    expect(getMySubmissions).toHaveBeenCalledWith('local-contributor');
+  });
+
+  it('requires an explicit reason before cancelling and keeps the Archived lesson in read-only submissions', async () => {
+    const openDraft = lessonDraft({ title: 'Cancel the outdated rollout lesson' });
+    const archivedDraft = lessonDraft({ title: openDraft.title, status: 'Archived', version: 2 });
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMySubmissions).mockResolvedValueOnce([openDraft]).mockResolvedValueOnce([archivedDraft]);
+    vi.mocked(cancelLesson).mockResolvedValue(archivedDraft);
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(await screen.findByRole('button', { name: `Cancel ${openDraft.title}` }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Cancel lesson' });
+    const reason = within(dialog).getByRole('textbox', { name: 'Reason for cancellation' });
+    expect(reason).toHaveAttribute('maxLength', '1000');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Enter a reason for cancelling this lesson.');
+    expect(cancelLesson).not.toHaveBeenCalled();
+
+    await user.type(reason, 'The project scope changed.');
+    expect(within(dialog).getByText('26/1,000 characters')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }));
+
+    expect(cancelLesson).toHaveBeenCalledWith('local-contributor', openDraft.id, {
+      version: openDraft.version,
+      reason: 'The project scope changed.',
+    });
+    const viewButton = await screen.findByRole('button', { name: `View ${archivedDraft.title}` });
+    expect(screen.getByText(`Lesson #${archivedDraft.id} · Archived`)).toBeInTheDocument();
+    await user.click(viewButton);
+
+    const details = screen.getByRole('dialog', { name: 'Lesson details' });
+    expect(within(details).getByText('Archived')).toBeInTheDocument();
+    expect(within(details).getByText('No project')).toBeInTheDocument();
+    expect(within(details).queryByRole('button', { name: /^Cancel / })).not.toBeInTheDocument();
+    expect(within(details).queryByRole('button', { name: /^Reopen / })).not.toBeInTheDocument();
+  });
+
+  it('keeps the cancellation reason and Open draft visible when the API fails', async () => {
+    const openDraft = lessonDraft({ title: 'Preserve cancellation context' });
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMySubmissions).mockResolvedValue([openDraft]);
+    vi.mocked(cancelLesson).mockRejectedValueOnce(new Error('Service unavailable'));
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor');
+    await screen.findByRole('heading', { name: 'Home' });
+    await user.click(screen.getByRole('link', { name: 'My Submissions' }));
+    await user.click(await screen.findByRole('button', { name: `Cancel ${openDraft.title}` }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Cancel lesson' });
+    const reason = within(dialog).getByRole('textbox', { name: 'Reason for cancellation' });
+    await user.type(reason, 'This work has been superseded.');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('could not be cancelled');
+    expect(reason).toHaveValue('This work has been superseded.');
+    expect(within(screen.getByRole('listitem')).getByText(`Draft #${openDraft.id} · Open`)).toBeInTheDocument();
+    expect(screen.queryByText(`Lesson #${openDraft.id} · Archived`)).not.toBeInTheDocument();
   });
 
   it('creates a title-only draft and keeps the entered title when saving fails', async () => {

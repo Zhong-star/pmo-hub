@@ -81,6 +81,12 @@ describe('Lessons Learned PostgreSQL persistence', () => {
 
     expect(result.stdout).toContain('CreateLessonsAndHistory1710000000000 has been executed successfully');
     expect(result.stdout).toContain('AddLessonDraftContent1710000000001 has been executed successfully');
+    expect(result.stdout).toContain('AddLessonCancellationEvent1710000000002 has been executed successfully');
+    expect(await dataSource?.query(`
+      SELECT column_name, character_maximum_length
+      FROM information_schema.columns
+      WHERE table_name = 'lesson_history' AND column_name = 'reason'
+    `)).toEqual([{ column_name: 'reason', character_maximum_length: 1000 }]);
 
     const repeat = await execFileAsync('npm', ['run', 'migration:run'], {
       cwd: resolve(__dirname, '..'),

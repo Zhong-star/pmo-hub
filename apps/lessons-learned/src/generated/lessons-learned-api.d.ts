@@ -73,6 +73,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/lessons/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the selected profile’s Open and Archived own submissions */
+        get: operations["LessonsController_getMySubmissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/lessons-learned/v1/lessons/{id}": {
         parameters: {
             query?: never;
@@ -101,6 +118,23 @@ export interface paths {
         put?: never;
         /** Submit a complete author-owned Open lesson for PMO evaluation */
         post: operations["LessonsController_submitOwnOpenDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lessons-learned/v1/lessons/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel an author-owned Open lesson with a reason */
+        post: operations["LessonsController_cancelOwnOpenDraft"];
         delete?: never;
         options?: never;
         head?: never;
@@ -181,7 +215,7 @@ export interface components {
              * @example Open
              * @enum {string}
              */
-            status: "Open" | "PMOEvaluation";
+            status: "Open" | "PMOEvaluation" | "Archived";
             /** @example 1 */
             version: number;
             projectId: string | null;
@@ -265,6 +299,21 @@ export interface components {
             /** @example INVALID_LESSON_SUBMISSION */
             code: string;
             /** @example Correct the indicated fields before submitting. */
+            message: string;
+            fieldErrors: {
+                [key: string]: string;
+            };
+        };
+        CancelLessonRequest: {
+            /** @example 2 */
+            version: number;
+            /** @example The project scope changed. */
+            reason: string;
+        };
+        LessonCancellationValidationResponse: {
+            /** @example INVALID_LESSON_CANCELLATION */
+            code: string;
+            /** @example Enter a cancellation reason. */
             message: string;
             fieldErrors: {
                 [key: string]: string;
@@ -478,6 +527,46 @@ export interface operations {
             };
         };
     };
+    LessonsController_getMySubmissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDraftResponse"][];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     LessonsController_updateOwnOpenDraft: {
         parameters: {
             query?: never;
@@ -617,6 +706,71 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    LessonsController_cancelOwnOpenDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric ID of the lesson draft. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelLessonRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDraftResponse"];
+                };
+            };
+            /** @description The cancellation reason is invalid; fieldErrors identifies the field to correct. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonCancellationValidationResponse"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson does not exist or is not owned by the selected profile. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson is no longer Open or the cancelled version is stale. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonConflictResponse"];
+                };
             };
         };
     };

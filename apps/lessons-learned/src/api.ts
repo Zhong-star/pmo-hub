@@ -3,7 +3,9 @@ export {
   getHealth,
   getHome,
   getMyOpenDrafts,
+  getMySubmissions,
   createLessonDraft,
+  cancelLesson,
   getLessonProjects,
   updateLessonDraft,
   submitLesson,
@@ -14,6 +16,8 @@ export {
   LESSONS_LEARNED_PROJECTS_PATH,
   LESSONS_LEARNED_DRAFT_PATH,
   LESSONS_LEARNED_SUBMIT_PATH,
+  LESSONS_LEARNED_SUBMISSIONS_PATH,
+  LESSONS_LEARNED_CANCEL_PATH,
 } from './generated/lessons-learned-api-client';
 
 export type {
@@ -22,4 +26,5 @@ export type {
   LessonProject,
   UpdateLessonDraftBody,
   SubmitLessonBody,
+  CancelLessonBody,
 } from './generated/lessons-learned-api-client';

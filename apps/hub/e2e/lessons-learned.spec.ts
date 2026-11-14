@@ -113,6 +113,48 @@ test('Contributor creates a title-only lesson and completes it from the edit mod
   await expect(page.getByRole('button', { name: 'Submit for PMO Review' })).toHaveCount(0);
 });
 
+test('Contributor cancels an Open lesson with a reason and can reopen its Archived details after reload', async ({ page }) => {
+  expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
+  const title = `Issue 23 cancelled lesson ${Date.now()}`;
+
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+  await page.getByRole('link', { name: 'My Submissions' }).click();
+
+  await page.getByRole('button', { name: 'Create lesson' }).click();
+  await page.getByRole('textbox', { name: 'Title' }).fill(title);
+  await page.getByRole('button', { name: 'Save Draft' }).click();
+  await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
+  const draftRow = page.getByRole('listitem').filter({ hasText: title });
+  const draftIdText = await draftRow.locator('.draft-meta').textContent();
+  const lessonId = Number(draftIdText?.match(/#(\d+)/)?.[1]);
+  expect(lessonId).toBeGreaterThan(0);
+  await page.getByRole('button', { name: /^Close editor$/ }).click();
+
+  await page.getByRole('button', { name: `Cancel ${title}` }).click();
+  const cancelDialog = page.getByRole('dialog', { name: 'Cancel lesson' });
+  await expect(cancelDialog).toBeVisible();
+  await cancelDialog.getByRole('textbox', { name: 'Reason for cancellation' }).fill('The project scope changed.');
+  await cancelDialog.getByRole('button', { name: 'Confirm cancellation' }).click();
+
+  await expect(page.getByText(`Lesson #${lessonId} · Archived`)).toBeVisible();
+  await page.getByRole('button', { name: `View ${title}` }).click();
+  const details = page.getByRole('dialog', { name: 'Lesson details' });
+  await expect(details.getByText('Archived', { exact: true })).toBeVisible();
+  await expect(details.getByText(title, { exact: true })).toBeVisible();
+  await expect(details.getByRole('button', { name: /^Reopen / })).toHaveCount(0);
+  await details.getByRole('button', { name: 'Close details' }).click();
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible();
+  await expect(page.getByText(`Lesson #${lessonId} · Archived`)).toBeVisible();
+  await page.getByRole('button', { name: `View ${title}` }).click();
+  await expect(page.getByRole('dialog', { name: 'Lesson details' }).getByText('Archived', { exact: true })).toBeVisible();
+});
+
 test('catalog link opens in the same tab and reload, back, and module return preserve the profile', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');

@@ -9,8 +9,10 @@ const healthPath = '/api/lessons-learned/v1/health';
 const homePath = '/api/lessons-learned/v1/home';
 const lessonsPath = '/api/lessons-learned/v1/lessons';
 const projectsPath = `${lessonsPath}/projects`;
+const submissionsPath = `${lessonsPath}/mine`;
 const draftPath = `${lessonsPath}/{id}`;
 const submitPath = `${draftPath}/submit`;
+const cancelPath = `${draftPath}/cancel`;
 const contract = JSON.parse(await readFile(contractPath, 'utf8'));
 const operation = contract.paths?.[healthPath]?.get;
 const responseSchema = operation?.responses?.['200']?.content?.['application/json']?.schema;
@@ -23,12 +25,17 @@ const createLessonRequestSchema = createLessonOperation?.requestBody?.content?.[
 const createLessonResponseSchema = createLessonOperation?.responses?.['201']?.content?.['application/json']?.schema;
 const projectsOperation = contract.paths?.[projectsPath]?.get;
 const projectsResponseSchema = projectsOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const submissionsOperation = contract.paths?.[submissionsPath]?.get;
+const submissionsResponseSchema = submissionsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const updateLessonOperation = contract.paths?.[draftPath]?.patch;
 const updateLessonRequestSchema = updateLessonOperation?.requestBody?.content?.['application/json']?.schema;
 const updateLessonResponseSchema = updateLessonOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const submitLessonOperation = contract.paths?.[submitPath]?.post;
 const submitLessonRequestSchema = submitLessonOperation?.requestBody?.content?.['application/json']?.schema;
 const submitLessonResponseSchema = submitLessonOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const cancelLessonOperation = contract.paths?.[cancelPath]?.post;
+const cancelLessonRequestSchema = cancelLessonOperation?.requestBody?.content?.['application/json']?.schema;
+const cancelLessonResponseSchema = cancelLessonOperation?.responses?.['200']?.content?.['application/json']?.schema;
 
 if (!operation || responseSchema?.$ref !== '#/components/schemas/HealthResponse') {
   throw new Error(`Expected GET ${healthPath} with a HealthResponse schema in ${contractPath}`);
@@ -53,6 +60,11 @@ if (!projectsOperation || projectsResponseSchema?.type !== 'array' ||
   throw new Error(`Expected GET ${projectsPath} with an array of LessonProjectResponse in ${contractPath}`);
 }
 
+if (!submissionsOperation || submissionsResponseSchema?.type !== 'array' ||
+  submissionsResponseSchema.items?.$ref !== '#/components/schemas/LessonDraftResponse') {
+  throw new Error(`Expected GET ${submissionsPath} with an array of LessonDraftResponse in ${contractPath}`);
+}
+
 if (!updateLessonOperation || updateLessonRequestSchema?.$ref !== '#/components/schemas/UpdateLessonDraftRequest' ||
   updateLessonResponseSchema?.$ref !== '#/components/schemas/LessonDraftResponse') {
   throw new Error(`Expected PATCH ${draftPath} with UpdateLessonDraftRequest and LessonDraftResponse in ${contractPath}`);
@@ -63,6 +75,11 @@ if (!submitLessonOperation || submitLessonRequestSchema?.$ref !== '#/components/
   throw new Error(`Expected POST ${submitPath} with SubmitLessonRequest and LessonDraftResponse in ${contractPath}`);
 }
 
+if (!cancelLessonOperation || cancelLessonRequestSchema?.$ref !== '#/components/schemas/CancelLessonRequest' ||
+  cancelLessonResponseSchema?.$ref !== '#/components/schemas/LessonDraftResponse') {
+  throw new Error(`Expected POST ${cancelPath} with CancelLessonRequest and LessonDraftResponse in ${contractPath}`);
+}
+
 const generatedClient = `/* This file is generated from services/lessons-learned-api/openapi/lessons-learned-v1.json. Do not edit directly. */
 import axios from 'axios';
 import type { paths } from './lessons-learned-api';
@@ -71,8 +88,10 @@ export const LESSONS_LEARNED_HEALTH_PATH = '${healthPath}' satisfies keyof paths
 export const LESSONS_LEARNED_HOME_PATH = '${homePath}' satisfies keyof paths;
 export const LESSONS_LEARNED_LESSONS_PATH = '${lessonsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_PROJECTS_PATH = '${projectsPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_SUBMISSIONS_PATH = '${submissionsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_DRAFT_PATH = '${draftPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMIT_PATH = '${submitPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_CANCEL_PATH = '${cancelPath}' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
@@ -80,6 +99,7 @@ export type CreateLessonDraftBody = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['
 export type LessonProject = paths[typeof LESSONS_LEARNED_PROJECTS_PATH]['get']['responses'][200]['content']['application/json'][number];
 export type UpdateLessonDraftBody = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['patch']['requestBody']['content']['application/json'];
 export type SubmitLessonBody = paths[typeof LESSONS_LEARNED_SUBMIT_PATH]['post']['requestBody']['content']['application/json'];
+export type CancelLessonBody = paths[typeof LESSONS_LEARNED_CANCEL_PATH]['post']['requestBody']['content']['application/json'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -108,6 +128,15 @@ export async function getHome(localUserId: string): Promise<HomeResponse> {
 
 export async function getMyOpenDrafts(localUserId: string): Promise<LessonDraft[]> {
   const { data } = await api.get<LessonDraft[]>(LESSONS_LEARNED_LESSONS_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function getMySubmissions(localUserId: string): Promise<LessonDraft[]> {
+  const { data } = await api.get<LessonDraft[]>(LESSONS_LEARNED_SUBMISSIONS_PATH, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });
@@ -156,6 +185,19 @@ export async function submitLesson(
   input: SubmitLessonBody,
 ): Promise<LessonDraft> {
   const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_SUBMIT_PATH.replace('{id}', String(lessonId)), input, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function cancelLesson(
+  localUserId: string,
+  lessonId: number,
+  input: CancelLessonBody,
+): Promise<LessonDraft> {
+  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_CANCEL_PATH.replace('{id}', String(lessonId)), input, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });

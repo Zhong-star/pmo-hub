@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   api,
+  cancelLesson,
   getHealth,
   getHome,
   getMyOpenDrafts,
+  getMySubmissions,
   createLessonDraft,
   getLessonProjects,
   updateLessonDraft,
@@ -14,6 +16,8 @@ import {
   LESSONS_LEARNED_PROJECTS_PATH,
   LESSONS_LEARNED_DRAFT_PATH,
   LESSONS_LEARNED_SUBMIT_PATH,
+  LESSONS_LEARNED_CANCEL_PATH,
+  LESSONS_LEARNED_SUBMISSIONS_PATH,
   LESSONS_LEARNED_API_TIMEOUT_MS,
 } from '../src/api';
 
@@ -201,6 +205,49 @@ describe('lessons learned HTTP client', () => {
 
     expect(adapter).toHaveBeenCalledWith(expect.objectContaining({
       url: LESSONS_LEARNED_SUBMIT_PATH.replace('{id}', '7'),
+      method: 'post',
+      data: JSON.stringify(body),
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
+    }));
+  });
+
+  it('retrieves own Open and Archived submissions and posts an explicit cancellation', async () => {
+    const archived = {
+      id: 7,
+      title: 'Improve release handover',
+      authorId: 'local-contributor',
+      updatedBy: 'local-contributor',
+      status: 'Archived' as const,
+      version: 2,
+      projectId: null,
+      projectName: null,
+      projectCategory: null,
+      projectPhase: null,
+      situationObserved: null,
+      rootCause: null,
+      lessonType: null,
+      impact: null,
+      recommendation: null,
+      applicability: null,
+      createdAt: '2026-11-13T12:00:00.000Z',
+      updatedAt: '2026-11-13T12:05:00.000Z',
+    };
+    const body = { version: 1, reason: 'The project scope changed.' };
+    const adapter = vi.fn()
+      .mockResolvedValueOnce({ data: [archived], status: 200, statusText: 'OK', headers: {}, config: {} })
+      .mockResolvedValueOnce({ data: archived, status: 200, statusText: 'OK', headers: {}, config: {} });
+    api.defaults.adapter = adapter;
+
+    await expect(getMySubmissions('local-contributor')).resolves.toEqual([archived]);
+    await expect(cancelLesson('local-contributor', 7, body)).resolves.toEqual(archived);
+
+    expect(adapter).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      url: LESSONS_LEARNED_SUBMISSIONS_PATH,
+      method: 'get',
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
+    }));
+    expect(adapter).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      url: LESSONS_LEARNED_CANCEL_PATH.replace('{id}', '7'),
       method: 'post',
       data: JSON.stringify(body),
       headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),

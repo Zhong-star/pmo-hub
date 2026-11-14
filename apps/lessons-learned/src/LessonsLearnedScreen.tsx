@@ -3,17 +3,21 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { useThemePreference } from '../../shared-ui/src/theme';
 import {
+  cancelLesson as cancelLessonRequest,
   createLessonDraft,
   getHome,
   getLessonProjects,
   getMyOpenDrafts,
+  getMySubmissions,
   submitLesson as submitLessonRequest,
   updateLessonDraft,
   type LessonDraft,
+  type CancelLessonBody,
   type SubmitLessonBody,
   type UpdateLessonDraftBody,
 } from './api';
 import { DraftEditor } from './DraftEditor';
+import { ArchivedSubmissionDetailsDialog, CancelLessonDialog } from './SubmissionDialogs';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
 
@@ -73,6 +77,8 @@ export function LessonsLearnedScreen() {
   const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [selectedDraft, setSelectedDraft] = useState<LessonDraft | null>(null);
+  const [selectedCancellationDraft, setSelectedCancellationDraft] = useState<LessonDraft | null>(null);
+  const [selectedArchivedSubmission, setSelectedArchivedSubmission] = useState<LessonDraft | null>(null);
   const selectedProfileIdRef = useRef(selectedProfileId);
   const selectionGenerationRef = useRef(selectionGeneration);
   const pendingCreateProfilesRef = useRef(new Set<string>());
@@ -123,7 +129,7 @@ export function LessonsLearnedScreen() {
   const isEditorOpen = isCreateFormOpen || selectedDraft !== null;
   const submissionsQuery = useQuery({
     queryKey: ['lessons-learned-my-submissions', selectedProfileId],
-    queryFn: () => getMyOpenDrafts(selectedProfileId ?? ''),
+    queryFn: () => getMySubmissions(selectedProfileId ?? ''),
     enabled: isHomePage && modulePage === 'my-submissions',
     networkMode: 'always',
     retry: false,
@@ -146,6 +152,8 @@ export function LessonsLearnedScreen() {
     setAuthorizedSelectionGeneration(null);
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
+    setSelectedCancellationDraft(null);
+    setSelectedArchivedSubmission(null);
   }, []);
 
   const isSavingCurrentDraft = selectedProfileId !== null && pendingCreateProfiles.has(selectedProfileId);
@@ -164,6 +172,8 @@ export function LessonsLearnedScreen() {
     setAuthorizedSelectionGeneration(null);
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
+    setSelectedCancellationDraft(null);
+    setSelectedArchivedSubmission(null);
   }, [isDefinitiveAccessFailure]);
 
   async function saveDraftFields(input: UpdateLessonDraftBody, draftId: number | null): Promise<LessonDraft> {
@@ -220,6 +230,16 @@ export function LessonsLearnedScreen() {
       queryKey: ['lessons-learned-my-submissions', profileId],
     });
     return submitted;
+  }
+
+  async function cancelDraft(draftId: number, input: CancelLessonBody): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before cancelling a lesson.');
+    const cancelled = await cancelLessonRequest(profileId, draftId, input);
+    await queryClient.invalidateQueries({
+      queryKey: ['lessons-learned-my-submissions', profileId],
+    });
+    return cancelled;
   }
 
   useEffect(() => {
@@ -414,8 +434,8 @@ export function LessonsLearnedScreen() {
                 <section className="submissions-page" aria-labelledby="page-title">
                   <div className="submissions-header">
                     <div>
-                      <h1 id="page-title">My Submissions</h1>
-                      <p className="intro">Your open lesson drafts.</p>
+                      <h1 id="page-title" tabIndex={-1}>My Submissions</h1>
+                      <p className="intro">Your lessons. Open drafts can be edited or cancelled.</p>
                     </div>
                     <button className="draft-action" type="button" disabled={isSavingCurrentDraft} onClick={() => {
                       setSelectedDraft(null);
@@ -433,7 +453,7 @@ export function LessonsLearnedScreen() {
                     </div>
                   )}
                   {submissionsQuery.isSuccess && submissionsQuery.data.length === 0 && (
-                    <p className="draft-empty">You have no open drafts yet.</p>
+                    <p className="draft-empty">You have no submissions yet.</p>
                   )}
                   {submissionsQuery.isSuccess && submissionsQuery.data.length > 0 && (
                     <ul className="draft-list">
@@ -441,19 +461,40 @@ export function LessonsLearnedScreen() {
                         <li key={draft.id}>
                           <div>
                             <p className="draft-title">{draft.title}</p>
-                            <p className="draft-meta">Draft #{draft.id} · Open</p>
+                            <p className="draft-meta">{draft.status === 'Open' ? 'Draft' : 'Lesson'} #{draft.id} · {draft.status}</p>
                           </div>
-                          <button
-                            className="draft-cancel"
-                            type="button"
-                            onClick={() => {
-                              setIsCreateFormOpen(false);
-                              setSelectedDraft(draft);
-                            }}
-                            aria-label={`Reopen ${draft.title}`}
-                          >
-                            Reopen
-                          </button>
+                          {draft.status === 'Open' ? (
+                            <div className="submission-actions">
+                              <button
+                                className="draft-cancel"
+                                type="button"
+                                onClick={() => setSelectedCancellationDraft(draft)}
+                                aria-label={`Cancel ${draft.title}`}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                className="draft-cancel"
+                                type="button"
+                                onClick={() => {
+                                  setIsCreateFormOpen(false);
+                                  setSelectedDraft(draft);
+                                }}
+                                aria-label={`Reopen ${draft.title}`}
+                              >
+                                Reopen
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              className="draft-cancel"
+                              type="button"
+                              onClick={() => setSelectedArchivedSubmission(draft)}
+                              aria-label={`View ${draft.title}`}
+                            >
+                              View
+                            </button>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -475,6 +516,19 @@ export function LessonsLearnedScreen() {
                         setSelectedDraft(null);
                         setIsCreateFormOpen(false);
                       }}
+                    />
+                  )}
+                  {selectedCancellationDraft && (
+                    <CancelLessonDialog
+                      draft={selectedCancellationDraft}
+                      onConfirm={cancelDraft}
+                      onClose={() => setSelectedCancellationDraft(null)}
+                    />
+                  )}
+                  {selectedArchivedSubmission && (
+                    <ArchivedSubmissionDetailsDialog
+                      draft={selectedArchivedSubmission}
+                      onClose={() => setSelectedArchivedSubmission(null)}
                     />
                   )}
                 </section>

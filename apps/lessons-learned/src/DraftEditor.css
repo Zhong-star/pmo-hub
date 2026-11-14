@@ -114,9 +114,18 @@
 .draft-editor-secondary { background: var(--theme-control-background); color: var(--theme-control-text); }
 .draft-editor-actions button:disabled { cursor: wait; opacity: .7; }
 
+.submission-detail-list { display: grid; gap: 13px; margin: 0; }
+.submission-detail-list div { display: grid; gap: 4px; }
+.submission-detail-list dt { color: var(--muted); font-size: 13px; font-weight: 700; }
+.submission-detail-list dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.submission-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
 @media (max-width: 560px) {
   .draft-editor-dialog { border-radius: 12px; }
   .draft-editor-catalog-status { align-items: flex-start; flex-direction: column; }
   .draft-editor-grid { grid-template-columns: minmax(0, 1fr); }
   .draft-editor-primary { margin-left: 0; }
+  .draft-list li { align-items: flex-start; flex-direction: column; }
+  .submission-actions { justify-content: flex-start; }
 }

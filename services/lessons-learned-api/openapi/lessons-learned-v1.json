@@ -220,6 +220,45 @@
         ]
       }
     },
+    "/api/lessons-learned/v1/lessons/mine": {
+      "get": {
+        "operationId": "LessonsController_getMySubmissions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LessonDraftResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected."
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access."
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable."
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List the selected profile’s Open and Archived own submissions",
+        "tags": [
+          "Lessons"
+        ]
+      }
+    },
     "/api/lessons-learned/v1/lessons/{id}": {
       "patch": {
         "operationId": "LessonsController_updateOwnOpenDraft",
@@ -366,6 +405,82 @@
           }
         ],
         "summary": "Submit a complete author-owned Open lesson for PMO evaluation",
+        "tags": [
+          "Lessons"
+        ]
+      }
+    },
+    "/api/lessons-learned/v1/lessons/{id}/cancel": {
+      "post": {
+        "operationId": "LessonsController_cancelOwnOpenDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The numeric ID of the lesson draft.",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelLessonRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonDraftResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The cancellation reason is invalid; fieldErrors identifies the field to correct.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonCancellationValidationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected."
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access."
+          },
+          "404": {
+            "description": "The lesson does not exist or is not owned by the selected profile."
+          },
+          "409": {
+            "description": "The lesson is no longer Open or the cancelled version is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Cancel an author-owned Open lesson with a reason",
         "tags": [
           "Lessons"
         ]
@@ -610,7 +725,8 @@
             "type": "string",
             "enum": [
               "Open",
-              "PMOEvaluation"
+              "PMOEvaluation",
+              "Archived"
             ],
             "example": "Open"
           },
@@ -935,6 +1051,50 @@
           "message": {
             "type": "string",
             "example": "Correct the indicated fields before submitting."
+          },
+          "fieldErrors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "fieldErrors"
+        ]
+      },
+      "CancelLessonRequest": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "minimum": 1,
+            "example": 2
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "example": "The project scope changed."
+          }
+        },
+        "required": [
+          "version",
+          "reason"
+        ]
+      },
+      "LessonCancellationValidationResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "INVALID_LESSON_CANCELLATION"
+          },
+          "message": {
+            "type": "string",
+            "example": "Enter a cancellation reason."
           },
           "fieldErrors": {
             "type": "object",

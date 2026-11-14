@@ -172,6 +172,188 @@ describe('Lessons Learned draft registration', () => {
     await dataSource.query('DROP FUNCTION reject_lesson_history()');
   });
 
+  it('lets the author cancel an Open draft and retains the Archived lesson in their submissions', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Cancel a lesson that is no longer useful' })
+      .expect(201);
+    const reason = 'x'.repeat(1000);
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body).toEqual([created.body]));
+
+    const cancelled = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/cancel`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: created.body.version, reason })
+      .expect(200);
+
+    expect(cancelled.body).toMatchObject({
+      id: created.body.id,
+      authorId: 'local-contributor',
+      updatedBy: 'local-contributor',
+      status: 'Archived',
+      version: created.body.version + 1,
+    });
+    expect(await dataSource?.query(
+      'SELECT event_type, previous_status, new_status, reason FROM lesson_history WHERE lesson_id = $1 ORDER BY id',
+      [created.body.id],
+    )).toEqual([
+      { event_type: 'Created', previous_status: null, new_status: 'Open', reason: null },
+      { event_type: 'Cancelled', previous_status: 'Open', new_status: 'Archived', reason },
+    ]);
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body).toEqual([cancelled.body]));
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body).toEqual([]));
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/cancel`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: cancelled.body.version, reason: 'Trying again.' })
+      .expect(409);
+    expect(await dataSource?.query(
+      'SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id',
+      [created.body.id],
+    )).toEqual([{ event_type: 'Created' }, { event_type: 'Cancelled' }]);
+  });
+
+  it('rejects invalid cancellation reasons without changing the draft or history', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Keep this draft open' })
+      .expect(201);
+
+    for (const reason of ['', '   ', 'x'.repeat(1001)]) {
+      const response = await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/cancel`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ version: created.body.version, reason });
+      expect(response.status, JSON.stringify(response.body)).toBe(400);
+      expect(response.body.code).toBe('INVALID_LESSON_CANCELLATION');
+      expect(response.body.fieldErrors.reason).toBeTruthy();
+    }
+
+    expect(await dataSource?.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
+      .toEqual([{ status: 'Open', version: 1 }]);
+    expect(await dataSource?.query('SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id', [created.body.id]))
+      .toEqual([{ event_type: 'Created' }]);
+  });
+
+  it('does not let another profile cancel the author’s draft', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Keep another profile’s draft private' })
+      .expect(201);
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/cancel`)
+      .send({ version: 1, reason: 'Unauthorized cancel attempt.' })
+      .expect(401);
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/cancel`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: 1, reason: 'Unauthorized cancel attempt.' })
+      .expect(404);
+
+    expect(await dataSource?.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
+      .toEqual([{ status: 'Open', version: 1 }]);
+    expect(await dataSource?.query('SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id', [created.body.id]))
+      .toEqual([{ event_type: 'Created' }]);
+  });
+
+  it('does not cancel a lesson that has already been submitted', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Do not cancel a submitted lesson' })
+      .expect(201);
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The handover omitted the current runbook.',
+        rootCause: null,
+        lessonType: 'Communication',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/cancel`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: created.body.version + 1, reason: 'Trying to cancel after submission.' })
+      .expect(409);
+
+    expect(await dataSource?.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
+      .toEqual([{ status: 'PMOEvaluation', version: 2 }]);
+    expect(await dataSource?.query('SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id', [created.body.id]))
+      .toEqual([{ event_type: 'Created' }, { event_type: 'Submitted' }]);
+  });
+
+  it('rolls back cancellation when recording its history fails', async () => {
+    if (!dataSource) throw new Error('The PostgreSQL test database did not start.');
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Cancellation must be atomic' })
+      .expect(201);
+
+    await dataSource.query(`
+      CREATE FUNCTION reject_lesson_cancellation_history() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.event_type = 'Cancelled' THEN RAISE EXCEPTION 'cancellation history write intentionally rejected'; END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER reject_lesson_cancellation_history_insert
+      BEFORE INSERT ON lesson_history FOR EACH ROW EXECUTE FUNCTION reject_lesson_cancellation_history();
+    `);
+
+    try {
+      await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/cancel`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ version: created.body.version, reason: 'This must not be committed alone.' })
+        .expect(500);
+
+      expect(await dataSource.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
+        .toEqual([{ status: 'Open', version: created.body.version }]);
+      expect(await dataSource.query('SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id', [created.body.id]))
+        .toEqual([{ event_type: 'Created' }]);
+    } finally {
+      await dataSource.query('DROP TRIGGER IF EXISTS reject_lesson_cancellation_history_insert ON lesson_history');
+      await dataSource.query('DROP FUNCTION IF EXISTS reject_lesson_cancellation_history()');
+    }
+  });
+
   it('lets the author complete an Open draft without adding an edit history event', async () => {
     const server = request(app!.getHttpServer());
     const created = await server

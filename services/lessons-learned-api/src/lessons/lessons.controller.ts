@@ -34,9 +34,11 @@ import {
   localProfileScheme,
 } from '../local-access-problem';
 import { CreateLessonRequest } from './create-lesson-request.dto';
+import { CancelLessonRequest } from './cancel-lesson-request.dto';
 import { LessonDraftResponse } from './lesson-response.dto';
 import { LessonConflictResponse } from './lesson-conflict-response.dto';
 import { LessonSubmissionValidationResponse } from './lesson-submission-validation-response.dto';
+import { LessonCancellationValidationResponse } from './lesson-cancellation-validation-response.dto';
 import { LessonsService } from './lessons.service';
 import { LessonProjectResponse } from './project-response.dto';
 import { SubmitLessonRequest } from './submit-lesson-request.dto';
@@ -92,6 +94,20 @@ export class LessonsController {
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
   ): Promise<LessonDraftResponse[]> {
     return this.lessons.getMyOpenDrafts(typeof header === 'string' ? header : undefined);
+  }
+
+  @Get('mine')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'List the selected profile’s Open and Archived own submissions' })
+  @ApiSecurity(localProfileScheme)
+  @ApiOkResponse({ type: LessonDraftResponse, isArray: true })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  getMySubmissions(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+  ): Promise<LessonDraftResponse[]> {
+    return this.lessons.getMySubmissions(typeof header === 'string' ? header : undefined);
   }
 
   @Patch(':id')
@@ -158,5 +174,45 @@ export class LessonsController {
     input: SubmitLessonRequest,
   ): Promise<LessonDraftResponse> {
     return this.lessons.submitOwnOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input);
+  }
+
+  @Post(':id/cancel')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Cancel an author-owned Open lesson with a reason' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson draft.' })
+  @ApiBody({ type: CancelLessonRequest })
+  @ApiOkResponse({ type: LessonDraftResponse })
+  @ApiBadRequestResponse({
+    type: LessonCancellationValidationResponse,
+    description: 'The cancellation reason is invalid; fieldErrors identifies the field to correct.',
+  })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not owned by the selected profile.' })
+  @ApiConflictResponse({
+    type: LessonConflictResponse,
+    description: 'The lesson is no longer Open or the cancelled version is stale.',
+  })
+  cancelOwnOpenDraft(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParseIntPipe) lessonId: number,
+    @Body(new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      expectedType: CancelLessonRequest,
+      exceptionFactory: (errors) => new BadRequestException({
+        code: 'INVALID_LESSON_CANCELLATION',
+        message: 'Enter a valid cancellation reason.',
+        fieldErrors: Object.fromEntries(errors.map((error) => [
+          error.property,
+          Object.values(error.constraints ?? {})[0] ?? 'Invalid value.',
+        ])),
+      }),
+    }))
+    input: CancelLessonRequest,
+  ): Promise<LessonDraftResponse> {
+    return this.lessons.cancelOwnOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input);
   }
 }
