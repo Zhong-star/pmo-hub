@@ -975,6 +975,85 @@
           "Lessons"
         ]
       }
+    },
+    "/api/lessons-learned/v1/lessons/{id}/reject": {
+      "post": {
+        "operationId": "LessonsController_rejectEvaluation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The numeric ID of the lesson under evaluation.",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectLessonRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonDraftResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The rejection reason is invalid; fieldErrors identifies the field to correct.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonRejectionValidationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected."
+          },
+          "403": {
+            "description": "The selected profile is not a PMO moderator."
+          },
+          "404": {
+            "description": "The lesson does not exist."
+          },
+          "409": {
+            "description": "The lesson is no longer awaiting PMO evaluation or the version is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonConflictResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable."
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Reject a lesson awaiting PMO evaluation with a recorded reason",
+        "tags": [
+          "Lessons"
+        ]
+      }
     }
   },
   "info": {
@@ -1369,7 +1448,8 @@
               "Submitted",
               "Cancelled",
               "Returned",
-              "Approved"
+              "Approved",
+              "Rejected"
             ]
           },
           "previousStatus": {
@@ -1907,6 +1987,50 @@
         },
         "required": [
           "version"
+        ]
+      },
+      "RejectLessonRequest": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "minimum": 1,
+            "example": 2
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "example": "This lesson duplicates existing guidance."
+          }
+        },
+        "required": [
+          "version",
+          "reason"
+        ]
+      },
+      "LessonRejectionValidationResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "INVALID_LESSON_REJECTION"
+          },
+          "message": {
+            "type": "string",
+            "example": "Enter a valid rejection reason."
+          },
+          "fieldErrors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "fieldErrors"
         ]
       }
     }

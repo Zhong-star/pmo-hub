@@ -2332,4 +2332,264 @@ describe('Lessons Learned draft registration', () => {
       .set('X-PMO-Local-User-ID', 'local-other-contributor')
       .expect(404);
   });
+
+  it('lets PMO reject an evaluation with a reason and keeps the archived lesson private to its author', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'A lesson rejected during PMO evaluation' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'A previous lesson already covers this scenario.',
+        rootCause: 'The lessons were not checked before the report was sent.',
+        lessonType: 'Future Prevention',
+        impact: 'Readers received duplicate guidance.',
+        recommendation: 'Search the existing lessons before adding a new one.',
+        applicability: 'Use when preparing a new lesson for PMO review.',
+      })
+      .expect(200);
+    const reason = 'This scenario is already covered by lesson #8.';
+
+    const rejected = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/reject`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version, reason })
+      .expect(200);
+
+    expect(rejected.body).toMatchObject({
+      id: created.body.id,
+      authorId: 'local-contributor',
+      updatedBy: 'local-pmo',
+      status: 'Archived',
+      version: submitted.body.version + 1,
+    });
+    await server
+      .get('/api/lessons-learned/v1/lessons/evaluation-queue')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body).toEqual([]));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.history.at(-1)).toMatchObject({
+        actorId: 'local-pmo',
+        eventType: 'Rejected',
+        previousStatus: 'PMOEvaluation',
+        newStatus: 'Archived',
+        reason,
+      }));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-other-contributor')
+      .expect(404);
+  });
+
+  it('requires a nonblank rejection reason of at most 1,000 characters', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Rejection reason boundary' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The submitted experience is incomplete.',
+        rootCause: 'Some required details are missing.',
+        lessonType: 'Future Prevention',
+        impact: 'The team could not apply the guidance.',
+        recommendation: 'Provide enough detail for PMO review.',
+        applicability: 'Use when preparing a new lesson.',
+      })
+      .expect(200);
+
+    for (const reason of ['', '   ', 'x'.repeat(1001)]) {
+      await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/reject`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, reason })
+        .expect(400)
+        .expect(({ body }) => {
+          expect(body.code).toBe('INVALID_LESSON_REJECTION');
+          expect(body.fieldErrors.reason).toBeDefined();
+        });
+    }
+
+    expect(await dataSource!.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
+      .toEqual([{ status: 'PMOEvaluation', version: submitted.body.version }]);
+
+    const maxLengthReason = 'x'.repeat(1000);
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/reject`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version, reason: maxLengthReason })
+      .expect(200);
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.history.at(-1).reason).toBe(maxLengthReason));
+  });
+
+  it('restricts rejection to PMO and validates the evaluation state and current version', async () => {
+    const server = request(app!.getHttpServer());
+    const open = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'A draft cannot be rejected' })
+      .expect(201);
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${open.body.id}/reject`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: open.body.version, reason: 'Not awaiting evaluation.' })
+      .expect(409)
+      .expect({
+        code: 'LESSON_NOT_AWAITING_EVALUATION',
+        message: 'Only lessons awaiting PMO evaluation can be rejected.',
+      });
+
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${open.body.id}/submit`)
+      .set('X-PMO-Local-USER-ID', 'local-contributor')
+      .send({
+        version: open.body.version,
+        title: open.body.title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The submitted experience needs PMO review.',
+        rootCause: 'The team did not identify the gap in time.',
+        lessonType: 'Future Prevention',
+        impact: 'The planned work needed additional effort.',
+        recommendation: 'Review the applicable process before release.',
+        applicability: 'Use for similar releases.',
+      })
+      .expect(200);
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${open.body.id}/reject`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: submitted.body.version, reason: 'A Contributor cannot decide.' })
+      .expect(403);
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${open.body.id}/reject`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version - 1, reason: 'This version is stale.' })
+      .expect(409)
+      .expect(({ body }) => expect(body.code).toBe('STALE_LESSON_VERSION'));
+    expect(await dataSource!.query('SELECT status, version FROM lessons WHERE id = $1', [open.body.id]))
+      .toEqual([{ status: 'PMOEvaluation', version: submitted.body.version }]);
+  });
+
+  it('rolls back rejection when the history event cannot be recorded', async () => {
+    if (!dataSource) throw new Error('The PostgreSQL test database did not start.');
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Rejection history is atomic' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The submitted experience does not apply to this module.',
+        rootCause: 'The submission is outside the intended scope.',
+        lessonType: 'Future Prevention',
+        impact: 'The entry could mislead other project teams.',
+        recommendation: 'Confirm the Lessons Learned scope first.',
+        applicability: 'Use for submissions to this module.',
+      })
+      .expect(200);
+    await dataSource.query(`
+      CREATE FUNCTION reject_rejection_history() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.event_type = 'Rejected' THEN RAISE EXCEPTION 'rejection history write intentionally rejected'; END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER reject_rejection_history_insert
+      BEFORE INSERT ON lesson_history FOR EACH ROW EXECUTE FUNCTION reject_rejection_history();
+    `);
+
+    try {
+      await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/reject`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, reason: 'This rejection must roll back.' })
+        .expect(500);
+      expect(await dataSource.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
+        .toEqual([{ status: 'PMOEvaluation', version: submitted.body.version }]);
+      expect(await dataSource.query(
+        'SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id',
+        [created.body.id],
+      )).toEqual([{ event_type: 'Created' }, { event_type: 'Submitted' }]);
+    } finally {
+      await dataSource.query('DROP TRIGGER IF EXISTS reject_rejection_history_insert ON lesson_history');
+      await dataSource.query('DROP FUNCTION IF EXISTS reject_rejection_history()');
+    }
+  });
+
+  it('records one rejection when two PMO decisions use the same evaluation version', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Only one rejection should win' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The lesson duplicates an existing submission.',
+        rootCause: 'Existing entries were not searched.',
+        lessonType: 'Future Prevention',
+        impact: 'The library could contain repeated guidance.',
+        recommendation: 'Search the library before submitting.',
+        applicability: 'Use for future lesson contributions.',
+      })
+      .expect(200);
+
+    const decisions = await Promise.all([
+      server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/reject`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, reason: 'First review decision.' }),
+      server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/reject`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, reason: 'Competing review decision.' }),
+    ]);
+
+    expect(decisions.map(({ status }) => status).sort()).toEqual([200, 409]);
+    expect(await dataSource!.query('SELECT status FROM lessons WHERE id = $1', [created.body.id]))
+      .toEqual([{ status: 'Archived' }]);
+    expect(await dataSource!.query(
+      "SELECT event_type, reason FROM lesson_history WHERE lesson_id = $1 AND event_type = 'Rejected'",
+      [created.body.id],
+    )).toHaveLength(1);
+  });
 });

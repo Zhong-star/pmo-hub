@@ -16,6 +16,7 @@ import {
   getPmoDrafts,
   getPmoEvaluationQueue,
   returnLesson as returnLessonRequest,
+  rejectLesson as rejectLessonRequest,
   submitLesson as submitLessonRequest,
   updateLessonDraft,
   type LessonDraft,
@@ -26,13 +27,14 @@ import {
   type PmoEvaluationQueueFilters,
   type CancelLessonBody,
   type ApproveLessonBody,
+  type RejectLessonBody,
   type SubmitLessonBody,
   type ReturnLessonBody,
   type UpdateLessonDraftBody,
 } from './api';
 import { DraftEditor } from './DraftEditor';
 import { ApprovalDialog } from './ApprovalDialogs';
-import { LessonSubmissionDetailsDialog, CancelLessonDialog } from './SubmissionDialogs';
+import { LessonSubmissionDetailsDialog, CancelLessonDialog, RejectLessonDialog } from './SubmissionDialogs';
 import { ReturnLessonDialog } from './ReturnLessonDialog';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
@@ -161,6 +163,7 @@ export function LessonsLearnedScreen() {
   const [selectedCancellationDraft, setSelectedCancellationDraft] = useState<LessonDraft | null>(null);
   const [selectedReturnLesson, setSelectedReturnLesson] = useState<LessonDetails | null>(null);
   const [selectedApprovalDraft, setSelectedApprovalDraft] = useState<LessonDraft | null>(null);
+  const [selectedRejectionDraft, setSelectedRejectionDraft] = useState<LessonDraft | null>(null);
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<number | null>(null);
   const [submissionSearch, setSubmissionSearch] = useState('');
   const [submissionProjectFilter, setSubmissionProjectFilter] = useState<SubmissionProjectFilter>({ kind: 'any' });
@@ -196,6 +199,7 @@ export function LessonsLearnedScreen() {
     setSelectedCancellationDraft(null);
     setSelectedReturnLesson(null);
     setSelectedApprovalDraft(null);
+    setSelectedRejectionDraft(null);
     setSelectedSubmissionId(null);
     setIsModuleMenuOpen(false);
   }, [resetSubmissionFilters]);
@@ -342,6 +346,7 @@ export function LessonsLearnedScreen() {
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
     setSelectedApprovalDraft(null);
+    setSelectedRejectionDraft(null);
     setSelectedSubmissionId(null);
     resetSubmissionFilters(modulePage);
   }, [modulePage, resetSubmissionFilters]);
@@ -390,6 +395,7 @@ export function LessonsLearnedScreen() {
     setSelectedCancellationDraft(null);
     setSelectedReturnLesson(null);
     setSelectedApprovalDraft(null);
+    setSelectedRejectionDraft(null);
     setSelectedSubmissionId(null);
   }, [isDefinitiveAccessFailure]);
 
@@ -490,6 +496,28 @@ export function LessonsLearnedScreen() {
     return latest;
   }
 
+
+  async function reloadRejectionEvaluation(lessonId: number): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before reloading an evaluation.');
+    const queue = await getPmoEvaluationQueue(profileId);
+    const latest = queue.find((lesson) => lesson.id === lessonId);
+    if (!latest) {
+      throw Object.assign(new Error('This lesson no longer awaits PMO evaluation.'), {
+        code: 'LESSON_NOT_AWAITING_EVALUATION',
+      });
+    }
+    return latest;
+  }
+
+  async function rejectEvaluation(lessonId: number, input: RejectLessonBody): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before rejecting a lesson.');
+    const rejected = await rejectLessonRequest(profileId, lessonId, input);
+    await refreshSubmissionQueries(profileId, lessonId);
+    return rejected;
+  }
+
   useEffect(() => {
     function handleStorageChange(event: StorageEvent) {
       if (event.key === null || event.key === LOCAL_USER_STORAGE_KEY) {
@@ -576,6 +604,7 @@ export function LessonsLearnedScreen() {
     setSelectedCancellationDraft(null);
     setSelectedReturnLesson(null);
     setSelectedApprovalDraft(null);
+    setSelectedRejectionDraft(null);
     setSelectedSubmissionId(null);
     setIsModuleMenuOpen(false);
   }
@@ -904,7 +933,7 @@ export function LessonsLearnedScreen() {
                             <th scope="col">Status</th>
                             {isLibraryPage && <th scope="col">Approved</th>}
                             {isPmoDraftsPage && <th scope="col">Updated</th>}
-                            {isPmoDraftsPage && <th scope="col">Actions</th>}
+                            {isPmoReviewListPage && <th scope="col">Actions</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -930,7 +959,7 @@ export function LessonsLearnedScreen() {
                                 ? <time dateTime={draft.approvedAt}>{formatUpdatedAt(draft.approvedAt)}</time>
                                 : 'Not available'}</td>}
                               {isPmoDraftsPage && <td><time dateTime={draft.updatedAt}>{formatUpdatedAt(draft.updatedAt)}</time></td>}
-                              {isPmoDraftsPage && <td>
+                              {isPmoReviewListPage && <td>
                                 <div className="submission-actions">
                                   {draft.status === 'Open' && (
                                     <>
@@ -954,6 +983,16 @@ export function LessonsLearnedScreen() {
                                         Cancel
                                       </button>
                                     </>
+                                  )}
+                                  {isPmoEvaluationQueuePage && draft.status === 'PMOEvaluation' && (
+                                    <button
+                                      className="draft-cancel"
+                                      type="button"
+                                      onClick={() => setSelectedRejectionDraft(draft)}
+                                      aria-label={`Reject ${draft.title}`}
+                                    >
+                                      Reject
+                                    </button>
                                   )}
                                 </div>
                               </td>}
@@ -1063,6 +1102,15 @@ export function LessonsLearnedScreen() {
                       onReload={reloadDraftFields}
                       onConfirm={cancelDraft}
                       onClose={() => setSelectedCancellationDraft(null)}
+                      onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
+                    />
+                  )}
+                  {selectedRejectionDraft && (
+                    <RejectLessonDialog
+                      draft={selectedRejectionDraft}
+                      onReload={reloadRejectionEvaluation}
+                      onConfirm={rejectEvaluation}
+                      onClose={() => setSelectedRejectionDraft(null)}
                       onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
                     />
                   )}

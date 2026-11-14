@@ -48,6 +48,8 @@ import { LessonsService } from './lessons.service';
 import { LessonProjectResponse } from './project-response.dto';
 import { SubmitLessonRequest } from './submit-lesson-request.dto';
 import { ReturnLessonRequest } from './return-lesson-request.dto';
+import { LessonRejectionValidationResponse } from './lesson-rejection-validation-response.dto';
+import { RejectLessonRequest } from './reject-lesson-request.dto';
 import { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import {
   LessonSubmissionsQuery,
@@ -386,5 +388,46 @@ export class LessonsController {
     input: ApproveLessonRequest,
   ): Promise<LessonDraftResponse> {
     return this.lessons.approveEvaluatedLesson(typeof header === 'string' ? header : undefined, lessonId, input);
+  }
+
+  @Post(':id/reject')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Reject a lesson awaiting PMO evaluation with a recorded reason' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson under evaluation.' })
+  @ApiBody({ type: RejectLessonRequest })
+  @ApiOkResponse({ type: LessonDraftResponse })
+  @ApiBadRequestResponse({
+    type: LessonRejectionValidationResponse,
+    description: 'The rejection reason is invalid; fieldErrors identifies the field to correct.',
+  })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile is not a PMO moderator.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist.' })
+  @ApiConflictResponse({
+    type: LessonConflictResponse,
+    description: 'The lesson is no longer awaiting PMO evaluation or the version is stale.',
+  })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  rejectEvaluation(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParseIntPipe) lessonId: number,
+    @Body(new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      expectedType: RejectLessonRequest,
+      exceptionFactory: (errors) => new BadRequestException({
+        code: 'INVALID_LESSON_REJECTION',
+        message: 'Enter a valid rejection reason.',
+        fieldErrors: Object.fromEntries(errors.map((error) => [
+          error.property,
+          Object.values(error.constraints ?? {})[0] ?? 'Invalid value.',
+        ])),
+      }),
+    }))
+    input: RejectLessonRequest,
+  ): Promise<LessonDraftResponse> {
+    return this.lessons.rejectEvaluation(typeof header === 'string' ? header : undefined, lessonId, input);
   }
 }

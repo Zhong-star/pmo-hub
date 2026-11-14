@@ -227,6 +227,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/lessons/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a lesson awaiting PMO evaluation with a recorded reason */
+        post: operations["LessonsController_rejectEvaluation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -336,7 +353,7 @@ export interface components {
             id: number;
             actorId: string;
             /** @enum {string} */
-            eventType: "Created" | "Submitted" | "Cancelled" | "Returned" | "Approved";
+            eventType: "Created" | "Submitted" | "Cancelled" | "Returned" | "Approved" | "Rejected";
             /** @enum {string|null} */
             previousStatus: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived" | null;
             /** @enum {string} */
@@ -488,6 +505,21 @@ export interface components {
         ApproveLessonRequest: {
             /** @example 4 */
             version: number;
+        };
+        RejectLessonRequest: {
+            /** @example 2 */
+            version: number;
+            /** @example This lesson duplicates existing guidance. */
+            reason: string;
+        };
+        LessonRejectionValidationResponse: {
+            /** @example INVALID_LESSON_REJECTION */
+            code: string;
+            /** @example Enter a valid rejection reason. */
+            message: string;
+            fieldErrors: {
+                [key: string]: string;
+            };
         };
     };
     responses: never;
@@ -1276,6 +1308,78 @@ export interface operations {
                 content?: never;
             };
             /** @description The lesson is no longer awaiting evaluation or its version is stale. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonConflictResponse"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LessonsController_rejectEvaluation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric ID of the lesson under evaluation. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectLessonRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDraftResponse"];
+                };
+            };
+            /** @description The rejection reason is invalid; fieldErrors identifies the field to correct. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonRejectionValidationResponse"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile is not a PMO moderator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson is no longer awaiting PMO evaluation or the version is stale. */
             409: {
                 headers: {
                     [name: string]: unknown;

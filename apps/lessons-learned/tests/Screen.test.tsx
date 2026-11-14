@@ -16,6 +16,7 @@ import {
   getPmoDrafts,
   getPmoEvaluationQueue,
   returnLesson,
+  rejectLesson,
   updateLessonDraft,
   type LessonDraft,
   type LessonDetails,
@@ -35,6 +36,7 @@ vi.mock('../src/api', () => ({
   getPmoDrafts: vi.fn(),
   getPmoEvaluationQueue: vi.fn(),
   returnLesson: vi.fn(),
+  rejectLesson: vi.fn(),
   updateLessonDraft: vi.fn(),
 }));
 
@@ -376,6 +378,64 @@ describe('Lessons Learned access check', () => {
     expect(title).toHaveValue('PMO typed corrections remain after rejection');
     expect(situation).toHaveValue('The approved runbook was absent from the handover.');
     expect(within(editor).getByText('Impact is required.')).toBeInTheDocument();
+  });
+
+  it('lets PMO confirm a rejection with a required reason and removes the lesson from the queue', async () => {
+    const submitted = lessonDraft({ id: 83, title: 'Duplicate rollout guidance', status: 'PMOEvaluation' });
+    const archived = lessonDraft({ ...submitted, status: 'Archived', updatedBy: 'local-pmo', version: submitted.version + 1 });
+    let isRejected = false;
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoEvaluationQueue).mockImplementation(async () => isRejected ? [] : [submitted]);
+    vi.mocked(rejectLesson).mockImplementation(async () => {
+      isRejected = true;
+      return archived;
+    });
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo', 0, 'evaluation-queue');
+    const table = await screen.findByRole('table', { name: 'Lessons awaiting PMO evaluation, oldest submission first' });
+    const row = within(table).getByRole('row', { name: /Duplicate rollout guidance/ });
+    await user.click(within(row).getByRole('button', { name: 'Reject Duplicate rollout guidance' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Reject lesson' });
+    const reason = within(dialog).getByRole('textbox', { name: 'Reason for rejection' });
+    expect(reason).toHaveAttribute('maxLength', '1000');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm rejection' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Enter a reason for rejecting this lesson.');
+    expect(rejectLesson).not.toHaveBeenCalled();
+
+    await user.type(reason, 'This guidance is already recorded.');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm rejection' }));
+
+    expect(rejectLesson).toHaveBeenCalledWith('local-pmo', submitted.id, {
+      version: submitted.version,
+      reason: 'This guidance is already recorded.',
+    });
+    expect(await screen.findByText('No lessons are awaiting PMO evaluation.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Reject lesson' })).not.toBeInTheDocument();
+  });
+
+  it('shows the rejection reason in the author’s My Submissions history', async () => {
+    const archived = lessonDraft({ id: 84, title: 'Rejected lesson in My Submissions', status: 'Archived', updatedBy: 'local-pmo', version: 3 });
+    const reason = 'This lesson duplicates existing guidance.';
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getMySubmissions).mockResolvedValue([archived]);
+    vi.mocked(getLessonDetails).mockResolvedValue({
+      ...lessonDetails(archived),
+      history: [
+        { id: 1, actorId: archived.authorId, eventType: 'Created', previousStatus: null, newStatus: 'Open', reason: null, occurredAt: archived.createdAt },
+        { id: 2, actorId: archived.authorId, eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation', reason: null, occurredAt: archived.updatedAt },
+        { id: 3, actorId: 'local-pmo', eventType: 'Rejected', previousStatus: 'PMOEvaluation', newStatus: 'Archived', reason, occurredAt: archived.updatedAt },
+      ],
+    });
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor', 0, 'my-submissions');
+    await screen.findByRole('heading', { name: 'My Submissions' });
+    await user.click(await screen.findByRole('button', { name: `View ${archived.title}` }));
+
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    expect(await within(details).findByText(`Rejection reason: ${reason}`)).toBeInTheDocument();
   });
 
   it('does not expose the evaluation queue or call its API for a Contributor deep link', async () => {
