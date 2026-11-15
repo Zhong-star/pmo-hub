@@ -1,6 +1,6 @@
 /* This file is generated from services/lessons-learned-api/openapi/lessons-learned-v1.json. Do not edit directly. */
 import axios from 'axios';
-import type { paths } from './lessons-learned-api';
+import type { components, paths } from './lessons-learned-api';
 
 export const LESSONS_LEARNED_HEALTH_PATH = '/api/lessons-learned/v1/health' satisfies keyof paths;
 export const LESSONS_LEARNED_HOME_PATH = '/api/lessons-learned/v1/home' satisfies keyof paths;
@@ -8,9 +8,16 @@ export const LESSONS_LEARNED_LESSONS_PATH = '/api/lessons-learned/v1/lessons' sa
 export const LESSONS_LEARNED_PROJECTS_PATH = '/api/lessons-learned/v1/lessons/projects' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMISSIONS_PATH = '/api/lessons-learned/v1/lessons/mine' satisfies keyof paths;
 export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '/api/lessons-learned/v1/lessons/pmo-drafts' satisfies keyof paths;
+export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '/api/lessons-learned/v1/lessons/evaluation-queue' satisfies keyof paths;
+export const LESSONS_LEARNED_EVALUATION_PROJECTS_PATH = '/api/lessons-learned/v1/lessons/evaluation-queue/projects' satisfies keyof paths;
+export const LESSONS_LEARNED_LIBRARY_PATH = '/api/lessons-learned/v1/lessons/library' satisfies keyof paths;
 export const LESSONS_LEARNED_DRAFT_PATH = '/api/lessons-learned/v1/lessons/{id}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMIT_PATH = '/api/lessons-learned/v1/lessons/{id}/submit' satisfies keyof paths;
+export const LESSONS_LEARNED_RETURN_PATH = '/api/lessons-learned/v1/lessons/{id}/return' satisfies keyof paths;
 export const LESSONS_LEARNED_CANCEL_PATH = '/api/lessons-learned/v1/lessons/{id}/cancel' satisfies keyof paths;
+export const LESSONS_LEARNED_APPROVE_PATH = '/api/lessons-learned/v1/lessons/{id}/approve' satisfies keyof paths;
+export const LESSONS_LEARNED_REJECT_PATH = '/api/lessons-learned/v1/lessons/{id}/reject' satisfies keyof paths;
+export const LESSONS_LEARNED_CLOSE_PATH = '/api/lessons-learned/v1/lessons/{id}/close' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
@@ -18,15 +25,38 @@ export type LessonDetails = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['get']['res
 export type LessonHistoryEvent = LessonDetails['history'][number];
 export type LessonSubmissionsFilters = NonNullable<paths[typeof LESSONS_LEARNED_SUBMISSIONS_PATH]['get']['parameters']['query']>;
 export type PmoDraftsFilters = NonNullable<paths[typeof LESSONS_LEARNED_PMO_DRAFTS_PATH]['get']['parameters']['query']>;
+export type LessonPage = components['schemas']['LessonPage'];
+type PageParameters = { paged: 'true'; cursor?: string };
+export type PmoEvaluationQueueFilters = Omit<NonNullable<paths[typeof LESSONS_LEARNED_EVALUATION_QUEUE_PATH]['get']['parameters']['query']>, 'paged' | 'cursor' | 'limit'>;
 export type CreateLessonDraftBody = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['post']['requestBody']['content']['application/json'];
 export type LessonProject = paths[typeof LESSONS_LEARNED_PROJECTS_PATH]['get']['responses'][200]['content']['application/json'][number];
-export type UpdateLessonDraftBody = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['patch']['requestBody']['content']['application/json'];
-export type SubmitLessonBody = paths[typeof LESSONS_LEARNED_SUBMIT_PATH]['post']['requestBody']['content']['application/json'];
-export type CancelLessonBody = paths[typeof LESSONS_LEARNED_CANCEL_PATH]['post']['requestBody']['content']['application/json'];
+export type UpdateLessonDraftBody = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['patch']['requestBody']['content']['application/json'] & { version: number; etag?: string };
+export type SubmitLessonBody = paths[typeof LESSONS_LEARNED_SUBMIT_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
+export type ReturnLessonBody = paths[typeof LESSONS_LEARNED_RETURN_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
+export type CancelLessonBody = paths[typeof LESSONS_LEARNED_CANCEL_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
+export type ApproveLessonBody = paths[typeof LESSONS_LEARNED_APPROVE_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
+export type RejectLessonBody = paths[typeof LESSONS_LEARNED_REJECT_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
+export type CloseLessonBody = paths[typeof LESSONS_LEARNED_CLOSE_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
 export const api = axios.create();
+api.defaults.headers.common.Accept = 'application/json, application/problem+json';
+
+api.interceptors.response.use(undefined, (error: unknown) => {
+  if (axios.isAxiosError(error) && error.response &&
+    String(error.response.headers['content-type']).startsWith('application/problem+json')) {
+    const problem = error.response.data as Partial<components['schemas']['LessonProblem']>;
+    const fieldErrors = Object.fromEntries((problem.errors ?? []).map(({ path, message }) => [path, message]));
+    error.response.data = {
+      ...problem,
+      code: problem.code === 'PRECONDITION_FAILED' ? 'STALE_LESSON_VERSION' : problem.code,
+      message: problem.detail,
+      ...(Object.keys(fieldErrors).length ? { fieldErrors } : {}),
+    };
+  }
+  return Promise.reject(error);
+});
 
 export async function getHealth(): Promise<HealthResponse> {
   const { data } = await api.get<HealthResponse>(LESSONS_LEARNED_HEALTH_PATH, {
@@ -78,6 +108,50 @@ export async function getPmoDrafts(localUserId: string, filters: PmoDraftsFilter
   return data;
 }
 
+export function getPmoEvaluationQueue(localUserId: string, filters?: PmoEvaluationQueueFilters): Promise<LessonDraft[]>;
+export function getPmoEvaluationQueue(localUserId: string, filters: PmoEvaluationQueueFilters, page: PageParameters): Promise<LessonPage | LessonDraft[]>;
+export async function getPmoEvaluationQueue(
+  localUserId: string,
+  filters: PmoEvaluationQueueFilters = {},
+  page?: PageParameters,
+): Promise<LessonPage | LessonDraft[]> {
+  const { data } = await api.get<LessonPage | LessonDraft[]>(LESSONS_LEARNED_EVALUATION_QUEUE_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+    params: page ? { ...filters, ...page } : filters,
+  });
+
+  return data;
+}
+
+export async function getEvaluationProjectSnapshots(localUserId: string): Promise<LessonProject[]> {
+  try {
+    const { data } = await api.get<LessonProject[]>(LESSONS_LEARNED_EVALUATION_PROJECTS_PATH, {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    });
+    return data;
+  } catch (error) {
+    if (!axios.isAxiosError(error) || error.response?.status !== 404) throw error;
+    const legacy = await getPmoEvaluationQueue(localUserId);
+    return legacy.flatMap(({ projectId, projectName }) =>
+      projectId && projectName ? [{ id: projectId, name: projectName }] : [],
+    );
+  }
+}
+
+export function getLibrary(localUserId: string): Promise<LessonDraft[]>;
+export function getLibrary(localUserId: string, page: PageParameters): Promise<LessonPage | LessonDraft[]>;
+export async function getLibrary(localUserId: string, page?: PageParameters): Promise<LessonPage | LessonDraft[]> {
+  const { data } = await api.get<LessonPage | LessonDraft[]>(LESSONS_LEARNED_LIBRARY_PATH, {
+    ...(page ? { params: page } : {}),
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
 export async function getLessonDetails(localUserId: string, lessonId: number): Promise<LessonDetails> {
   const { data } = await api.get<LessonDetails>(LESSONS_LEARNED_DRAFT_PATH.replace('{id}', String(lessonId)), {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
@@ -114,9 +188,10 @@ export async function updateLessonDraft(
   lessonId: number,
   input: UpdateLessonDraftBody,
 ): Promise<LessonDraft> {
-  const { data } = await api.patch<LessonDraft>(LESSONS_LEARNED_DRAFT_PATH.replace('{id}', String(lessonId)), input, {
+  const { etag, ...body } = input;
+  const { data } = await api.patch<LessonDraft>(LESSONS_LEARNED_DRAFT_PATH.replace('{id}', String(lessonId)), body, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
-    headers: { 'X-PMO-Local-User-ID': localUserId },
+    headers: { 'X-PMO-Local-User-ID': localUserId, ...(etag ? { 'If-Match': etag } : {}) },
   });
 
   return data;
@@ -127,9 +202,24 @@ export async function submitLesson(
   lessonId: number,
   input: SubmitLessonBody,
 ): Promise<LessonDraft> {
-  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_SUBMIT_PATH.replace('{id}', String(lessonId)), input, {
+  const { etag, ...body } = input;
+  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_SUBMIT_PATH.replace('{id}', String(lessonId)), body, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
-    headers: { 'X-PMO-Local-User-ID': localUserId },
+    headers: { 'X-PMO-Local-User-ID': localUserId, ...(etag ? { 'If-Match': etag } : {}) },
+  });
+
+  return data;
+}
+
+export async function returnLesson(
+  localUserId: string,
+  lessonId: number,
+  input: ReturnLessonBody,
+): Promise<LessonDraft> {
+  const { etag, ...body } = input;
+  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_RETURN_PATH.replace('{id}', String(lessonId)), body, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId, ...(etag ? { 'If-Match': etag } : {}) },
   });
 
   return data;
@@ -140,9 +230,51 @@ export async function cancelLesson(
   lessonId: number,
   input: CancelLessonBody,
 ): Promise<LessonDraft> {
-  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_CANCEL_PATH.replace('{id}', String(lessonId)), input, {
+  const { etag, ...body } = input;
+  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_CANCEL_PATH.replace('{id}', String(lessonId)), body, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
-    headers: { 'X-PMO-Local-User-ID': localUserId },
+    headers: { 'X-PMO-Local-User-ID': localUserId, ...(etag ? { 'If-Match': etag } : {}) },
+  });
+
+  return data;
+}
+
+export async function approveLesson(
+  localUserId: string,
+  lessonId: number,
+  input: ApproveLessonBody,
+): Promise<LessonDraft> {
+  const { etag, ...body } = input;
+  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_APPROVE_PATH.replace('{id}', String(lessonId)), body, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId, ...(etag ? { 'If-Match': etag } : {}) },
+  });
+  return data;
+}
+
+export async function rejectLesson(
+  localUserId: string,
+  lessonId: number,
+  input: RejectLessonBody,
+): Promise<LessonDraft> {
+  const { etag, ...body } = input;
+  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_REJECT_PATH.replace('{id}', String(lessonId)), body, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId, ...(etag ? { 'If-Match': etag } : {}) },
+  });
+
+  return data;
+}
+
+export async function closeLesson(
+  localUserId: string,
+  lessonId: number,
+  input: CloseLessonBody,
+): Promise<LessonDraft> {
+  const { etag, ...body } = input;
+  const { data } = await api.post<LessonDraft>(LESSONS_LEARNED_CLOSE_PATH.replace('{id}', String(lessonId)), body, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId, ...(etag ? { 'If-Match': etag } : {}) },
   });
 
   return data;

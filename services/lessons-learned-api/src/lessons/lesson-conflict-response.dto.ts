@@ -1,6 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export const lessonConflictCodes = ['STALE_LESSON_VERSION', 'LESSON_NOT_OPEN'] as const;
+export const lessonConflictCodes = [
+  'STALE_LESSON_VERSION',
+  'LESSON_NOT_OPEN',
+  'LESSON_NOT_AWAITING_EVALUATION',
+  'LESSON_NOT_IN_EVALUATION',
+  'LESSON_NOT_APPROVED',
+] as const;
 
 export class LessonConflictResponse {
   @ApiProperty({ enum: lessonConflictCodes, type: String })

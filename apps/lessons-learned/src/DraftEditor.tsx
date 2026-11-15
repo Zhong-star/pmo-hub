@@ -4,7 +4,7 @@ import type { LessonDraft, LessonProject, SubmitLessonBody, UpdateLessonDraftBod
 import { useDialogFocus } from './useDialogFocus';
 import './DraftEditor.css';
 
-type DraftFields = Required<Omit<UpdateLessonDraftBody, 'version'>>;
+type DraftFields = Required<Omit<UpdateLessonDraftBody, 'version' | 'etag'>>;
 
 type DraftEditorProps = {
   draft: LessonDraft | null;
@@ -19,6 +19,7 @@ type DraftEditorProps = {
   onViewCurrent?: (draftId: number) => void;
   getReturnFocusTarget?: (draftId: number | null) => HTMLElement | null;
   onRegisterNavigationCloseRequest?: (requestClose: (() => boolean) | null) => void;
+  canEditEvaluation?: boolean;
   onSave: (input: UpdateLessonDraftBody, draftId: number | null) => Promise<LessonDraft>;
   onSubmit: (input: SubmitLessonBody, draftId: number) => Promise<LessonDraft>;
   onReload: (draftId: number) => Promise<LessonDraft>;
@@ -135,6 +136,7 @@ export function DraftEditor({
   onViewCurrent,
   getReturnFocusTarget,
   onRegisterNavigationCloseRequest,
+  canEditEvaluation = false,
   onSave,
   onSubmit,
   onReload,
@@ -143,10 +145,13 @@ export function DraftEditor({
   const [savedFields, setSavedFields] = useState(() => toFormValues(draft));
   const [draftId, setDraftId] = useState(draft?.id ?? null);
   const [version, setVersion] = useState(draft?.version ?? 0);
+  const [etag, setETag] = useState(draft?.etag);
+  const isEvaluationDraft = draft?.status === 'PMOEvaluation';
+  const isEvaluationEdit = isEvaluationDraft && canEditEvaluation;
   const [error, setError] = useState<string | null>(null);
   const [titleError, setTitleError] = useState<string | null>(null);
   const [submissionFieldErrors, setSubmissionFieldErrors] = useState<SubmissionFieldErrors>({});
-  const [isSubmitted, setIsSubmitted] = useState(draft?.status === 'PMOEvaluation');
+  const [isSubmitted, setIsSubmitted] = useState(isEvaluationDraft && !canEditEvaluation);
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
@@ -191,6 +196,9 @@ export function DraftEditor({
       ? [{ ...selectedProject, isSavedSnapshot: false, isUnavailableSelection: true }]
       : []),
   ];
+  const currentStatusError = isEvaluationEdit
+    ? 'This lesson is no longer in PMO evaluation. Your changes are still here; saving is disabled. View its current status and history below.'
+    : 'This lesson is no longer Open. Your changes are still here; saving and submitting are disabled. View its current status and history below.';
 
   useDialogFocus(dialogRef, titleRef, () => getReturnFocusTarget?.(draftId) ?? null);
 
@@ -248,21 +256,28 @@ export function DraftEditor({
     setHasConflict(false);
     setIsSaved(false);
     try {
-      const updated = await onSave({ ...fields, title, version }, draftId);
+      const updated = await onSave({ ...fields, title, version, ...(etag ? { etag } : {}) }, draftId);
       const nextFields = toFormValues(updated);
       setFields(nextFields);
       setSavedFields(nextFields);
       setDraftId(updated.id);
       setVersion(updated.version);
+      setETag(updated.etag);
       setIsSaved(true);
     } catch (saveError) {
-      if (getApiErrorCode(saveError) === 'STALE_LESSON_VERSION') {
+      const serverFieldErrors = getApiFieldErrors(saveError);
+      if (serverFieldErrors) {
+        setSubmissionFieldErrors(serverFieldErrors);
+        const firstField = Object.keys(serverFieldErrors)[0] as keyof DraftFields | undefined;
+        if (firstField) pendingSubmissionFocusRef.current = firstField;
+        setError('Correct the indicated fields before saving. Your changes are still here.');
+      } else if (getApiErrorCode(saveError) === 'STALE_LESSON_VERSION') {
         setHasConflict(true);
         setError('This draft changed after you opened it. Your edits are still here; reload the latest version to continue.');
-      } else if (getApiErrorCode(saveError) === 'LESSON_NOT_OPEN') {
+      } else if (['LESSON_NOT_OPEN', 'LESSON_NOT_IN_EVALUATION'].includes(getApiErrorCode(saveError) ?? '')) {
         setIsLessonNotOpen(true);
         setHasConflict(false);
-        setError('This lesson is no longer Open. Your changes are still here; saving and submitting are disabled. View its current status and history below.');
+        setError(currentStatusError);
       } else {
         setError('The draft could not be saved. Your changes are still here; try again.');
       }
@@ -308,19 +323,23 @@ export function DraftEditor({
     try {
       let submittedDraftId = draftId;
       let submittedVersion = version;
+      let submittedETag = etag;
       if (submittedDraftId === null) {
         const created = await onSave({ ...fields, title, version }, null);
         submittedDraftId = created.id;
         submittedVersion = created.version;
+        submittedETag = created.etag;
         const saved = toFormValues(created);
         setFields(saved);
         setSavedFields(saved);
         setDraftId(created.id);
         setVersion(created.version);
+        setETag(created.etag);
       }
 
       const input = {
         version: submittedVersion,
+        ...(submittedETag ? { etag: submittedETag } : {}),
         title,
         projectId: fields.projectId,
         projectName: fields.projectName,
@@ -339,6 +358,7 @@ export function DraftEditor({
       setSavedFields(nextFields);
       setDraftId(submitted.id);
       setVersion(submitted.version);
+      setETag(submitted.etag);
       setIsSubmitted(true);
       setIsSaved(false);
     } catch (submitError) {
@@ -354,7 +374,7 @@ export function DraftEditor({
       } else if (getApiErrorCode(submitError) === 'LESSON_NOT_OPEN') {
         setIsLessonNotOpen(true);
         setHasConflict(false);
-        setError('This lesson is no longer Open. Your changes are still here; saving and submitting are disabled. View its current status and history below.');
+        setError(currentStatusError);
       } else {
         setError('The lesson could not be submitted. Your changes are still here; try again.');
       }
@@ -376,14 +396,15 @@ export function DraftEditor({
       setSavedFields(latestFields);
       setDraftId(latest.id);
       setVersion(latest.version);
+      setETag(latest.etag);
       setError(null);
       setHasConflict(false);
       setIsSaved(false);
     } catch (reloadError) {
-      if (getApiErrorCode(reloadError) === 'LESSON_NOT_OPEN') {
+      if (['LESSON_NOT_OPEN', 'LESSON_NOT_IN_EVALUATION'].includes(getApiErrorCode(reloadError) ?? '')) {
         setIsLessonNotOpen(true);
         setHasConflict(false);
-        setError('This lesson is no longer Open. Your changes are still here; saving and submitting are disabled. View its current status and history below.');
+        setError(currentStatusError);
       } else {
         setError('The latest version could not be loaded. Your edits are still here; try again.');
       }
@@ -421,7 +442,7 @@ export function DraftEditor({
         <form className="draft-editor-form" noValidate onSubmit={save}>
           <div className="draft-editor-heading">
             <div>
-              {draftId !== null && <p className="draft-editor-eyebrow">{isSubmitted ? `Lesson #${draftId} · PMO evaluation` : `Draft #${draftId} · Open`}</p>}
+              {draftId !== null && <p className="draft-editor-eyebrow">{isSubmitted || isEvaluationDraft ? `Lesson #${draftId} · PMO evaluation` : `Draft #${draftId} · Open`}</p>}
               <h2 id="draft-editor-title">{isSubmitted ? 'Lesson submitted' : draftId === null ? 'Create lesson' : 'Edit lesson'}</h2>
             </div>
             <button className="draft-editor-close" type="button" aria-label="Close editor" disabled={isSaving || isReloading} onClick={requestClose}>
@@ -612,7 +633,7 @@ export function DraftEditor({
 
           {Object.keys(submissionFieldErrors).length > 0 && (
             <div className="draft-editor-error" role="alert" aria-label="Submission errors">
-              <p>Review these fields before submitting:</p>
+              <p>{isEvaluationEdit ? 'Review these fields before saving:' : 'Review these fields before submitting:'}</p>
               <ul>
                 {Object.entries(submissionFieldErrors).map(([field, message]) => (
                   <li key={field}>{submissionFieldLabels[field as keyof DraftFields]}: {message}</li>

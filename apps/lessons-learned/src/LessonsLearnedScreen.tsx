@@ -1,29 +1,46 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { WorkspaceSidebar } from '../../shared-ui/src/WorkspaceSidebar';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { useThemePreference } from '../../shared-ui/src/theme';
 import {
+  approveLesson as approveLessonRequest,
+  closeLesson as closeLessonRequest,
   cancelLesson as cancelLessonRequest,
   createLessonDraft,
   getHome,
+  getEvaluationProjectSnapshots,
+  getLibrary,
   getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
   getMySubmissions,
   getPmoDrafts,
+  getPmoEvaluationQueue,
+  returnLesson as returnLessonRequest,
+  rejectLesson as rejectLessonRequest,
   submitLesson as submitLessonRequest,
   updateLessonDraft,
   type LessonDraft,
+  type LessonPage,
+  type LessonDetails,
   type LessonProject,
   type LessonSubmissionsFilters,
   type PmoDraftsFilters,
+  type PmoEvaluationQueueFilters,
   type CancelLessonBody,
+  type ApproveLessonBody,
+  type RejectLessonBody,
+  type CloseLessonBody,
   type SubmitLessonBody,
+  type ReturnLessonBody,
   type UpdateLessonDraftBody,
 } from './api';
 import { DraftEditor } from './DraftEditor';
-import { LessonSubmissionDetailsDialog, CancelLessonDialog } from './SubmissionDialogs';
+import { ApprovalDialog } from './ApprovalDialogs';
+import { ClosureDialog } from './ClosureDialog';
+import { LessonSubmissionDetailsDialog, CancelLessonDialog, RejectLessonDialog } from './SubmissionDialogs';
+import { ReturnLessonDialog } from './ReturnLessonDialog';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
 const HISTORY_POSITION_KEY = '__pmoHubLessonsLearnedHistoryPosition';
@@ -67,12 +84,14 @@ function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
   return role === 'LESSONS_MODERATOR' ? 'PMO' : 'Contributor';
 }
 
-type ModulePage = 'home' | 'my-submissions' | 'pmo-drafts';
+type ModulePage = 'home' | 'my-submissions' | 'pmo-drafts' | 'evaluation-queue' | 'library';
 
 function readModulePage(): ModulePage {
   const page = new URLSearchParams(window.location.search).get('page');
   if (page === 'my-submissions') return 'my-submissions';
   if (page === 'pmo-drafts') return 'pmo-drafts';
+  if (page === 'evaluation-queue') return 'evaluation-queue';
+  if (page === 'library') return 'library';
   return 'home';
 }
 
@@ -122,7 +141,7 @@ function readProjectFilterOptionValue(value: string): SubmissionProjectFilter {
 
 function getProjectFilterOptions(
   catalogProjects: LessonProject[],
-  submissions: LessonDraft[],
+  submissions: Pick<LessonDraft, 'projectId' | 'projectName'>[],
 ): LessonProject[] {
   const projectsById = new Map<string, LessonProject>();
   for (const submission of submissions) {
@@ -136,6 +155,16 @@ function getProjectFilterOptions(
   return [...projectsById.values()];
 }
 
+function flattenLessonPages(pages: (LessonPage | LessonDraft[])[]): LessonDraft[] {
+  const legacy = pages.find(Array.isArray);
+  if (legacy) return legacy;
+  const byId = new Map<number, LessonDraft>();
+  for (const page of pages) {
+    if (!Array.isArray(page)) for (const lesson of page.items) byId.set(lesson.id, lesson);
+  }
+  return Array.from(byId.values());
+}
+
 export function LessonsLearnedScreen() {
   const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
   const [selectionGeneration, setSelectionGeneration] = useState(0);
@@ -147,6 +176,10 @@ export function LessonsLearnedScreen() {
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [selectedDraft, setSelectedDraft] = useState<LessonDraft | null>(null);
   const [selectedCancellationDraft, setSelectedCancellationDraft] = useState<LessonDraft | null>(null);
+  const [selectedReturnLesson, setSelectedReturnLesson] = useState<LessonDetails | null>(null);
+  const [selectedApprovalDraft, setSelectedApprovalDraft] = useState<LessonDraft | null>(null);
+  const [selectedRejectionDraft, setSelectedRejectionDraft] = useState<LessonDraft | null>(null);
+  const [selectedClosureDraft, setSelectedClosureDraft] = useState<LessonDraft | null>(null);
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<number | null>(null);
   const [submissionSearch, setSubmissionSearch] = useState('');
   const [submissionProjectFilter, setSubmissionProjectFilter] = useState<SubmissionProjectFilter>({ kind: 'any' });
@@ -180,6 +213,10 @@ export function LessonsLearnedScreen() {
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
+    setSelectedReturnLesson(null);
+    setSelectedApprovalDraft(null);
+    setSelectedRejectionDraft(null);
+    setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
     setIsModuleMenuOpen(false);
   }, [resetSubmissionFilters]);
@@ -230,14 +267,21 @@ export function LessonsLearnedScreen() {
   const isHomePage = selectedProfileId !== null && hasUsableHomeData;
   const isPmo = homeQuery.data?.profile.role === 'LESSONS_MODERATOR';
   const isPmoDraftsPage = modulePage === 'pmo-drafts' && isPmo;
+  const isPmoEvaluationQueuePage = modulePage === 'evaluation-queue' && isPmo;
+  const isPmoReviewListPage = isPmoDraftsPage || isPmoEvaluationQueuePage;
   const isMySubmissionsPage = modulePage === 'my-submissions';
+  const isLibraryPage = modulePage === 'library';
+  const isSubmissionTablePage = isPmoReviewListPage || isLibraryPage;
   const showHomeRecheckError = isHomePage && homeQuery.isError && !homeQuery.isFetching;
   const isEditorOpen = isCreateFormOpen || selectedDraft !== null;
-  const submissionsFilters: LessonSubmissionsFilters = {
+  const commonSubmissionFilters: PmoEvaluationQueueFilters = {
     ...(submissionSearch.trim() ? { search: submissionSearch.trim() } : {}),
     ...(submissionProjectFilter.kind === 'project' ? { projectId: submissionProjectFilter.id } : {}),
     ...(submissionProjectFilter.kind === 'without-project' ? { withoutProject: true } : {}),
     ...(submissionLessonType ? { lessonType: submissionLessonType } : {}),
+  };
+  const submissionsFilters: LessonSubmissionsFilters = {
+    ...commonSubmissionFilters,
     ...(submissionStatus ? { status: submissionStatus } : {}),
   };
   const pmoDraftFilters: PmoDraftsFilters = {
@@ -262,8 +306,33 @@ export function LessonsLearnedScreen() {
     retry: false,
     refetchOnWindowFocus: true,
   });
+  const evaluationQueueQuery = useInfiniteQuery({
+    queryKey: ['lessons-learned-evaluation-queue', selectedProfileId, commonSubmissionFilters],
+    queryFn: ({ pageParam }) => getPmoEvaluationQueue(selectedProfileId ?? '', commonSubmissionFilters, { paged: 'true', cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => Array.isArray(lastPage) ? undefined : lastPage.page.nextCursor ?? undefined,
+    enabled: isHomePage && isPmoEvaluationQueuePage,
+    gcTime: 0,
+    networkMode: 'always',
+    retry: false,
+    refetchOnWindowFocus: true,
+  });
+  const libraryQuery = useInfiniteQuery({
+    queryKey: ['lessons-learned-library', selectedProfileId],
+    queryFn: ({ pageParam }) => getLibrary(selectedProfileId ?? '', { paged: 'true', cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => Array.isArray(lastPage) ? undefined : lastPage.page.nextCursor ?? undefined,
+    enabled: isHomePage && isLibraryPage,
+    networkMode: 'always',
+    retry: false,
+    refetchOnWindowFocus: true,
+  });
   const projectOptionsQuery = useQuery({
-    queryKey: ['lessons-learned-project-options', selectedProfileId, isPmoDraftsPage ? 'pmo' : 'mine'],
+    queryKey: [
+      'lessons-learned-project-options',
+      selectedProfileId,
+      isPmoDraftsPage ? 'pmo-drafts' : 'mine',
+    ],
     queryFn: () => isPmoDraftsPage
       ? getPmoDrafts(selectedProfileId ?? '')
       : getMySubmissions(selectedProfileId ?? ''),
@@ -271,10 +340,17 @@ export function LessonsLearnedScreen() {
     networkMode: 'always',
     retry: false,
   });
+  const evaluationProjectsQuery = useQuery({
+    queryKey: ['lessons-learned-project-options', selectedProfileId, 'evaluation-queue'],
+    queryFn: () => getEvaluationProjectSnapshots(selectedProfileId ?? ''),
+    enabled: isHomePage && isPmoEvaluationQueuePage,
+    networkMode: 'always',
+    retry: false,
+  });
   const submissionDetailsQuery = useQuery({
     queryKey: ['lessons-learned-submission-details', selectedProfileId, selectedSubmissionId],
     queryFn: () => getLessonDetails(selectedProfileId ?? '', selectedSubmissionId ?? 0),
-    enabled: isHomePage && (isMySubmissionsPage || isPmoDraftsPage) && selectedSubmissionId !== null,
+    enabled: isHomePage && (isMySubmissionsPage || isPmoReviewListPage || isLibraryPage) && selectedSubmissionId !== null,
     networkMode: 'always',
     retry: false,
   });
@@ -296,6 +372,9 @@ export function LessonsLearnedScreen() {
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
+    setSelectedApprovalDraft(null);
+    setSelectedRejectionDraft(null);
+    setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
     resetSubmissionFilters(modulePage);
   }, [modulePage, resetSubmissionFilters]);
@@ -304,14 +383,25 @@ export function LessonsLearnedScreen() {
   const projectsQuery = useQuery({
     queryKey: ['lessons-learned-projects', selectedProfileId],
     queryFn: () => getLessonProjects(selectedProfileId ?? ''),
-    enabled: isHomePage && (isMySubmissionsPage || isPmoDraftsPage),
+    enabled: isHomePage && (isMySubmissionsPage || isPmoReviewListPage),
     networkMode: 'always',
     retry: false,
   });
-  const projectFilterOptions = getProjectFilterOptions(projectsQuery.data ?? [], projectOptionsQuery.data ?? []);
+  const currentProjectOptionsQuery = isPmoEvaluationQueuePage ? evaluationProjectsQuery : projectOptionsQuery;
+  const projectFilterOptions = isPmoEvaluationQueuePage
+    ? getProjectFilterOptions(projectsQuery.data ?? [], (evaluationProjectsQuery.data ?? []).map(({ id, name }) => ({ projectId: id, projectName: name })))
+    : getProjectFilterOptions(projectsQuery.data ?? [], projectOptionsQuery.data ?? []);
   const authorFilterOptions = [...new Set((projectOptionsQuery.data ?? []).map(({ authorId }) => authorId))].sort();
-  const currentSubmissionsQuery = isPmoDraftsPage ? pmoDraftsQuery : submissionsQuery;
-  const currentSubmissionFilters = isPmoDraftsPage ? pmoDraftFilters : submissionsFilters;
+  const currentSubmissionsQuery = isPmoDraftsPage
+    ? pmoDraftsQuery
+    : isPmoEvaluationQueuePage ? evaluationQueueQuery : isLibraryPage ? libraryQuery : submissionsQuery;
+  const pagedQuery = isPmoEvaluationQueuePage ? evaluationQueueQuery : isLibraryPage ? libraryQuery : undefined;
+  const submissionItems = pagedQuery
+    ? flattenLessonPages(pagedQuery.data?.pages ?? [])
+    : (isPmoDraftsPage ? pmoDraftsQuery.data : submissionsQuery.data) ?? [];
+  const currentSubmissionFilters = isPmoDraftsPage
+    ? pmoDraftFilters
+    : isPmoEvaluationQueuePage ? commonSubmissionFilters : isLibraryPage ? {} : submissionsFilters;
 
   async function refreshSubmissionQueries(profileId: string, lessonId?: number): Promise<void> {
     if (lessonId !== undefined) {
@@ -323,7 +413,9 @@ export function LessonsLearnedScreen() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-my-submissions', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-pmo-drafts', profileId] }),
+      queryClient.invalidateQueries({ queryKey: ['lessons-learned-evaluation-queue', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-project-options', profileId] }),
+      queryClient.invalidateQueries({ queryKey: ['lessons-learned-library', profileId] }),
     ]);
   }
 
@@ -335,6 +427,10 @@ export function LessonsLearnedScreen() {
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
+    setSelectedReturnLesson(null);
+    setSelectedApprovalDraft(null);
+    setSelectedRejectionDraft(null);
+    setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
   }, [isDefinitiveAccessFailure]);
 
@@ -374,12 +470,14 @@ export function LessonsLearnedScreen() {
   async function reloadDraftFields(draftId: number): Promise<LessonDraft> {
     const profileId = selectedProfileIdRef.current;
     if (!profileId) throw new Error('Select a profile before reloading a lesson.');
+    const isEvaluationEdit = selectedDraft?.id === draftId && selectedDraft.status === 'PMOEvaluation';
     const drafts = homeQuery.data?.profile.role === 'LESSONS_MODERATOR'
-      ? await getPmoDrafts(profileId, { status: 'Open' })
+      ? isEvaluationEdit ? await getPmoEvaluationQueue(profileId) : await getPmoDrafts(profileId, { status: 'Open' })
       : await getMyOpenDrafts(profileId);
     const latest = drafts.find((draft) => draft.id === draftId);
     if (!latest) {
-      throw Object.assign(new Error('This lesson is no longer an Open draft.'), { code: 'LESSON_NOT_OPEN' });
+      const code = isEvaluationEdit ? 'LESSON_NOT_IN_EVALUATION' : 'LESSON_NOT_OPEN';
+      throw Object.assign(new Error('This lesson is no longer editable in its current state.'), { code });
     }
     return latest;
   }
@@ -398,6 +496,79 @@ export function LessonsLearnedScreen() {
     const cancelled = await cancelLessonRequest(profileId, draftId, input);
     await refreshSubmissionQueries(profileId, draftId);
     return cancelled;
+  }
+
+  async function returnLesson(draftId: number, input: ReturnLessonBody): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before returning a lesson.');
+    const returned = await returnLessonRequest(profileId, draftId, input);
+    await refreshSubmissionQueries(profileId, draftId);
+    return returned;
+  }
+
+  async function reloadLessonDetails(lessonId: number): Promise<LessonDetails> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before reloading a lesson.');
+    return getLessonDetails(profileId, lessonId);
+  }
+
+  async function approveDraft(draftId: number, input: ApproveLessonBody): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before approving a lesson.');
+    const approved = await approveLessonRequest(profileId, draftId, input);
+    await refreshSubmissionQueries(profileId, draftId);
+    setSelectedApprovalDraft(null);
+    setSelectedSubmissionId(null);
+    return approved;
+  }
+
+  async function closeDraft(draftId: number, input: CloseLessonBody): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before closing a lesson.');
+    const closed = await closeLessonRequest(profileId, draftId, input);
+    await refreshSubmissionQueries(profileId, draftId);
+    setSelectedClosureDraft(null);
+    setSelectedSubmissionId(null);
+    return closed;
+  }
+
+  async function reloadApprovalLesson(lessonId: number): Promise<LessonDetails> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before reloading a lesson.');
+    const latest = await getLessonDetails(profileId, lessonId);
+    queryClient.setQueryData(['lessons-learned-submission-details', profileId, lessonId], latest);
+    setSelectedApprovalDraft(null);
+    return latest;
+  }
+
+
+  async function reloadRejectionEvaluation(lessonId: number): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before reloading an evaluation.');
+    const latest = await getLessonDetails(profileId, lessonId);
+    if (latest.status !== 'PMOEvaluation') {
+      throw Object.assign(new Error('This lesson no longer awaits PMO evaluation.'), {
+        code: 'LESSON_NOT_AWAITING_EVALUATION',
+      });
+    }
+    return latest;
+  }
+
+  async function rejectEvaluation(lessonId: number, input: RejectLessonBody): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before rejecting a lesson.');
+    const rejected = await rejectLessonRequest(profileId, lessonId, input);
+    await refreshSubmissionQueries(profileId, lessonId);
+    return rejected;
+  }
+
+  async function reloadClosureLesson(lessonId: number): Promise<LessonDetails> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before reloading a lesson.');
+    const latest = await getLessonDetails(profileId, lessonId);
+    queryClient.setQueryData(['lessons-learned-submission-details', profileId, lessonId], latest);
+    setSelectedClosureDraft(null);
+    return latest;
   }
 
   useEffect(() => {
@@ -484,6 +655,10 @@ export function LessonsLearnedScreen() {
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
+    setSelectedReturnLesson(null);
+    setSelectedApprovalDraft(null);
+    setSelectedRejectionDraft(null);
+    setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
     setIsModuleMenuOpen(false);
   }
@@ -526,7 +701,10 @@ export function LessonsLearnedScreen() {
               <a
                 key={destination.id}
                 href="/lessons-learned/"
-                aria-current={(modulePage === 'home' || (!isPmo && modulePage === 'pmo-drafts')) && destination.current ? 'page' : undefined}
+                aria-current={(
+                  modulePage === 'home'
+                  || (!isPmo && (modulePage === 'pmo-drafts' || modulePage === 'evaluation-queue'))
+                ) && destination.current ? 'page' : undefined}
                 onClick={(event) => navigateTo('home', event)}
               >
                 {destination.label}
@@ -539,6 +717,13 @@ export function LessonsLearnedScreen() {
             >
               My Submissions
             </a>
+            <a
+              href="/lessons-learned/?page=library"
+              aria-current={isLibraryPage ? 'page' : undefined}
+              onClick={(event) => navigateTo('library', event)}
+            >
+              Lessons Library
+            </a>
             {isPmo && (
               <a
                 href="/lessons-learned/?page=pmo-drafts"
@@ -546,6 +731,15 @@ export function LessonsLearnedScreen() {
                 onClick={(event) => navigateTo('pmo-drafts', event)}
               >
                 PMO Drafts
+              </a>
+            )}
+            {isPmo && (
+              <a
+                href="/lessons-learned/?page=evaluation-queue"
+                aria-current={isPmoEvaluationQueuePage ? 'page' : undefined}
+                onClick={(event) => navigateTo('evaluation-queue', event)}
+              >
+                Evaluation Queue
               </a>
             )}
           </WorkspaceSidebar>
@@ -635,7 +829,7 @@ export function LessonsLearnedScreen() {
 
         {isHomePage && (
           <>
-              {modulePage === 'home' || (modulePage === 'pmo-drafts' && !isPmo) ? (
+              {modulePage === 'home' || (!isPmo && (modulePage === 'pmo-drafts' || modulePage === 'evaluation-queue')) ? (
                 <>
                   <h1 id="page-title">Home</h1>
                   <p className="intro">Welcome, {homeQuery.data.profile.displayName}</p>
@@ -646,12 +840,19 @@ export function LessonsLearnedScreen() {
                 <section className="submissions-page" aria-labelledby="page-title">
                   <div className="submissions-header">
                     <div>
-                      <h1 id="page-title" tabIndex={-1}>{isPmoDraftsPage ? 'PMO Drafts' : 'My Submissions'}</h1>
-                      <p className="intro">{isPmoDraftsPage
-                        ? 'Find lessons across the module. Only Open lessons can be edited or cancelled.'
-                        : 'Your lessons. Open drafts can be edited or cancelled.'}</p>
+                    <h1 id="page-title" tabIndex={-1}>{isLibraryPage
+                        ? 'Lessons Library'
+                        : isPmoEvaluationQueuePage ? 'Evaluation Queue'
+                          : isPmoDraftsPage ? 'PMO Drafts' : 'My Submissions'}</h1>
+                      <p className="intro">{isLibraryPage
+                        ? 'Browse lessons published by PMO, with the most recently approved first.'
+                        : isPmoEvaluationQueuePage
+                          ? 'Lessons awaiting PMO evaluation, with the oldest submission first.'
+                          : isPmoDraftsPage
+                            ? 'Find lessons across the module. Only Open lessons can be edited or cancelled.'
+                            : 'Your lessons. Open drafts can be edited or cancelled.'}</p>
                     </div>
-                    {!isPmoDraftsPage && (
+                    {!isPmoReviewListPage && !isLibraryPage && (
                       <button className="draft-action" type="button" disabled={isSavingCurrentDraft} onClick={() => {
                         setSelectedDraft(null);
                         setIsCreateFormOpen(true);
@@ -661,7 +862,9 @@ export function LessonsLearnedScreen() {
                     )}
                   </div>
 
-                  <div className="submission-filters" role="group" aria-label={isPmoDraftsPage ? 'Filter PMO Drafts' : 'Filter My Submissions'}>
+                  {!isLibraryPage && <div className="submission-filters" role="group" aria-label={isPmoEvaluationQueuePage
+                    ? 'Filter Evaluation Queue'
+                    : isPmoDraftsPage ? 'Filter PMO Drafts' : 'Filter My Submissions'}>
                     <div className="draft-editor-field">
                       <label htmlFor="submission-search">Search title or ID</label>
                       <input
@@ -698,7 +901,7 @@ export function LessonsLearnedScreen() {
                         <option value="Communication">Communication</option>
                       </select>
                     </div>
-                    <div className="draft-editor-field">
+                    {!isPmoEvaluationQueuePage && <div className="draft-editor-field">
                       <label htmlFor="submission-status">Status</label>
                       <select id="submission-status" value={submissionStatus} onChange={(event) => setSubmissionStatus(event.target.value as LessonDraft['status'] | '')}>
                         <option value="">Any status</option>
@@ -708,7 +911,7 @@ export function LessonsLearnedScreen() {
                         <option value="Closed">Closed</option>
                         <option value="Archived">Archived</option>
                       </select>
-                    </div>
+                    </div>}
                     {isPmoDraftsPage && (
                       <div className="draft-editor-field">
                         <label htmlFor="submission-author">Author</label>
@@ -724,52 +927,71 @@ export function LessonsLearnedScreen() {
                         </select>
                       </div>
                     )}
-                  </div>
+                  </div>}
                   {projectsQuery.isError && !projectsQuery.isFetching && (
                     <div className="draft-error" role="alert">
                       <p>The project filter options could not be loaded.</p>
                       <button className="draft-cancel" type="button" onClick={() => void projectsQuery.refetch()}>Retry projects</button>
                     </div>
                   )}
-                  {projectOptionsQuery.isError && !projectOptionsQuery.isFetching && (
+                  {currentProjectOptionsQuery.isError && !currentProjectOptionsQuery.isFetching && (
                     <div className="draft-error" role="alert">
                       <p>Past project filter options could not be loaded.</p>
-                      <button className="draft-cancel" type="button" onClick={() => void projectOptionsQuery.refetch()}>
+                      <button className="draft-cancel" type="button" onClick={() => void currentProjectOptionsQuery.refetch()}>
                         Retry project filters
                       </button>
                     </div>
                   )}
 
-                  {currentSubmissionsQuery.isPending && <p role="status">{isPmoDraftsPage ? 'Loading PMO Drafts…' : 'Loading your submissions…'}</p>}
-                  {currentSubmissionsQuery.isError && (
+                  {currentSubmissionsQuery.isPending && <p role="status">{isLibraryPage
+                    ? 'Loading published lessons…'
+                    : isPmoEvaluationQueuePage
+                      ? 'Loading the evaluation queue…'
+                      : isPmoDraftsPage ? 'Loading PMO Drafts…' : 'Loading your submissions…'}</p>}
+                  {currentSubmissionsQuery.isError && !pagedQuery?.isFetchNextPageError && (
                     <div className="draft-error" role="alert">
-                      <p>{isPmoDraftsPage ? 'PMO Drafts could not be loaded.' : 'Your submissions could not be loaded.'}</p>
+                      <p>{isLibraryPage
+                        ? 'The Lessons Library could not be loaded.'
+                        : isPmoEvaluationQueuePage
+                          ? 'The evaluation queue could not be loaded.'
+                          : isPmoDraftsPage ? 'PMO Drafts could not be loaded.' : 'Your submissions could not be loaded.'}</p>
                       <button className="draft-cancel" type="button" onClick={() => void currentSubmissionsQuery.refetch()}>Retry</button>
                     </div>
                   )}
-                  {currentSubmissionsQuery.isSuccess && currentSubmissionsQuery.data.length === 0 && (
-                    <p className="draft-empty">{isPmoDraftsPage
-                      ? Object.keys(currentSubmissionFilters).length ? 'No lessons match these filters.' : 'No lessons are available.'
-                      : Object.keys(currentSubmissionFilters).length ? 'No submissions match these filters.' : 'You have no submissions yet.'}</p>
+                  {currentSubmissionsQuery.isSuccess && submissionItems.length === 0 && (
+                    <p className="draft-empty">{isLibraryPage
+                      ? 'No lessons have been published yet.'
+                      : isPmoEvaluationQueuePage
+                        ? Object.keys(currentSubmissionFilters).length
+                          ? 'No lessons match these filters.'
+                          : 'No lessons are awaiting PMO evaluation.'
+                        : isPmoDraftsPage
+                          ? Object.keys(currentSubmissionFilters).length ? 'No lessons match these filters.' : 'No lessons are available.'
+                          : Object.keys(currentSubmissionFilters).length ? 'No submissions match these filters.' : 'You have no submissions yet.'}</p>
                   )}
-                  {isPmoDraftsPage && currentSubmissionsQuery.isSuccess && currentSubmissionsQuery.data.length > 0 && (
+                  {isSubmissionTablePage && submissionItems.length > 0 && (
                     <div className="submission-table-wrapper">
                       <table className="submission-table">
-                        <caption className="visually-hidden">Lessons available to PMO</caption>
+                        <caption className="visually-hidden">{isLibraryPage
+                          ? 'Published lessons, newest approval first'
+                          : isPmoEvaluationQueuePage
+                            ? 'Lessons awaiting PMO evaluation, oldest submission first'
+                            : 'Lessons available to PMO'}</caption>
                         <thead>
                           <tr>
                             <th scope="col">Title</th>
                             <th scope="col">ID</th>
-                            <th scope="col">Author</th>
+                            {!isLibraryPage && <th scope="col">Author</th>}
                             <th scope="col">Project</th>
                             <th scope="col">Type</th>
                             <th scope="col">Status</th>
-                            <th scope="col">Updated</th>
-                            <th scope="col">Actions</th>
+                            {isLibraryPage && <th scope="col">Approved</th>}
+                            {isPmoDraftsPage && <th scope="col">Updated</th>}
+                            {isPmoReviewListPage && <th scope="col">Actions</th>}
                           </tr>
                         </thead>
                         <tbody>
-                          {currentSubmissionsQuery.data.map((draft) => (
+                          {submissionItems.map((draft) => (
                             <tr key={draft.id}>
                               <th scope="row">
                                 <button
@@ -783,12 +1005,15 @@ export function LessonsLearnedScreen() {
                                 </button>
                               </th>
                               <td>#{draft.id}</td>
-                              <td>{draft.authorId}</td>
+                              {!isLibraryPage && <td>{draft.authorId}</td>}
                               <td>{draft.projectName ?? 'No project'}</td>
                               <td>{draft.lessonType ?? 'Not specified'}</td>
                               <td>{draft.status}</td>
-                              <td><time dateTime={draft.updatedAt}>{formatUpdatedAt(draft.updatedAt)}</time></td>
-                              <td>
+                              {isLibraryPage && <td>{draft.approvedAt
+                                ? <time dateTime={draft.approvedAt}>{formatUpdatedAt(draft.approvedAt)}</time>
+                                : 'Not available'}</td>}
+                              {isPmoDraftsPage && <td><time dateTime={draft.updatedAt}>{formatUpdatedAt(draft.updatedAt)}</time></td>}
+                              {isPmoReviewListPage && <td>
                                 <div className="submission-actions">
                                   {draft.status === 'Open' && (
                                     <>
@@ -813,21 +1038,46 @@ export function LessonsLearnedScreen() {
                                       </button>
                                     </>
                                   )}
+                                  {isPmoEvaluationQueuePage && draft.status === 'PMOEvaluation' && (
+                                    <button
+                                      className="draft-cancel"
+                                      type="button"
+                                      onClick={() => setSelectedRejectionDraft(draft)}
+                                      aria-label={`Reject ${draft.title}`}
+                                    >
+                                      Reject
+                                    </button>
+                                  )}
                                 </div>
-                              </td>
+                              </td>}
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                   )}
-                  {!isPmoDraftsPage && currentSubmissionsQuery.isSuccess && currentSubmissionsQuery.data.length > 0 && (
+                  {pagedQuery?.hasNextPage && (
+                    <div>
+                      {pagedQuery.isFetchNextPageError && <p role="alert">The next page could not be loaded.</p>}
+                      <button className="draft-cancel" type="button" disabled={pagedQuery.isFetching}
+                        onClick={() => void pagedQuery.fetchNextPage()}>
+                        {pagedQuery.isFetchingNextPage ? 'Loading more…' : 'Load more'}
+                      </button>
+                    </div>
+                  )}
+                  {!isSubmissionTablePage && currentSubmissionsQuery.isSuccess && submissionItems.length > 0 && (
                     <ul className="draft-list">
-                      {currentSubmissionsQuery.data.map((draft) => (
+                      {submissionItems.map((draft) => (
                         <li key={draft.id}>
                           <div>
                             <p className="draft-title">{draft.title}</p>
                             <p className="draft-meta">{draft.status === 'Open' ? 'Draft' : 'Lesson'} #{draft.id} · {draft.status}</p>
+                            {draft.status === 'Open' && draft.latestReviewGuidance && (
+                              <p className="return-guidance-notice">
+                                <strong>Latest PMO guidance</strong>
+                                <span>{draft.latestReviewGuidance}</span>
+                              </p>
+                            )}
                           </div>
                           {draft.status === 'Open' ? (
                             <div className="submission-actions">
@@ -879,7 +1129,10 @@ export function LessonsLearnedScreen() {
                     <DraftEditor
                       key={selectedDraft?.id ?? 'new'}
                       draft={selectedDraft}
-                      canSubmit={selectedDraft === null || selectedDraft.authorId === selectedProfileId}
+                      canEditEvaluation={isPmoEvaluationQueuePage && selectedDraft?.status === 'PMOEvaluation'}
+                      canSubmit={selectedDraft === null || (
+                        selectedDraft.status !== 'PMOEvaluation' && selectedDraft.authorId === selectedProfileId
+                      )}
                       projects={projectsQuery.data ?? []}
                       projectsLoading={projectsQuery.isFetching}
                       projectsError={projectsQuery.isError && !projectsQuery.isFetching}
@@ -915,14 +1168,64 @@ export function LessonsLearnedScreen() {
                       onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
                     />
                   )}
+                  {selectedRejectionDraft && (
+                    <RejectLessonDialog
+                      draft={selectedRejectionDraft}
+                      onReload={reloadRejectionEvaluation}
+                      onConfirm={rejectEvaluation}
+                      onClose={() => setSelectedRejectionDraft(null)}
+                      onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
+                    />
+                  )}
                   {selectedSubmissionId !== null && (
                     <LessonSubmissionDetailsDialog
                       lessonId={selectedSubmissionId}
                       details={submissionDetailsQuery.data}
                       isLoading={submissionDetailsQuery.isLoading}
                       hasError={submissionDetailsQuery.isError}
+                      canEdit={isPmoEvaluationQueuePage && submissionDetailsQuery.data?.status === 'PMOEvaluation'}
+                      onEdit={() => {
+                        const details = submissionDetailsQuery.data;
+                        if (!isPmoEvaluationQueuePage || details?.status !== 'PMOEvaluation') return;
+                        setSelectedDraft(details);
+                        setSelectedSubmissionId(null);
+                      }}
                       onRetry={() => void submissionDetailsQuery.refetch()}
+                      canApprove={Boolean(isPmo)}
+                      onApprove={(lesson) => setSelectedApprovalDraft(lesson)}
+                      canClose={Boolean(isPmo)}
+                      onCloseLesson={(lesson) => setSelectedClosureDraft(lesson)}
                       onClose={() => setSelectedSubmissionId(null)}
+                      onReturn={isPmoEvaluationQueuePage ? setSelectedReturnLesson : undefined}
+                    />
+                  )}
+                  {selectedReturnLesson && (
+                    <ReturnLessonDialog
+                      lesson={selectedReturnLesson}
+                      onReload={reloadLessonDetails}
+                      onConfirm={returnLesson}
+                      onClose={() => setSelectedReturnLesson(null)}
+                      onComplete={() => {
+                        setSelectedReturnLesson(null);
+                        setSelectedSubmissionId(null);
+                      }}
+                      onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
+                    />
+                  )}
+                  {selectedApprovalDraft && (
+                    <ApprovalDialog
+                      lesson={selectedApprovalDraft}
+                      onConfirm={approveDraft}
+                      onReload={reloadApprovalLesson}
+                      onClose={() => setSelectedApprovalDraft(null)}
+                    />
+                  )}
+                  {selectedClosureDraft && (
+                    <ClosureDialog
+                      lesson={selectedClosureDraft}
+                      onConfirm={closeDraft}
+                      onReload={reloadClosureLesson}
+                      onClose={() => setSelectedClosureDraft(null)}
                     />
                   )}
                 </section>

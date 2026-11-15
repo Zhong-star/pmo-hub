@@ -127,6 +127,9 @@
 .submission-history li p + p { color: var(--muted); font-size: 13px; }
 
 .submission-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.return-guidance-notice { display: grid; gap: 4px; margin: 8px 0 0; border-left: 3px solid var(--primary-background); border-radius: 0 6px 6px 0; padding: 8px 10px; background: var(--surface-background); color: var(--text); white-space: pre-wrap; }
+.return-guidance-notice strong { font-size: 13px; }
+.return-guidance-notice span { overflow-wrap: anywhere; }
 
 @media (max-width: 560px) {
   .draft-editor-dialog { border-radius: 12px; }

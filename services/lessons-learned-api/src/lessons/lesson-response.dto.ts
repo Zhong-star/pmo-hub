@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LESSON_STATUSES, LESSON_TYPES, type LessonStatus, type LessonType } from './lesson-domain.constants';
 
 export type { LessonStatus } from './lesson-domain.constants';
@@ -21,6 +21,9 @@ export class LessonDraftResponse {
 
   @ApiProperty({ type: Number, minimum: 1, example: 1 })
   version!: number;
+
+  @ApiPropertyOptional({ type: String, description: 'Opaque ETag for this lesson version.' })
+  etag?: string;
 
   @ApiProperty({ type: String, nullable: true, maxLength: 128 })
   projectId!: string | null;
@@ -65,6 +68,12 @@ export class LessonDraftResponse {
 
   @ApiProperty({ type: String, format: 'date-time' })
   updatedAt!: Date;
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 1000, description: 'Most recent PMO return guidance while the lesson is Open.' })
+  latestReviewGuidance!: string | null;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  approvedAt!: Date | null;
 }
 
 export class LessonHistoryEventResponse {
@@ -74,8 +83,8 @@ export class LessonHistoryEventResponse {
   @ApiProperty({ type: String })
   actorId!: string;
 
-  @ApiProperty({ type: String, enum: ['Created', 'Submitted', 'Cancelled'] })
-  eventType!: 'Created' | 'Submitted' | 'Cancelled';
+  @ApiProperty({ type: String, enum: ['Created', 'Submitted', 'Cancelled', 'Returned', 'Approved', 'Rejected', 'Closed'] })
+  eventType!: 'Created' | 'Submitted' | 'Cancelled' | 'Returned' | 'Approved' | 'Rejected' | 'Closed';
 
   @ApiProperty({ type: String, enum: LESSON_STATUSES, nullable: true })
   previousStatus!: LessonStatus | null;

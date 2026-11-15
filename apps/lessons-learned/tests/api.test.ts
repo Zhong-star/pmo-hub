@@ -7,25 +7,48 @@ import {
   getMyOpenDrafts,
   getMySubmissions,
   getPmoDrafts,
+  getPmoEvaluationQueue,
   getLessonDetails,
   createLessonDraft,
   getLessonProjects,
   updateLessonDraft,
   submitLesson,
+  returnLesson,
   LESSONS_LEARNED_LESSONS_PATH,
   LESSONS_LEARNED_HEALTH_PATH,
   LESSONS_LEARNED_HOME_PATH,
   LESSONS_LEARNED_PROJECTS_PATH,
   LESSONS_LEARNED_DRAFT_PATH,
   LESSONS_LEARNED_SUBMIT_PATH,
+  LESSONS_LEARNED_RETURN_PATH,
   LESSONS_LEARNED_CANCEL_PATH,
   LESSONS_LEARNED_SUBMISSIONS_PATH,
+  LESSONS_LEARNED_EVALUATION_QUEUE_PATH,
   LESSONS_LEARNED_API_TIMEOUT_MS,
 } from '../src/api';
 
 describe('lessons learned HTTP client', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('sends the displayed ETag and presents a 412 as a stale edit to the UI', async () => {
+    const adapter = vi.fn().mockRejectedValue({
+      isAxiosError: true,
+      response: {
+        status: 412,
+        headers: { 'content-type': 'application/problem+json' },
+        data: { code: 'PRECONDITION_FAILED', detail: 'Reload the current version.' },
+      },
+    });
+    api.defaults.adapter = adapter;
+
+    await expect(updateLessonDraft('local-contributor', 3, { title: 'Edited', version: 2, etag: '"shown-tag"' }))
+      .rejects.toMatchObject({ response: { status: 412, data: { code: 'STALE_LESSON_VERSION' } } });
+    const [config] = adapter.mock.calls[0];
+    expect(config.headers.get('If-Match')).toBe('"shown-tag"');
+    expect(config.headers.get('Accept')).toContain('application/problem+json');
+    expect(JSON.parse(config.data)).toEqual({ title: 'Edited', version: 2 });
   });
 
   it('requests the health endpoint with the configured timeout and returns the contract response', async () => {
@@ -213,6 +236,42 @@ describe('lessons learned HTTP client', () => {
     }));
   });
 
+  it('posts PMO return guidance with the current lesson version', async () => {
+    const returned = {
+      id: 7,
+      title: 'Improve release handover',
+      authorId: 'local-contributor',
+      updatedBy: 'local-pmo',
+      status: 'Open' as const,
+      version: 5,
+      projectId: null,
+      projectName: null,
+      projectCategory: 'Technology' as const,
+      projectPhase: 'Execution' as const,
+      situationObserved: 'The handover omitted the current runbook.',
+      rootCause: null,
+      lessonType: 'Communication' as const,
+      impact: 'Operations followed an outdated procedure.',
+      recommendation: 'Share the current runbook before release.',
+      applicability: 'Use for releases with an operations handover.',
+      createdAt: '2026-11-13T12:00:00.000Z',
+      updatedAt: '2026-11-13T12:05:00.000Z',
+      latestReviewGuidance: null,
+    };
+    const body = { version: 4, guidance: 'Please link the revised runbook.' };
+    const adapter = vi.fn().mockResolvedValue({ data: returned, status: 200, statusText: 'OK', headers: {}, config: {} });
+    api.defaults.adapter = adapter;
+
+    await expect(returnLesson('local-pmo', 7, body)).resolves.toEqual(returned);
+
+    expect(adapter).toHaveBeenCalledWith(expect.objectContaining({
+      url: LESSONS_LEARNED_RETURN_PATH.replace('{id}', '7'),
+      method: 'post',
+      data: JSON.stringify(body),
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-pmo' }),
+    }));
+  });
+
   it('retrieves own Open and Archived submissions and posts an explicit cancellation', async () => {
     const archived = {
       id: 7,
@@ -334,6 +393,31 @@ describe('lessons learned HTTP client', () => {
 
     expect(adapter).toHaveBeenCalledWith(expect.objectContaining({
       url: '/api/lessons-learned/v1/lessons/pmo-drafts',
+      method: 'get',
+      params: filters,
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-pmo' }),
+    }));
+  });
+
+  it('requests the PMO evaluation queue with its combined filters and moderator profile', async () => {
+    const filters = {
+      search: 'Operations',
+      projectId: 'LOCAL-PROJECT-001',
+      lessonType: 'Communication' as const,
+    };
+    const adapter = vi.fn().mockResolvedValue({
+      data: [],
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config: {},
+    });
+    api.defaults.adapter = adapter;
+
+    await expect(getPmoEvaluationQueue('local-pmo', filters)).resolves.toEqual([]);
+
+    expect(adapter).toHaveBeenCalledWith(expect.objectContaining({
+      url: LESSONS_LEARNED_EVALUATION_QUEUE_PATH,
       method: 'get',
       params: filters,
       headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-pmo' }),

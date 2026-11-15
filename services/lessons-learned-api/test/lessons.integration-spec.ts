@@ -26,6 +26,7 @@ describe('Lessons Learned draft registration', () => {
   const previousProjectsFile = process.env.LESSONS_LEARNED_PROJECTS_FILE;
 
   const profiles = [
+    { id: 'local-other-contributor', displayName: 'Other Contributor', role: 'LESSONS_USER' },
     { id: 'local-contributor', displayName: 'Local Contributor', role: 'LESSONS_USER' },
     { id: 'local-pmo', displayName: 'Local PMO', role: 'LESSONS_MODERATOR' },
   ];
@@ -1057,7 +1058,7 @@ describe('Lessons Learned draft registration', () => {
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .send({ title: 'Submitted draft' })
       .expect(201);
-    await dataSource.query('UPDATE lessons SET status = $2 WHERE id = $1', [created.body.id, 'PMOEvaluation']);
+    await dataSource.query('UPDATE lessons SET status = $2 WHERE id = $1', [created.body.id, 'Approved']);
 
     await request(app!.getHttpServer())
       .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
@@ -1065,6 +1066,208 @@ describe('Lessons Learned draft registration', () => {
       .send({ version: created.body.version, title: 'Cannot edit submitted draft' })
       .expect(409)
       .expect({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
+  });
+
+  it('lets PMO edit a complete evaluation while preserving authorship, status, queue position, and transition history', async () => {
+    const server = request(app!.getHttpServer());
+    const submitCompleteLesson = async (title: string) => {
+      const created = await server
+        .post('/api/lessons-learned/v1/lessons')
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ title })
+        .expect(201);
+
+      return server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          version: created.body.version,
+          title,
+          projectId: null,
+          projectName: null,
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The release handover omitted the current runbook.',
+          rootCause: 'No checklist owner had been assigned.',
+          lessonType: 'Future Prevention',
+          impact: 'The release team repeated verification work.',
+          recommendation: 'Assign an owner to review the checklist.',
+          applicability: 'Use for releases with shared operational ownership.',
+        })
+        .expect(200);
+    };
+
+    const first = await submitCompleteLesson('First evaluation');
+    const second = await submitCompleteLesson('Second evaluation');
+    const originalOrder = await server
+      .get('/api/lessons-learned/v1/lessons/evaluation-queue')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .then(({ body }) => body.map(({ id }: { id: number }) => id));
+
+    const edited = await server
+      .patch(`/api/lessons-learned/v1/lessons/${first.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({
+        version: first.body.version,
+        title: 'First evaluation with PMO corrections',
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the approved runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+
+    expect(edited.body).toMatchObject({
+      title: 'First evaluation with PMO corrections',
+      authorId: 'local-contributor',
+      updatedBy: 'local-pmo',
+      status: 'PMOEvaluation',
+      version: first.body.version + 1,
+    });
+    const currentOrder = await server
+      .get('/api/lessons-learned/v1/lessons/evaluation-queue')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .then(({ body }) => body.map(({ id }: { id: number }) => id));
+    expect(originalOrder).toEqual([first.body.id, second.body.id]);
+    expect(currentOrder).toEqual(originalOrder);
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${first.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.history.map(({ eventType }: { eventType: string }) => eventType))
+        .toEqual(['Created', 'Submitted']));
+  });
+
+  it('blocks evaluation edits from Contributors, rejects stale versions, and stops edits after evaluation', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Evaluation edit permissions' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the current runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+    const completeEdit = {
+      title: 'Evaluation title edited by PMO',
+      projectId: null,
+      projectName: null,
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      situationObserved: 'The release handover omitted the approved runbook.',
+      rootCause: 'No checklist owner had been assigned.',
+      lessonType: 'Future Prevention',
+      impact: 'The release team repeated verification work.',
+      recommendation: 'Assign an owner to review the checklist.',
+      applicability: 'Use for releases with shared operational ownership.',
+    };
+
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: submitted.body.version, ...completeEdit })
+      .expect(409)
+      .expect(({ body }) => expect(body.code).toBe('LESSON_NOT_OPEN'));
+
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version, ...completeEdit })
+      .expect(200);
+
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version, ...completeEdit, title: 'Stale evaluation edit' })
+      .expect(409)
+      .expect({
+        code: 'STALE_LESSON_VERSION',
+        message: 'This draft changed after you opened it. Reload the current version before saving again.',
+      });
+
+    await dataSource!.query('UPDATE lessons SET status = $2 WHERE id = $1', [created.body.id, 'Approved']);
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version + 1, ...completeEdit })
+      .expect(409)
+      .expect({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
+  });
+
+  it('keeps a lesson in evaluation unchanged when PMO edit validation fails', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Evaluation content stays complete' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the current runbook.',
+        rootCause: null,
+        lessonType: 'Communication',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+
+    await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({
+        version: submitted.body.version,
+        title: 'A corrected title that must stay unsaved',
+        projectCategory: null,
+      })
+      .expect(400)
+      .expect(({ body }) => expect(body).toMatchObject({
+        code: 'INVALID_LESSON_EDIT',
+        fieldErrors: { projectCategory: 'Project category is required.' },
+      }));
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body).toMatchObject({
+        title: 'Evaluation content stays complete',
+        authorId: 'local-contributor',
+        status: 'PMOEvaluation',
+        version: submitted.body.version,
+      }));
   });
 
   it('returns the row written by a version-checked update when a later writer changes it immediately', async () => {
@@ -1236,6 +1439,200 @@ describe('Lessons Learned draft registration', () => {
       .expect(404);
   });
 
+  it('lets PMO read only the evaluation queue in order of last submission, even after later edits', async () => {
+    const server = request(app!.getHttpServer());
+    const submitCompleteLesson = async (title: string) => {
+      const created = await server
+        .post('/api/lessons-learned/v1/lessons')
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ title })
+        .expect(201);
+
+      return server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          version: created.body.version,
+          title,
+          projectId: null,
+          projectName: null,
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The release handover omitted the current runbook.',
+          rootCause: 'No checklist owner had been assigned.',
+          lessonType: 'Future Prevention',
+          impact: 'The release team repeated verification work.',
+          recommendation: 'Assign an owner to review the checklist.',
+          applicability: 'Use for releases with shared operational ownership.',
+        })
+        .expect(200);
+    };
+
+    const oldestSubmission = await submitCompleteLesson('Oldest evaluation');
+    const middleSubmission = await submitCompleteLesson('Middle evaluation');
+    const newestSubmission = await submitCompleteLesson('Newest evaluation');
+    const stillOpen = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Not submitted for evaluation' })
+      .expect(201);
+
+    const timestamps = [
+      [oldestSubmission.body.id, '2026-11-14T09:00:00Z', '2026-11-14T10:30:00Z'],
+      [middleSubmission.body.id, '2026-11-14T09:30:00.000001Z', '2026-11-14T09:00:00Z'],
+      [newestSubmission.body.id, '2026-11-14T09:30:00.000001Z', '2026-11-14T10:15:00Z'],
+    ] as const;
+
+    for (const [lessonId, submittedAt, updatedAt] of timestamps) {
+      await dataSource!.query(
+        "UPDATE lesson_history SET occurred_at = $2 WHERE lesson_id = $1 AND event_type = 'Submitted'",
+        [lessonId, submittedAt],
+      );
+      await dataSource!.query('UPDATE lessons SET updated_at = $2 WHERE id = $1', [lessonId, updatedAt]);
+    }
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/evaluation-queue')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(403);
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/evaluation-queue')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.map(({ id, status }: { id: number; status: string }) => [id, status])).toEqual([
+          [oldestSubmission.body.id, 'PMOEvaluation'],
+          [middleSubmission.body.id, 'PMOEvaluation'],
+          [newestSubmission.body.id, 'PMOEvaluation'],
+        ]);
+        expect(body.some(({ id }: { id: number }) => id === stillOpen.body.id)).toBe(false);
+      });
+    const path = '/api/lessons-learned/v1/lessons/evaluation-queue';
+    const pmoHeaders = { 'X-PMO-Local-User-ID': 'local-pmo' };
+    const first = await server.get(path).query({ limit: 1 }).set(pmoHeaders).expect(200);
+    expect(first.body.items.map(({ id }: { id: number }) => id)).toEqual([oldestSubmission.body.id]);
+    const cursor = first.body.page.nextCursor;
+    expect(typeof cursor).toBe('string');
+    const remaining = await server.get(path).query({ cursor, limit: 2 }).set(pmoHeaders).expect(200);
+    expect(remaining.body.items.map(({ id }: { id: number }) => id)).toEqual([middleSubmission.body.id, newestSubmission.body.id]);
+    expect(remaining.body.page.nextCursor).toBeNull();
+    const second = await server.get(path).query({ cursor, limit: 1 }).set(pmoHeaders).expect(200);
+    const third = await server.get(path).query({ cursor: second.body.page.nextCursor, limit: 1 }).set(pmoHeaders).expect(200);
+    expect(third.body.items[0].id).toBe(newestSubmission.body.id);
+    await server.get(path).query({ cursor, search: 'Changed filter' }).set(pmoHeaders).expect(400);
+    await server.get(path).query({ limit: 101 }).set(pmoHeaders).expect(400);
+  });
+
+  it('serves the default cursor page without changing the legacy evaluation response', async () => {
+    const server = request(app!.getHttpServer());
+    const path = '/api/lessons-learned/v1/lessons/evaluation-queue';
+    const pmo = { 'X-PMO-Local-User-ID': 'local-pmo' };
+    await server.get(path).set(pmo).expect(200).expect(({ body }) => expect(body).toEqual([]));
+    await server.get(`${path}?paged=true`).set(pmo).expect(200).expect(({ body }) => {
+      expect(body).toEqual({ items: [], page: { limit: 50, nextCursor: null } });
+    });
+    await server.get(`${path}?paged=true`).set('X-PMO-Local-User-ID', 'local-contributor').expect(403);
+  });
+
+  it('searches the evaluation queue by title prefix or exact ID, combines project and type filters, and opens history', async () => {
+    const server = request(app!.getHttpServer());
+    const submitCompleteLesson = async (title: string, projectId: string, projectName: string, lessonType: string) => {
+      const created = await server
+        .post('/api/lessons-learned/v1/lessons')
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ title, projectId, projectName })
+        .expect(201);
+
+      return server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          version: created.body.version,
+          title,
+          projectId,
+          projectName,
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The release handover omitted the current runbook.',
+          rootCause: 'No checklist owner had been assigned.',
+          lessonType,
+          impact: 'The release team repeated verification work.',
+          recommendation: 'Assign an owner to review the checklist.',
+          applicability: 'Use for releases with shared operational ownership.',
+        })
+        .expect(200);
+    };
+
+    const handover = await submitCompleteLesson(
+      'Operations handover lesson',
+      'LOCAL-PROJECT-001',
+      'Fictional Atlas Modernization',
+      'Communication',
+    );
+    const roadmap = await submitCompleteLesson(
+      'Operations roadmap lesson',
+      'LOCAL-PROJECT-001',
+      'Fictional Atlas Modernization',
+      'Communication',
+    );
+    await submitCompleteLesson(
+      'Operations risk lesson',
+      'LOCAL-PROJECT-002',
+      'Fictional Harbor Migration',
+      'Future Prevention',
+    );
+    await submitCompleteLesson(
+      'Database backup lesson',
+      'LOCAL-PROJECT-001',
+      'Fictional Atlas Modernization',
+      'Communication',
+    );
+
+    const queue = '/api/lessons-learned/v1/lessons/evaluation-queue';
+    await server.get(`${queue}/projects`).set('X-PMO-Local-User-ID', 'local-pmo').expect(200)
+      .expect(({ body }) => {
+        expect(body).toContainEqual({ id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' });
+        expect(body.filter(({ id }: { id: string }) => id === 'LOCAL-PROJECT-001')).toHaveLength(1);
+      });
+    await server.get(`${queue}/projects`).set('X-PMO-Local-User-ID', 'local-contributor').expect(403);
+    await server
+      .get(queue)
+      .query({ search: 'Operations', projectId: 'LOCAL-PROJECT-001', lessonType: 'Communication' })
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([
+        handover.body.id,
+        roadmap.body.id,
+      ]));
+
+    await server
+      .get(queue)
+      .query({ search: 'Operations handover' })
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([handover.body.id]));
+
+    await server
+      .get(queue)
+      .query({ search: String(handover.body.id) })
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([handover.body.id]));
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${handover.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ id: handover.body.id, title: 'Operations handover lesson' });
+        expect(body.history).toMatchObject([
+          { eventType: 'Created', newStatus: 'Open' },
+          { eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation' },
+        ]);
+      });
+  });
+
   it('lets PMO list lessons across authors and statuses with combined filters while denying Contributors', async () => {
     const server = request(app!.getHttpServer());
     const create = async (profileId: string, title: string, lessonType: string, project: boolean) => server
@@ -1377,5 +1774,920 @@ describe('Lessons Learned draft registration', () => {
       .toEqual([{ status: 'Open' }]);
     expect(await dataSource!.query('SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id', [created.body.id]))
       .toEqual([{ event_type: 'Created' }]);
+  });
+
+  it('checks the displayed ETag while preserving the legacy version contract', async () => {
+    const server = request(app!.getHttpServer());
+    const contributor = { 'X-PMO-Local-User-ID': 'local-contributor' };
+    const collection = '/api/lessons-learned/v1/lessons';
+    const created = await server.post(collection).set(contributor).send({ title: 'Conditional draft' }).expect(201);
+    const path = `${collection}/${created.body.id}`;
+    const details = await server.get(path).set(contributor).expect(200).expect('ETag', /^"/);
+    const etag = details.headers.etag;
+    const accept = { Accept: 'application/json, application/problem+json' };
+
+    await server.patch(path).set(contributor).set(accept).set('If-Match', etag)
+      .send({ title: 'Conflicting preconditions', version: created.body.version + 1 })
+      .expect(400).expect('Content-Type', /application\/problem\+json/);
+    const updated = await server.patch(path).set(contributor).set(accept).set('If-Match', etag)
+      .send({ title: 'Updated with ETag' }).expect(200).expect('ETag', /^"/);
+    expect(updated.headers.etag).not.toBe(etag);
+    await server.patch(path).set(contributor).set(accept).set('If-Match', etag)
+      .send({ title: 'Stale ETag' }).expect(412).expect('Content-Type', /application\/problem\+json/)
+      .expect(({ body }) => expect(body).toMatchObject({ status: 412, code: 'PRECONDITION_FAILED' }));
+    await server.patch(path).set(contributor).send({ title: 'Stale version', version: created.body.version })
+      .expect(409).expect(({ body }) => expect(body.code).toBe('STALE_LESSON_VERSION'));
+    await server.post(`${path}/cancel`).set(contributor).set(accept).set('If-Match', updated.headers.etag)
+      .send({ reason: '' }).expect(400).expect('Content-Type', /application\/problem\+json/)
+      .expect(({ body }) => expect(body.errors).toContainEqual(expect.objectContaining({ path: 'reason' })));
+    const cancelled = await server.post(`${path}/cancel`).set(contributor).set(accept).set('If-Match', updated.headers.etag)
+      .send({ reason: 'The project changed direction.' }).expect(200);
+    await server.patch(path).set(contributor).set(accept).set('If-Match', updated.headers.etag)
+      .send({ title: 'Stale after cancellation' }).expect(412);
+    await server.patch(path).set(contributor).set(accept).set('If-Match', cancelled.headers.etag)
+      .send({ title: 'Current version but invalid state' }).expect(409)
+      .expect(({ body }) => expect(body.code).toBe('LESSON_NOT_OPEN'));
+  });
+
+  it('keeps the draft content and version when saving cannot read PMO guidance', async () => {
+    const server = request(app!.getHttpServer());
+    const profile = 'local-contributor';
+    const lessonsPath = '/api/lessons-learned/v1/lessons';
+    const created = await server.post(lessonsPath)
+      .set('X-PMO-Local-User-ID', profile)
+      .send({ title: 'Original draft', impact: 'Original impact' })
+      .expect(201);
+    const lessonPath = `${lessonsPath}/${created.body.id}`;
+    const before = await server.get(lessonPath).set('X-PMO-Local-User-ID', profile).expect(200);
+
+    // Make history unavailable in the isolated PostgreSQL database for this request.
+    await dataSource!.query('ALTER TABLE lesson_history RENAME TO unavailable_lesson_history');
+    try {
+      await server.patch(lessonPath)
+        .set('X-PMO-Local-User-ID', profile)
+        .send({ title: 'Changed draft', impact: 'Changed impact', version: before.body.version })
+        .expect(500);
+    } finally {
+      await dataSource!.query('ALTER TABLE unavailable_lesson_history RENAME TO lesson_history');
+    }
+
+    const after = await server.get(lessonPath).set('X-PMO-Local-User-ID', profile).expect(200);
+    expect(after.body).toEqual(before.body);
+  });
+
+  it('lets only PMO return a submitted lesson with required guidance of at most 1000 characters', async () => {
+    const server = request(app!.getHttpServer());
+    const title = 'A returned lesson can be corrected and resubmitted';
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the current runbook.',
+        rootCause: null,
+        lessonType: 'Communication',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+
+    const returnPath = `/api/lessons-learned/v1/lessons/${created.body.id}/return`;
+    await server
+      .post(returnPath)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: submitted.body.version, guidance: 'Please add the missing context.' })
+      .expect(403);
+
+    for (const guidance of [undefined, '', '   ', 'x'.repeat(1001)]) {
+      const payload = { version: submitted.body.version, ...(guidance === undefined ? {} : { guidance }) };
+      await server
+        .post(returnPath)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send(payload)
+        .expect(400);
+    }
+
+    await server
+      .post(returnPath)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version - 1, guidance: 'This decision is stale.' })
+      .expect(409)
+      .expect(({ body }) => expect(body.code).toBe('STALE_LESSON_VERSION'));
+
+    const guidance = 'Please add the missing context. ' + 'x'.repeat(1000 - 'Please add the missing context. '.length);
+    const returned = await server
+      .post(returnPath)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version, guidance })
+      .expect(200);
+
+    expect(returned.body).toMatchObject({
+      id: created.body.id,
+      authorId: 'local-contributor',
+      updatedBy: 'local-pmo',
+      status: 'Open',
+      version: submitted.body.version + 1,
+      latestReviewGuidance: guidance,
+    });
+    await server
+      .get('/api/lessons-learned/v1/lessons/evaluation-queue')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.some(({ id }: { id: number }) => id === created.body.id)).toBe(false));
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body[0]).toMatchObject({
+        id: created.body.id,
+        status: 'Open',
+        latestReviewGuidance: guidance,
+      }));
+    await server
+      .get('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body[0].latestReviewGuidance).toBe(guidance));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.latestReviewGuidance).toBe(guidance);
+        expect(body.history).toMatchObject([
+          { eventType: 'Created', newStatus: 'Open', reason: null },
+          { eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation', reason: null },
+          { actorId: 'local-pmo', eventType: 'Returned', previousStatus: 'PMOEvaluation', newStatus: 'Open', reason: guidance },
+        ]);
+      });
+  });
+
+  it('keeps every return in history, shows the latest guidance, and allows only the author to resubmit', async () => {
+    const server = request(app!.getHttpServer());
+    const title = 'Repeated return keeps each instruction';
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title })
+      .expect(201);
+    const submissionInput = (version: number, submissionTitle = title) => ({
+      version,
+      title: submissionTitle,
+      projectCategory: 'Technology',
+      projectPhase: 'Execution',
+      situationObserved: 'The release handover omitted the current runbook.',
+      rootCause: null,
+      lessonType: 'Communication',
+      impact: 'The release team repeated verification work.',
+      recommendation: 'Assign an owner to review the checklist.',
+      applicability: 'Use for releases with shared operational ownership.',
+    });
+    const firstSubmission = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send(submissionInput(created.body.version))
+      .expect(200);
+    const firstGuidance = 'Please include the date of the project decision.';
+    const firstReturn = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/return`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: firstSubmission.body.version, guidance: firstGuidance })
+      .expect(200);
+
+    const submitPath = `/api/lessons-learned/v1/lessons/${created.body.id}/submit`;
+    await server
+      .post(submitPath)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send(submissionInput(firstReturn.body.version))
+      .expect(404);
+
+    const revisedTitle = `${title} after author changes`;
+    const edited = await server
+      .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: firstReturn.body.version, title: revisedTitle })
+      .expect(200);
+    expect(edited.body.latestReviewGuidance).toBe(firstGuidance);
+    await server
+      .post(submitPath)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ ...submissionInput(edited.body.version), lessonType: 'Future Prevention', rootCause: '   ' })
+      .expect(400);
+    const secondSubmission = await server
+      .post(submitPath)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send(submissionInput(edited.body.version, revisedTitle))
+      .expect(200);
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body[0]).toMatchObject({
+        id: created.body.id,
+        status: 'PMOEvaluation',
+        latestReviewGuidance: null,
+      }));
+
+    const secondGuidance = 'Please explain why the proposed mitigation addresses the cause.';
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/return`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: secondSubmission.body.version, guidance: secondGuidance })
+      .expect(200);
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/return`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: firstReturn.body.version, guidance: 'This version is stale.' })
+      .expect(409)
+      .expect(({ body }) => expect(body.code).toBe('LESSON_NOT_AWAITING_EVALUATION'));
+    await server
+      .get('/api/lessons-learned/v1/lessons/mine')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body[0]).toMatchObject({
+        id: created.body.id,
+        status: 'Open',
+        latestReviewGuidance: secondGuidance,
+      }));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.history).toMatchObject([
+        { eventType: 'Created', previousStatus: null, newStatus: 'Open' },
+        { eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation' },
+        { eventType: 'Returned', previousStatus: 'PMOEvaluation', newStatus: 'Open', reason: firstGuidance },
+        { eventType: 'Submitted', previousStatus: 'Open', newStatus: 'PMOEvaluation' },
+        { eventType: 'Returned', previousStatus: 'PMOEvaluation', newStatus: 'Open', reason: secondGuidance },
+      ]));
+  });
+
+  it('rolls back a return when history fails and permits only one concurrent PMO decision', async () => {
+    if (!dataSource) throw new Error('The PostgreSQL test database did not start.');
+    const server = request(app!.getHttpServer());
+    const title = 'Return decisions are atomic';
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the current runbook.',
+        rootCause: null,
+        lessonType: 'Communication',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+    await dataSource.query(`
+      CREATE FUNCTION reject_return_history() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.event_type = 'Returned' THEN RAISE EXCEPTION 'return history write intentionally rejected'; END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER reject_return_history_insert
+      BEFORE INSERT ON lesson_history FOR EACH ROW EXECUTE FUNCTION reject_return_history();
+    `);
+
+    try {
+      await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/return`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, guidance: 'The failed event must roll back.' })
+        .expect(500);
+
+      expect(await dataSource.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
+        .toEqual([{ status: 'PMOEvaluation', version: submitted.body.version }]);
+      expect(await dataSource.query(
+        "SELECT event_type FROM lesson_history WHERE lesson_id = $1 AND event_type = 'Returned'",
+        [created.body.id],
+      )).toEqual([]);
+    } finally {
+      await dataSource.query('DROP TRIGGER IF EXISTS reject_return_history_insert ON lesson_history');
+      await dataSource.query('DROP FUNCTION IF EXISTS reject_return_history()');
+    }
+
+    const returnPath = `/api/lessons-learned/v1/lessons/${created.body.id}/return`;
+    const decisions = await Promise.all([
+      server.post(returnPath)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, guidance: 'Add a current support owner.' }),
+      server.post(returnPath)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, guidance: 'Add a current support contact.' }),
+    ]);
+    expect(decisions.map(({ status }) => status).sort()).toEqual([200, 409]);
+    const conflict = decisions.find(({ status }) => status === 409);
+    expect(conflict?.body.code).toBe('LESSON_NOT_AWAITING_EVALUATION');
+    expect(await dataSource.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
+      .toEqual([{ status: 'Open', version: submitted.body.version + 1 }]);
+    expect(await dataSource.query(
+      "SELECT actor_id, event_type FROM lesson_history WHERE lesson_id = $1 AND event_type = 'Returned'",
+      [created.body.id],
+    )).toEqual([{ actor_id: 'local-pmo', event_type: 'Returned' }]);
+  });
+
+  it('lets PMO approve the complete version it reviewed and records its publication date with history', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        title: 'Publish a verified handover lesson',
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the current runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        ...created.body,
+        projectId: null,
+        projectName: null,
+        version: created.body.version,
+      })
+      .expect(200);
+
+    const approved = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version })
+      .expect(200);
+
+    expect(approved.body).toMatchObject({
+      id: created.body.id,
+      authorId: 'local-contributor',
+      updatedBy: 'local-pmo',
+      status: 'Approved',
+      version: submitted.body.version + 1,
+    });
+    expect(Date.parse(approved.body.approvedAt)).not.toBeNaN();
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.history.at(-1)).toMatchObject({
+        actorId: 'local-pmo',
+        eventType: 'Approved',
+        previousStatus: 'PMOEvaluation',
+        newStatus: 'Approved',
+      }));
+  });
+
+  it('checks PMO permission, the displayed version, and stored completeness before approval', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        title: 'Revalidate the reviewed lesson',
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The handover omitted the current runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        ...created.body,
+        projectId: null,
+        projectName: null,
+        version: created.body.version,
+      })
+      .expect(200);
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: submitted.body.version })
+      .expect(403);
+    await dataSource!.query(
+      'UPDATE lessons SET version = version + 1, recommendation = NULL WHERE id = $1',
+      [created.body.id],
+    );
+
+    const stale = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version })
+      .expect(409);
+    expect(stale.body.code).toBe('STALE_LESSON_VERSION');
+
+    const incomplete = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version + 1 })
+      .expect(400);
+    expect(incomplete.body).toMatchObject({
+      code: 'INVALID_LESSON_APPROVAL',
+      fieldErrors: { recommendation: 'Recommendation is required.' },
+    });
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe('PMOEvaluation');
+        expect(body.approvedAt).toBeNull();
+        expect(body.history.map(({ eventType }: { eventType: string }) => eventType)).toEqual(['Created', 'Submitted']);
+      });
+  });
+
+  it('rolls back approval when recording its history fails', async () => {
+    if (!dataSource) throw new Error('The PostgreSQL test database did not start.');
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        title: 'Rollback failed approval history',
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The handover omitted the current runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ ...created.body, version: created.body.version })
+      .expect(200);
+    await dataSource.query(`
+      CREATE FUNCTION reject_approval_history() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.event_type = 'Approved' THEN RAISE EXCEPTION 'approval history write intentionally rejected'; END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER reject_approval_history_insert
+      BEFORE INSERT ON lesson_history FOR EACH ROW EXECUTE FUNCTION reject_approval_history();
+    `);
+
+    try {
+      await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version })
+        .expect(500);
+    } finally {
+      await dataSource.query('DROP TRIGGER IF EXISTS reject_approval_history_insert ON lesson_history');
+      await dataSource.query('DROP FUNCTION IF EXISTS reject_approval_history()');
+    }
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe('PMOEvaluation');
+        expect(body.approvedAt).toBeNull();
+        expect(body.history.map(({ eventType }: { eventType: string }) => eventType)).toEqual(['Created', 'Submitted']);
+      });
+  });
+
+  it('records one approval event when two PMO decisions race on the same version', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        title: 'Resolve concurrent approval decisions',
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The handover omitted the current runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ ...created.body, version: created.body.version })
+      .expect(200);
+
+    const decisions = await Promise.all([
+      server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version }),
+      server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version }),
+    ]);
+    expect(decisions.map(({ status }) => status).sort()).toEqual([200, 409]);
+    const successfulDecision = decisions.find(({ status }) => status === 200)!;
+    const rejectedDecision = decisions.find(({ status }) => status === 409)!;
+    expect(rejectedDecision.body.code).toBe('LESSON_NOT_AWAITING_EVALUATION');
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe('Approved');
+        expect(body.approvedAt).toBe(successfulDecision.body.approvedAt);
+        expect(body.history.filter(({ eventType }: { eventType: string }) => eventType === 'Approved')).toHaveLength(1);
+      });
+  });
+
+  it('lets another Contributor find published lessons while keeping drafts and full history private', async () => {
+    const server = request(app!.getHttpServer());
+    const publish = async (title: string) => {
+      const created = await server
+        .post('/api/lessons-learned/v1/lessons')
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          title,
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The handover omitted the current runbook.',
+          rootCause: 'No checklist owner had been assigned.',
+          lessonType: 'Future Prevention',
+          impact: 'The release team repeated verification work.',
+          recommendation: 'Assign an owner to review the checklist.',
+          applicability: 'Use for releases with shared operational ownership.',
+        })
+        .expect(201);
+      const submitted = await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ ...created.body, version: created.body.version })
+        .expect(200);
+      const approved = await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version })
+        .expect(200);
+      return approved.body;
+    };
+    const olderPublication = await publish('Published handover checklist');
+    const newerPublication = await publish('Published release verification');
+    const privateDraft = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Private lesson still under evaluation' })
+      .expect(201);
+    const privateSubmission = await server
+      .post(`/api/lessons-learned/v1/lessons/${privateDraft.body.id}/submit`)
+      .set('X-PMO-Local-USER-ID', 'local-contributor')
+      .send({
+        ...privateDraft.body,
+        version: privateDraft.body.version,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The handover omitted the current runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The release team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for releases with shared operational ownership.',
+      })
+      .expect(200);
+
+    await server
+      .get('/api/lessons-learned/v1/lessons/library')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.map(({ id }: { id: number }) => id)).toEqual([
+        newerPublication.id,
+        olderPublication.id,
+      ]));
+    await server
+      .get('/api/lessons-learned/v1/lessons/library')
+      .set('X-PMO-Local-User-ID', 'local-other-contributor')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.map(({ id }: { id: number }) => id)).toEqual([newerPublication.id, olderPublication.id]);
+        expect(body.map(({ approvedAt }: { approvedAt: string | null }) => approvedAt)).toEqual([
+          newerPublication.approvedAt,
+          olderPublication.approvedAt,
+        ]);
+      });
+    const libraryPath = '/api/lessons-learned/v1/lessons/library';
+    const reader = { 'X-PMO-Local-User-ID': 'local-other-contributor' };
+    const first = await server.get(libraryPath).query({ limit: 1 }).set(reader).expect(200);
+    expect(first.body.items[0].id).toBe(newerPublication.id);
+    const second = await server.get(libraryPath).query({ cursor: first.body.page.nextCursor, limit: 1 }).set(reader).expect(200);
+    expect(second.body.items[0].id).toBe(olderPublication.id);
+    expect(second.body.page.nextCursor).toBeNull();
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${newerPublication.id}`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body.history.at(-1)?.eventType).toBe('Approved'));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${newerPublication.id}`)
+      .set('X-PMO-Local-User-ID', 'local-other-contributor')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.title).toBe('Published release verification');
+        expect(body.history).toEqual([]);
+      });
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${privateSubmission.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-other-contributor')
+      .expect(404);
+  });
+
+  it('lets PMO reject an evaluation with a reason and keeps the archived lesson private to its author', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'A lesson rejected during PMO evaluation' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'A previous lesson already covers this scenario.',
+        rootCause: 'The lessons were not checked before the report was sent.',
+        lessonType: 'Future Prevention',
+        impact: 'Readers received duplicate guidance.',
+        recommendation: 'Search the existing lessons before adding a new one.',
+        applicability: 'Use when preparing a new lesson for PMO review.',
+      })
+      .expect(200);
+    const reason = 'This scenario is already covered by lesson #8.';
+
+    const rejected = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/reject`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version, reason })
+      .expect(200);
+
+    expect(rejected.body).toMatchObject({
+      id: created.body.id,
+      authorId: 'local-contributor',
+      updatedBy: 'local-pmo',
+      status: 'Archived',
+      version: submitted.body.version + 1,
+    });
+    await server
+      .get('/api/lessons-learned/v1/lessons/evaluation-queue')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .expect(200)
+      .expect(({ body }) => expect(body).toEqual([]));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.history.at(-1)).toMatchObject({
+        actorId: 'local-pmo',
+        eventType: 'Rejected',
+        previousStatus: 'PMOEvaluation',
+        newStatus: 'Archived',
+        reason,
+      }));
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-other-contributor')
+      .expect(404);
+  });
+
+  it('requires a nonblank rejection reason of at most 1,000 characters', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Rejection reason boundary' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The submitted experience is incomplete.',
+        rootCause: 'Some required details are missing.',
+        lessonType: 'Future Prevention',
+        impact: 'The team could not apply the guidance.',
+        recommendation: 'Provide enough detail for PMO review.',
+        applicability: 'Use when preparing a new lesson.',
+      })
+      .expect(200);
+
+    for (const reason of ['', '   ', 'x'.repeat(1001)]) {
+      await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/reject`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, reason })
+        .expect(400)
+        .expect(({ body }) => {
+          expect(body.code).toBe('INVALID_LESSON_REJECTION');
+          expect(body.fieldErrors.reason).toBeDefined();
+        });
+    }
+
+    expect(await dataSource!.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
+      .toEqual([{ status: 'PMOEvaluation', version: submitted.body.version }]);
+
+    const maxLengthReason = 'x'.repeat(1000);
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/reject`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version, reason: maxLengthReason })
+      .expect(200);
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${created.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200)
+      .expect(({ body }) => expect(body.history.at(-1).reason).toBe(maxLengthReason));
+  });
+
+  it('restricts rejection to PMO and validates the evaluation state and current version', async () => {
+    const server = request(app!.getHttpServer());
+    const open = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'A draft cannot be rejected' })
+      .expect(201);
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${open.body.id}/reject`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: open.body.version, reason: 'Not awaiting evaluation.' })
+      .expect(409)
+      .expect({
+        code: 'LESSON_NOT_AWAITING_EVALUATION',
+        message: 'Only lessons awaiting PMO evaluation can be rejected.',
+      });
+
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${open.body.id}/submit`)
+      .set('X-PMO-Local-USER-ID', 'local-contributor')
+      .send({
+        version: open.body.version,
+        title: open.body.title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The submitted experience needs PMO review.',
+        rootCause: 'The team did not identify the gap in time.',
+        lessonType: 'Future Prevention',
+        impact: 'The planned work needed additional effort.',
+        recommendation: 'Review the applicable process before release.',
+        applicability: 'Use for similar releases.',
+      })
+      .expect(200);
+
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${open.body.id}/reject`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ version: submitted.body.version, reason: 'A Contributor cannot decide.' })
+      .expect(403);
+    await server
+      .post(`/api/lessons-learned/v1/lessons/${open.body.id}/reject`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version - 1, reason: 'This version is stale.' })
+      .expect(409)
+      .expect(({ body }) => expect(body.code).toBe('STALE_LESSON_VERSION'));
+    expect(await dataSource!.query('SELECT status, version FROM lessons WHERE id = $1', [open.body.id]))
+      .toEqual([{ status: 'PMOEvaluation', version: submitted.body.version }]);
+  });
+
+  it('rolls back rejection when the history event cannot be recorded', async () => {
+    if (!dataSource) throw new Error('The PostgreSQL test database did not start.');
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Rejection history is atomic' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The submitted experience does not apply to this module.',
+        rootCause: 'The submission is outside the intended scope.',
+        lessonType: 'Future Prevention',
+        impact: 'The entry could mislead other project teams.',
+        recommendation: 'Confirm the Lessons Learned scope first.',
+        applicability: 'Use for submissions to this module.',
+      })
+      .expect(200);
+    await dataSource.query(`
+      CREATE FUNCTION reject_rejection_history() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.event_type = 'Rejected' THEN RAISE EXCEPTION 'rejection history write intentionally rejected'; END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER reject_rejection_history_insert
+      BEFORE INSERT ON lesson_history FOR EACH ROW EXECUTE FUNCTION reject_rejection_history();
+    `);
+
+    try {
+      await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/reject`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, reason: 'This rejection must roll back.' })
+        .expect(500);
+      expect(await dataSource.query('SELECT status, version FROM lessons WHERE id = $1', [created.body.id]))
+        .toEqual([{ status: 'PMOEvaluation', version: submitted.body.version }]);
+      expect(await dataSource.query(
+        'SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id',
+        [created.body.id],
+      )).toEqual([{ event_type: 'Created' }, { event_type: 'Submitted' }]);
+    } finally {
+      await dataSource.query('DROP TRIGGER IF EXISTS reject_rejection_history_insert ON lesson_history');
+      await dataSource.query('DROP FUNCTION IF EXISTS reject_rejection_history()');
+    }
+  });
+
+  it('records one rejection when two PMO decisions use the same evaluation version', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Only one rejection should win' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The lesson duplicates an existing submission.',
+        rootCause: 'Existing entries were not searched.',
+        lessonType: 'Future Prevention',
+        impact: 'The library could contain repeated guidance.',
+        recommendation: 'Search the library before submitting.',
+        applicability: 'Use for future lesson contributions.',
+      })
+      .expect(200);
+
+    const decisions = await Promise.all([
+      server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/reject`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, reason: 'First review decision.' }),
+      server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/reject`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version, reason: 'Competing review decision.' }),
+    ]);
+
+    expect(decisions.map(({ status }) => status).sort()).toEqual([200, 409]);
+    expect(await dataSource!.query('SELECT status FROM lessons WHERE id = $1', [created.body.id]))
+      .toEqual([{ status: 'Archived' }]);
+    expect(await dataSource!.query(
+      "SELECT event_type, reason FROM lesson_history WHERE lesson_id = $1 AND event_type = 'Rejected'",
+      [created.body.id],
+    )).toHaveLength(1);
   });
 });
