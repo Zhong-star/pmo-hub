@@ -431,8 +431,8 @@ test('Lessons Learned stage 3 returns, publishes and closes a lesson across prof
   await editor.getByRole('textbox', { name: 'Impact' }).fill('The checklist made handover steps explicit.');
   await editor.getByRole('button', { name: 'Save Draft' }).click();
   await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
-  await editor.getByRole('button', { name: /Close/ }).click();
-  if (!(await details.isVisible())) await page.getByRole('button', { name: `View ${title}` }).click();
+  await editor.getByRole('button', { name: 'Close editor' }).click();
+  await page.getByRole('button', { name: `View ${title}` }).click();
   await details.getByRole('button', { name: 'Approve and publish' }).click();
   await page.getByRole('button', { name: 'Confirm approval' }).click();
   await expect(page.getByRole('button', { name: `View ${title}` })).toHaveCount(0);
@@ -506,10 +506,12 @@ test('PMO edits a lesson during evaluation without changing its author or queue 
   await page.getByRole('link', { name: 'Evaluation Queue' }).click();
 
   const queue = page.getByRole('table', { name: 'Lessons awaiting PMO evaluation, oldest submission first' });
-  const initialRows = queue.getByRole('row');
-  await expect(initialRows.nth(1)).toContainText(firstTitle);
-  await expect(initialRows.nth(2)).toContainText(secondTitle);
-  await initialRows.nth(1).getByRole('button', { name: `View ${firstTitle}` }).click();
+  await page.getByRole('searchbox', { name: 'Search title or ID' }).fill('Issue 31');
+  const rows = queue.getByRole('row');
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(1)).toContainText(firstTitle);
+  await expect(rows.nth(2)).toContainText(secondTitle);
+  await rows.nth(1).getByRole('button', { name: `View ${firstTitle}` }).click();
   const details = page.getByRole('dialog', { name: 'Lesson details' });
   await expect(details.getByText('PMOEvaluation', { exact: true })).toBeVisible();
   await details.getByRole('button', { name: 'Edit lesson' }).click();
@@ -522,10 +524,9 @@ test('PMO edits a lesson during evaluation without changing its author or queue 
   await expect(evaluationEditor.getByText('Draft saved.', { exact: true })).toBeVisible();
   await evaluationEditor.getByRole('button', { name: /^Close$/ }).click();
 
-  const currentRows = queue.getByRole('row');
-  await expect(currentRows.nth(1)).toContainText(correctedTitle);
-  await expect(currentRows.nth(2)).toContainText(secondTitle);
-  await currentRows.nth(1).getByRole('button', { name: `View ${correctedTitle}` }).click();
+  await expect(rows.nth(1)).toContainText(correctedTitle);
+  await expect(rows.nth(2)).toContainText(secondTitle);
+  await rows.nth(1).getByRole('button', { name: `View ${correctedTitle}` }).click();
   const updatedDetails = page.getByRole('dialog', { name: 'Lesson details' });
   await expect(updatedDetails.getByText('Author', { exact: true }).locator('..')).toContainText('local-developer');
   await expect(updatedDetails.getByText('Updated by', { exact: true }).locator('..')).toContainText('local-pmo');
