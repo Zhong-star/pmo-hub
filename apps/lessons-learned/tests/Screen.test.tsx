@@ -25,6 +25,7 @@ import {
 
 vi.mock('../src/api', () => ({
   approveLesson: vi.fn(),
+  closeLesson: vi.fn(),
   cancelLesson: vi.fn(),
   createLessonDraft: vi.fn(),
   getHome: vi.fn(),

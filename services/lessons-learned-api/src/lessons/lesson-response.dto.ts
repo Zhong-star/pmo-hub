@@ -80,8 +80,8 @@ export class LessonHistoryEventResponse {
   @ApiProperty({ type: String })
   actorId!: string;
 
-  @ApiProperty({ type: String, enum: ['Created', 'Submitted', 'Cancelled', 'Returned', 'Approved', 'Rejected'] })
-  eventType!: 'Created' | 'Submitted' | 'Cancelled' | 'Returned' | 'Approved' | 'Rejected';
+  @ApiProperty({ type: String, enum: ['Created', 'Submitted', 'Cancelled', 'Returned', 'Approved', 'Rejected', 'Closed'] })
+  eventType!: 'Created' | 'Submitted' | 'Cancelled' | 'Returned' | 'Approved' | 'Rejected' | 'Closed';
 
   @ApiProperty({ type: String, enum: LESSON_STATUSES, nullable: true })
   previousStatus!: LessonStatus | null;
