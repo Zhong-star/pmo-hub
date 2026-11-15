@@ -4,7 +4,7 @@ import type { LessonDraft, LessonProject, SubmitLessonBody, UpdateLessonDraftBod
 import { useDialogFocus } from './useDialogFocus';
 import './DraftEditor.css';
 
-type DraftFields = Required<Omit<UpdateLessonDraftBody, 'version'>>;
+type DraftFields = Required<Omit<UpdateLessonDraftBody, 'version' | 'etag'>>;
 
 type DraftEditorProps = {
   draft: LessonDraft | null;
@@ -145,6 +145,7 @@ export function DraftEditor({
   const [savedFields, setSavedFields] = useState(() => toFormValues(draft));
   const [draftId, setDraftId] = useState(draft?.id ?? null);
   const [version, setVersion] = useState(draft?.version ?? 0);
+  const [etag, setETag] = useState(draft?.etag);
   const isEvaluationDraft = draft?.status === 'PMOEvaluation';
   const isEvaluationEdit = isEvaluationDraft && canEditEvaluation;
   const [error, setError] = useState<string | null>(null);
@@ -255,12 +256,13 @@ export function DraftEditor({
     setHasConflict(false);
     setIsSaved(false);
     try {
-      const updated = await onSave({ ...fields, title, version }, draftId);
+      const updated = await onSave({ ...fields, title, version, ...(etag ? { etag } : {}) }, draftId);
       const nextFields = toFormValues(updated);
       setFields(nextFields);
       setSavedFields(nextFields);
       setDraftId(updated.id);
       setVersion(updated.version);
+      setETag(updated.etag);
       setIsSaved(true);
     } catch (saveError) {
       const serverFieldErrors = getApiFieldErrors(saveError);
@@ -321,19 +323,23 @@ export function DraftEditor({
     try {
       let submittedDraftId = draftId;
       let submittedVersion = version;
+      let submittedETag = etag;
       if (submittedDraftId === null) {
         const created = await onSave({ ...fields, title, version }, null);
         submittedDraftId = created.id;
         submittedVersion = created.version;
+        submittedETag = created.etag;
         const saved = toFormValues(created);
         setFields(saved);
         setSavedFields(saved);
         setDraftId(created.id);
         setVersion(created.version);
+        setETag(created.etag);
       }
 
       const input = {
         version: submittedVersion,
+        ...(submittedETag ? { etag: submittedETag } : {}),
         title,
         projectId: fields.projectId,
         projectName: fields.projectName,
@@ -352,6 +358,7 @@ export function DraftEditor({
       setSavedFields(nextFields);
       setDraftId(submitted.id);
       setVersion(submitted.version);
+      setETag(submitted.etag);
       setIsSubmitted(true);
       setIsSaved(false);
     } catch (submitError) {
@@ -389,6 +396,7 @@ export function DraftEditor({
       setSavedFields(latestFields);
       setDraftId(latest.id);
       setVersion(latest.version);
+      setETag(latest.etag);
       setError(null);
       setHasConflict(false);
       setIsSaved(false);

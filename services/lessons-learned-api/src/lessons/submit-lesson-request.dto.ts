@@ -5,7 +5,7 @@ import { projectCategories, projectPhases } from './lesson-fields-request.dto';
 import { LESSON_TYPES } from './lesson-domain.constants';
 
 export class SubmitLessonRequest {
-  @ApiProperty({ type: Number, minimum: 1, example: 2 })
+  @ApiPropertyOptional({ type: Number, minimum: 1, example: 2 })
   @IsInt()
   @Min(1)
   version!: number;

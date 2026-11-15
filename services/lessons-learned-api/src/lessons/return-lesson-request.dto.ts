@@ -1,8 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsInt, IsString, Matches, MaxLength, Min } from 'class-validator';
 
 export class ReturnLessonRequest {
-  @ApiProperty({ type: Number, minimum: 1, example: 3 })
+  @ApiPropertyOptional({ type: Number, minimum: 1, example: 3 })
   @IsInt()
   @Min(1)
   version!: number;

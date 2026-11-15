@@ -32,6 +32,25 @@ describe('lessons learned HTTP client', () => {
     vi.restoreAllMocks();
   });
 
+  it('sends the displayed ETag and presents a 412 as a stale edit to the UI', async () => {
+    const adapter = vi.fn().mockRejectedValue({
+      isAxiosError: true,
+      response: {
+        status: 412,
+        headers: { 'content-type': 'application/problem+json' },
+        data: { code: 'PRECONDITION_FAILED', detail: 'Reload the current version.' },
+      },
+    });
+    api.defaults.adapter = adapter;
+
+    await expect(updateLessonDraft('local-contributor', 3, { title: 'Edited', version: 2, etag: '"shown-tag"' }))
+      .rejects.toMatchObject({ response: { status: 412, data: { code: 'STALE_LESSON_VERSION' } } });
+    const [config] = adapter.mock.calls[0];
+    expect(config.headers.get('If-Match')).toBe('"shown-tag"');
+    expect(config.headers.get('Accept')).toContain('application/problem+json');
+    expect(JSON.parse(config.data)).toEqual({ title: 'Edited', version: 2 });
+  });
+
   it('requests the health endpoint with the configured timeout and returns the contract response', async () => {
     const adapter = vi.fn().mockResolvedValue({
       data: { status: 'ok' },

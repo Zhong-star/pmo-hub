@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { WorkspaceSidebar } from '../../shared-ui/src/WorkspaceSidebar';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { useThemePreference } from '../../shared-ui/src/theme';
@@ -9,6 +9,7 @@ import {
   cancelLesson as cancelLessonRequest,
   createLessonDraft,
   getHome,
+  getEvaluationProjectSnapshots,
   getLibrary,
   getLessonDetails,
   getLessonProjects,
@@ -21,6 +22,7 @@ import {
   submitLesson as submitLessonRequest,
   updateLessonDraft,
   type LessonDraft,
+  type LessonPage,
   type LessonDetails,
   type LessonProject,
   type LessonSubmissionsFilters,
@@ -139,7 +141,7 @@ function readProjectFilterOptionValue(value: string): SubmissionProjectFilter {
 
 function getProjectFilterOptions(
   catalogProjects: LessonProject[],
-  submissions: LessonDraft[],
+  submissions: Pick<LessonDraft, 'projectId' | 'projectName'>[],
 ): LessonProject[] {
   const projectsById = new Map<string, LessonProject>();
   for (const submission of submissions) {
@@ -151,6 +153,16 @@ function getProjectFilterOptions(
     if (!projectsById.has(project.id)) projectsById.set(project.id, project);
   }
   return [...projectsById.values()];
+}
+
+function flattenLessonPages(pages: (LessonPage | LessonDraft[])[]): LessonDraft[] {
+  const legacy = pages.find(Array.isArray);
+  if (legacy) return legacy;
+  const byId = new Map<number, LessonDraft>();
+  for (const page of pages) {
+    if (!Array.isArray(page)) for (const lesson of page.items) byId.set(lesson.id, lesson);
+  }
+  return Array.from(byId.values());
 }
 
 export function LessonsLearnedScreen() {
@@ -294,17 +306,22 @@ export function LessonsLearnedScreen() {
     retry: false,
     refetchOnWindowFocus: true,
   });
-  const evaluationQueueQuery = useQuery({
+  const evaluationQueueQuery = useInfiniteQuery({
     queryKey: ['lessons-learned-evaluation-queue', selectedProfileId, commonSubmissionFilters],
-    queryFn: () => getPmoEvaluationQueue(selectedProfileId ?? '', commonSubmissionFilters),
+    queryFn: ({ pageParam }) => getPmoEvaluationQueue(selectedProfileId ?? '', commonSubmissionFilters, { paged: 'true', cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => Array.isArray(lastPage) ? undefined : lastPage.page.nextCursor ?? undefined,
     enabled: isHomePage && isPmoEvaluationQueuePage,
+    gcTime: 0,
     networkMode: 'always',
     retry: false,
     refetchOnWindowFocus: true,
   });
-  const libraryQuery = useQuery({
+  const libraryQuery = useInfiniteQuery({
     queryKey: ['lessons-learned-library', selectedProfileId],
-    queryFn: () => getLibrary(selectedProfileId ?? ''),
+    queryFn: ({ pageParam }) => getLibrary(selectedProfileId ?? '', { paged: 'true', cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => Array.isArray(lastPage) ? undefined : lastPage.page.nextCursor ?? undefined,
     enabled: isHomePage && isLibraryPage,
     networkMode: 'always',
     retry: false,
@@ -314,14 +331,19 @@ export function LessonsLearnedScreen() {
     queryKey: [
       'lessons-learned-project-options',
       selectedProfileId,
-      isPmoDraftsPage ? 'pmo-drafts' : isPmoEvaluationQueuePage ? 'evaluation-queue' : 'mine',
+      isPmoDraftsPage ? 'pmo-drafts' : 'mine',
     ],
     queryFn: () => isPmoDraftsPage
       ? getPmoDrafts(selectedProfileId ?? '')
-      : isPmoEvaluationQueuePage
-        ? getPmoEvaluationQueue(selectedProfileId ?? '')
-        : getMySubmissions(selectedProfileId ?? ''),
-    enabled: isHomePage && (isMySubmissionsPage || isPmoReviewListPage),
+      : getMySubmissions(selectedProfileId ?? ''),
+    enabled: isHomePage && (isMySubmissionsPage || isPmoDraftsPage),
+    networkMode: 'always',
+    retry: false,
+  });
+  const evaluationProjectsQuery = useQuery({
+    queryKey: ['lessons-learned-project-options', selectedProfileId, 'evaluation-queue'],
+    queryFn: () => getEvaluationProjectSnapshots(selectedProfileId ?? ''),
+    enabled: isHomePage && isPmoEvaluationQueuePage,
     networkMode: 'always',
     retry: false,
   });
@@ -365,11 +387,18 @@ export function LessonsLearnedScreen() {
     networkMode: 'always',
     retry: false,
   });
-  const projectFilterOptions = getProjectFilterOptions(projectsQuery.data ?? [], projectOptionsQuery.data ?? []);
+  const currentProjectOptionsQuery = isPmoEvaluationQueuePage ? evaluationProjectsQuery : projectOptionsQuery;
+  const projectFilterOptions = isPmoEvaluationQueuePage
+    ? getProjectFilterOptions(projectsQuery.data ?? [], (evaluationProjectsQuery.data ?? []).map(({ id, name }) => ({ projectId: id, projectName: name })))
+    : getProjectFilterOptions(projectsQuery.data ?? [], projectOptionsQuery.data ?? []);
   const authorFilterOptions = [...new Set((projectOptionsQuery.data ?? []).map(({ authorId }) => authorId))].sort();
   const currentSubmissionsQuery = isPmoDraftsPage
     ? pmoDraftsQuery
     : isPmoEvaluationQueuePage ? evaluationQueueQuery : isLibraryPage ? libraryQuery : submissionsQuery;
+  const pagedQuery = isPmoEvaluationQueuePage ? evaluationQueueQuery : isLibraryPage ? libraryQuery : undefined;
+  const submissionItems = pagedQuery
+    ? flattenLessonPages(pagedQuery.data?.pages ?? [])
+    : (isPmoDraftsPage ? pmoDraftsQuery.data : submissionsQuery.data) ?? [];
   const currentSubmissionFilters = isPmoDraftsPage
     ? pmoDraftFilters
     : isPmoEvaluationQueuePage ? commonSubmissionFilters : isLibraryPage ? {} : submissionsFilters;
@@ -516,9 +545,8 @@ export function LessonsLearnedScreen() {
   async function reloadRejectionEvaluation(lessonId: number): Promise<LessonDraft> {
     const profileId = selectedProfileIdRef.current;
     if (!profileId) throw new Error('Select a profile before reloading an evaluation.');
-    const queue = await getPmoEvaluationQueue(profileId);
-    const latest = queue.find((lesson) => lesson.id === lessonId);
-    if (!latest) {
+    const latest = await getLessonDetails(profileId, lessonId);
+    if (latest.status !== 'PMOEvaluation') {
       throw Object.assign(new Error('This lesson no longer awaits PMO evaluation.'), {
         code: 'LESSON_NOT_AWAITING_EVALUATION',
       });
@@ -906,10 +934,10 @@ export function LessonsLearnedScreen() {
                       <button className="draft-cancel" type="button" onClick={() => void projectsQuery.refetch()}>Retry projects</button>
                     </div>
                   )}
-                  {projectOptionsQuery.isError && !projectOptionsQuery.isFetching && (
+                  {currentProjectOptionsQuery.isError && !currentProjectOptionsQuery.isFetching && (
                     <div className="draft-error" role="alert">
                       <p>Past project filter options could not be loaded.</p>
-                      <button className="draft-cancel" type="button" onClick={() => void projectOptionsQuery.refetch()}>
+                      <button className="draft-cancel" type="button" onClick={() => void currentProjectOptionsQuery.refetch()}>
                         Retry project filters
                       </button>
                     </div>
@@ -920,7 +948,7 @@ export function LessonsLearnedScreen() {
                     : isPmoEvaluationQueuePage
                       ? 'Loading the evaluation queue…'
                       : isPmoDraftsPage ? 'Loading PMO Drafts…' : 'Loading your submissions…'}</p>}
-                  {currentSubmissionsQuery.isError && (
+                  {currentSubmissionsQuery.isError && !pagedQuery?.isFetchNextPageError && (
                     <div className="draft-error" role="alert">
                       <p>{isLibraryPage
                         ? 'The Lessons Library could not be loaded.'
@@ -930,7 +958,7 @@ export function LessonsLearnedScreen() {
                       <button className="draft-cancel" type="button" onClick={() => void currentSubmissionsQuery.refetch()}>Retry</button>
                     </div>
                   )}
-                  {currentSubmissionsQuery.isSuccess && currentSubmissionsQuery.data.length === 0 && (
+                  {currentSubmissionsQuery.isSuccess && submissionItems.length === 0 && (
                     <p className="draft-empty">{isLibraryPage
                       ? 'No lessons have been published yet.'
                       : isPmoEvaluationQueuePage
@@ -941,7 +969,7 @@ export function LessonsLearnedScreen() {
                           ? Object.keys(currentSubmissionFilters).length ? 'No lessons match these filters.' : 'No lessons are available.'
                           : Object.keys(currentSubmissionFilters).length ? 'No submissions match these filters.' : 'You have no submissions yet.'}</p>
                   )}
-                  {isSubmissionTablePage && currentSubmissionsQuery.isSuccess && currentSubmissionsQuery.data.length > 0 && (
+                  {isSubmissionTablePage && submissionItems.length > 0 && (
                     <div className="submission-table-wrapper">
                       <table className="submission-table">
                         <caption className="visually-hidden">{isLibraryPage
@@ -963,7 +991,7 @@ export function LessonsLearnedScreen() {
                           </tr>
                         </thead>
                         <tbody>
-                          {currentSubmissionsQuery.data.map((draft) => (
+                          {submissionItems.map((draft) => (
                             <tr key={draft.id}>
                               <th scope="row">
                                 <button
@@ -1028,9 +1056,18 @@ export function LessonsLearnedScreen() {
                       </table>
                     </div>
                   )}
-                  {!isSubmissionTablePage && currentSubmissionsQuery.isSuccess && currentSubmissionsQuery.data.length > 0 && (
+                  {pagedQuery?.hasNextPage && (
+                    <div>
+                      {pagedQuery.isFetchNextPageError && <p role="alert">The next page could not be loaded.</p>}
+                      <button className="draft-cancel" type="button" disabled={pagedQuery.isFetching}
+                        onClick={() => void pagedQuery.fetchNextPage()}>
+                        {pagedQuery.isFetchingNextPage ? 'Loading more…' : 'Load more'}
+                      </button>
+                    </div>
+                  )}
+                  {!isSubmissionTablePage && currentSubmissionsQuery.isSuccess && submissionItems.length > 0 && (
                     <ul className="draft-list">
-                      {currentSubmissionsQuery.data.map((draft) => (
+                      {submissionItems.map((draft) => (
                         <li key={draft.id}>
                           <div>
                             <p className="draft-title">{draft.title}</p>

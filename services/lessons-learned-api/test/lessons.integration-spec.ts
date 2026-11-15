@@ -1479,8 +1479,8 @@ describe('Lessons Learned draft registration', () => {
 
     const timestamps = [
       [oldestSubmission.body.id, '2026-11-14T09:00:00Z', '2026-11-14T10:30:00Z'],
-      [middleSubmission.body.id, '2026-11-14T09:30:00Z', '2026-11-14T09:00:00Z'],
-      [newestSubmission.body.id, '2026-11-14T10:00:00Z', '2026-11-14T10:15:00Z'],
+      [middleSubmission.body.id, '2026-11-14T09:30:00.000001Z', '2026-11-14T09:00:00Z'],
+      [newestSubmission.body.id, '2026-11-14T09:30:00.000001Z', '2026-11-14T10:15:00Z'],
     ] as const;
 
     for (const [lessonId, submittedAt, updatedAt] of timestamps) {
@@ -1508,6 +1508,31 @@ describe('Lessons Learned draft registration', () => {
         ]);
         expect(body.some(({ id }: { id: number }) => id === stillOpen.body.id)).toBe(false);
       });
+    const path = '/api/lessons-learned/v1/lessons/evaluation-queue';
+    const pmoHeaders = { 'X-PMO-Local-User-ID': 'local-pmo' };
+    const first = await server.get(path).query({ limit: 1 }).set(pmoHeaders).expect(200);
+    expect(first.body.items.map(({ id }: { id: number }) => id)).toEqual([oldestSubmission.body.id]);
+    const cursor = first.body.page.nextCursor;
+    expect(typeof cursor).toBe('string');
+    const remaining = await server.get(path).query({ cursor, limit: 2 }).set(pmoHeaders).expect(200);
+    expect(remaining.body.items.map(({ id }: { id: number }) => id)).toEqual([middleSubmission.body.id, newestSubmission.body.id]);
+    expect(remaining.body.page.nextCursor).toBeNull();
+    const second = await server.get(path).query({ cursor, limit: 1 }).set(pmoHeaders).expect(200);
+    const third = await server.get(path).query({ cursor: second.body.page.nextCursor, limit: 1 }).set(pmoHeaders).expect(200);
+    expect(third.body.items[0].id).toBe(newestSubmission.body.id);
+    await server.get(path).query({ cursor, search: 'Changed filter' }).set(pmoHeaders).expect(400);
+    await server.get(path).query({ limit: 101 }).set(pmoHeaders).expect(400);
+  });
+
+  it('serves the default cursor page without changing the legacy evaluation response', async () => {
+    const server = request(app!.getHttpServer());
+    const path = '/api/lessons-learned/v1/lessons/evaluation-queue';
+    const pmo = { 'X-PMO-Local-User-ID': 'local-pmo' };
+    await server.get(path).set(pmo).expect(200).expect(({ body }) => expect(body).toEqual([]));
+    await server.get(`${path}?paged=true`).set(pmo).expect(200).expect(({ body }) => {
+      expect(body).toEqual({ items: [], page: { limit: 50, nextCursor: null } });
+    });
+    await server.get(`${path}?paged=true`).set('X-PMO-Local-User-ID', 'local-contributor').expect(403);
   });
 
   it('searches the evaluation queue by title prefix or exact ID, combines project and type filters, and opens history', async () => {
@@ -1565,6 +1590,12 @@ describe('Lessons Learned draft registration', () => {
     );
 
     const queue = '/api/lessons-learned/v1/lessons/evaluation-queue';
+    await server.get(`${queue}/projects`).set('X-PMO-Local-User-ID', 'local-pmo').expect(200)
+      .expect(({ body }) => {
+        expect(body).toContainEqual({ id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' });
+        expect(body.filter(({ id }: { id: string }) => id === 'LOCAL-PROJECT-001')).toHaveLength(1);
+      });
+    await server.get(`${queue}/projects`).set('X-PMO-Local-User-ID', 'local-contributor').expect(403);
     await server
       .get(queue)
       .query({ search: 'Operations', projectId: 'LOCAL-PROJECT-001', lessonType: 'Communication' })
@@ -1743,6 +1774,39 @@ describe('Lessons Learned draft registration', () => {
       .toEqual([{ status: 'Open' }]);
     expect(await dataSource!.query('SELECT event_type FROM lesson_history WHERE lesson_id = $1 ORDER BY id', [created.body.id]))
       .toEqual([{ event_type: 'Created' }]);
+  });
+
+  it('checks the displayed ETag while preserving the legacy version contract', async () => {
+    const server = request(app!.getHttpServer());
+    const contributor = { 'X-PMO-Local-User-ID': 'local-contributor' };
+    const collection = '/api/lessons-learned/v1/lessons';
+    const created = await server.post(collection).set(contributor).send({ title: 'Conditional draft' }).expect(201);
+    const path = `${collection}/${created.body.id}`;
+    const details = await server.get(path).set(contributor).expect(200).expect('ETag', /^"/);
+    const etag = details.headers.etag;
+    const accept = { Accept: 'application/json, application/problem+json' };
+
+    await server.patch(path).set(contributor).set(accept).set('If-Match', etag)
+      .send({ title: 'Conflicting preconditions', version: created.body.version + 1 })
+      .expect(400).expect('Content-Type', /application\/problem\+json/);
+    const updated = await server.patch(path).set(contributor).set(accept).set('If-Match', etag)
+      .send({ title: 'Updated with ETag' }).expect(200).expect('ETag', /^"/);
+    expect(updated.headers.etag).not.toBe(etag);
+    await server.patch(path).set(contributor).set(accept).set('If-Match', etag)
+      .send({ title: 'Stale ETag' }).expect(412).expect('Content-Type', /application\/problem\+json/)
+      .expect(({ body }) => expect(body).toMatchObject({ status: 412, code: 'PRECONDITION_FAILED' }));
+    await server.patch(path).set(contributor).send({ title: 'Stale version', version: created.body.version })
+      .expect(409).expect(({ body }) => expect(body.code).toBe('STALE_LESSON_VERSION'));
+    await server.post(`${path}/cancel`).set(contributor).set(accept).set('If-Match', updated.headers.etag)
+      .send({ reason: '' }).expect(400).expect('Content-Type', /application\/problem\+json/)
+      .expect(({ body }) => expect(body.errors).toContainEqual(expect.objectContaining({ path: 'reason' })));
+    const cancelled = await server.post(`${path}/cancel`).set(contributor).set(accept).set('If-Match', updated.headers.etag)
+      .send({ reason: 'The project changed direction.' }).expect(200);
+    await server.patch(path).set(contributor).set(accept).set('If-Match', updated.headers.etag)
+      .send({ title: 'Stale after cancellation' }).expect(412);
+    await server.patch(path).set(contributor).set(accept).set('If-Match', cancelled.headers.etag)
+      .send({ title: 'Current version but invalid state' }).expect(409)
+      .expect(({ body }) => expect(body.code).toBe('LESSON_NOT_OPEN'));
   });
 
   it('keeps the draft content and version when saving cannot read PMO guidance', async () => {
@@ -2341,6 +2405,13 @@ describe('Lessons Learned draft registration', () => {
           olderPublication.approvedAt,
         ]);
       });
+    const libraryPath = '/api/lessons-learned/v1/lessons/library';
+    const reader = { 'X-PMO-Local-User-ID': 'local-other-contributor' };
+    const first = await server.get(libraryPath).query({ limit: 1 }).set(reader).expect(200);
+    expect(first.body.items[0].id).toBe(newerPublication.id);
+    const second = await server.get(libraryPath).query({ cursor: first.body.page.nextCursor, limit: 1 }).set(reader).expect(200);
+    expect(second.body.items[0].id).toBe(olderPublication.id);
+    expect(second.body.page.nextCursor).toBeNull();
     await server
       .get(`/api/lessons-learned/v1/lessons/${newerPublication.id}`)
       .set('X-PMO-Local-User-ID', 'local-pmo')

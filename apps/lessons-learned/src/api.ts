@@ -3,6 +3,7 @@ export {
   approveLesson,
   closeLesson,
   getHealth,
+  getEvaluationProjectSnapshots,
   getHome,
   getLibrary,
   getMyOpenDrafts,
@@ -37,6 +38,7 @@ export {
 export type {
   CreateLessonDraftBody,
   LessonDraft,
+  LessonPage,
   LessonDetails,
   LessonHistoryEvent,
   LessonSubmissionsFilters,

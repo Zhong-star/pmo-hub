@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LESSON_STATUSES, LESSON_TYPES, type LessonStatus, type LessonType } from './lesson-domain.constants';
 
 export type { LessonStatus } from './lesson-domain.constants';
@@ -21,6 +21,9 @@ export class LessonDraftResponse {
 
   @ApiProperty({ type: Number, minimum: 1, example: 1 })
   version!: number;
+
+  @ApiPropertyOptional({ type: String, description: 'Opaque ETag for this lesson version.' })
+  etag?: string;
 
   @ApiProperty({ type: String, nullable: true, maxLength: 128 })
   projectId!: string | null;

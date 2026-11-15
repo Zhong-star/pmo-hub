@@ -15,6 +15,7 @@ import {
   getMySubmissions,
   getPmoDrafts,
   getPmoEvaluationQueue,
+  getEvaluationProjectSnapshots,
   returnLesson,
   rejectLesson,
   updateLessonDraft,
@@ -36,6 +37,7 @@ vi.mock('../src/api', () => ({
   getMySubmissions: vi.fn(),
   getPmoDrafts: vi.fn(),
   getPmoEvaluationQueue: vi.fn(),
+  getEvaluationProjectSnapshots: vi.fn(),
   returnLesson: vi.fn(),
   rejectLesson: vi.fn(),
   updateLessonDraft: vi.fn(),
@@ -125,6 +127,7 @@ beforeEach(() => {
   vi.mocked(getMySubmissions).mockImplementation((profileId) => getMyOpenDrafts(profileId));
   vi.mocked(getPmoDrafts).mockResolvedValue([]);
   vi.mocked(getPmoEvaluationQueue).mockResolvedValue([]);
+  vi.mocked(getEvaluationProjectSnapshots).mockResolvedValue([]);
   vi.mocked(returnLesson).mockImplementation(async (_profileId, lessonId) => lessonDraft({
     id: lessonId,
     status: 'Open',
@@ -239,7 +242,7 @@ describe('Lessons Learned access check', () => {
 
     expect(await screen.findByRole('heading', { name: 'Evaluation Queue' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Evaluation Queue' })).toHaveAttribute('aria-current', 'page');
-    expect(getPmoEvaluationQueue).toHaveBeenCalledWith('local-pmo', {});
+    expect(getPmoEvaluationQueue).toHaveBeenCalledWith('local-pmo', {}, { paged: 'true', cursor: undefined });
 
     const table = screen.getByRole('table', { name: 'Lessons awaiting PMO evaluation, oldest submission first' });
     const rows = within(table).getAllByRole('row');
@@ -467,7 +470,7 @@ describe('Lessons Learned access check', () => {
     renderScreen('local-contributor', 0, 'library');
 
     expect(await screen.findByRole('heading', { name: 'Lessons Library' })).toBeInTheDocument();
-    expect(getLibrary).toHaveBeenCalledWith('local-contributor');
+    expect(getLibrary).toHaveBeenCalledWith('local-contributor', { paged: 'true', cursor: undefined });
     expect(screen.getByRole('link', { name: 'Lessons Library' })).toHaveAttribute('aria-current', 'page');
     const table = await screen.findByRole('table', { name: 'Published lessons, newest approval first' });
     const row = within(table).getByRole('row', { name: /Published release verification/ });
@@ -610,8 +613,30 @@ describe('Lessons Learned access check', () => {
       search: 'Operations',
       projectId: 'LOCAL-PROJECT-001',
       lessonType: 'Communication',
-    }));
+    }, { paged: 'true', cursor: undefined }));
     expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
+  });
+
+  it('appends an evaluation page and discards loaded pages after filtering', async () => {
+    const first = lessonDraft({ id: 90, title: 'First evaluation', status: 'PMOEvaluation' });
+    const second = lessonDraft({ id: 91, title: 'Second evaluation', status: 'PMOEvaluation' });
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getPmoEvaluationQueue).mockImplementation(async (_profile, filters, page) => {
+      if (!page) return [first, second];
+      if (filters.search) return { items: [second], page: { limit: 50, nextCursor: null } };
+      return page.cursor
+        ? { items: [second], page: { limit: 50, nextCursor: null } }
+        : { items: [first], page: { limit: 50, nextCursor: 'next' } };
+    });
+    const user = userEvent.setup();
+    renderScreen('local-pmo', 0, 'evaluation-queue');
+    expect(await screen.findByRole('button', { name: 'View First evaluation' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
+    expect(await screen.findByRole('button', { name: 'View Second evaluation' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'View First evaluation' })).toBeVisible();
+    await user.type(screen.getByRole('searchbox', { name: 'Search title or ID' }), 'Second');
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'View First evaluation' })).not.toBeInTheDocument());
+    expect(await screen.findByRole('button', { name: 'View Second evaluation' })).toBeVisible();
   });
 
   it('lets PMO edit a third-party Open draft without Submit and preserves edits after a stale-version conflict', async () => {

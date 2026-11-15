@@ -370,6 +370,37 @@ test('PMO Drafts lists, edits, and cancels Contributor lessons with their histor
   await expect(archivedDetails.getByText('Cancellation reason: The author approved closing this draft.')).toBeVisible();
 });
 
+test('a stale draft ETag preserves unsaved text until the author explicitly reloads', async ({ page }) => {
+  const profile = 'local-developer';
+  const headers = { 'X-PMO-Local-User-ID': profile };
+  const title = `Conditional draft ${Date.now()}`;
+  const drafts = '/api/lessons-learned/v1/lessons';
+  const created = await page.request.post(drafts, { headers, data: { title } });
+  expect(created.status()).toBe(201);
+  const lesson = await created.json();
+  await page.addInitScript((id) => localStorage.setItem('pmo-hub.local-user-id', id), profile);
+  await page.goto('/lessons-learned/?page=my-submissions');
+  await page.getByRole('button', { name: `Reopen ${title}` }).click();
+  const editor = page.getByRole('dialog', { name: 'Edit lesson' });
+  const input = editor.getByRole('textbox', { name: 'Title' });
+  await input.fill('Unsaved work');
+
+  const path = `${drafts}/${lesson.id}`;
+  const otherEdit = await page.request.patch(path, { headers, data: { title: 'Saved in another tab', version: lesson.version } });
+  expect(otherEdit.status()).toBe(200);
+  const stale = page.waitForResponse((response) => response.url().endsWith(path) && response.request().method() === 'PATCH');
+  await editor.getByRole('button', { name: 'Save Draft' }).click();
+  const response = await stale;
+  expect(response.status()).toBe(412);
+  expect(response.request().headers()['if-match']).toBeTruthy();
+  const reload = editor.getByRole('button', { name: 'Reload latest version' });
+  await expect(reload).toBeVisible();
+  await expect(input).toHaveValue('Unsaved work');
+  page.once('dialog', (dialog) => dialog.accept());
+  await reload.click();
+  await expect(input).toHaveValue('Saved in another tab');
+});
+
 test('Lessons Learned stage 3 returns, publishes and closes a lesson across profiles', async ({ page }) => {
   expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
   const title = `Stage 3 review ${Date.now()}`;

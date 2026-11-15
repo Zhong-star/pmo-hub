@@ -116,7 +116,7 @@ export function CancelLessonDialog({ draft, onClose, onReload, onConfirm, onRegi
     setReasonError(null);
     setRequestError(null);
     try {
-      await onConfirm(currentDraft.id, { version, reason });
+      await onConfirm(currentDraft.id, { version, reason, ...(currentDraft.etag ? { etag: currentDraft.etag } : {}) });
       onClose();
     } catch (error) {
       setReasonError(getReasonFieldError(error));
@@ -283,7 +283,7 @@ export function RejectLessonDialog({ draft, onClose, onReload, onConfirm, onRegi
     setReasonError(null);
     setRequestError(null);
     try {
-      await onConfirm(currentDraft.id, { version, reason });
+      await onConfirm(currentDraft.id, { version, reason, ...(currentDraft.etag ? { etag: currentDraft.etag } : {}) });
       onClose();
     } catch (error) {
       setReasonError(getReasonFieldError(error));

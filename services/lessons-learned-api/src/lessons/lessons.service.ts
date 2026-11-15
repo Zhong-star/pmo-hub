@@ -14,6 +14,7 @@ import { LocalAccessService } from '../local-access.service';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../database/database.module';
 import { LessonHistory } from './lesson-history.entity';
 import { Lesson } from './lesson.entity';
+import { paginateLessons, type LessonPage, type LessonPageRequest } from './lesson-pagination';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
 import type { ApproveLessonRequest } from './approve-lesson-request.dto';
 import type { CloseLessonRequest } from './close-lesson-request.dto';
@@ -123,7 +124,8 @@ export class LessonsService {
   async getPmoEvaluationQueue(
     localUserId: string | undefined,
     filters: PmoEvaluationQueueFilter = {},
-  ): Promise<LessonDraftResponse[]> {
+    page?: LessonPageRequest,
+  ): Promise<LessonDraftResponse[] | LessonPage> {
     const profile = this.localAccess.getProfile(localUserId);
     if (profile.role !== 'LESSONS_MODERATOR') {
       throw new ForbiddenException('PMO moderator access is required to list the evaluation queue.');
@@ -133,19 +135,34 @@ export class LessonsService {
       .where('lesson.status = :queueStatus', { queueStatus: 'PMOEvaluation' });
     this.applySearchFilters(query, filters);
 
-    const lessons = await query
-      .addSelect(
-        `(SELECT MAX(queue_history.occurred_at)
+    const lastSubmission = `(SELECT MAX(queue_history.occurred_at)
           FROM lesson_history queue_history
           WHERE queue_history.lesson_id = lesson.id
             AND queue_history.event_type = 'Submitted'
-            AND queue_history.new_status = 'PMOEvaluation')`,
-        'last_evaluation_submission_at',
-      )
+            AND queue_history.new_status = 'PMOEvaluation')`;
+    if (page) {
+      const scope = JSON.stringify(['queue', filters.search, filters.projectId, Boolean(filters.withoutProject), filters.lessonType]);
+      return paginateLessons(query, page, scope, lastSubmission, 'ASC', (lesson) => this.toResponse(lesson));
+    }
+    const lessons = await query
+      .addSelect(lastSubmission, 'last_evaluation_submission_at')
       .orderBy('last_evaluation_submission_at', 'ASC')
       .addOrderBy('lesson.id', 'ASC')
       .getMany();
     return lessons.map((lesson) => this.toResponse(lesson));
+  }
+
+  async getEvaluationProjectSnapshots(localUserId: string | undefined): Promise<LessonProject[]> {
+    if (this.localAccess.getProfile(localUserId).role !== 'LESSONS_MODERATOR') {
+      throw new ForbiddenException('PMO moderator access is required to list evaluation projects.');
+    }
+    return this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
+      .distinctOn(['lesson.project_id'])
+      .select('lesson.project_id', 'id').addSelect('lesson.project_name', 'name')
+      .where('lesson.status = :status', { status: 'PMOEvaluation' })
+      .andWhere('lesson.project_id IS NOT NULL AND lesson.project_name IS NOT NULL')
+      .orderBy('lesson.project_id', 'ASC').addOrderBy('lesson.id', 'DESC')
+      .getRawMany<LessonProject>();
   }
 
   private async includeLatestReviewGuidance(
@@ -171,11 +188,13 @@ export class LessonsService {
     }));
   }
 
-  async getLibrary(localUserId: string | undefined): Promise<LessonDraftResponse[]> {
+  async getLibrary(localUserId: string | undefined, page?: LessonPageRequest): Promise<LessonDraftResponse[] | LessonPage> {
     this.localAccess.getProfile(localUserId);
-    const lessons = await this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
+    const query = this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
       .where('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
-      .andWhere('lesson.approved_at IS NOT NULL')
+      .andWhere('lesson.approved_at IS NOT NULL');
+    if (page) return paginateLessons(query, page, 'library', 'lesson.approved_at', 'DESC', (lesson) => this.toResponse(lesson));
+    const lessons = await query
       .orderBy('lesson.approvedAt', 'DESC')
       .addOrderBy('lesson.id', 'DESC')
       .getMany();
@@ -263,6 +282,7 @@ export class LessonsService {
     localUserId: string | undefined,
     lessonId: number,
     input: CancelLessonRequest,
+    usesIfMatch = false,
   ): Promise<LessonDraftResponse> {
     const profile = this.localAccess.getProfile(localUserId);
     const dataSource = this.requireDataSource();
@@ -276,6 +296,7 @@ export class LessonsService {
       if (!current || (profile.role !== 'LESSONS_MODERATOR' && current.authorId !== profile.id)) {
         throw new NotFoundException('Lesson not found.');
       }
+      if (usesIfMatch && current.version !== input.version) throw this.staleVersionConflict();
       if (current.status !== 'Open') {
         throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be cancelled.' });
       }
@@ -311,6 +332,7 @@ export class LessonsService {
     localUserId: string | undefined,
     lessonId: number,
     input: ApproveLessonRequest,
+    usesIfMatch = false,
   ): Promise<LessonDraftResponse> {
     const profile = this.localAccess.getProfile(localUserId);
     if (profile.role !== 'LESSONS_MODERATOR') {
@@ -325,6 +347,7 @@ export class LessonsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
+      if (usesIfMatch && current.version !== input.version) throw this.staleVersionConflict();
       if (current.status !== 'PMOEvaluation') {
         throw new ConflictException({
           code: 'LESSON_NOT_AWAITING_EVALUATION',
@@ -357,6 +380,7 @@ export class LessonsService {
     localUserId: string | undefined,
     lessonId: number,
     input: RejectLessonRequest,
+    usesIfMatch = false,
   ): Promise<LessonDraftResponse> {
     const profile = this.localAccess.getProfile(localUserId);
     if (profile.role !== 'LESSONS_MODERATOR') {
@@ -381,6 +405,7 @@ export class LessonsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
+      if (usesIfMatch && current.version !== input.version) throw this.staleVersionConflict();
       if (current.status !== 'PMOEvaluation') {
         throw new ConflictException({
           code: 'LESSON_NOT_AWAITING_EVALUATION',
@@ -410,6 +435,7 @@ export class LessonsService {
     localUserId: string | undefined,
     lessonId: number,
     input: CloseLessonRequest,
+    usesIfMatch = false,
   ): Promise<LessonDraftResponse> {
     const profile = this.localAccess.getProfile(localUserId);
     if (profile.role !== 'LESSONS_MODERATOR') {
@@ -423,6 +449,7 @@ export class LessonsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
+      if (usesIfMatch && current.version !== input.version) throw this.staleVersionConflict();
       if (current.status !== 'Approved') {
         throw new ConflictException({
           code: 'LESSON_NOT_APPROVED',
@@ -458,6 +485,7 @@ export class LessonsService {
     localUserId: string | undefined,
     lessonId: number,
     input: UpdateLessonDraftRequest,
+    usesIfMatch = false,
   ): Promise<LessonDraftResponse> {
     const profile = this.localAccess.getProfile(localUserId);
     const repository = this.requireDataSource().getRepository(Lesson);
@@ -465,6 +493,7 @@ export class LessonsService {
     if (!current || (profile.role !== 'LESSONS_MODERATOR' && current.authorId !== profile.id)) {
       throw new NotFoundException('Lesson not found.');
     }
+    if (usesIfMatch && current.version !== input.version) throw this.staleVersionConflict();
     const canEditEvaluation = current.status === 'PMOEvaluation' && profile.role === 'LESSONS_MODERATOR';
     if (current.status !== 'Open' && !canEditEvaluation) {
       throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
@@ -528,6 +557,7 @@ export class LessonsService {
         if (!latest || (profile.role !== 'LESSONS_MODERATOR' && latest.authorId !== profile.id)) {
           throw new NotFoundException('Lesson not found.');
         }
+        if (usesIfMatch && latest.version !== input.version) throw this.staleVersionConflict();
         if (latest.status !== current.status) {
           if (current.status === 'PMOEvaluation') {
             throw new ConflictException({
@@ -554,6 +584,7 @@ export class LessonsService {
     localUserId: string | undefined,
     lessonId: number,
     input: SubmitLessonRequest,
+    usesIfMatch = false,
   ): Promise<LessonDraftResponse> {
     const profile = this.localAccess.getProfile(localUserId);
     const dataSource = this.requireDataSource();
@@ -565,6 +596,7 @@ export class LessonsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
+      if (usesIfMatch && current.version !== input.version) throw this.staleVersionConflict();
       if (current.status !== 'Open') {
         throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be submitted.' });
       }
@@ -630,6 +662,7 @@ export class LessonsService {
     localUserId: string | undefined,
     lessonId: number,
     input: ReturnLessonRequest,
+    usesIfMatch = false,
   ): Promise<LessonDraftResponse> {
     const profile = this.localAccess.getProfile(localUserId);
     if (profile.role !== 'LESSONS_MODERATOR') {
@@ -643,6 +676,7 @@ export class LessonsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
+      if (usesIfMatch && current.version !== input.version) throw this.staleVersionConflict();
       if (current.status !== 'PMOEvaluation') {
         throw new ConflictException({
           code: 'LESSON_NOT_AWAITING_EVALUATION',

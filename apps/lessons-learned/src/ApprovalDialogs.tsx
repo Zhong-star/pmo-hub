@@ -35,7 +35,7 @@ export function ApprovalDialog({ lesson, onConfirm, onReload, onClose }: Approva
     setIsApproving(true);
     setRequestError(null);
     try {
-      await onConfirm(lesson.id, { version: lesson.version });
+      await onConfirm(lesson.id, { version: lesson.version, ...(lesson.etag ? { etag: lesson.etag } : {}) });
       onClose();
     } catch (error) {
       const code = getApiErrorCode(error);

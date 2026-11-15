@@ -106,7 +106,7 @@ export function ReturnLessonDialog({
     setGuidanceError(null);
     setRequestError(null);
     try {
-      await onConfirm(currentLesson.id, { version, guidance });
+      await onConfirm(currentLesson.id, { version, guidance, ...(currentLesson.etag ? { etag: currentLesson.etag } : {}) });
       onComplete();
     } catch (error) {
       setGuidanceError(getGuidanceFieldError(error));
