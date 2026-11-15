@@ -1745,6 +1745,32 @@ describe('Lessons Learned draft registration', () => {
       .toEqual([{ event_type: 'Created' }]);
   });
 
+  it('keeps the draft content and version when saving cannot read PMO guidance', async () => {
+    const server = request(app!.getHttpServer());
+    const profile = 'local-contributor';
+    const lessonsPath = '/api/lessons-learned/v1/lessons';
+    const created = await server.post(lessonsPath)
+      .set('X-PMO-Local-User-ID', profile)
+      .send({ title: 'Original draft', impact: 'Original impact' })
+      .expect(201);
+    const lessonPath = `${lessonsPath}/${created.body.id}`;
+    const before = await server.get(lessonPath).set('X-PMO-Local-User-ID', profile).expect(200);
+
+    // Make history unavailable in the isolated PostgreSQL database for this request.
+    await dataSource!.query('ALTER TABLE lesson_history RENAME TO unavailable_lesson_history');
+    try {
+      await server.patch(lessonPath)
+        .set('X-PMO-Local-User-ID', profile)
+        .send({ title: 'Changed draft', impact: 'Changed impact', version: before.body.version })
+        .expect(500);
+    } finally {
+      await dataSource!.query('ALTER TABLE unavailable_lesson_history RENAME TO lesson_history');
+    }
+
+    const after = await server.get(lessonPath).set('X-PMO-Local-User-ID', profile).expect(200);
+    expect(after.body).toEqual(before.body);
+  });
+
   it('lets only PMO return a submitted lesson with required guidance of at most 1000 characters', async () => {
     const server = request(app!.getHttpServer());
     const title = 'A returned lesson can be corrected and resubmitted';

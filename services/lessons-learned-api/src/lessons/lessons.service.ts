@@ -148,11 +148,14 @@ export class LessonsService {
     return lessons.map((lesson) => this.toResponse(lesson));
   }
 
-  private async includeLatestReviewGuidance(submissions: LessonDraftResponse[]): Promise<LessonDraftResponse[]> {
+  private async includeLatestReviewGuidance(
+    submissions: LessonDraftResponse[],
+    history = this.requireDataSource().getRepository(LessonHistory),
+  ): Promise<LessonDraftResponse[]> {
     const openLessonIds = submissions.filter((submission) => submission.status === 'Open').map(({ id }) => id);
     if (openLessonIds.length === 0) return submissions;
 
-    const returnEvents = await this.requireDataSource().getRepository(LessonHistory).find({
+    const returnEvents = await history.find({
       where: { lessonId: In(openLessonIds), eventType: 'Returned', newStatus: 'Open' },
       order: { occurredAt: 'DESC', id: 'DESC' },
     });
@@ -502,42 +505,49 @@ export class LessonsService {
     };
     if (current.status === 'PMOEvaluation') this.validateEvaluationCompleteness(fields);
 
-    const update = repository.createQueryBuilder()
-      .update(Lesson)
-      .set({
-        ...fields,
-        updatedBy: profile.id,
-        version: () => '"version" + 1',
-        updatedAt: () => 'CURRENT_TIMESTAMP',
-      })
-      .where('id = :lessonId AND status = :status AND version = :version', {
-        lessonId,
-        status: current.status,
-        version: input.version,
-      });
-    if (profile.role !== 'LESSONS_MODERATOR') update.andWhere('author_id = :authorId', { authorId: profile.id });
-    const result = await update.returning('*').execute();
+    return this.requireDataSource().transaction(async (manager) => {
+      const transactionalLessons = manager.getRepository(Lesson);
+      const update = transactionalLessons.createQueryBuilder()
+        .update(Lesson)
+        .set({
+          ...fields,
+          updatedBy: profile.id,
+          version: () => '"version" + 1',
+          updatedAt: () => 'CURRENT_TIMESTAMP',
+        })
+        .where('id = :lessonId AND status = :status AND version = :version', {
+          lessonId,
+          status: current.status,
+          version: input.version,
+        });
+      if (profile.role !== 'LESSONS_MODERATOR') update.andWhere('author_id = :authorId', { authorId: profile.id });
+      const result = await update.returning('*').execute();
 
-    if (!result.affected) {
-      const latest = await repository.findOne({ where: { id: lessonId } });
-      if (!latest || (profile.role !== 'LESSONS_MODERATOR' && latest.authorId !== profile.id)) {
-        throw new NotFoundException('Lesson not found.');
-      }
-      if (latest.status !== current.status) {
-        if (current.status === 'PMOEvaluation') {
-          throw new ConflictException({
-            code: 'LESSON_NOT_IN_EVALUATION',
-            message: 'This lesson is no longer in PMO evaluation. Reload its current status before saving again.',
-          });
+      if (!result.affected) {
+        const latest = await transactionalLessons.findOne({ where: { id: lessonId } });
+        if (!latest || (profile.role !== 'LESSONS_MODERATOR' && latest.authorId !== profile.id)) {
+          throw new NotFoundException('Lesson not found.');
         }
-        throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
+        if (latest.status !== current.status) {
+          if (current.status === 'PMOEvaluation') {
+            throw new ConflictException({
+              code: 'LESSON_NOT_IN_EVALUATION',
+              message: 'This lesson is no longer in PMO evaluation. Reload its current status before saving again.',
+            });
+          }
+          throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
+        }
+        throw this.staleVersionConflict();
       }
-      throw this.staleVersionConflict();
-    }
 
-    const updated = result.raw[0] as Record<string, unknown> | undefined;
-    if (!updated) throw new InternalServerErrorException('The updated draft could not be returned.');
-    return (await this.includeLatestReviewGuidance([this.toResponseFromDatabaseRow(updated)]))[0]!;
+      const updated = result.raw[0] as Record<string, unknown> | undefined;
+      if (!updated) throw new InternalServerErrorException('The updated draft could not be returned.');
+      const [response] = await this.includeLatestReviewGuidance(
+        [this.toResponseFromDatabaseRow(updated)],
+        manager.getRepository(LessonHistory),
+      );
+      return response!;
+    });
   }
 
   async submitOwnOpenDraft(
