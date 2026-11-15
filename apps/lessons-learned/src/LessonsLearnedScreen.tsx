@@ -5,6 +5,7 @@ import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { useThemePreference } from '../../shared-ui/src/theme';
 import {
   approveLesson as approveLessonRequest,
+  closeLesson as closeLessonRequest,
   cancelLesson as cancelLessonRequest,
   createLessonDraft,
   getHome,
@@ -26,12 +27,14 @@ import {
   type PmoEvaluationQueueFilters,
   type CancelLessonBody,
   type ApproveLessonBody,
+  type CloseLessonBody,
   type SubmitLessonBody,
   type ReturnLessonBody,
   type UpdateLessonDraftBody,
 } from './api';
 import { DraftEditor } from './DraftEditor';
 import { ApprovalDialog } from './ApprovalDialogs';
+import { ClosureDialog } from './ClosureDialog';
 import { LessonSubmissionDetailsDialog, CancelLessonDialog } from './SubmissionDialogs';
 import { ReturnLessonDialog } from './ReturnLessonDialog';
 
@@ -161,6 +164,7 @@ export function LessonsLearnedScreen() {
   const [selectedCancellationDraft, setSelectedCancellationDraft] = useState<LessonDraft | null>(null);
   const [selectedReturnLesson, setSelectedReturnLesson] = useState<LessonDetails | null>(null);
   const [selectedApprovalDraft, setSelectedApprovalDraft] = useState<LessonDraft | null>(null);
+  const [selectedClosureDraft, setSelectedClosureDraft] = useState<LessonDraft | null>(null);
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<number | null>(null);
   const [submissionSearch, setSubmissionSearch] = useState('');
   const [submissionProjectFilter, setSubmissionProjectFilter] = useState<SubmissionProjectFilter>({ kind: 'any' });
@@ -196,6 +200,7 @@ export function LessonsLearnedScreen() {
     setSelectedCancellationDraft(null);
     setSelectedReturnLesson(null);
     setSelectedApprovalDraft(null);
+    setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
     setIsModuleMenuOpen(false);
   }, [resetSubmissionFilters]);
@@ -342,6 +347,7 @@ export function LessonsLearnedScreen() {
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
     setSelectedApprovalDraft(null);
+    setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
     resetSubmissionFilters(modulePage);
   }, [modulePage, resetSubmissionFilters]);
@@ -390,6 +396,7 @@ export function LessonsLearnedScreen() {
     setSelectedCancellationDraft(null);
     setSelectedReturnLesson(null);
     setSelectedApprovalDraft(null);
+    setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
   }, [isDefinitiveAccessFailure]);
 
@@ -479,12 +486,31 @@ export function LessonsLearnedScreen() {
     return approved;
   }
 
+  async function closeDraft(draftId: number, input: CloseLessonBody): Promise<LessonDraft> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before closing a lesson.');
+    const closed = await closeLessonRequest(profileId, draftId, input);
+    await refreshSubmissionQueries(profileId, draftId);
+    setSelectedClosureDraft(null);
+    setSelectedSubmissionId(null);
+    return closed;
+  }
+
   async function reloadApprovalLesson(lessonId: number): Promise<LessonDetails> {
     const profileId = selectedProfileIdRef.current;
     if (!profileId) throw new Error('Select a profile before reloading a lesson.');
     const latest = await getLessonDetails(profileId, lessonId);
     queryClient.setQueryData(['lessons-learned-submission-details', profileId, lessonId], latest);
     setSelectedApprovalDraft(null);
+    return latest;
+  }
+
+  async function reloadClosureLesson(lessonId: number): Promise<LessonDetails> {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId) throw new Error('Select a profile before reloading a lesson.');
+    const latest = await getLessonDetails(profileId, lessonId);
+    queryClient.setQueryData(['lessons-learned-submission-details', profileId, lessonId], latest);
+    setSelectedClosureDraft(null);
     return latest;
   }
 
@@ -574,6 +600,7 @@ export function LessonsLearnedScreen() {
     setSelectedCancellationDraft(null);
     setSelectedReturnLesson(null);
     setSelectedApprovalDraft(null);
+    setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
     setIsModuleMenuOpen(false);
   }
@@ -1070,6 +1097,8 @@ export function LessonsLearnedScreen() {
                       onRetry={() => void submissionDetailsQuery.refetch()}
                       canApprove={Boolean(isPmo)}
                       onApprove={(lesson) => setSelectedApprovalDraft(lesson)}
+                      canClose={Boolean(isPmo)}
+                      onCloseLesson={(lesson) => setSelectedClosureDraft(lesson)}
                       onClose={() => setSelectedSubmissionId(null)}
                       onReturn={isPmoEvaluationQueuePage ? setSelectedReturnLesson : undefined}
                     />
@@ -1093,6 +1122,14 @@ export function LessonsLearnedScreen() {
                       onConfirm={approveDraft}
                       onReload={reloadApprovalLesson}
                       onClose={() => setSelectedApprovalDraft(null)}
+                    />
+                  )}
+                  {selectedClosureDraft && (
+                    <ClosureDialog
+                      lesson={selectedClosureDraft}
+                      onConfirm={closeDraft}
+                      onReload={reloadClosureLesson}
+                      onClose={() => setSelectedClosureDraft(null)}
                     />
                   )}
                 </section>

@@ -227,6 +227,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/lessons/{id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close an approved lesson while preserving its publication date */
+        post: operations["LessonsController_closeApprovedLesson"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -336,7 +353,7 @@ export interface components {
             id: number;
             actorId: string;
             /** @enum {string} */
-            eventType: "Created" | "Submitted" | "Cancelled" | "Returned" | "Approved";
+            eventType: "Created" | "Submitted" | "Cancelled" | "Returned" | "Approved" | "Rejected" | "Closed";
             /** @enum {string|null} */
             previousStatus: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived" | null;
             /** @enum {string} */
@@ -405,7 +422,7 @@ export interface components {
         };
         LessonConflictResponse: {
             /** @enum {string} */
-            code: "STALE_LESSON_VERSION" | "LESSON_NOT_OPEN" | "LESSON_NOT_AWAITING_EVALUATION";
+            code: "STALE_LESSON_VERSION" | "LESSON_NOT_OPEN" | "LESSON_NOT_AWAITING_EVALUATION" | "LESSON_NOT_APPROVED";
             /** @example This draft changed after you opened it. Reload the current version before saving again. */
             message: string;
         };
@@ -478,6 +495,10 @@ export interface components {
         };
         ApproveLessonRequest: {
             /** @example 4 */
+            version: number;
+        };
+        CloseLessonRequest: {
+            /** @example 7 */
             version: number;
         };
     };
@@ -1265,6 +1286,76 @@ export interface operations {
                 content?: never;
             };
             /** @description The lesson is no longer awaiting evaluation or its version is stale. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonConflictResponse"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LessonsController_closeApprovedLesson: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric ID of the approved lesson. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloseLessonRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDraftResponse"];
+                };
+            };
+            /** @description The lesson version must be a positive integer. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The selected profile is not a PMO moderator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The lesson is no longer Approved or its version is stale. */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -215,6 +215,8 @@ type LessonSubmissionDetailsDialogProps = {
   onReturn?: (lesson: LessonDetails) => void;
   canApprove?: boolean;
   onApprove?: (lesson: LessonDetails) => void;
+  canClose?: boolean;
+  onCloseLesson?: (lesson: LessonDetails) => void;
 };
 
 export function LessonSubmissionDetailsDialog({
@@ -227,6 +229,8 @@ export function LessonSubmissionDetailsDialog({
   onReturn,
   canApprove = false,
   onApprove,
+  canClose = false,
+  onCloseLesson,
 }: LessonSubmissionDetailsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -316,6 +320,11 @@ export function LessonSubmissionDetailsDialog({
           {canApprove && lesson?.status === 'PMOEvaluation' && onApprove && (
             <button className="draft-editor-primary" type="button" onClick={() => onApprove(lesson)}>
               Approve and publish
+            </button>
+          )}
+          {canClose && lesson?.status === 'Approved' && onCloseLesson && (
+            <button className="draft-editor-primary" type="button" onClick={() => onCloseLesson(lesson)}>
+              Close lesson
             </button>
           )}
           <button className="draft-editor-secondary" type="button" onClick={onClose}>Close details</button>

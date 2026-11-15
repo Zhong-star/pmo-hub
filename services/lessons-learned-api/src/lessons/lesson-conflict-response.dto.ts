@@ -4,6 +4,7 @@ export const lessonConflictCodes = [
   'STALE_LESSON_VERSION',
   'LESSON_NOT_OPEN',
   'LESSON_NOT_AWAITING_EVALUATION',
+  'LESSON_NOT_APPROVED',
 ] as const;
 
 export class LessonConflictResponse {

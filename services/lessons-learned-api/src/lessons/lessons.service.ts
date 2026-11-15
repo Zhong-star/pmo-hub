@@ -16,6 +16,7 @@ import { LessonHistory } from './lesson-history.entity';
 import { Lesson } from './lesson.entity';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
 import type { ApproveLessonRequest } from './approve-lesson-request.dto';
+import type { CloseLessonRequest } from './close-lesson-request.dto';
 import type { CancelLessonRequest } from './cancel-lesson-request.dto';
 import { ProjectCatalogService, type LessonProject } from './project-catalog.service';
 import type { SubmitLessonRequest } from './submit-lesson-request.dto';
@@ -332,6 +333,49 @@ export class LessonsService {
       }));
 
       return this.toResponse(approved);
+    });
+  }
+
+  async closeApprovedLesson(
+    localUserId: string | undefined,
+    lessonId: number,
+    input: CloseLessonRequest,
+  ): Promise<LessonDraftResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    if (profile.role !== 'LESSONS_MODERATOR') {
+      throw new ForbiddenException('PMO moderator access is required to close lessons.');
+    }
+
+    return this.requireDataSource().transaction(async (manager) => {
+      const lessons = manager.getRepository(Lesson);
+      const current = await lessons.findOne({
+        where: { id: lessonId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!current) throw new NotFoundException('Lesson not found.');
+      if (current.status !== 'Approved') {
+        throw new ConflictException({
+          code: 'LESSON_NOT_APPROVED',
+          message: 'This lesson is no longer Approved. Reload the current version before deciding again.',
+        });
+      }
+      if (current.version !== input.version) throw this.staleVersionConflict();
+
+      current.status = 'Closed';
+      current.updatedBy = profile.id;
+      current.version += 1;
+      const closed = await lessons.save(current);
+
+      const history = manager.getRepository(LessonHistory);
+      await history.save(history.create({
+        lessonId: closed.id,
+        actorId: profile.id,
+        eventType: 'Closed',
+        previousStatus: 'Approved',
+        newStatus: 'Closed',
+      }));
+
+      return this.toResponse(closed);
     });
   }
 

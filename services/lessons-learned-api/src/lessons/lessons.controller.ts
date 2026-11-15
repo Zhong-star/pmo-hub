@@ -37,6 +37,7 @@ import {
 } from '../local-access-problem';
 import { CreateLessonRequest } from './create-lesson-request.dto';
 import { ApproveLessonRequest } from './approve-lesson-request.dto';
+import { CloseLessonRequest } from './close-lesson-request.dto';
 import { CancelLessonRequest } from './cancel-lesson-request.dto';
 import { LessonDetailsResponse, LessonDraftResponse } from './lesson-response.dto';
 import { LessonConflictResponse } from './lesson-conflict-response.dto';
@@ -370,5 +371,28 @@ export class LessonsController {
     input: ApproveLessonRequest,
   ): Promise<LessonDraftResponse> {
     return this.lessons.approveEvaluatedLesson(typeof header === 'string' ? header : undefined, lessonId, input);
+  }
+
+  @Post(':id/close')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Close an approved lesson while preserving its publication date' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the approved lesson.' })
+  @ApiBody({ type: CloseLessonRequest })
+  @ApiOkResponse({ type: LessonDraftResponse })
+  @ApiResponse({ status: 400, description: 'The lesson version must be a positive integer.' })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile is not a PMO moderator.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist.' })
+  @ApiConflictResponse({ type: LessonConflictResponse, description: 'The lesson is no longer Approved or its version is stale.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  closeApprovedLesson(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParseIntPipe) lessonId: number,
+    @Body(new ValidationPipe({ transform: true, whitelist: true, expectedType: CloseLessonRequest }))
+    input: CloseLessonRequest,
+  ): Promise<LessonDraftResponse> {
+    return this.lessons.closeApprovedLesson(typeof header === 'string' ? header : undefined, lessonId, input);
   }
 }

@@ -1,6 +1,7 @@
 export {
   api,
   approveLesson,
+  closeLesson,
   getHealth,
   getHome,
   getLibrary,
@@ -28,6 +29,7 @@ export {
   LESSONS_LEARNED_LIBRARY_PATH,
   LESSONS_LEARNED_CANCEL_PATH,
   LESSONS_LEARNED_APPROVE_PATH,
+  LESSONS_LEARNED_CLOSE_PATH,
 } from './generated/lessons-learned-api-client';
 
 export type {
@@ -44,4 +46,5 @@ export type {
   ReturnLessonBody,
   CancelLessonBody,
   ApproveLessonBody,
+  CloseLessonBody,
 } from './generated/lessons-learned-api-client';
