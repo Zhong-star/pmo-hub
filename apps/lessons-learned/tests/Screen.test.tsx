@@ -499,7 +499,7 @@ describe('Lessons Learned access check', () => {
 
     renderScreen('local-pmo', 0, 'evaluation-queue');
     await screen.findByRole('heading', { name: 'Evaluation Queue' });
-    await user.click(screen.getByRole('button', { name: 'View Approval review lesson' }));
+    await user.click(await screen.findByRole('button', { name: 'View Approval review lesson' }));
     const details = await screen.findByRole('dialog', { name: 'Lesson details' });
     await user.click(within(details).getByRole('button', { name: 'Approve and publish' }));
 
@@ -525,7 +525,7 @@ describe('Lessons Learned access check', () => {
 
     renderScreen('local-pmo', 0, 'evaluation-queue');
     await screen.findByRole('heading', { name: 'Evaluation Queue' });
-    await user.click(screen.getByRole('button', { name: 'View Changed approval lesson' }));
+    await user.click(await screen.findByRole('button', { name: 'View Changed approval lesson' }));
     const details = await screen.findByRole('dialog', { name: 'Lesson details' });
     await user.click(within(details).getByRole('button', { name: 'Approve and publish' }));
     const confirmation = await screen.findByRole('dialog', { name: 'Approve lesson' });

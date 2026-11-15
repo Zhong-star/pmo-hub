@@ -30,6 +30,19 @@ import type {
   PmoEvaluationQueueFilter,
 } from './lesson-submissions-query.dto';
 
+type EvaluationFields = Pick<
+  Lesson,
+  | 'title'
+  | 'projectCategory'
+  | 'projectPhase'
+  | 'situationObserved'
+  | 'rootCause'
+  | 'lessonType'
+  | 'impact'
+  | 'recommendation'
+  | 'applicability'
+>;
+
 @Injectable()
 export class LessonsService {
   constructor(
@@ -405,10 +418,8 @@ export class LessonsService {
     if (!current || (profile.role !== 'LESSONS_MODERATOR' && current.authorId !== profile.id)) {
       throw new NotFoundException('Lesson not found.');
     }
-    if (current.status === 'PMOEvaluation' && profile.role !== 'LESSONS_MODERATOR') {
-      throw new ForbiddenException('PMO moderator access is required to edit a lesson during evaluation.');
-    }
-    if (current.status !== 'Open' && current.status !== 'PMOEvaluation') {
+    const canEditEvaluation = current.status === 'PMOEvaluation' && profile.role === 'LESSONS_MODERATOR';
+    if (current.status !== 'Open' && !canEditEvaluation) {
       throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be edited.' });
     }
     if (current.version !== input.version) throw this.staleVersionConflict();
@@ -651,27 +662,16 @@ export class LessonsService {
   }
 
   private validateLessonForApproval(lesson: Lesson): void {
-    const fieldErrors: Record<string, string> = {};
-    const requireText = (field: string, value: string | null, label: string) => {
-      if (!value?.trim()) fieldErrors[field] = `${label} is required.`;
-    };
-
-    requireText('title', lesson.title, 'Title');
-    if (!['Technology', 'Business', 'Infrastructure', 'Data'].includes(lesson.projectCategory ?? '')) {
+    const fieldErrors = this.evaluationCompletenessErrors(lesson);
+    if (lesson.projectCategory && !['Technology', 'Business', 'Infrastructure', 'Data'].includes(lesson.projectCategory)) {
       fieldErrors.projectCategory = 'Choose a project category.';
     }
-    if (!['Initiation', 'Planning', 'Execution', 'Closure', 'Not Applicable'].includes(lesson.projectPhase ?? '')) {
+    if (lesson.projectPhase && !['Initiation', 'Planning', 'Execution', 'Closure', 'Not Applicable'].includes(lesson.projectPhase)) {
       fieldErrors.projectPhase = 'Choose a project phase.';
     }
-    requireText('situationObserved', lesson.situationObserved, 'Situation observed');
-    if (!['Future Prevention', 'Success to Repeat', 'Risk Avoided', 'Communication'].includes(lesson.lessonType ?? '')) {
+    if (lesson.lessonType && !['Future Prevention', 'Success to Repeat', 'Risk Avoided', 'Communication'].includes(lesson.lessonType)) {
       fieldErrors.lessonType = 'Choose a lesson type.';
     }
-    requireText('impact', lesson.impact, 'Impact');
-    requireText('recommendation', lesson.recommendation, 'Recommendation');
-    requireText('applicability', lesson.applicability, 'Applicability');
-    if (lesson.lessonType === 'Future Prevention') requireText('rootCause', lesson.rootCause, 'Root cause');
-
     if (Object.keys(fieldErrors).length > 0) {
       throw new BadRequestException({
         code: 'INVALID_LESSON_APPROVAL',
@@ -689,29 +689,8 @@ export class LessonsService {
     });
   }
 
-  private validateEvaluationCompleteness(fields: {
-    title: string;
-    projectCategory: Lesson['projectCategory'];
-    projectPhase: Lesson['projectPhase'];
-    situationObserved: Lesson['situationObserved'];
-    rootCause: Lesson['rootCause'];
-    lessonType: Lesson['lessonType'];
-    impact: Lesson['impact'];
-    recommendation: Lesson['recommendation'];
-    applicability: Lesson['applicability'];
-  }): void {
-    const fieldErrors: Record<string, string> = {};
-    if (!fields.title.trim()) fieldErrors.title = 'Title is required.';
-    if (!fields.projectCategory) fieldErrors.projectCategory = 'Project category is required.';
-    if (!fields.projectPhase) fieldErrors.projectPhase = 'Project phase is required.';
-    if (!fields.situationObserved?.trim()) fieldErrors.situationObserved = 'Situation observed is required.';
-    if (!fields.lessonType) fieldErrors.lessonType = 'Lesson type is required.';
-    if (!fields.impact?.trim()) fieldErrors.impact = 'Impact is required.';
-    if (!fields.recommendation?.trim()) fieldErrors.recommendation = 'Recommendation is required.';
-    if (!fields.applicability?.trim()) fieldErrors.applicability = 'Applicability is required.';
-    if (fields.lessonType === 'Future Prevention' && !fields.rootCause?.trim()) {
-      fieldErrors.rootCause = 'Root cause is required for Future Prevention.';
-    }
+  private validateEvaluationCompleteness(fields: EvaluationFields): void {
+    const fieldErrors = this.evaluationCompletenessErrors(fields);
     if (Object.keys(fieldErrors).length > 0) {
       throw new BadRequestException({
         code: 'INVALID_LESSON_EDIT',
@@ -719,6 +698,25 @@ export class LessonsService {
         fieldErrors,
       });
     }
+  }
+
+  private evaluationCompletenessErrors(fields: EvaluationFields): Record<string, string> {
+    const fieldErrors: Record<string, string> = {};
+    const requireText = (field: string, value: string | null, label: string) => {
+      if (!value?.trim()) fieldErrors[field] = `${label} is required.`;
+    };
+
+    requireText('title', fields.title, 'Title');
+    if (!fields.projectCategory) fieldErrors.projectCategory = 'Project category is required.';
+    if (!fields.projectPhase) fieldErrors.projectPhase = 'Project phase is required.';
+    requireText('situationObserved', fields.situationObserved, 'Situation observed');
+    if (!fields.lessonType) fieldErrors.lessonType = 'Lesson type is required.';
+    requireText('impact', fields.impact, 'Impact');
+    requireText('recommendation', fields.recommendation, 'Recommendation');
+    requireText('applicability', fields.applicability, 'Applicability');
+    if (fields.lessonType === 'Future Prevention') requireText('rootCause', fields.rootCause, 'Root cause');
+
+    return fieldErrors;
   }
 
   private requireDataSource(): DataSource {

@@ -1190,7 +1190,8 @@ describe('Lessons Learned draft registration', () => {
       .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .send({ version: submitted.body.version, ...completeEdit })
-      .expect(403);
+      .expect(409)
+      .expect(({ body }) => expect(body.code).toBe('LESSON_NOT_OPEN'));
 
     await server
       .patch(`/api/lessons-learned/v1/lessons/${created.body.id}`)

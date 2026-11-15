@@ -355,7 +355,7 @@ export function RejectLessonDialog({ draft, onClose, onReload, onConfirm, onRegi
           )}
         </div>
         {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
-        {hasVersionConflict && isAwaitingEvaluation && (
+        {(hasVersionConflict || !isAwaitingEvaluation) && (
           <button className="draft-editor-secondary" type="button" disabled={isRejecting || isReloading} onClick={() => void reloadCurrentEvaluation()}>
             {isReloading ? 'Reloading…' : 'Reload current version'}
           </button>

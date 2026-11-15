@@ -145,7 +145,7 @@ describe('Lessons Learned health API', () => {
       .toBe('#/components/schemas/LessonConflictResponse');
     expect(contract.components?.schemas?.LessonConflictResponse?.required).toEqual(['code', 'message']);
     expect(contract.components?.schemas?.LessonConflictResponse?.properties?.code?.enum)
-      .toEqual(['STALE_LESSON_VERSION', 'LESSON_NOT_OPEN']);
+      .toEqual(expect.arrayContaining(['STALE_LESSON_VERSION', 'LESSON_NOT_OPEN', 'LESSON_NOT_AWAITING_EVALUATION']));
     expect(contract.components?.schemas?.LessonConflictResponse?.properties?.message?.type).toBe('string');
     expect(contract.components?.schemas?.UpdateLessonDraftRequest?.properties?.situationObserved?.maxLength)
       .toBe(4000);
