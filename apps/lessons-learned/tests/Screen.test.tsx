@@ -492,7 +492,7 @@ describe('Lessons Learned access check', () => {
     renderScreen('local-contributor', 0, 'library');
 
     expect(await screen.findByRole('heading', { name: 'Lessons Library' })).toBeInTheDocument();
-    expect(getLibrary).toHaveBeenCalledWith('local-contributor', { paged: 'true', cursor: undefined });
+    await waitFor(() => expect(getLibrary).toHaveBeenCalledWith('local-contributor', { paged: 'true', cursor: undefined }));
     expect(screen.getByRole('link', { name: 'Lessons Library' })).toHaveAttribute('aria-current', 'page');
     const table = await screen.findByRole('table', { name: 'Published lessons, newest approval first' });
     const row = within(table).getByRole('row', { name: /Published release verification/ });

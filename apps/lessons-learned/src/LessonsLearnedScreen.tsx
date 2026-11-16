@@ -185,6 +185,16 @@ function isLibraryLesson(lesson: LessonDraft | LibraryLesson): lesson is Library
   return 'viewCount' in lesson && typeof lesson.viewCount === 'number';
 }
 
+function isPublishedLibraryLesson(lesson: LessonDetails): boolean {
+  return (lesson.status === 'Approved' || lesson.status === 'Closed') && Boolean(lesson.approvedAt);
+}
+
+async function getLegacyPublishedLibraryLesson(profileId: string, lessonId: number): Promise<LessonDetails> {
+  const lesson = await getLessonDetails(profileId, lessonId);
+  if (!isPublishedLibraryLesson(lesson)) throw new Error('Published lesson is unavailable.');
+  return lesson;
+}
+
 function createLibraryOpeningId(): string {
   if (typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
   const bytes = window.crypto.getRandomValues(new Uint8Array(16));
@@ -374,16 +384,27 @@ export function LessonsLearnedScreen() {
     ...commonSubmissionFilters,
     ...(librarySort === 'newest' ? {} : { sort: librarySort }),
   };
+  const libraryProjectsQuery = useQuery({
+    queryKey: ['lessons-learned-project-options', selectedProfileId, 'library'],
+    queryFn: () => getLibraryProjectSnapshots(selectedProfileId ?? ''),
+    enabled: isHomePage && isLibraryPage,
+    networkMode: 'always',
+    retry: false,
+  });
+  const libraryCapabilityResolved = libraryProjectsQuery.isSuccess || libraryProjectsQuery.isError;
+  const isLegacyLibrary = libraryProjectsQuery.isError && getApiErrorStatus(libraryProjectsQuery.error) === 404;
   const libraryQuery = useInfiniteQuery({
-    queryKey: ['lessons-learned-library', selectedProfileId, libraryFilters],
-    queryFn: ({ pageParam }) => getLibrary(selectedProfileId ?? '', {
-      ...libraryFilters,
-      paged: 'true',
-      cursor: pageParam,
-    }),
+    queryKey: ['lessons-learned-library', selectedProfileId, isLegacyLibrary ? 'legacy' : libraryFilters],
+    queryFn: ({ pageParam }) => isLegacyLibrary
+      ? getLibrary(selectedProfileId ?? '', { paged: 'true', cursor: pageParam })
+      : getLibrary(selectedProfileId ?? '', {
+        ...libraryFilters,
+        paged: 'true',
+        cursor: pageParam,
+      }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => Array.isArray(lastPage) ? undefined : lastPage.page.nextCursor ?? undefined,
-    enabled: isHomePage && isLibraryPage,
+    enabled: isHomePage && isLibraryPage && libraryCapabilityResolved,
     networkMode: 'always',
     retry: false,
     refetchOnWindowFocus: true,
@@ -408,13 +429,6 @@ export function LessonsLearnedScreen() {
     networkMode: 'always',
     retry: false,
   });
-  const libraryProjectsQuery = useQuery({
-    queryKey: ['lessons-learned-project-options', selectedProfileId, 'library'],
-    queryFn: () => getLibraryProjectSnapshots(selectedProfileId ?? ''),
-    enabled: isHomePage && isLibraryPage,
-    networkMode: 'always',
-    retry: false,
-  });
   const submissionDetailsQuery = useQuery({
     queryKey: ['lessons-learned-submission-details', selectedProfileId, selectedSubmissionId],
     queryFn: () => getLessonDetails(selectedProfileId ?? '', selectedSubmissionId ?? 0),
@@ -423,9 +437,11 @@ export function LessonsLearnedScreen() {
     retry: false,
   });
   const libraryDetailsQuery = useQuery({
-    queryKey: ['lessons-learned-library-details', selectedProfileId, libraryDetailId],
-    queryFn: () => getLibraryLessonDetails(selectedProfileId ?? '', libraryDetailId ?? 0),
-    enabled: isHomePage && isLibraryPage && libraryDetailId !== null,
+    queryKey: ['lessons-learned-library-details', selectedProfileId, libraryDetailId, isLegacyLibrary ? 'legacy' : 'current'],
+    queryFn: () => isLegacyLibrary
+      ? getLegacyPublishedLibraryLesson(selectedProfileId ?? '', libraryDetailId ?? 0)
+      : getLibraryLessonDetails(selectedProfileId ?? '', libraryDetailId ?? 0),
+    enabled: isHomePage && isLibraryPage && libraryDetailId !== null && libraryCapabilityResolved,
     networkMode: 'always',
     retry: false,
   });
@@ -451,7 +467,7 @@ export function LessonsLearnedScreen() {
     },
   });
   useEffect(() => {
-    if (!isHomePage || !isLibraryPage || !libraryDetailsQuery.isSuccess || !selectedProfileId || libraryDetailId === null) return;
+    if (!isHomePage || !isLibraryPage || isLegacyLibrary || !libraryDetailsQuery.isSuccess || !selectedProfileId || libraryDetailId === null) return;
     const opening = libraryOpeningRef.current;
     if (!opening || opening.status !== 'ready' || opening.lessonId !== libraryDetailId || opening.profileId !== selectedProfileId) return;
     if (libraryDetailsQuery.isFetching || libraryDetailsQuery.data?.id !== libraryDetailId) return;
@@ -462,7 +478,7 @@ export function LessonsLearnedScreen() {
       lessonId: opening.lessonId,
       openingId: opening.openingId,
     });
-  }, [isHomePage, isLibraryPage, libraryDetailId, libraryDetailsQuery.data, libraryDetailsQuery.isFetching, libraryDetailsQuery.isSuccess, recordView, selectedProfileId]);
+  }, [isHomePage, isLibraryPage, isLegacyLibrary, libraryDetailId, libraryDetailsQuery.data, libraryDetailsQuery.isFetching, libraryDetailsQuery.isSuccess, recordView, selectedProfileId]);
   useEffect(() => {
     const opening = libraryOpeningRef.current;
     if (opening?.status === 'ready' && libraryDetailId !== opening.lessonId) opening.status = 'failed';
@@ -537,7 +553,7 @@ export function LessonsLearnedScreen() {
 
   function openLibraryLessonFromList(lessonId: number) {
     if (!selectedProfileId) return;
-    libraryOpeningRef.current = {
+    libraryOpeningRef.current = isLegacyLibrary ? null : {
       profileId: selectedProfileId,
       lessonId,
       openingId: createLibraryOpeningId(),
@@ -554,7 +570,7 @@ export function LessonsLearnedScreen() {
       });
       queryClient.removeQueries({
         queryKey: ['lessons-learned-library-details', profileId, lessonId],
-        exact: true,
+        exact: false,
       });
     }
     await Promise.all([
@@ -714,10 +730,17 @@ export function LessonsLearnedScreen() {
     const profileId = selectedProfileIdRef.current;
     if (!profileId) throw new Error('Select a profile before reloading a lesson.');
     const latest = isLibraryPage
-      ? await getLibraryLessonDetails(profileId, lessonId)
+      ? isLegacyLibrary
+        ? await getLegacyPublishedLibraryLesson(profileId, lessonId)
+        : await getLibraryLessonDetails(profileId, lessonId)
       : await getLessonDetails(profileId, lessonId);
     const detailsKey = isLibraryPage ? 'lessons-learned-library-details' : 'lessons-learned-submission-details';
-    queryClient.setQueryData([detailsKey, profileId, lessonId], latest);
+    queryClient.setQueryData([
+      detailsKey,
+      profileId,
+      lessonId,
+      ...(isLibraryPage ? [isLegacyLibrary ? 'legacy' : 'current'] : []),
+    ], latest);
     setSelectedClosureDraft(null);
     return latest;
   }
@@ -997,7 +1020,9 @@ export function LessonsLearnedScreen() {
                         : isPmoEvaluationQueuePage ? 'Evaluation Queue'
                           : isPmoDraftsPage ? 'PMO Drafts' : 'My Submissions'}</h1>
                       <p className="intro">{isLibraryPage
-                        ? 'Browse lessons published by PMO. Search, filter, and sort to find published guidance.'
+                        ? isLegacyLibrary
+                          ? 'Browse lessons published by PMO.'
+                          : 'Browse lessons published by PMO. Search, filter, and sort to find published guidance.'
                         : isPmoEvaluationQueuePage
                           ? 'Lessons awaiting PMO evaluation, with the oldest submission first.'
                           : isPmoDraftsPage
@@ -1014,7 +1039,7 @@ export function LessonsLearnedScreen() {
                     )}
                   </div>
 
-                  {isLibraryPage && (
+                  {isLibraryPage && !isLegacyLibrary && (
                     <>
                       <div className="submission-filters" role="group" aria-label="Search, filter, and sort Lessons Library">
                         <div className="draft-editor-field">
@@ -1155,7 +1180,7 @@ export function LessonsLearnedScreen() {
                       <button className="draft-cancel" type="button" onClick={() => void projectsQuery.refetch()}>Retry projects</button>
                     </div>
                   )}
-                  {currentProjectOptionsQuery.isError && !currentProjectOptionsQuery.isFetching && (
+                  {currentProjectOptionsQuery.isError && !currentProjectOptionsQuery.isFetching && !isLegacyLibrary && (
                     <div className="draft-error" role="alert">
                       <p>{isLibraryPage ? 'Published project filter options could not be loaded.' : 'Past project filter options could not be loaded.'}</p>
                       <button className="draft-cancel" type="button" onClick={() => void currentProjectOptionsQuery.refetch()}>
@@ -1181,7 +1206,7 @@ export function LessonsLearnedScreen() {
                   )}
                   {currentSubmissionsQuery.isSuccess && submissionItems.length === 0 && (
                     <p className="draft-empty">{isLibraryPage
-                      ? currentSubmissionFilters && Object.keys(currentSubmissionFilters).length > 0
+                      ? !isLegacyLibrary && currentSubmissionFilters && Object.keys(currentSubmissionFilters).length > 0
                         ? 'No published lessons match these filters.'
                         : 'No lessons have been published yet.'
                       : isPmoEvaluationQueuePage
@@ -1209,7 +1234,7 @@ export function LessonsLearnedScreen() {
                             <th scope="col">Type</th>
                             <th scope="col">Status</th>
                             {isLibraryPage && <th scope="col">Approved</th>}
-                            {isLibraryPage && <th scope="col">Views</th>}
+                            {isLibraryPage && !isLegacyLibrary && <th scope="col">Views</th>}
                             {isPmoDraftsPage && <th scope="col">Updated</th>}
                             {isPmoReviewListPage && <th scope="col">Actions</th>}
                           </tr>
@@ -1255,7 +1280,7 @@ export function LessonsLearnedScreen() {
                               {isLibraryPage && <td>{draft.approvedAt
                                 ? <time dateTime={draft.approvedAt}>{formatUpdatedAt(draft.approvedAt)}</time>
                                 : 'Not available'}</td>}
-                              {isLibraryPage && <td>{isLibraryLesson(draft) ? draft.viewCount : 0}</td>}
+                              {isLibraryPage && !isLegacyLibrary && <td>{isLibraryLesson(draft) ? draft.viewCount : 0}</td>}
                               {isPmoDraftsPage && <td><time dateTime={draft.updatedAt}>{formatUpdatedAt(draft.updatedAt)}</time></td>}
                               {isPmoReviewListPage && <td>
                                 <div className="submission-actions">

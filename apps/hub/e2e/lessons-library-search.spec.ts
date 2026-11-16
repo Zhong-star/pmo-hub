@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { publishLesson } from './fixtures/lessons-library';
 
 test('Contributor searches and filters published Library lessons without losing state in details', async ({ page }) => {
   expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
@@ -9,44 +10,19 @@ test('Contributor searches and filters published Library lessons without losing 
   const wrongTypeTitle = `Gestão de riscos sem tipo correspondente ${stamp}`;
   const unrelatedTitle = `Capacity planning ${stamp}`;
 
-  async function publish(title: string, projectId: string | null, projectName: string | null, lessonType: string) {
-    const created = await page.request.post(`${apiBase}/lessons`, {
-      headers: { 'X-PMO-Local-User-ID': 'local-developer' },
-      data: { title },
-    });
-    expect(created.status()).toBe(201);
-    const draft = await created.json();
-    const submitted = await page.request.post(`${apiBase}/lessons/${draft.id}/submit`, {
-      headers: { 'X-PMO-Local-User-ID': 'local-developer' },
-      data: {
-        version: draft.version,
-        title,
-        projectId,
-        projectName,
-        projectCategory: 'Technology',
-        projectPhase: 'Execution',
-        situationObserved: `Description for ${title}.`,
-        rootCause: 'The previous result was not found before work started.',
-        lessonType,
-        impact: 'The team spent time repeating an earlier investigation.',
-        recommendation: 'Search the Lessons Library before starting.',
-        applicability: 'Use on projects with similar delivery risks.',
-      },
-    });
-    expect(submitted.status()).toBe(200);
-    const evaluation = await submitted.json();
-    const approved = await page.request.post(`${apiBase}/lessons/${draft.id}/approve`, {
-      headers: { 'X-PMO-Local-User-ID': 'local-pmo' },
-      data: { version: evaluation.version },
-    });
-    expect(approved.status()).toBe(200);
-    return approved.json();
-  }
-
-  await publish(targetTitle, null, null, 'Communication');
-  await publish(wrongProjectTitle, 'LOCAL-PROJECT-001', 'Fictional Atlas Modernization', 'Communication');
-  await publish(wrongTypeTitle, null, null, 'Future Prevention');
-  await publish(unrelatedTitle, 'LOCAL-PROJECT-001', 'Fictional Atlas Modernization', 'Future Prevention');
+  await publishLesson(page.request, targetTitle, { authorId: 'local-developer', lessonType: 'Communication' });
+  await publishLesson(page.request, wrongProjectTitle, {
+    authorId: 'local-developer',
+    projectId: 'LOCAL-PROJECT-001',
+    projectName: 'Fictional Atlas Modernization',
+    lessonType: 'Communication',
+  });
+  await publishLesson(page.request, wrongTypeTitle, { authorId: 'local-developer' });
+  await publishLesson(page.request, unrelatedTitle, {
+    authorId: 'local-developer',
+    projectId: 'LOCAL-PROJECT-001',
+    projectName: 'Fictional Atlas Modernization',
+  });
 
   await page.goto('/');
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-contributor');
@@ -91,7 +67,7 @@ test('Contributor searches and filters published Library lessons without losing 
 
   const sortPrefix = `Sort item ${stamp}`;
   const sortingTitles = [`${sortPrefix} Alpha`, `${sortPrefix} Beta`];
-  await Promise.all(sortingTitles.map((title) => publish(title, null, null, 'Communication')));
+  await Promise.all(sortingTitles.map((title) => publishLesson(page.request, title, { authorId: 'local-developer', lessonType: 'Communication' })));
   const sortQuery = new URLSearchParams({ search: sortPrefix, sort: 'title', limit: '1' });
   const sortFirstResponse = await page.request.get(`${apiBase}/lessons/library?${sortQuery}`, {
     headers: { 'X-PMO-Local-User-ID': 'local-contributor' },

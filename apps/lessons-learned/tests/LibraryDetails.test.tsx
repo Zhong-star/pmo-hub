@@ -8,6 +8,7 @@ import {
   getLibrary,
   getLibraryLessonDetails,
   getLibraryProjectSnapshots,
+  getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
   getMySubmissions,
@@ -136,7 +137,7 @@ describe('published Library lesson details', () => {
     renderLibrary('/lessons-learned/?page=library&lesson=42');
 
     expect(await screen.findByRole('dialog', { name: 'Published lesson details' })).toBeInTheDocument();
-    expect(getLibraryLessonDetails).toHaveBeenCalledWith('local-contributor', 42);
+    await waitFor(() => expect(getLibraryLessonDetails).toHaveBeenCalledWith('local-contributor', 42));
     expect(recordLibraryView).not.toHaveBeenCalled();
     expect(await screen.findByText('No checklist owner had been assigned.')).toBeInTheDocument();
     expect(within(screen.getByRole('dialog', { name: 'Published lesson details' })).getByText('Local Contributor')).toBeInTheDocument();
@@ -150,6 +151,84 @@ describe('published Library lesson details', () => {
     expect(screen.queryByRole('dialog', { name: 'Published lesson details' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Lessons Library' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Lessons Library' })).toHaveFocus();
+  });
+
+  it('keeps the Library usable with the previous API and limits its detail fallback to published lessons', async () => {
+    vi.mocked(getLibraryProjectSnapshots).mockRejectedValue({ response: { status: 404 } });
+    vi.mocked(getLibrary).mockResolvedValue([libraryLesson()]);
+    vi.mocked(getLessonDetails).mockResolvedValue(publishedDetails({
+      history: [{
+        id: 7,
+        eventType: 'Approved',
+        previousStatus: 'PMOEvaluation',
+        newStatus: 'Approved',
+        actorId: 'local-pmo',
+        occurredAt: '2026-11-14T12:30:00.000Z',
+        reason: null,
+      }],
+    }));
+    renderLibrary('/lessons-learned/?page=library');
+
+    const lessonLink = await screen.findByRole('link', { name: 'View Improve release handover' });
+    expect(getLibrary).toHaveBeenCalledWith('local-contributor', { paged: 'true', cursor: undefined });
+    expect(screen.queryByRole('searchbox', { name: 'Search title or ID' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Project' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Lesson type' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Sort by' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Views' })).not.toBeInTheDocument();
+
+    await userEvent.setup().click(lessonLink);
+    const details = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    expect(getLessonDetails).toHaveBeenCalledWith('local-contributor', 42);
+    expect(getLibraryLessonDetails).not.toHaveBeenCalled();
+    expect(recordLibraryView).not.toHaveBeenCalled();
+    expect(within(details).getByText('No checklist owner had been assigned.')).toBeVisible();
+    expect(within(details).getByRole('heading', { name: 'History' })).toBeVisible();
+    expect(document.querySelector('time[datetime="2026-11-14T12:00:00.000Z"]')).toBeInTheDocument();
+  });
+
+  it('does not render legacy details unless they are approved or closed with an approval date', async () => {
+    vi.mocked(getLibraryProjectSnapshots).mockRejectedValue({ response: { status: 404 } });
+    vi.mocked(getLessonDetails).mockResolvedValue(publishedDetails({
+      status: 'Open',
+      approvedAt: null,
+      situationObserved: 'PRIVATE DRAFT CONTENT',
+    }));
+    renderLibrary('/lessons-learned/?page=library&lesson=42');
+
+    expect(await screen.findByRole('dialog', { name: 'Published lesson details' })).toBeInTheDocument();
+    expect(await screen.findByText('Lesson details and history could not be loaded.')).toBeVisible();
+    expect(screen.queryByText('PRIVATE DRAFT CONTENT')).not.toBeInTheDocument();
+    expect(getLessonDetails).toHaveBeenCalledWith('local-contributor', 42);
+    expect(getLibraryLessonDetails).not.toHaveBeenCalled();
+    expect(recordLibraryView).not.toHaveBeenCalled();
+  });
+
+  it('keeps permission failures on the current Library API path', async () => {
+    vi.mocked(getLibraryProjectSnapshots).mockRejectedValue({ response: { status: 403 } });
+    vi.mocked(getLibrary).mockResolvedValue([libraryLesson()]);
+    renderLibrary('/lessons-learned/?page=library');
+
+    expect(await screen.findByRole('link', { name: 'View Improve release handover' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search title or ID' })).toBeInTheDocument();
+    expect(getLibrary).toHaveBeenCalledWith('local-contributor', {
+      paged: 'true',
+      cursor: undefined,
+    });
+    expect(getLibraryProjectSnapshots).toHaveBeenCalledWith('local-contributor');
+    expect(screen.getByText('Published project filter options could not be loaded.')).toBeVisible();
+  });
+
+  it('uses only the dedicated detail route on the current API, including for 404 responses', async () => {
+    vi.mocked(getLibraryLessonDetails).mockRejectedValue({ response: { status: 404 } });
+    vi.mocked(getLessonDetails).mockResolvedValue(publishedDetails({ situationObserved: 'PRIVATE FALLBACK CONTENT' }));
+    renderLibrary('/lessons-learned/?page=library&lesson=42');
+
+    expect(await screen.findByRole('dialog', { name: 'Published lesson details' })).toBeInTheDocument();
+    expect(await screen.findByText('Lesson details and history could not be loaded.')).toBeVisible();
+    expect(screen.queryByText('PRIVATE FALLBACK CONTENT')).not.toBeInTheDocument();
+    expect(getLibraryLessonDetails).toHaveBeenCalledWith('local-contributor', 42);
+    expect(getLessonDetails).not.toHaveBeenCalled();
   });
 
   it('opens a shareable Library URL and closes with browser history while restoring focus', async () => {

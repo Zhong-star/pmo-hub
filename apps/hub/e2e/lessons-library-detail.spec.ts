@@ -1,43 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { publishLesson } from './fixtures/lessons-library';
 
 const lessonsPath = 'http://127.0.0.1:5199/api/lessons-learned/v1/lessons';
-
-async function publishLesson(request: APIRequestContext, title: string) {
-  const authorHeaders = { 'X-PMO-Local-User-ID': 'local-contributor' };
-  const createdResponse = await request.post(lessonsPath, {
-    headers: authorHeaders,
-    data: { title },
-  });
-  expect(createdResponse.status()).toBe(201);
-  const created = await createdResponse.json();
-
-  const submittedResponse = await request.post(`${lessonsPath}/${created.id}/submit`, {
-    headers: authorHeaders,
-    data: {
-      version: created.version,
-      title,
-      projectId: null,
-      projectName: null,
-      projectCategory: 'Technology',
-      projectPhase: 'Execution',
-      situationObserved: 'The handover omitted the release runbook.',
-      rootCause: 'No checklist owner had been assigned.',
-      lessonType: 'Future Prevention',
-      impact: 'The next team repeated verification work.',
-      recommendation: 'Assign an owner to review the release checklist.',
-      applicability: 'Use for software releases with a shared on call rotation.',
-    },
-  });
-  expect(submittedResponse.status()).toBe(200);
-  const submitted = await submittedResponse.json();
-
-  const approvedResponse = await request.post(`${lessonsPath}/${created.id}/approve`, {
-    headers: { 'X-PMO-Local-User-ID': 'local-pmo' },
-    data: { version: submitted.version },
-  });
-  expect(approvedResponse.status()).toBe(200);
-  return approvedResponse.json() as Promise<{ id: number; approvedAt: string; version: number }>;
-}
 
 async function getLibraryLesson(request: APIRequestContext, lessonId: number, profileId = 'local-contributor') {
   const response = await request.get(`${lessonsPath}/library`, {
@@ -83,19 +47,20 @@ test('published Library detail supports direct and list navigation with role che
   await expect(page).toHaveURL(new RegExp(`page=library&lesson=${published.id}`));
   await expect(page.getByRole('dialog', { name: 'Published lesson details' })).toBeVisible();
   await expect.poll(async () => (await getLibraryLesson(request, published.id)).viewCount).toBe(1);
-  await page.reload();
-  await expect(page.getByRole('dialog', { name: 'Published lesson details' })).toBeVisible();
-  await expect.poll(async () => (await getLibraryLesson(request, published.id)).viewCount).toBe(1);
   await page.keyboard.press('Escape');
   await expect(page).toHaveURL(/\?page=library$/);
-  await expect(listLink).toBeFocused();
+  await expect(page.getByRole('link', { name: `View ${title}` })).toBeFocused();
   await expect.poll(() => listPanel.evaluate((panel) => panel.scrollTop)).toBe(scrollTopBeforeOpen);
 
-  await listLink.click();
+  await page.getByRole('link', { name: `View ${title}` }).click();
+  await expect(page.getByRole('dialog', { name: 'Published lesson details' })).toBeVisible();
+  await expect.poll(async () => (await getLibraryLesson(request, published.id)).viewCount).toBe(2);
+  await page.reload();
   await expect(page.getByRole('dialog', { name: 'Published lesson details' })).toBeVisible();
   await expect.poll(async () => (await getLibraryLesson(request, published.id)).viewCount).toBe(2);
   await page.keyboard.press('Escape');
   await expect(page).toHaveURL(/\?page=library$/);
+  await expect(page.getByRole('heading', { name: 'Lessons Library' })).toBeFocused();
   await page.goForward();
   await expect(page.getByRole('dialog', { name: 'Published lesson details' })).toBeVisible();
   await expect.poll(async () => (await getLibraryLesson(request, published.id)).viewCount).toBe(2);
