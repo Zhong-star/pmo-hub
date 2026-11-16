@@ -56,6 +56,7 @@ import { RejectLessonRequest } from './reject-lesson-request.dto';
 import { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import {
   LessonSubmissionsQuery,
+  LessonsLibraryQuery,
   PmoDraftsQuery,
   PmoEvaluationQueueQuery,
 } from './lesson-submissions-query.dto';
@@ -222,6 +223,10 @@ export class LessonsController {
   @ApiQuery({ name: 'paged', required: false, enum: ['true'], description: 'Opt in to the cursor response envelope.' })
   @ApiQuery({ name: 'cursor', required: false, type: String })
   @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'A case- and accent-insensitive title prefix, numeric ID or #ID.' })
+  @ApiQuery({ name: 'projectId', required: false, type: String, description: 'Project snapshot ID.' })
+  @ApiQuery({ name: 'withoutProject', required: false, type: Boolean, description: 'Filter lessons without a project.' })
+  @ApiQuery({ name: 'lessonType', required: false, enum: LESSON_TYPES })
   @ApiOkResponse({ schema: { oneOf: [
     { type: 'array', items: { $ref: getSchemaPath(LessonDraftResponse) } },
     { $ref: getSchemaPath(LessonPage) },
@@ -232,11 +237,31 @@ export class LessonsController {
   @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
   getLibrary(
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Query(new ValidationPipe({ transform: true, whitelist: true, expectedType: LessonsLibraryQuery }))
+    filters: LessonsLibraryQuery,
     @Query('paged') paged?: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ): Promise<LessonDraftResponse[] | LessonPage> {
-    return this.lessons.getLibrary(typeof header === 'string' ? header : undefined, readPageRequest(paged, cursor, limit));
+    return this.lessons.getLibrary(
+      typeof header === 'string' ? header : undefined,
+      readPageRequest(paged, cursor, limit),
+      filters,
+    );
+  }
+
+  @Get('library/projects')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'List project snapshots used by published Lessons Library entries' })
+  @ApiSecurity(localProfileScheme)
+  @ApiOkResponse({ type: [LessonProjectResponse] })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  getLibraryProjectSnapshots(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+  ): Promise<LessonProjectResponse[]> {
+    return this.lessons.getLibraryProjectSnapshots(typeof header === 'string' ? header : undefined);
   }
 
   @Get('library/:id')

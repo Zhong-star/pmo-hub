@@ -727,7 +727,7 @@ describe('Lessons Learned draft registration', () => {
       .send({ title: 'Submit a complete lesson' })
       .expect(201);
 
-    const submittedResponse = await server
+    const submitted = await server
       .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .send({
@@ -2633,6 +2633,111 @@ describe('Lessons Learned draft registration', () => {
       .get(`/api/lessons-learned/v1/lessons/${privateDraft.body.id}`)
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .expect(200);
+  });
+
+  it('searches and filters the complete published Library before cursor pagination', async () => {
+    const server = request(app!.getHttpServer());
+    const publish = async (input: {
+      title: string;
+      projectId?: string | null;
+      projectName?: string | null;
+      lessonType: 'Future Prevention' | 'Communication';
+    }) => {
+      const created = await server
+        .post('/api/lessons-learned/v1/lessons')
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ title: input.title })
+        .expect(201);
+      const submitted = await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          version: created.body.version,
+          title: input.title,
+          projectId: input.projectId ?? null,
+          projectName: input.projectName ?? null,
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The approved lesson includes a searchable description.',
+          rootCause: 'The review team could not find an earlier result.',
+          lessonType: input.lessonType,
+          impact: 'The team repeated avoidable investigation.',
+          recommendation: 'Search the Library before starting.',
+          applicability: 'Use this guidance on similar projects.',
+        })
+        .expect(200);
+      return server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version })
+        .expect(200);
+    };
+    const riskLesson = await publish({
+      title: 'Gestão de riscos',
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+      lessonType: 'Communication',
+    });
+    const numericTitle = await publish({ title: `${riskLesson.body.id} handover checklist`, lessonType: 'Future Prevention' });
+    const hashTitle = await publish({ title: '#planning for handover', lessonType: 'Communication' });
+    await publish({ title: 'Recently approved unrelated lesson', lessonType: 'Communication' });
+
+    const reader = { 'X-PMO-Local-User-ID': 'local-other-contributor' };
+    const libraryPath = '/api/lessons-learned/v1/lessons/library';
+    await server.get(`${libraryPath}/projects`).set(reader).expect(200).expect(({ body }) => {
+      expect(body).toContainEqual({ id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' });
+    });
+    await server.get(libraryPath).query({ search: 'gestao', limit: 1 }).set(reader).expect(200).expect(({ body }) => {
+      expect(body.items.map(({ id }: { id: number }) => id)).toEqual([riskLesson.body.id]);
+      expect(body.items[0].authorName).toBe('Local Contributor');
+      expect(body.page.nextCursor).toBeNull();
+    });
+    await server.get(libraryPath).query({
+      search: 'GESTÃO',
+      projectId: 'LOCAL-PROJECT-001',
+      lessonType: 'Communication',
+    }).set(reader).expect(200).expect(({ body }) => {
+      expect(body.map(({ id }: { id: number }) => id)).toEqual([riskLesson.body.id]);
+    });
+    await server.get(libraryPath).query({ search: String(riskLesson.body.id) }).set(reader).expect(200).expect(({ body }) => {
+      expect(body.map(({ id }: { id: number }) => id)).toContain(riskLesson.body.id);
+      expect(body.map(({ id }: { id: number }) => id)).toContain(numericTitle.body.id);
+    });
+    await server.get(libraryPath).query({ search: `#${riskLesson.body.id}` }).set(reader).expect(200).expect(({ body }) => {
+      expect(body.map(({ id }: { id: number }) => id)).toEqual([riskLesson.body.id]);
+    });
+    await server.get(libraryPath).query({ search: '#plan' }).set(reader).expect(200).expect(({ body }) => {
+      expect(body.map(({ id }: { id: number }) => id)).toEqual([hashTitle.body.id]);
+    });
+    await server.get(libraryPath).query({
+      search: String(riskLesson.body.id),
+      withoutProject: 'true',
+      lessonType: 'Future Prevention',
+      limit: 1,
+    }).set(reader).expect(200).expect(({ body }) => {
+      expect(body.items.map(({ id }: { id: number }) => id)).toEqual([numericTitle.body.id]);
+      expect(body.page.nextCursor).toBeNull();
+    });
+    const closedRiskLesson = await server
+      .post(`/api/lessons-learned/v1/lessons/${riskLesson.body.id}/close`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: riskLesson.body.version })
+      .expect(200);
+    expect(closedRiskLesson.body.approvedAt).toBe(riskLesson.body.approvedAt);
+    await server.get(libraryPath).query({
+      search: 'gestao',
+      projectId: 'LOCAL-PROJECT-001',
+      lessonType: 'Communication',
+    }).set(reader).expect(200).expect(({ body }) => {
+      expect(body).toContainEqual(expect.objectContaining({
+        id: riskLesson.body.id,
+        status: 'Closed',
+        approvedAt: riskLesson.body.approvedAt,
+      }));
+    });
+    const unfilteredFirstPage = await server.get(libraryPath).query({ limit: 1 }).set(reader).expect(200);
+    await server.get(libraryPath).query({ search: 'gestao', cursor: unfilteredFirstPage.body.page.nextCursor, limit: 1 })
+      .set(reader).expect(400);
   });
 
   it('lets PMO reject an evaluation with a reason and keeps the archived lesson private to its author', async () => {

@@ -31,6 +31,7 @@ import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto
 import type { LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse } from './lesson-response.dto';
 import type {
   LessonSearchFilters,
+  LessonsLibraryFilter,
   LessonSubmissionsFilter,
   PmoDraftsFilter,
   PmoEvaluationQueueFilter,
@@ -48,6 +49,24 @@ type EvaluationFields = Pick<
   | 'recommendation'
   | 'applicability'
 >;
+
+const libraryTitleWithoutMarks = "REGEXP_REPLACE(NORMALIZE(LOWER(lesson.title), NFD), U&'[\\0300-\\036F\\1AB0-\\1AFF\\1DC0-\\1DFF\\20D0-\\20FF\\FE20-\\FE2F]', '', 'g')";
+const libraryCombiningMarkRanges = [
+  [0x0300, 0x036f],
+  [0x1ab0, 0x1aff],
+  [0x1dc0, 0x1dff],
+  [0x20d0, 0x20ff],
+  [0xfe20, 0xfe2f],
+] as const;
+
+function normalizeLibrarySearch(value: string): string {
+  return [...value.toLowerCase().normalize('NFD')]
+    .filter((character) => {
+      const codePoint = character.codePointAt(0)!;
+      return !libraryCombiningMarkRanges.some(([start, end]) => codePoint >= start && codePoint <= end);
+    })
+    .join('');
+}
 
 @Injectable()
 export class LessonsService {
@@ -204,20 +223,48 @@ export class LessonsService {
     }));
   }
 
-  async getLibrary(localUserId: string | undefined, page?: LessonPageRequest): Promise<LessonDraftResponse[] | LessonPage> {
+  async getLibrary(
+    localUserId: string | undefined,
+    page?: LessonPageRequest,
+    filters: LessonsLibraryFilter = {},
+  ): Promise<LessonDraftResponse[] | LessonPage> {
     this.localAccess.getProfile(localUserId);
+    const authorNames = this.localAccess.getDisplayNames();
     const query = this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
       .where('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
       .andWhere('lesson.approved_at IS NOT NULL');
+    this.applySearchFilters(query, filters, true);
     if (page) {
-      return paginateLessons(query, page, 'library', 'lesson.approved_at', 'DESC',
-        (lesson) => this.toResponse(lesson), this.representationTokens);
+      const hasFilters = Boolean(filters.search || filters.projectId || filters.withoutProject || filters.lessonType);
+      const scope = hasFilters ? `library:${JSON.stringify([
+        filters.search || null,
+        filters.projectId || null,
+        filters.withoutProject ?? false,
+        filters.lessonType || null,
+      ])}` : 'library';
+      return paginateLessons(query, page, scope, 'lesson.approved_at', 'DESC',
+        (lesson) => this.toLibraryResponse(lesson, authorNames), this.representationTokens);
     }
     const lessons = await query
       .orderBy('lesson.approvedAt', 'DESC')
       .addOrderBy('lesson.id', 'DESC')
       .getMany();
-    return lessons.map((lesson) => this.toResponse(lesson));
+    return lessons.map((lesson) => this.toLibraryResponse(lesson, authorNames));
+  }
+
+  async getLibraryProjectSnapshots(localUserId: string | undefined): Promise<LessonProject[]> {
+    this.localAccess.getProfile(localUserId);
+    return this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
+      .select('lesson.project_id', 'id')
+      .addSelect('MAX(lesson.project_name)', 'name')
+      .where('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
+      .andWhere('lesson.approved_at IS NOT NULL')
+      .andWhere('lesson.project_id IS NOT NULL')
+      .andWhere('lesson.project_name IS NOT NULL')
+      .groupBy('lesson.project_id')
+      .orderBy('MAX(lesson.project_name)', 'ASC')
+      .addOrderBy('lesson.project_id', 'ASC')
+      .getRawMany<LessonProject>();
   }
 
   async getLibraryLessonDetails(localUserId: string | undefined, lessonId: number): Promise<LessonDetailsResponse> {
@@ -259,9 +306,34 @@ export class LessonsService {
     return this.includeLatestReviewGuidance(lessons.map((lesson) => this.toResponse(lesson)));
   }
 
-  private applySearchFilters(query: SelectQueryBuilder<Lesson>, filters: LessonSearchFilters): void {
+  private applySearchFilters(
+    query: SelectQueryBuilder<Lesson>,
+    filters: LessonSearchFilters,
+    librarySearch = false,
+  ): void {
     if (filters.search) {
-      if (/^\d+$/.test(filters.search)) {
+      if (librarySearch) {
+        const exactId = /^#([0-9]+)$/.exec(filters.search);
+        const titlePrefix = normalizeLibrarySearch(filters.search);
+        if (exactId) {
+          const lessonId = Number(exactId[1]);
+          if (Number.isSafeInteger(lessonId) && lessonId > 0 && lessonId <= 2_147_483_647) {
+            query.andWhere('lesson.id = :lessonId', { lessonId });
+          } else {
+            query.andWhere('1 = 0');
+          }
+        } else if (/^[0-9]+$/.test(filters.search)) {
+          const lessonId = Number(filters.search);
+          const titleQuery = `LEFT(${libraryTitleWithoutMarks}, CHAR_LENGTH(:titlePrefix)) = :titlePrefix`;
+          if (Number.isSafeInteger(lessonId) && lessonId <= 2_147_483_647) {
+            query.andWhere(`(lesson.id = :lessonId OR ${titleQuery})`, { lessonId, titlePrefix });
+          } else {
+            query.andWhere(titleQuery, { titlePrefix });
+          }
+        } else {
+          query.andWhere(`LEFT(${libraryTitleWithoutMarks}, CHAR_LENGTH(:titlePrefix)) = :titlePrefix`, { titlePrefix });
+        }
+      } else if (/^\d+$/.test(filters.search)) {
         const lessonId = Number(filters.search);
         if (Number.isSafeInteger(lessonId) && lessonId <= 2_147_483_647) {
           query.andWhere(
@@ -909,6 +981,13 @@ export class LessonsService {
       createdAt: lesson.createdAt,
       updatedAt: lesson.updatedAt,
       latestReviewGuidance: null,
+    };
+  }
+
+  private toLibraryResponse(lesson: Lesson, authorNames: ReadonlyMap<string, string>): LessonDraftResponse {
+    return {
+      ...this.toResponse(lesson),
+      authorName: authorNames.get(lesson.authorId) ?? lesson.authorId,
     };
   }
 
