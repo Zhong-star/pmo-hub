@@ -12,6 +12,7 @@ export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '/api/lessons-learned/v1/le
 export const LESSONS_LEARNED_EVALUATION_PROJECTS_PATH = '/api/lessons-learned/v1/lessons/evaluation-queue/projects' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_PATH = '/api/lessons-learned/v1/lessons/library' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_DETAIL_PATH = '/api/lessons-learned/v1/lessons/library/{id}' satisfies keyof paths;
+export const LESSONS_LEARNED_LIBRARY_VIEW_PATH = '/api/lessons-learned/v1/lessons/library/{id}/views' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_PROJECTS_PATH = '/api/lessons-learned/v1/lessons/library/projects' satisfies keyof paths;
 export const LESSONS_LEARNED_DRAFT_PATH = '/api/lessons-learned/v1/lessons/{id}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMIT_PATH = '/api/lessons-learned/v1/lessons/{id}/submit' satisfies keyof paths;
@@ -28,6 +29,8 @@ export type LessonHistoryEvent = LessonDetails['history'][number];
 export type LessonSubmissionsFilters = NonNullable<paths[typeof LESSONS_LEARNED_SUBMISSIONS_PATH]['get']['parameters']['query']>;
 export type PmoDraftsFilters = NonNullable<paths[typeof LESSONS_LEARNED_PMO_DRAFTS_PATH]['get']['parameters']['query']>;
 export type LessonPage = components['schemas']['LessonPage'];
+export type LibraryLesson = components['schemas']['LessonLibraryResponse'];
+export type LibraryPage = components['schemas']['LessonLibraryPage'];
 type PageParameters = { paged: 'true'; cursor?: string };
 export type LessonsLibraryFilters = Omit<NonNullable<paths[typeof LESSONS_LEARNED_LIBRARY_PATH]['get']['parameters']['query']>, 'paged' | 'cursor' | 'limit'>;
 type LibraryPageParameters = PageParameters & LessonsLibraryFilters;
@@ -41,6 +44,8 @@ export type CancelLessonBody = paths[typeof LESSONS_LEARNED_CANCEL_PATH]['post']
 export type ApproveLessonBody = paths[typeof LESSONS_LEARNED_APPROVE_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
 export type RejectLessonBody = paths[typeof LESSONS_LEARNED_REJECT_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
 export type CloseLessonBody = paths[typeof LESSONS_LEARNED_CLOSE_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
+export type RecordLibraryViewBody = paths[typeof LESSONS_LEARNED_LIBRARY_VIEW_PATH]['post']['requestBody']['content']['application/json'];
+export type RecordLibraryViewResponse = paths[typeof LESSONS_LEARNED_LIBRARY_VIEW_PATH]['post']['responses'][200]['content']['application/json'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -155,10 +160,10 @@ export async function getEvaluationProjectSnapshots(localUserId: string, signal?
   }
 }
 
-export function getLibrary(localUserId: string): Promise<LessonDraft[]>;
-export function getLibrary(localUserId: string, page: LibraryPageParameters): Promise<LessonPage | LessonDraft[]>;
-export async function getLibrary(localUserId: string, page?: LibraryPageParameters): Promise<LessonPage | LessonDraft[]> {
-  const { data } = await api.get<LessonPage | LessonDraft[]>(LESSONS_LEARNED_LIBRARY_PATH, {
+export function getLibrary(localUserId: string): Promise<LibraryLesson[]>;
+export function getLibrary(localUserId: string, page: LibraryPageParameters): Promise<LibraryPage | LibraryLesson[]>;
+export async function getLibrary(localUserId: string, page?: LibraryPageParameters): Promise<LibraryPage | LibraryLesson[]> {
+  const { data } = await api.get<LibraryPage | LibraryLesson[]>(LESSONS_LEARNED_LIBRARY_PATH, {
     ...(page ? { params: page } : {}),
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
@@ -181,6 +186,23 @@ export async function getLibraryLessonDetails(localUserId: string, lessonId: num
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });
+
+  return data;
+}
+
+export async function recordLibraryView(
+  localUserId: string,
+  lessonId: number,
+  input: RecordLibraryViewBody,
+): Promise<RecordLibraryViewResponse> {
+  const { data } = await api.post<RecordLibraryViewResponse>(
+    LESSONS_LEARNED_LIBRARY_VIEW_PATH.replace('{id}', String(lessonId)),
+    input,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
 
   return data;
 }

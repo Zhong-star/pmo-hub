@@ -2262,7 +2262,7 @@ describe('Lessons Learned draft registration', () => {
     const approved = await server
       .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
       .set('X-PMO-Local-User-ID', 'local-pmo')
-      .send({ version: submitted.version })
+      .send({ version: submitted.body.version })
       .expect(200);
 
     expect(approved.body).toMatchObject({
@@ -2633,6 +2633,78 @@ describe('Lessons Learned draft registration', () => {
       .get(`/api/lessons-learned/v1/lessons/${privateDraft.body.id}`)
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .expect(200);
+  });
+
+  it('counts an authorized Library opening once and exposes the confirmed total on the Library list', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Counted Library opening' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The next team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for software releases with shared ownership.',
+      })
+      .expect(200);
+    const approved = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version })
+      .expect(200);
+
+    const libraryPath = '/api/lessons-learned/v1/lessons/library';
+    const detailsPath = `${libraryPath}/${created.body.id}`;
+    const openingId = '854b1b18-1aa1-4ba9-81ae-35131b5de943';
+    const reader = { 'X-PMO-Local-User-ID': 'local-other-contributor' };
+    await server.get(libraryPath).set(reader).expect(200).expect(({ body }) => {
+      expect(body.find(({ id }: { id: number }) => id === created.body.id)?.viewCount).toBe(0);
+    });
+    await server.get('/api/lessons-learned/v1/lessons/mine').set({ 'X-PMO-Local-User-ID': 'local-contributor' })
+      .expect(200).expect(({ body }) => {
+        expect(body.find(({ id }: { id: number }) => id === created.body.id)).not.toHaveProperty('viewCount');
+      });
+    const detailsBefore = await server.get(detailsPath).set(reader).expect(200).expect(({ body }) => {
+      expect(body).not.toHaveProperty('viewCount');
+    });
+    await server.post(`${libraryPath}/0/views`).set(reader).send({ openingId }).expect(400);
+    await server.post(`${libraryPath}/2147483648/views`).set(reader).send({ openingId }).expect(400);
+    await server.post(`${detailsPath}/views`).set(reader).send({ openingId: 'not-a-uuid' }).expect(400);
+    await server.post(`${detailsPath}/views`).send({ openingId }).expect(401);
+
+    const duplicateAttempts = await Promise.all([
+      server.post(`${detailsPath}/views`).set(reader).send({ openingId }),
+      server.post(`${detailsPath}/views`).set(reader).send({ openingId }),
+    ]);
+    expect(duplicateAttempts.map(({ status, body }) => [status, body.viewCount])).toEqual([[200, 1], [200, 1]]);
+    await server.post(`${detailsPath}/views`).set(reader).send({ openingId }).expect(200, { viewCount: 1 });
+    await server.get(detailsPath).set(reader).expect(200).expect('ETag', detailsBefore.headers.etag);
+    await server.get(libraryPath).set(reader).expect(200).expect(({ body }) => {
+      expect(body.find(({ id }: { id: number }) => id === created.body.id)?.viewCount).toBe(1);
+    });
+
+    const closed = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/close`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: approved.body.version })
+      .expect(200);
+    expect(closed.body.approvedAt).toBe(approved.body.approvedAt);
+    await server.get(libraryPath).set(reader).expect(200).expect(({ body }) => {
+      expect(body).toContainEqual(expect.objectContaining({ id: created.body.id, status: 'Closed', viewCount: 1 }));
+    });
   });
 
   it('searches and filters the complete published Library before cursor pagination', async () => {

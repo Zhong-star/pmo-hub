@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { WorkspaceSidebar } from '../../shared-ui/src/WorkspaceSidebar';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { useThemePreference } from '../../shared-ui/src/theme';
@@ -13,6 +13,7 @@ import {
   getLibrary,
   getLibraryLessonDetails,
   getLibraryProjectSnapshots,
+  recordLibraryView,
   getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
@@ -26,6 +27,8 @@ import {
   type LessonDraft,
   type LessonPage,
   type LessonDetails,
+  type LibraryLesson,
+  type LibraryPage,
   type LessonProject,
   type LessonSubmissionsFilters,
   type LessonsLibraryFilters,
@@ -168,14 +171,38 @@ function getProjectFilterOptions(
   return [...projectsById.values()];
 }
 
-function flattenLessonPages(pages: (LessonPage | LessonDraft[])[]): LessonDraft[] {
+function flattenLessonPages(pages: (LessonPage | LibraryPage | LessonDraft[])[]): (LessonDraft | LibraryLesson)[] {
   const legacy = pages.find(Array.isArray);
   if (legacy) return legacy;
-  const byId = new Map<number, LessonDraft>();
+  const byId = new Map<number, LessonDraft | LibraryLesson>();
   for (const page of pages) {
     if (!Array.isArray(page)) for (const lesson of page.items) byId.set(lesson.id, lesson);
   }
   return Array.from(byId.values());
+}
+
+function isLibraryLesson(lesson: LessonDraft | LibraryLesson): lesson is LibraryLesson {
+  return 'viewCount' in lesson && typeof lesson.viewCount === 'number';
+}
+
+function createLibraryOpeningId(): string {
+  if (typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+  const bytes = window.crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function updateLibraryPageViewCount(
+  page: LibraryPage | LibraryLesson[],
+  lessonId: number,
+  viewCount: number,
+): LibraryPage | LibraryLesson[] {
+  const update = (lesson: LibraryLesson) => lesson.id === lessonId
+    ? { ...lesson, viewCount: Math.max(lesson.viewCount, viewCount) }
+    : lesson;
+  return Array.isArray(page) ? page.map(update) : { ...page, items: page.items.map(update) };
 }
 
 export function LessonsLearnedScreen() {
@@ -183,6 +210,12 @@ export function LessonsLearnedScreen() {
   const [selectionGeneration, setSelectionGeneration] = useState(0);
   const [authorizedSelectionGeneration, setAuthorizedSelectionGeneration] = useState<number | null>(null);
   const panelRef = useRef<HTMLElement>(null);
+  const libraryOpeningRef = useRef<{
+    profileId: string;
+    lessonId: number;
+    openingId: string;
+    status: 'ready' | 'recording' | 'recorded' | 'failed';
+  } | null>(null);
   const [modulePage, setModulePage] = useState<ModulePage>(readModulePage);
   const {
     lessonId: libraryDetailId,
@@ -396,6 +429,44 @@ export function LessonsLearnedScreen() {
     networkMode: 'always',
     retry: false,
   });
+  const { mutate: recordView } = useMutation({
+    mutationFn: ({ profileId, lessonId, openingId }: { profileId: string; lessonId: number; openingId: string }) =>
+      recordLibraryView(profileId, lessonId, { openingId }),
+    retry: 2,
+    networkMode: 'always',
+    onSuccess: (result, opening) => {
+      const currentOpening = libraryOpeningRef.current;
+      if (currentOpening?.openingId === opening.openingId) currentOpening.status = 'recorded';
+      queryClient.setQueriesData<InfiniteData<LibraryPage | LibraryLesson[]>>(
+        { queryKey: ['lessons-learned-library', opening.profileId] },
+        (current) => current ? {
+          ...current,
+          pages: current.pages.map((page) => updateLibraryPageViewCount(page, opening.lessonId, result.viewCount)),
+        } : current,
+      );
+    },
+    onError: (_error, opening) => {
+      const currentOpening = libraryOpeningRef.current;
+      if (currentOpening?.openingId === opening.openingId) currentOpening.status = 'failed';
+    },
+  });
+  useEffect(() => {
+    if (!isHomePage || !isLibraryPage || !libraryDetailsQuery.isSuccess || !selectedProfileId || libraryDetailId === null) return;
+    const opening = libraryOpeningRef.current;
+    if (!opening || opening.status !== 'ready' || opening.lessonId !== libraryDetailId || opening.profileId !== selectedProfileId) return;
+    if (libraryDetailsQuery.isFetching || libraryDetailsQuery.data?.id !== libraryDetailId) return;
+
+    opening.status = 'recording';
+    recordView({
+      profileId: opening.profileId,
+      lessonId: opening.lessonId,
+      openingId: opening.openingId,
+    });
+  }, [isHomePage, isLibraryPage, libraryDetailId, libraryDetailsQuery.data, libraryDetailsQuery.isFetching, libraryDetailsQuery.isSuccess, recordView, selectedProfileId]);
+  useEffect(() => {
+    const opening = libraryOpeningRef.current;
+    if (opening?.status === 'ready' && libraryDetailId !== opening.lessonId) opening.status = 'failed';
+  }, [libraryDetailId]);
   const refetchHomeAccess = homeQuery.refetch;
   useEffect(() => {
     if (libraryDetailsQuery.isError && isDefinitiveAccessError(libraryDetailsQuery.error)) {
@@ -463,6 +534,17 @@ export function LessonsLearnedScreen() {
         : []),
     ...(submissionLessonType ? [`Type: ${submissionLessonType}`] : []),
   ];
+
+  function openLibraryLessonFromList(lessonId: number) {
+    if (!selectedProfileId) return;
+    libraryOpeningRef.current = {
+      profileId: selectedProfileId,
+      lessonId,
+      openingId: createLibraryOpeningId(),
+      status: 'ready',
+    };
+    openLibraryLesson(lessonId);
+  }
 
   async function refreshSubmissionQueries(profileId: string, lessonId?: number): Promise<void> {
     if (lessonId !== undefined) {
@@ -631,8 +713,11 @@ export function LessonsLearnedScreen() {
   async function reloadClosureLesson(lessonId: number): Promise<LessonDetails> {
     const profileId = selectedProfileIdRef.current;
     if (!profileId) throw new Error('Select a profile before reloading a lesson.');
-    const latest = await getLessonDetails(profileId, lessonId);
-    queryClient.setQueryData(['lessons-learned-submission-details', profileId, lessonId], latest);
+    const latest = isLibraryPage
+      ? await getLibraryLessonDetails(profileId, lessonId)
+      : await getLessonDetails(profileId, lessonId);
+    const detailsKey = isLibraryPage ? 'lessons-learned-library-details' : 'lessons-learned-submission-details';
+    queryClient.setQueryData([detailsKey, profileId, lessonId], latest);
     setSelectedClosureDraft(null);
     return latest;
   }
@@ -1124,6 +1209,7 @@ export function LessonsLearnedScreen() {
                             <th scope="col">Type</th>
                             <th scope="col">Status</th>
                             {isLibraryPage && <th scope="col">Approved</th>}
+                            {isLibraryPage && <th scope="col">Views</th>}
                             {isPmoDraftsPage && <th scope="col">Updated</th>}
                             {isPmoReviewListPage && <th scope="col">Actions</th>}
                           </tr>
@@ -1139,7 +1225,7 @@ export function LessonsLearnedScreen() {
                                     onClick={(event) => {
                                       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                                       event.preventDefault();
-                                      openLibraryLesson(draft.id);
+                                      openLibraryLessonFromList(draft.id);
                                     }}
                                     aria-label={`View ${draft.title}`}
                                     data-lesson-view-id={draft.id}
@@ -1169,6 +1255,7 @@ export function LessonsLearnedScreen() {
                               {isLibraryPage && <td>{draft.approvedAt
                                 ? <time dateTime={draft.approvedAt}>{formatUpdatedAt(draft.approvedAt)}</time>
                                 : 'Not available'}</td>}
+                              {isLibraryPage && <td>{isLibraryLesson(draft) ? draft.viewCount : 0}</td>}
                               {isPmoDraftsPage && <td><time dateTime={draft.updatedAt}>{formatUpdatedAt(draft.updatedAt)}</time></td>}
                               {isPmoReviewListPage && <td>
                                 <div className="submission-actions">

@@ -106,3 +106,16 @@ export class LessonDetailsResponse extends LessonDraftResponse {
   @ApiProperty({ type: LessonHistoryEventResponse, isArray: true })
   history!: LessonHistoryEventResponse[];
 }
+
+export class LessonLibraryResponse extends LessonDraftResponse {
+  @ApiProperty({ type: String, description: 'Display name of the author.' })
+  declare authorName: string;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  viewCount!: number;
+}
+
+export class RecordLessonLibraryViewResponse {
+  @ApiProperty({ type: Number, minimum: 0, example: 1 })
+  viewCount!: number;
+}

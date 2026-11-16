@@ -18,7 +18,7 @@ import { LessonHistory } from './lesson-history.entity';
 import { Lesson } from './lesson.entity';
 import {
   encodeProjectCursor, paginateLibraryLessonsByTextKey, paginateLessons, readProjectCursor,
-  type LessonPage, type LessonPageRequest, type LessonProjectPage,
+  type LessonLibraryPage, type LessonPage, type LessonPageRequest, type LessonProjectPage,
 } from './lesson-pagination';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
 import type { ApproveLessonRequest } from './approve-lesson-request.dto';
@@ -29,7 +29,11 @@ import { ProjectCatalogService, type LessonProject } from './project-catalog.ser
 import type { SubmitLessonRequest } from './submit-lesson-request.dto';
 import type { ReturnLessonRequest } from './return-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
-import type { LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse } from './lesson-response.dto';
+import type {
+  LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse,
+  LessonLibraryResponse, RecordLessonLibraryViewResponse,
+} from './lesson-response.dto';
+import type { RecordLibraryViewRequest } from './record-library-view-request.dto';
 import type {
   LessonSearchFilters,
   LessonsLibraryFilter,
@@ -229,7 +233,7 @@ export class LessonsService {
     localUserId: string | undefined,
     page?: LessonPageRequest,
     filters: LessonsLibraryFilter = {},
-  ): Promise<LessonDraftResponse[] | LessonPage> {
+  ): Promise<LessonLibraryResponse[] | LessonLibraryPage> {
     this.localAccess.getProfile(localUserId);
     const authorNames = this.localAccess.getDisplayNames();
     const sort = filters.sort ?? 'newest';
@@ -323,6 +327,45 @@ export class LessonsService {
         ...this.toDetailsResponse(lesson, history),
         authorName: this.localAccess.getDisplayNameForProfile(lesson.authorId) ?? lesson.authorId,
       };
+    });
+  }
+
+  async recordLibraryView(
+    localUserId: string | undefined,
+    lessonId: number,
+    input: RecordLibraryViewRequest,
+  ): Promise<RecordLessonLibraryViewResponse> {
+    this.localAccess.getProfile(localUserId);
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction(async (manager) => {
+      const lesson = await manager.getRepository(Lesson).findOne({
+        where: { id: lessonId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const isPublished = lesson?.approvedAt !== null
+        && (lesson?.status === 'Approved' || lesson?.status === 'Closed');
+      if (!lesson || !isPublished) throw new NotFoundException('Published lesson not found.');
+
+      const inserted = await manager.query(`
+        INSERT INTO lesson_library_views (lesson_id, opening_id)
+        VALUES ($1, $2::uuid)
+        ON CONFLICT (lesson_id, opening_id) DO NOTHING
+        RETURNING opening_id
+      `, [lessonId, input.openingId]) as { opening_id: string }[];
+      if (inserted.length === 0) return { viewCount: lesson.viewCount };
+
+      const updated = await manager.query(`
+        WITH changed AS (
+          UPDATE lessons
+          SET view_count = view_count + 1
+          WHERE id = $1
+          RETURNING view_count
+        )
+        SELECT view_count FROM changed
+      `, [lessonId]) as { view_count: number }[];
+      if (!updated[0]) throw new InternalServerErrorException('The Library view could not be recorded.');
+      return { viewCount: Number(updated[0].view_count) };
     });
   }
 
@@ -1018,10 +1061,11 @@ export class LessonsService {
     };
   }
 
-  private toLibraryResponse(lesson: Lesson, authorNames: ReadonlyMap<string, string>): LessonDraftResponse {
+  private toLibraryResponse(lesson: Lesson, authorNames: ReadonlyMap<string, string>): LessonLibraryResponse {
     return {
       ...this.toResponse(lesson),
       authorName: authorNames.get(lesson.authorId) ?? lesson.authorId,
+      viewCount: lesson.viewCount,
     };
   }
 

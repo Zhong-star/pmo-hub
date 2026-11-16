@@ -41,7 +41,9 @@ import { CreateLessonRequest } from './create-lesson-request.dto';
 import { ApproveLessonRequest } from './approve-lesson-request.dto';
 import { CloseLessonRequest } from './close-lesson-request.dto';
 import { CancelLessonRequest } from './cancel-lesson-request.dto';
-import { LessonDetailsResponse, LessonDraftResponse } from './lesson-response.dto';
+import {
+  LessonDetailsResponse, LessonDraftResponse, LessonLibraryResponse, RecordLessonLibraryViewResponse,
+} from './lesson-response.dto';
 import { LessonConflictResponse } from './lesson-conflict-response.dto';
 import { LessonSubmissionValidationResponse } from './lesson-submission-validation-response.dto';
 import { LessonEditValidationResponse } from './lesson-edit-validation-response.dto';
@@ -62,11 +64,13 @@ import {
   PmoEvaluationQueueQuery,
 } from './lesson-submissions-query.dto';
 import { ConditionalLessonWrite, LessonHttpContract, LessonProblem, LessonProblemFilter } from './lesson-http-contract';
-import { LessonPage, LessonProjectPage, readPageRequest } from './lesson-pagination';
+import { LessonLibraryPage, LessonPage, LessonProjectPage, readPageRequest } from './lesson-pagination';
+import { RecordLibraryViewRequest } from './record-library-view-request.dto';
+import { ParsePositivePostgresIntegerPipe } from './parse-positive-postgres-integer.pipe';
 import { LESSON_STATUSES, LESSON_TYPES } from './lesson-domain.constants';
 
 @ApiTags('Lessons')
-@ApiExtraModels(LocalAccessProblem, LessonPage, LessonProblem, LessonProjectPage)
+@ApiExtraModels(LocalAccessProblem, LessonLibraryPage, LessonLibraryResponse, LessonPage, LessonProblem, LessonProjectPage)
 @Controller('lessons')
 @UseFilters(LocalAccessProblemFilter, LessonProblemFilter)
 @UseInterceptors(LessonHttpContract)
@@ -228,10 +232,10 @@ export class LessonsController {
   @ApiQuery({ name: 'projectId', required: false, type: String, description: 'Project snapshot ID.' })
   @ApiQuery({ name: 'withoutProject', required: false, type: Boolean, description: 'Filter lessons without a project.' })
   @ApiQuery({ name: 'lessonType', required: false, enum: LESSON_TYPES })
-  @ApiQuery({ name: 'sort', required: false, enum: LESSON_LIBRARY_SORTS, default: 'newest' })
+  @ApiQuery({ name: 'sort', required: false, enum: LESSON_LIBRARY_SORTS, default: 'newest', description: 'Sort the filtered published lessons before cursor pagination.' })
   @ApiOkResponse({ schema: { oneOf: [
-    { type: 'array', items: { $ref: getSchemaPath(LessonDraftResponse) } },
-    { $ref: getSchemaPath(LessonPage) },
+    { type: 'array', items: { $ref: getSchemaPath(LessonLibraryResponse) } },
+    { $ref: getSchemaPath(LessonLibraryPage) },
   ] } })
   @ApiBadRequestResponse({ description: 'Invalid page limit or cursor for this query.' })
   @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
@@ -244,7 +248,7 @@ export class LessonsController {
     @Query('paged') paged?: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
-  ): Promise<LessonDraftResponse[] | LessonPage> {
+  ): Promise<LessonLibraryResponse[] | LessonLibraryPage> {
     return this.lessons.getLibrary(
       typeof header === 'string' ? header : undefined,
       readPageRequest(paged, cursor, limit),
@@ -272,15 +276,38 @@ export class LessonsController {
   @ApiSecurity(localProfileScheme)
   @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the published lesson.' })
   @ApiOkResponse({ type: LessonDetailsResponse })
+  @ApiBadRequestResponse({ description: 'The lesson ID is outside the supported range.' })
   @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
   @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
   @ApiResponse({ status: 404, description: 'The published lesson does not exist or is not available in the Library.' })
   @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
   getLibraryLessonDetails(
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
-    @Param('id', ParseIntPipe) lessonId: number,
+    @Param('id', ParsePositivePostgresIntegerPipe) lessonId: number,
   ): Promise<LessonDetailsResponse> {
     return this.lessons.getLibraryLessonDetails(typeof header === 'string' ? header : undefined, lessonId);
+  }
+
+  @Post('library/:id/views')
+  @Header('Cache-Control', 'no-store')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Record one authorized opening of a published Library lesson' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'Positive PostgreSQL integer lesson ID.' })
+  @ApiBody({ type: RecordLibraryViewRequest })
+  @ApiOkResponse({ type: RecordLessonLibraryViewResponse })
+  @ApiBadRequestResponse({ description: 'The lesson ID or opening UUID is invalid.' })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
+  @ApiResponse({ status: 404, description: 'The published lesson does not exist or is not available in the Library.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  recordLibraryView(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParsePositivePostgresIntegerPipe) lessonId: number,
+    @Body(new ValidationPipe({ transform: true, whitelist: true, expectedType: RecordLibraryViewRequest }))
+    input: RecordLibraryViewRequest,
+  ): Promise<RecordLessonLibraryViewResponse> {
+    return this.lessons.recordLibraryView(typeof header === 'string' ? header : undefined, lessonId, input);
   }
 
   @Get(':id')

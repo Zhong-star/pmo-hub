@@ -36,7 +36,18 @@ async function publishLesson(request: APIRequestContext, title: string) {
     data: { version: submitted.version },
   });
   expect(approvedResponse.status()).toBe(200);
-  return approvedResponse.json() as Promise<{ id: number; approvedAt: string }>;
+  return approvedResponse.json() as Promise<{ id: number; approvedAt: string; version: number }>;
+}
+
+async function getLibraryLesson(request: APIRequestContext, lessonId: number, profileId = 'local-contributor') {
+  const response = await request.get(`${lessonsPath}/library`, {
+    headers: { 'X-PMO-Local-User-ID': profileId },
+  });
+  expect(response.status()).toBe(200);
+  const lessons = await response.json() as { id: number; status: string; approvedAt: string; viewCount: number }[];
+  const lesson = lessons.find(({ id }) => id === lessonId);
+  expect(lesson).toBeDefined();
+  return lesson!;
 }
 
 async function setProfileAndOpenLesson(page: Page, profileId: string, lessonId: number) {
@@ -57,6 +68,7 @@ test('published Library detail supports direct and list navigation with role che
   await expect(authorDetails.getByText('No checklist owner had been assigned.', { exact: true })).toBeVisible();
   await expect(authorDetails.getByRole('heading', { name: 'History' })).toBeVisible();
   await expect(authorDetails.getByRole('button', { name: 'Close lesson', exact: true })).toHaveCount(0);
+  expect((await getLibraryLesson(request, published.id)).viewCount).toBe(0);
 
   await authorDetails.getByRole('button', { name: 'Close published lesson details' }).click();
   await expect(page).toHaveURL(/\?page=library$/);
@@ -70,10 +82,23 @@ test('published Library detail supports direct and list navigation with role che
   await listLink.click();
   await expect(page).toHaveURL(new RegExp(`page=library&lesson=${published.id}`));
   await expect(page.getByRole('dialog', { name: 'Published lesson details' })).toBeVisible();
+  await expect.poll(async () => (await getLibraryLesson(request, published.id)).viewCount).toBe(1);
+  await page.reload();
+  await expect(page.getByRole('dialog', { name: 'Published lesson details' })).toBeVisible();
+  await expect.poll(async () => (await getLibraryLesson(request, published.id)).viewCount).toBe(1);
   await page.keyboard.press('Escape');
   await expect(page).toHaveURL(/\?page=library$/);
   await expect(listLink).toBeFocused();
   await expect.poll(() => listPanel.evaluate((panel) => panel.scrollTop)).toBe(scrollTopBeforeOpen);
+
+  await listLink.click();
+  await expect(page.getByRole('dialog', { name: 'Published lesson details' })).toBeVisible();
+  await expect.poll(async () => (await getLibraryLesson(request, published.id)).viewCount).toBe(2);
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\?page=library$/);
+  await page.goForward();
+  await expect(page.getByRole('dialog', { name: 'Published lesson details' })).toBeVisible();
+  await expect.poll(async () => (await getLibraryLesson(request, published.id)).viewCount).toBe(2);
 
   await setProfileAndOpenLesson(page, 'local-developer', published.id);
   const contributorDetails = page.getByRole('dialog', { name: 'Published lesson details' });
@@ -87,6 +112,11 @@ test('published Library detail supports direct and list navigation with role che
   await pmoDetails.getByRole('button', { name: 'Close lesson', exact: true }).click();
   await page.getByRole('dialog', { name: 'Close lesson' }).getByRole('button', { name: 'Confirm closure' }).click();
   await expect(page).toHaveURL(/\?page=library$/);
+  await expect.poll(async () => getLibraryLesson(request, published.id, 'local-pmo')).toMatchObject({
+    status: 'Closed',
+    approvedAt: published.approvedAt,
+    viewCount: 2,
+  });
 
   await setProfileAndOpenLesson(page, 'revoked-profile', published.id);
   await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();

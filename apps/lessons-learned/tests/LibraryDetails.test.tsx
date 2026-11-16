@@ -7,13 +7,16 @@ import {
   getHome,
   getLibrary,
   getLibraryLessonDetails,
+  getLibraryProjectSnapshots,
   getLessonProjects,
   getMyOpenDrafts,
   getMySubmissions,
   getPmoDrafts,
   getPmoEvaluationQueue,
   getEvaluationProjectSnapshots,
+  recordLibraryView,
   type LessonDraft,
+  type LibraryLesson,
   type LessonDetails,
 } from '../src/api';
 
@@ -25,6 +28,8 @@ vi.mock('../src/api', () => ({
   getHome: vi.fn(),
   getLibrary: vi.fn(),
   getLibraryLessonDetails: vi.fn(),
+  getLibraryProjectSnapshots: vi.fn(),
+  recordLibraryView: vi.fn(),
   getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
@@ -74,6 +79,15 @@ function publishedLesson(overrides: Partial<LessonDraft> = {}): LessonDraft {
   };
 }
 
+function libraryLesson(overrides: Partial<LibraryLesson> = {}): LibraryLesson {
+  return {
+    ...publishedLesson(overrides),
+    authorName: overrides.authorName ?? 'Local Contributor',
+    viewCount: overrides.viewCount ?? 0,
+    ...overrides,
+  };
+}
+
 function publishedDetails(overrides: Partial<LessonDetails> = {}): LessonDetails {
   const lesson = publishedLesson(overrides);
   return {
@@ -99,6 +113,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getHome).mockResolvedValue(contributor);
   vi.mocked(getLibrary).mockResolvedValue([]);
+  vi.mocked(getLibraryProjectSnapshots).mockResolvedValue([]);
+  vi.mocked(recordLibraryView).mockResolvedValue({ viewCount: 1 });
   vi.mocked(getLibraryLessonDetails).mockImplementation(async (_profileId, lessonId) => publishedDetails({ id: lessonId }));
   vi.mocked(getLessonProjects).mockResolvedValue([]);
   vi.mocked(getMyOpenDrafts).mockResolvedValue([]);
@@ -121,6 +137,7 @@ describe('published Library lesson details', () => {
 
     expect(await screen.findByRole('dialog', { name: 'Published lesson details' })).toBeInTheDocument();
     expect(getLibraryLessonDetails).toHaveBeenCalledWith('local-contributor', 42);
+    expect(recordLibraryView).not.toHaveBeenCalled();
     expect(await screen.findByText('No checklist owner had been assigned.')).toBeInTheDocument();
     expect(within(screen.getByRole('dialog', { name: 'Published lesson details' })).getByText('Local Contributor')).toBeInTheDocument();
     expect(within(screen.getByRole('dialog', { name: 'Published lesson details' })).getByText('Approved', { selector: 'dd' })).toBeInTheDocument();
@@ -136,7 +153,7 @@ describe('published Library lesson details', () => {
   });
 
   it('opens a shareable Library URL and closes with browser history while restoring focus', async () => {
-    vi.mocked(getLibrary).mockResolvedValue([publishedLesson()]);
+    vi.mocked(getLibrary).mockResolvedValue([libraryLesson()]);
     renderLibrary('/lessons-learned/?page=library');
     const user = userEvent.setup();
     const lessonLink = await screen.findByRole('link', { name: 'View Improve release handover' });
@@ -145,6 +162,9 @@ describe('published Library lesson details', () => {
     expect(window.location.search).toBe('?page=library&lesson=42');
     expect(await screen.findByRole('dialog', { name: 'Published lesson details' })).toBeInTheDocument();
     expect(getLibraryLessonDetails).toHaveBeenCalledWith('local-contributor', 42);
+    await waitFor(() => expect(recordLibraryView).toHaveBeenCalledWith(
+      'local-contributor', 42, { openingId: expect.stringMatching(/^[0-9a-f-]{36}$/i) },
+    ));
 
     await user.keyboard('{Escape}');
     await waitFor(() => expect(window.location.search).toBe('?page=library'));
@@ -158,5 +178,29 @@ describe('published Library lesson details', () => {
     expect(await screen.findByRole('button', { name: 'Close lesson' })).toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole('button', { name: 'Close lesson' }));
     expect(await screen.findByRole('dialog', { name: 'Close lesson' })).toBeInTheDocument();
+  });
+
+  it('keeps the detail and confirmed view count available when recording needs a retry', async () => {
+    vi.mocked(getLibrary).mockResolvedValue([libraryLesson({ viewCount: 7 })]);
+    vi.mocked(recordLibraryView)
+      .mockRejectedValueOnce({ response: { status: 503 } })
+      .mockResolvedValueOnce({ viewCount: 8 });
+    renderLibrary('/lessons-learned/?page=library');
+    const lessonLink = await screen.findByRole('link', { name: 'View Improve release handover' });
+    const row = lessonLink.closest('tr')!;
+    const user = userEvent.setup();
+    await user.click(lessonLink);
+
+    const details = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    expect(await within(details).findByText('The handover omitted the runbook.')).toBeVisible();
+    await waitFor(() => expect(recordLibraryView).toHaveBeenCalledTimes(1));
+    expect(within(row).getByRole('cell', { name: '7' })).toBeInTheDocument();
+
+    await waitFor(() => expect(recordLibraryView).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    const [firstAttempt, retry] = vi.mocked(recordLibraryView).mock.calls;
+    expect(retry).toEqual(firstAttempt);
+    expect(details).toBeVisible();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(within(row).getByRole('cell', { name: '8' })).toBeInTheDocument());
   });
 });

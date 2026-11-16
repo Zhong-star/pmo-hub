@@ -3,7 +3,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { createHash } from 'node:crypto';
 import type { SelectQueryBuilder } from 'typeorm';
 import type { Lesson } from './lesson.entity';
-import { LessonDraftResponse } from './lesson-response.dto';
+import { LessonDraftResponse, LessonLibraryResponse } from './lesson-response.dto';
 import { LessonProjectResponse } from './project-response.dto';
 
 class LessonPageInfo {
@@ -14,12 +14,17 @@ class LessonPageInfo {
   limit!: number;
 }
 
-export class LessonPage {
+export class LessonPage<T = LessonDraftResponse> {
   @ApiProperty({ type: [LessonDraftResponse] })
-  items!: LessonDraftResponse[];
+  items!: T[];
 
   @ApiProperty({ type: LessonPageInfo })
   page!: LessonPageInfo;
+}
+
+export class LessonLibraryPage extends LessonPage<LessonLibraryResponse> {
+  @ApiProperty({ type: [LessonLibraryResponse] })
+  declare items: LessonLibraryResponse[];
 }
 
 export class LessonProjectPage {
@@ -76,15 +81,15 @@ function decodeCursor(cursor: string, scope: string): { key: string; id: number 
   }
 }
 
-export async function paginateLessons(
+export async function paginateLessons<T extends LessonDraftResponse = LessonDraftResponse>(
   query: SelectQueryBuilder<Lesson>,
   request: LessonPageRequest,
   scope: string,
   timestamp: string,
   direction: 'ASC' | 'DESC',
-  toResponse: (lesson: Lesson) => LessonDraftResponse,
+  toResponse: (lesson: Lesson) => T,
   representationTokens: boolean,
-): Promise<LessonPage> {
+): Promise<LessonPage<T>> {
   // Keep PostgreSQL microsecond precision in the cursor instead of rounding through a JavaScript Date.
   const key = `COALESCE((EXTRACT(EPOCH FROM ${timestamp}) * 1000000)::bigint, 9223372036854775807::bigint)`;
   if (request.cursor !== undefined) {
@@ -138,14 +143,14 @@ function decodeLibrarySortCursor(
   }
 }
 
-export async function paginateLibraryLessonsByTextKey(
+export async function paginateLibraryLessonsByTextKey<T extends LessonDraftResponse = LessonDraftResponse>(
   query: SelectQueryBuilder<Lesson>,
   request: LessonPageRequest,
   scope: string,
   sort: 'title' | 'project' | 'type',
-  toResponse: (lesson: Lesson) => LessonDraftResponse,
+  toResponse: (lesson: Lesson) => T,
   representationTokens: boolean,
-): Promise<LessonPage> {
+): Promise<LessonPage<T>> {
   const rankExpression = sort === 'project'
     ? 'CASE WHEN lesson.projectId IS NULL THEN 1 ELSE 0 END'
     : sort === 'type' ? 'CASE WHEN lesson.lessonType IS NULL THEN 1 ELSE 0 END' : '0::integer';

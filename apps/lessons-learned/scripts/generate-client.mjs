@@ -15,6 +15,7 @@ const evaluationQueuePath = `${lessonsPath}/evaluation-queue`;
 const evaluationProjectsPath = evaluationQueuePath + '/projects';
 const libraryPath = `${lessonsPath}/library`;
 const libraryDetailPath = `${libraryPath}/{id}`;
+const libraryViewPath = `${libraryDetailPath}/views`;
 const libraryProjectsPath = libraryPath + '/projects';
 const draftPath = `${lessonsPath}/{id}`;
 const submitPath = `${draftPath}/submit`;
@@ -45,6 +46,9 @@ const libraryOperation = contract.paths?.[libraryPath]?.get;
 const libraryResponseSchema = libraryOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const libraryDetailOperation = contract.paths?.[libraryDetailPath]?.get;
 const libraryDetailResponseSchema = libraryDetailOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const libraryViewOperation = contract.paths?.[libraryViewPath]?.post;
+const libraryViewRequestSchema = libraryViewOperation?.requestBody?.content?.['application/json']?.schema;
+const libraryViewResponseSchema = libraryViewOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const libraryProjectsOperation = contract.paths?.[libraryProjectsPath]?.get;
 const libraryProjectsResponseSchema = libraryProjectsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const detailsOperation = contract.paths?.[draftPath]?.get;
@@ -108,8 +112,10 @@ if (!evaluationQueueResponseSchema?.oneOf?.some((schema) => schema.$ref === '#/c
   throw new Error('Expected a LessonPage response in the Lessons Learned OpenAPI contract.');
 }
 
-if (!libraryResponseSchema?.oneOf?.some((schema) => schema.$ref === '#/components/schemas/LessonPage')) {
-  throw new Error('Expected a LessonPage response in the Lessons Learned OpenAPI contract.');
+if (!libraryResponseSchema?.oneOf?.some((schema) => schema.$ref === '#/components/schemas/LessonLibraryPage') ||
+  !libraryResponseSchema?.oneOf?.some((schema) => schema.type === 'array' &&
+    schema.items?.$ref === '#/components/schemas/LessonLibraryResponse')) {
+  throw new Error('Expected a LessonLibraryPage or LessonLibraryResponse array in the Lessons Learned OpenAPI contract.');
 }
 
 if (!libraryProjectsOperation || libraryProjectsResponseSchema?.type !== 'array' ||
@@ -119,6 +125,11 @@ if (!libraryProjectsOperation || libraryProjectsResponseSchema?.type !== 'array'
 
 if (!libraryDetailOperation || libraryDetailResponseSchema?.$ref !== '#/components/schemas/LessonDetailsResponse') {
   throw new Error(`Expected GET ${libraryDetailPath} with LessonDetailsResponse in ${contractPath}`);
+}
+
+if (!libraryViewOperation || libraryViewRequestSchema?.$ref !== '#/components/schemas/RecordLibraryViewRequest' ||
+  libraryViewResponseSchema?.$ref !== '#/components/schemas/RecordLessonLibraryViewResponse') {
+  throw new Error(`Expected POST ${libraryViewPath} with RecordLibraryViewRequest and RecordLessonLibraryViewResponse in ${contractPath}`);
 }
 
 if (!detailsOperation || detailsResponseSchema?.$ref !== '#/components/schemas/LessonDetailsResponse') {
@@ -173,6 +184,7 @@ export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '${evaluationQueuePath}' sa
 export const LESSONS_LEARNED_EVALUATION_PROJECTS_PATH = '${evaluationProjectsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_PATH = '${libraryPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_DETAIL_PATH = '${libraryDetailPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_LIBRARY_VIEW_PATH = '${libraryViewPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_PROJECTS_PATH = '${libraryProjectsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_DRAFT_PATH = '${draftPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMIT_PATH = '${submitPath}' satisfies keyof paths;
@@ -189,6 +201,8 @@ export type LessonHistoryEvent = LessonDetails['history'][number];
 export type LessonSubmissionsFilters = NonNullable<paths[typeof LESSONS_LEARNED_SUBMISSIONS_PATH]['get']['parameters']['query']>;
 export type PmoDraftsFilters = NonNullable<paths[typeof LESSONS_LEARNED_PMO_DRAFTS_PATH]['get']['parameters']['query']>;
 export type LessonPage = components['schemas']['LessonPage'];
+export type LibraryLesson = components['schemas']['LessonLibraryResponse'];
+export type LibraryPage = components['schemas']['LessonLibraryPage'];
 type PageParameters = { paged: 'true'; cursor?: string };
 export type LessonsLibraryFilters = Omit<NonNullable<paths[typeof LESSONS_LEARNED_LIBRARY_PATH]['get']['parameters']['query']>, 'paged' | 'cursor' | 'limit'>;
 type LibraryPageParameters = PageParameters & LessonsLibraryFilters;
@@ -202,6 +216,8 @@ export type CancelLessonBody = paths[typeof LESSONS_LEARNED_CANCEL_PATH]['post']
 export type ApproveLessonBody = paths[typeof LESSONS_LEARNED_APPROVE_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
 export type RejectLessonBody = paths[typeof LESSONS_LEARNED_REJECT_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
 export type CloseLessonBody = paths[typeof LESSONS_LEARNED_CLOSE_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
+export type RecordLibraryViewBody = paths[typeof LESSONS_LEARNED_LIBRARY_VIEW_PATH]['post']['requestBody']['content']['application/json'];
+export type RecordLibraryViewResponse = paths[typeof LESSONS_LEARNED_LIBRARY_VIEW_PATH]['post']['responses'][200]['content']['application/json'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -316,10 +332,10 @@ export async function getEvaluationProjectSnapshots(localUserId: string, signal?
   }
 }
 
-export function getLibrary(localUserId: string): Promise<LessonDraft[]>;
-export function getLibrary(localUserId: string, page: LibraryPageParameters): Promise<LessonPage | LessonDraft[]>;
-export async function getLibrary(localUserId: string, page?: LibraryPageParameters): Promise<LessonPage | LessonDraft[]> {
-  const { data } = await api.get<LessonPage | LessonDraft[]>(LESSONS_LEARNED_LIBRARY_PATH, {
+export function getLibrary(localUserId: string): Promise<LibraryLesson[]>;
+export function getLibrary(localUserId: string, page: LibraryPageParameters): Promise<LibraryPage | LibraryLesson[]>;
+export async function getLibrary(localUserId: string, page?: LibraryPageParameters): Promise<LibraryPage | LibraryLesson[]> {
+  const { data } = await api.get<LibraryPage | LibraryLesson[]>(LESSONS_LEARNED_LIBRARY_PATH, {
     ...(page ? { params: page } : {}),
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
@@ -342,6 +358,23 @@ export async function getLibraryLessonDetails(localUserId: string, lessonId: num
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });
+
+  return data;
+}
+
+export async function recordLibraryView(
+  localUserId: string,
+  lessonId: number,
+  input: RecordLibraryViewBody,
+): Promise<RecordLibraryViewResponse> {
+  const { data } = await api.post<RecordLibraryViewResponse>(
+    LESSONS_LEARNED_LIBRARY_VIEW_PATH.replace('{id}', String(lessonId)),
+    input,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
 
   return data;
 }

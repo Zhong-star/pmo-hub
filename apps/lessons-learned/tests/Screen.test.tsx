@@ -11,6 +11,7 @@ import {
   getLibrary,
   getLibraryLessonDetails,
   getLibraryProjectSnapshots,
+  recordLibraryView,
   getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
@@ -22,6 +23,7 @@ import {
   rejectLesson,
   updateLessonDraft,
   type LessonDraft,
+  type LibraryLesson,
   type LessonDetails,
   type UpdateLessonDraftBody,
 } from '../src/api';
@@ -35,6 +37,7 @@ vi.mock('../src/api', () => ({
   getLibrary: vi.fn(),
   getLibraryLessonDetails: vi.fn(),
   getLibraryProjectSnapshots: vi.fn(),
+  recordLibraryView: vi.fn(),
   getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
@@ -79,6 +82,15 @@ function lessonDraft(overrides: Partial<LessonDraft> = {}): LessonDraft {
     createdAt: '2026-11-13T12:00:00.000Z',
     updatedAt: '2026-11-13T12:00:00.000Z',
     approvedAt: null,
+    ...overrides,
+  };
+}
+
+function libraryLesson(overrides: Partial<LibraryLesson> = {}): LibraryLesson {
+  return {
+    ...lessonDraft(overrides),
+    authorName: overrides.authorName ?? 'Local Contributor',
+    viewCount: overrides.viewCount ?? 0,
     ...overrides,
   };
 }
@@ -139,6 +151,7 @@ beforeEach(() => {
     updatedBy: 'local-pmo',
   }));
   vi.mocked(getLibrary).mockResolvedValue([]);
+  vi.mocked(recordLibraryView).mockResolvedValue({ viewCount: 1 });
   vi.mocked(getLibraryLessonDetails).mockImplementation(async (_profileId, lessonId) => ({
     ...lessonDetails({ id: lessonId }),
     history: [],
@@ -462,7 +475,7 @@ describe('Lessons Learned access check', () => {
   });
 
   it('shows the initial Library to Contributors and opens published content without full history', async () => {
-    const published = lessonDraft({
+    const published = libraryLesson({
       id: 91,
       title: 'Published release verification',
       status: 'Approved',
@@ -484,11 +497,17 @@ describe('Lessons Learned access check', () => {
     const table = await screen.findByRole('table', { name: 'Published lessons, newest approval first' });
     const row = within(table).getByRole('row', { name: /Published release verification/ });
     expect(within(row).getByText('Approved')).toBeInTheDocument();
+    expect(within(row).getByRole('cell', { name: '0' })).toBeInTheDocument();
     await user.click(within(row).getByRole('link', { name: 'View Published release verification' }));
 
     const details = await screen.findByRole('dialog', { name: 'Published lesson details' });
     expect(window.location.search).toBe('?page=library&lesson=91');
     expect(getLibraryLessonDetails).toHaveBeenCalledWith('local-contributor', 91);
+    await waitFor(() => expect(recordLibraryView).toHaveBeenCalledWith(
+      'local-contributor', 91, { openingId: expect.stringMatching(/^[0-9a-f-]{36}$/i) },
+    ));
+    await waitFor(() => expect(within(screen.getByRole('row', { name: /Published release verification/ }))
+      .getByRole('cell', { name: '1' })).toBeInTheDocument());
     expect(within(details).getByText('The handover omitted the current runbook.')).toBeInTheDocument();
     expect(within(details).queryByRole('heading', { name: 'History' })).not.toBeInTheDocument();
     await user.click(within(details).getByRole('button', { name: 'Back to Lessons Library' }));
@@ -497,25 +516,25 @@ describe('Lessons Learned access check', () => {
   });
 
   it('changes the Library order, starts from the first page, and keeps loaded order when details close', async () => {
-    const newest = lessonDraft({
+    const newest = libraryLesson({
       id: 90,
       title: 'Newest published result',
       status: 'Approved',
       approvedAt: '2026-11-15T15:30:00.000Z',
     });
-    const titleFirst = lessonDraft({
+    const titleFirst = libraryLesson({
       id: 91,
       title: 'Alpha sorted result',
       status: 'Approved',
       approvedAt: '2026-11-14T15:30:00.000Z',
     });
-    const titleSecond = lessonDraft({
+    const titleSecond = libraryLesson({
       id: 92,
       title: 'Beta sorted result',
       status: 'Closed',
       approvedAt: '2026-11-13T15:30:00.000Z',
     });
-    const page = (items: LessonDraft[], nextCursor: string | null) => ({
+    const page = (items: LibraryLesson[], nextCursor: string | null) => ({
       items,
       page: { limit: 1, nextCursor },
     });
@@ -561,7 +580,7 @@ describe('Lessons Learned access check', () => {
   });
 
   it('searches and filters the published Library while preserving loaded pages when details close', async () => {
-    const first = lessonDraft({
+    const first = libraryLesson({
       id: 91,
       title: 'Gestão de riscos',
       authorName: 'Local Contributor',
@@ -572,7 +591,7 @@ describe('Lessons Learned access check', () => {
       lessonType: 'Communication',
       situationObserved: 'The team did not record its risk decision.',
     });
-    const second = lessonDraft({
+    const second = libraryLesson({
       id: 92,
       title: 'Older published handover',
       authorName: 'Other Contributor',
@@ -580,7 +599,7 @@ describe('Lessons Learned access check', () => {
       approvedAt: '2026-11-13T15:30:00.000Z',
       situationObserved: 'The handover missed an owner.',
     });
-    const page = (items: LessonDraft[], nextCursor: string | null) => ({
+    const page = (items: LibraryLesson[], nextCursor: string | null) => ({
       items,
       page: { limit: 1, nextCursor },
     });

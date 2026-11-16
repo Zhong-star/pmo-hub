@@ -1312,11 +1312,11 @@
                     {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/LessonDraftResponse"
+                        "$ref": "#/components/schemas/LessonLibraryResponse"
                       }
                     },
                     {
-                      "$ref": "#/components/schemas/LessonPage"
+                      "$ref": "#/components/schemas/LessonLibraryPage"
                     }
                   ]
                 }
@@ -1598,6 +1598,42 @@
               }
             }
           },
+          "400": {
+            "description": "The lesson ID is outside the supported range.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
           "401": {
             "description": "A local Hub profile must be selected.",
             "content": {
@@ -1723,6 +1759,215 @@
           }
         ],
         "summary": "Get published lesson content and authorized lifecycle history for the Library detail URL",
+        "tags": [
+          "Lessons"
+        ]
+      }
+    },
+    "/api/lessons-learned/v1/lessons/library/{id}/views": {
+      "post": {
+        "operationId": "LessonsController_recordLibraryView",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Positive PostgreSQL integer lesson ID.",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordLibraryViewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordLessonLibraryViewResponse"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "ETag for the returned lesson version.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The lesson ID or opening UUID is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The published lesson does not exist or is not available in the Library.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Record one authorized opening of a published Library lesson",
         "tags": [
           "Lessons"
         ]
@@ -3775,6 +4020,201 @@
           "navigation"
         ]
       },
+      "LessonLibraryResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 150,
+            "example": "Improve release handover"
+          },
+          "authorId": {
+            "type": "string",
+            "example": "local-contributor"
+          },
+          "authorName": {
+            "type": "string",
+            "description": "Display name of the author."
+          },
+          "updatedBy": {
+            "type": "string",
+            "example": "local-contributor"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Open",
+              "PMOEvaluation",
+              "Approved",
+              "Closed",
+              "Archived"
+            ],
+            "example": "Open"
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1,
+            "example": 1
+          },
+          "etag": {
+            "type": "string",
+            "description": "Opaque ETag for this lesson version."
+          },
+          "projectId": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 128
+          },
+          "projectName": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200
+          },
+          "projectCategory": {
+            "type": "string",
+            "enum": [
+              "Technology",
+              "Business",
+              "Infrastructure",
+              "Data"
+            ],
+            "nullable": true
+          },
+          "projectPhase": {
+            "type": "string",
+            "enum": [
+              "Initiation",
+              "Planning",
+              "Execution",
+              "Closure",
+              "Not Applicable"
+            ],
+            "nullable": true
+          },
+          "situationObserved": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 4000
+          },
+          "rootCause": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 4000
+          },
+          "lessonType": {
+            "type": "string",
+            "enum": [
+              "Future Prevention",
+              "Success to Repeat",
+              "Risk Avoided",
+              "Communication"
+            ],
+            "nullable": true
+          },
+          "impact": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 4000
+          },
+          "recommendation": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 4000
+          },
+          "applicability": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 4000
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "latestReviewGuidance": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 1000,
+            "description": "Most recent PMO return guidance while the lesson is Open."
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "viewCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 0
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "authorId",
+          "updatedBy",
+          "status",
+          "version",
+          "projectId",
+          "projectName",
+          "projectCategory",
+          "projectPhase",
+          "situationObserved",
+          "rootCause",
+          "lessonType",
+          "impact",
+          "recommendation",
+          "applicability",
+          "createdAt",
+          "updatedAt",
+          "latestReviewGuidance",
+          "approvedAt",
+          "viewCount"
+        ]
+      },
+      "LessonPageInfo": {
+        "type": "object",
+        "properties": {
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "limit": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "nextCursor",
+          "limit"
+        ]
+      },
+      "LessonLibraryPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LessonLibraryResponse"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/LessonPageInfo"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ]
+      },
       "LessonDraftResponse": {
         "type": "object",
         "properties": {
@@ -3926,24 +4366,6 @@
           "updatedAt",
           "latestReviewGuidance",
           "approvedAt"
-        ]
-      },
-      "LessonPageInfo": {
-        "type": "object",
-        "properties": {
-          "nextCursor": {
-            "type": "string",
-            "nullable": true
-          },
-          "limit": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 100
-          }
-        },
-        "required": [
-          "nextCursor",
-          "limit"
         ]
       },
       "LessonPage": {
@@ -4359,6 +4781,32 @@
           "latestReviewGuidance",
           "approvedAt",
           "history"
+        ]
+      },
+      "RecordLibraryViewRequest": {
+        "type": "object",
+        "properties": {
+          "openingId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable idempotency key for one Library opening."
+          }
+        },
+        "required": [
+          "openingId"
+        ]
+      },
+      "RecordLessonLibraryViewResponse": {
+        "type": "object",
+        "properties": {
+          "viewCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 1
+          }
+        },
+        "required": [
+          "viewCount"
         ]
       },
       "UpdateLessonDraftRequest": {
