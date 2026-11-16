@@ -174,6 +174,9 @@ function deploy(layer, failureTarget, withPostgres) {
     if (lessonTokenFormat === 'representation' && !previous?.lessonTokenFormat) {
       throw new Error('Validate a backend release with legacy token emission before enabling representation tokens.');
     }
+    if (lessonTokenFormat === 'representation' && withPostgres && previous?.withPostgres !== 'true') {
+      throw new Error('The rollback release must have PostgreSQL enabled before enabling representation tokens with PostgreSQL.');
+    }
     if (withPostgres) migrateDatabase(images['lessons-learned-api'], version);
     try {
       release(layer, { images, withPostgres, lessonTokenFormat });

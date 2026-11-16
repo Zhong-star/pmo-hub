@@ -8,6 +8,8 @@ Local simulated identity is enabled by default only outside `NODE_ENV=production
 
 `LESSONS_LEARNED_TOKEN_FORMAT` defaults to `legacy` for the transition release. That release accepts both ETag and lesson cursor formats and emits the legacy formats. After validating the transition release as a rollback target, set the variable to `representation` to emit representation-specific ETags and compact lesson cursors. Both modes validate the complete representation ETag on conditional writes and continue accepting legacy ETags by lesson version.
 
+Every change to the lesson history must increment the lesson version in the same PostgreSQL transaction. Maintenance routines that correct or remove history must follow this rule too, so the version check on concurrent writes protects the representation validated by `If-Match`.
+
 The `openapi:generate` command writes the versioned OpenAPI artifact to the module-owned `openapi/` directory.
 
 The API listens on `127.0.0.1:3002` by default. Set `HOST` or `PORT` to override those local development defaults.

@@ -52,6 +52,8 @@ O comando provisiona o banco dedicado no cluster com volume persistente e gera o
 
 Para ativar os ETags por representação e os cursores compactos de Lessons Learned, valide primeiro uma release de backend com PostgreSQL e `LESSONS_LEARNED_TOKEN_FORMAT=legacy` (padrão). Essa versão recebe os dois formatos e emite o legado. Só então repita o deploy de backend com PostgreSQL e `LESSONS_LEARNED_TOKEN_FORMAT=representation`. O comando guarda o formato junto com a release e restaura ambos em caso de rollback. Para reverter a partir da fase de emissão nova, use uma release que já aceite os dois formatos.
 
+Execute `node --test infrastructure/kubernetes/local/deploy.test.mjs` para verificar a proteção de rollback do comando de deploy com as chamadas de infraestrutura simuladas.
+
 Para verificar a independência entre as camadas, compare as imagens antes e depois de cada deploy. Depois de uma release bem-sucedida, force a falha de um rollout e compare novamente. As quatro imagens devem voltar aos valores registrados imediatamente antes da falha:
 
 ```powershell
