@@ -270,15 +270,26 @@ export async function getPmoEvaluationQueue(
   return data;
 }
 
-export async function getEvaluationProjectSnapshots(localUserId: string): Promise<LessonProject[]> {
+export async function getEvaluationProjectSnapshots(localUserId: string, signal?: AbortSignal): Promise<LessonProject[]> {
+  const projects: LessonProject[] = [];
+  let cursor: string | undefined;
   try {
-    const { data } = await api.get<LessonProject[]>(LESSONS_LEARNED_EVALUATION_PROJECTS_PATH, {
-      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
-      headers: { 'X-PMO-Local-User-ID': localUserId },
-    });
-    return data;
+    do {
+      const { data } = await api.get<LessonProject[] | components['schemas']['LessonProjectPage']>(
+        LESSONS_LEARNED_EVALUATION_PROJECTS_PATH, {
+          timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+          headers: { 'X-PMO-Local-User-ID': localUserId },
+          params: { paged: 'true', cursor },
+          signal,
+        },
+      );
+      if (Array.isArray(data)) return data;
+      projects.push(...data.items);
+      cursor = data.page.nextCursor ?? undefined;
+    } while (cursor);
+    return projects;
   } catch (error) {
-    if (!axios.isAxiosError(error) || error.response?.status !== 404) throw error;
+    if (cursor || !axios.isAxiosError(error) || error.response?.status !== 404) throw error;
     const legacy = await getPmoEvaluationQueue(localUserId);
     return legacy.flatMap(({ projectId, projectName }) =>
       projectId && projectName ? [{ id: projectId, name: projectName }] : [],

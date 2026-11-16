@@ -6,6 +6,10 @@ Open lesson drafts can be completed through `PATCH /api/lessons-learned/v1/lesso
 
 Local simulated identity is enabled by default only outside `NODE_ENV=production`. The local Kubernetes deploy helper explicitly enables it and uses the module profile file packaged with the API image. Updating profiles in Kubernetes requires a backend release, and rollback restores the previous image and its profiles. The Hub client sends the selected profile ID. Keep simulated identity disabled in production deployments.
 
+`LESSONS_LEARNED_TOKEN_FORMAT` defaults to `legacy` for the transition release. That release accepts both ETag and lesson cursor formats and emits the legacy formats. After validating the transition release as a rollback target, set the variable to `representation` to emit representation-specific ETags and compact lesson cursors. Both modes validate the complete representation ETag on conditional writes and continue accepting legacy ETags by lesson version.
+
+Every change to the lesson history must increment the lesson version in the same PostgreSQL transaction. Maintenance routines that correct or remove history must follow this rule too, so the version check on concurrent writes protects the representation validated by `If-Match`.
+
 The `openapi:generate` command writes the versioned OpenAPI artifact to the module-owned `openapi/` directory.
 
 The API listens on `127.0.0.1:3002` by default. Set `HOST` or `PORT` to override those local development defaults.
