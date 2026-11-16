@@ -17,7 +17,8 @@ import { emitsRepresentationTokens } from './lesson-token-format';
 import { LessonHistory } from './lesson-history.entity';
 import { Lesson } from './lesson.entity';
 import {
-  encodeProjectCursor, paginateLessons, readProjectCursor, type LessonPage, type LessonPageRequest, type LessonProjectPage,
+  encodeProjectCursor, paginateLibraryLessonsByTextKey, paginateLessons, readProjectCursor,
+  type LessonPage, type LessonPageRequest, type LessonProjectPage,
 } from './lesson-pagination';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
 import type { ApproveLessonRequest } from './approve-lesson-request.dto';
@@ -32,6 +33,7 @@ import type { LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResp
 import type {
   LessonSearchFilters,
   LessonsLibraryFilter,
+  LessonsLibrarySort,
   LessonSubmissionsFilter,
   PmoDraftsFilter,
   PmoEvaluationQueueFilter,
@@ -230,26 +232,58 @@ export class LessonsService {
   ): Promise<LessonDraftResponse[] | LessonPage> {
     this.localAccess.getProfile(localUserId);
     const authorNames = this.localAccess.getDisplayNames();
+    const sort = filters.sort ?? 'newest';
     const query = this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
       .where('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
       .andWhere('lesson.approved_at IS NOT NULL');
     this.applySearchFilters(query, filters, true);
     if (page) {
       const hasFilters = Boolean(filters.search || filters.projectId || filters.withoutProject || filters.lessonType);
-      const scope = hasFilters ? `library:${JSON.stringify([
+      const filterValues = [
         filters.search || null,
         filters.projectId || null,
         filters.withoutProject ?? false,
         filters.lessonType || null,
-      ])}` : 'library';
-      return paginateLessons(query, page, scope, 'lesson.approved_at', 'DESC',
-        (lesson) => this.toLibraryResponse(lesson, authorNames), this.representationTokens);
+      ];
+      const legacyScope = hasFilters ? `library:${JSON.stringify(filterValues)}` : 'library';
+      const scope = sort === 'newest'
+        ? legacyScope
+        : `library-sort-v1:${JSON.stringify([sort, ...filterValues])}`;
+      const toResponse = (lesson: Lesson) => this.toLibraryResponse(lesson, authorNames);
+      if (sort === 'newest') {
+        return paginateLessons(query, page, scope, 'lesson.approved_at', 'DESC', toResponse, this.representationTokens);
+      }
+      if (sort === 'oldest') {
+        return paginateLessons(query, page, scope, 'lesson.approved_at', 'ASC', toResponse, this.representationTokens);
+      }
+      return paginateLibraryLessonsByTextKey(query, page, scope, sort, toResponse, this.representationTokens);
     }
-    const lessons = await query
-      .orderBy('lesson.approvedAt', 'DESC')
-      .addOrderBy('lesson.id', 'DESC')
-      .getMany();
+    const lessons = await this.orderLibrary(query, sort).getMany();
     return lessons.map((lesson) => this.toLibraryResponse(lesson, authorNames));
+  }
+
+  private orderLibrary(query: SelectQueryBuilder<Lesson>, sort: LessonsLibrarySort): SelectQueryBuilder<Lesson> {
+    if (sort === 'newest') {
+      return query.orderBy('lesson.approvedAt', 'DESC').addOrderBy('lesson.id', 'DESC');
+    }
+    if (sort === 'oldest') {
+      return query.orderBy('lesson.approvedAt', 'ASC').addOrderBy('lesson.id', 'ASC');
+    }
+    if (sort === 'title') {
+      return query.orderBy('LOWER(lesson.title)', 'ASC')
+        .addOrderBy('lesson.approvedAt', 'DESC')
+        .addOrderBy('lesson.id', 'DESC');
+    }
+    if (sort === 'project') {
+      return query.orderBy('CASE WHEN lesson.projectId IS NULL THEN 1 ELSE 0 END', 'ASC')
+        .addOrderBy("LOWER(COALESCE(lesson.projectName, ''))", 'ASC')
+        .addOrderBy('lesson.approvedAt', 'DESC')
+        .addOrderBy('lesson.id', 'DESC');
+    }
+    return query.orderBy('CASE WHEN lesson.lessonType IS NULL THEN 1 ELSE 0 END', 'ASC')
+      .addOrderBy("LOWER(COALESCE(lesson.lessonType, ''))", 'ASC')
+      .addOrderBy('lesson.approvedAt', 'DESC')
+      .addOrderBy('lesson.id', 'DESC');
   }
 
   async getLibraryProjectSnapshots(localUserId: string | undefined): Promise<LessonProject[]> {

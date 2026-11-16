@@ -496,6 +496,70 @@ describe('Lessons Learned access check', () => {
     expect(within(table).getByRole('link', { name: 'View Published release verification' })).toHaveFocus();
   });
 
+  it('changes the Library order, starts from the first page, and keeps loaded order when details close', async () => {
+    const newest = lessonDraft({
+      id: 90,
+      title: 'Newest published result',
+      status: 'Approved',
+      approvedAt: '2026-11-15T15:30:00.000Z',
+    });
+    const titleFirst = lessonDraft({
+      id: 91,
+      title: 'Alpha sorted result',
+      status: 'Approved',
+      approvedAt: '2026-11-14T15:30:00.000Z',
+    });
+    const titleSecond = lessonDraft({
+      id: 92,
+      title: 'Beta sorted result',
+      status: 'Closed',
+      approvedAt: '2026-11-13T15:30:00.000Z',
+    });
+    const page = (items: LessonDraft[], nextCursor: string | null) => ({
+      items,
+      page: { limit: 1, nextCursor },
+    });
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getLibrary).mockImplementation(async (_profileId, request) => {
+      if (request?.sort === 'title') {
+        return request.cursor ? page([titleSecond], null) : page([titleFirst], 'title-next');
+      }
+      return page([newest], null);
+    });
+    vi.mocked(getLibraryLessonDetails).mockResolvedValue({ ...lessonDetails(titleSecond), history: [] });
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor', 0, 'library');
+
+    expect(await screen.findByRole('row', { name: /Newest published result/ })).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort by' }), 'title');
+    await waitFor(() => expect(getLibrary).toHaveBeenLastCalledWith('local-contributor', {
+      paged: 'true',
+      cursor: undefined,
+      sort: 'title',
+    }));
+    expect(await screen.findByRole('row', { name: /Alpha sorted result/ })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Load more' }));
+    const table = screen.getByRole('table', { name: 'Published lessons, title order' });
+    const secondRow = await within(table).findByRole('row', { name: /Beta sorted result/ });
+    await user.click(within(secondRow).getByRole('link', { name: 'View Beta sorted result' }));
+    const details = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    await user.click(within(details).getByRole('button', { name: 'Close published lesson details' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Published lesson details' })).not.toBeInTheDocument());
+    const visibleTitles = within(table).getAllByRole('row').slice(1).map((row) => row.textContent);
+    expect(visibleTitles).toHaveLength(2);
+    expect(visibleTitles[0]).toContain('Alpha sorted result');
+    expect(visibleTitles[1]).toContain('Beta sorted result');
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('title');
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort by' }), 'newest');
+    await waitFor(() => expect(getLibrary).toHaveBeenLastCalledWith('local-contributor', {
+      paged: 'true',
+      cursor: undefined,
+    }));
+    expect(await screen.findByRole('row', { name: /Newest published result/ })).toBeInTheDocument();
+  });
+
   it('searches and filters the published Library while preserving loaded pages when details close', async () => {
     const first = lessonDraft({
       id: 91,

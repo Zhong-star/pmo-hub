@@ -107,3 +107,92 @@ export async function paginateLessons(
     : null;
   return { items: entities.slice(0, request.limit).map(toResponse), page: { limit: request.limit, nextCursor } };
 }
+
+interface LibrarySortCursor {
+  scope: string;
+  rank: number;
+  value: string;
+  approvedAt: string;
+  id: number;
+}
+
+function decodeLibrarySortCursor(
+  cursor: string,
+  scope: string,
+): LibrarySortCursor {
+  try {
+    if (typeof cursor !== 'string' || !/^[A-Za-z0-9_-]{1,4096}$/.test(cursor)) throw new Error();
+    const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    const scopeHash = createHash('sha256').update(scope).digest('hex');
+    if (
+      (decoded.scope !== scope && decoded.scope !== scopeHash) ||
+      !Number.isInteger(decoded.rank) || (decoded.rank !== 0 && decoded.rank !== 1) ||
+      typeof decoded.value !== 'string' || [...decoded.value].length > 200 || decoded.value.includes('\0') ||
+      typeof decoded.approvedAt !== 'string' || !/^-?[0-9]{1,19}$/.test(decoded.approvedAt) ||
+      BigInt(decoded.approvedAt) > 9223372036854775807n || BigInt(decoded.approvedAt) < -9223372036854775808n ||
+      !Number.isInteger(decoded.id) || decoded.id < 1 || decoded.id > 2147483647
+    ) throw new Error();
+    return decoded as LibrarySortCursor;
+  } catch {
+    throw new BadRequestException('Invalid cursor for this lesson query.');
+  }
+}
+
+export async function paginateLibraryLessonsByTextKey(
+  query: SelectQueryBuilder<Lesson>,
+  request: LessonPageRequest,
+  scope: string,
+  sort: 'title' | 'project' | 'type',
+  toResponse: (lesson: Lesson) => LessonDraftResponse,
+  representationTokens: boolean,
+): Promise<LessonPage> {
+  const rankExpression = sort === 'project'
+    ? 'CASE WHEN lesson.projectId IS NULL THEN 1 ELSE 0 END'
+    : sort === 'type' ? 'CASE WHEN lesson.lessonType IS NULL THEN 1 ELSE 0 END' : '0::integer';
+  const valueExpression = sort === 'title'
+    ? 'LOWER(lesson.title)'
+    : sort === 'project' ? "LOWER(COALESCE(lesson.projectName, ''))" : "LOWER(COALESCE(lesson.lessonType, ''))";
+  const approvalExpression = 'COALESCE((EXTRACT(EPOCH FROM lesson.approvedAt) * 1000000)::bigint, 9223372036854775807::bigint)';
+
+  if (request.cursor !== undefined) {
+    const cursor = decodeLibrarySortCursor(request.cursor, scope);
+    query.andWhere(`(
+      ${rankExpression} > :sortRank OR
+      (${rankExpression} = :sortRank AND ${valueExpression} > :sortValue) OR
+      (${rankExpression} = :sortRank AND ${valueExpression} = :sortValue AND ${approvalExpression} < CAST(:approvedAt AS bigint)) OR
+      (${rankExpression} = :sortRank AND ${valueExpression} = :sortValue AND ${approvalExpression} = CAST(:approvedAt AS bigint) AND lesson.id < :sortId)
+    )`, {
+      sortRank: cursor.rank,
+      sortValue: cursor.value,
+      approvedAt: cursor.approvedAt,
+      sortId: cursor.id,
+    });
+  }
+
+  const { raw, entities } = await query
+    .addSelect(rankExpression, 'library_sort_rank')
+    .addSelect(valueExpression, 'library_sort_value')
+    .addSelect(approvalExpression, 'library_sort_approved_at')
+    .orderBy('library_sort_rank', 'ASC')
+    .addOrderBy('library_sort_value', 'ASC')
+    .addOrderBy('library_sort_approved_at', 'DESC')
+    .addOrderBy('lesson.id', 'DESC')
+    .limit(request.limit + 1)
+    .getRawAndEntities<{
+      library_sort_rank: string | number;
+      library_sort_value: string;
+      library_sort_approved_at: string;
+    }>();
+
+  const last = request.limit - 1;
+  const nextCursor = entities.length > request.limit
+    ? Buffer.from(JSON.stringify({
+      scope: representationTokens ? createHash('sha256').update(scope).digest('hex') : scope,
+      rank: Number(raw[last].library_sort_rank),
+      value: raw[last].library_sort_value,
+      approvedAt: raw[last].library_sort_approved_at,
+      id: entities[last].id,
+    })).toString('base64url')
+    : null;
+  return { items: entities.slice(0, request.limit).map(toResponse), page: { limit: request.limit, nextCursor } };
+}

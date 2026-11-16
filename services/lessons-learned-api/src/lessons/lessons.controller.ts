@@ -55,6 +55,7 @@ import { LessonRejectionValidationResponse } from './lesson-rejection-validation
 import { RejectLessonRequest } from './reject-lesson-request.dto';
 import { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import {
+  LESSON_LIBRARY_SORTS,
   LessonSubmissionsQuery,
   LessonsLibraryQuery,
   PmoDraftsQuery,
@@ -218,7 +219,7 @@ export class LessonsController {
 
   @Get('library')
   @Header('Cache-Control', 'no-store')
-  @ApiOperation({ summary: 'List published lessons by most recent approval date' })
+  @ApiOperation({ summary: 'List published lessons with the selected sort order' })
   @ApiSecurity(localProfileScheme)
   @ApiQuery({ name: 'paged', required: false, enum: ['true'], description: 'Opt in to the cursor response envelope.' })
   @ApiQuery({ name: 'cursor', required: false, type: String })
@@ -227,6 +228,7 @@ export class LessonsController {
   @ApiQuery({ name: 'projectId', required: false, type: String, description: 'Project snapshot ID.' })
   @ApiQuery({ name: 'withoutProject', required: false, type: Boolean, description: 'Filter lessons without a project.' })
   @ApiQuery({ name: 'lessonType', required: false, enum: LESSON_TYPES })
+  @ApiQuery({ name: 'sort', required: false, enum: LESSON_LIBRARY_SORTS, default: 'newest' })
   @ApiOkResponse({ schema: { oneOf: [
     { type: 'array', items: { $ref: getSchemaPath(LessonDraftResponse) } },
     { $ref: getSchemaPath(LessonPage) },

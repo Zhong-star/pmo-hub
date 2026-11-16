@@ -39,7 +39,19 @@ export class LessonSubmissionsQuery extends LessonSearchFiltersQuery {
 
 export class PmoEvaluationQueueQuery extends LessonSearchFiltersQuery {}
 
-export class LessonsLibraryQuery extends LessonSearchFiltersQuery {}
+export const LESSON_LIBRARY_SORTS = ['newest', 'oldest', 'title', 'project', 'type'] as const;
+export type LessonsLibrarySort = typeof LESSON_LIBRARY_SORTS[number];
+
+export class LessonsLibraryQuery extends LessonSearchFiltersQuery {
+  @ApiPropertyOptional({
+    enum: LESSON_LIBRARY_SORTS,
+    default: 'newest',
+    description: 'Sort the filtered published lessons before cursor pagination.',
+  })
+  @IsOptional()
+  @IsIn(LESSON_LIBRARY_SORTS)
+  sort?: LessonsLibrarySort;
+}
 
 export class PmoDraftsQuery extends LessonSubmissionsQuery {
   @ApiPropertyOptional({ type: String, description: 'Author profile ID.' })
@@ -58,6 +70,6 @@ export type LessonSubmissionsFilter = LessonSearchFilters & Pick<LessonSubmissio
 
 export type PmoEvaluationQueueFilter = LessonSearchFilters;
 
-export type LessonsLibraryFilter = LessonSearchFilters;
+export type LessonsLibraryFilter = LessonSearchFilters & Pick<LessonsLibraryQuery, 'sort'>;
 
 export type PmoDraftsFilter = LessonSubmissionsFilter & Pick<PmoDraftsQuery, 'authorId'>;

@@ -1255,6 +1255,22 @@
             }
           },
           {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Sort the filtered published lessons before cursor pagination.",
+            "schema": {
+              "enum": [
+                "newest",
+                "oldest",
+                "title",
+                "project",
+                "type"
+              ],
+              "type": "string"
+            }
+          },
+          {
             "name": "paged",
             "required": false,
             "in": "query",
@@ -1431,7 +1447,7 @@
             "localProfile": []
           }
         ],
-        "summary": "List published lessons by most recent approval date",
+        "summary": "List published lessons with the selected sort order",
         "tags": [
           "Lessons"
         ]

@@ -2740,6 +2740,156 @@ describe('Lessons Learned draft registration', () => {
       .set(reader).expect(400);
   });
 
+  it('sorts the filtered published Library before cursor pagination', async () => {
+    const server = request(app!.getHttpServer());
+    const libraryPath = '/api/lessons-learned/v1/lessons/library';
+    const reader = { 'X-PMO-Local-User-ID': 'local-other-contributor' };
+    const publish = async (input: {
+      title: string;
+      projectId?: string;
+      projectName?: string;
+      lessonType: 'Future Prevention' | 'Communication';
+    }) => {
+      const created = await server
+        .post('/api/lessons-learned/v1/lessons')
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ title: input.title })
+        .expect(201);
+      const submitted = await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          version: created.body.version,
+          title: input.title,
+          projectId: input.projectId ?? null,
+          projectName: input.projectName ?? null,
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The team could not find the right guidance quickly.',
+          rootCause: 'The published lessons had no useful order.',
+          lessonType: input.lessonType,
+          impact: 'The team repeated avoidable work.',
+          recommendation: 'Sort published lessons by the information readers need.',
+          applicability: 'Use this guidance when consulting the Library.',
+        })
+        .expect(200);
+      const approved = await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version })
+        .expect(200);
+      return approved.body as { id: number; version: number; approvedAt: string };
+    };
+
+    const zuluHarbor = await publish({
+      title: 'Zulu handover',
+      projectId: 'LOCAL-PROJECT-002',
+      projectName: 'Fictional Harbor Migration',
+      lessonType: 'Future Prevention',
+    });
+    const alphaHarbor = await publish({
+      title: 'Alpha checkpoint',
+      projectId: 'LOCAL-PROJECT-002',
+      projectName: 'Fictional Harbor Migration',
+      lessonType: 'Communication',
+    });
+    const alphaNoProject = await publish({ title: 'Alpha checkpoint', lessonType: 'Communication' });
+    const bravoAtlas = await publish({
+      title: 'Bravo handover',
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+      lessonType: 'Future Prevention',
+    });
+    const alphaOlder = await publish({
+      title: 'Alpha older guidance',
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+      lessonType: 'Communication',
+    });
+
+    const closed = await server
+      .post(`/api/lessons-learned/v1/lessons/${bravoAtlas.id}/close`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: bravoAtlas.version })
+      .expect(200);
+    expect(closed.body.approvedAt).toBe(bravoAtlas.approvedAt);
+
+    await dataSource!.query(
+      'UPDATE lessons SET approved_at = $2 WHERE id = $1',
+      [zuluHarbor.id, '2026-01-01T00:00:00.000Z'],
+    );
+    await dataSource!.query(
+      'UPDATE lessons SET approved_at = $2 WHERE id = $1',
+      [alphaHarbor.id, '2026-01-02T00:00:00.000Z'],
+    );
+    await dataSource!.query(
+      'UPDATE lessons SET approved_at = $2 WHERE id = $1',
+      [alphaNoProject.id, '2026-01-02T00:00:00.000Z'],
+    );
+    await dataSource!.query(
+      'UPDATE lessons SET approved_at = $2 WHERE id = $1',
+      [bravoAtlas.id, '2026-01-03T00:00:00.000Z'],
+    );
+    await dataSource!.query(
+      'UPDATE lessons SET approved_at = $2 WHERE id = $1',
+      [alphaOlder.id, '2026-01-01T00:00:00.000Z'],
+    );
+
+    const cases = [
+      { sort: 'newest', ids: [bravoAtlas.id, alphaNoProject.id, alphaHarbor.id, alphaOlder.id, zuluHarbor.id] },
+      { sort: 'oldest', ids: [zuluHarbor.id, alphaOlder.id, alphaHarbor.id, alphaNoProject.id, bravoAtlas.id] },
+      { sort: 'title', ids: [alphaNoProject.id, alphaHarbor.id, alphaOlder.id, bravoAtlas.id, zuluHarbor.id] },
+      { sort: 'project', ids: [bravoAtlas.id, alphaOlder.id, alphaHarbor.id, zuluHarbor.id, alphaNoProject.id] },
+      { sort: 'type', ids: [alphaNoProject.id, alphaHarbor.id, alphaOlder.id, bravoAtlas.id, zuluHarbor.id] },
+    ] as const;
+
+    for (const { sort, ids } of cases) {
+      const pagedIds: number[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await server.get(libraryPath)
+          .query({ sort, cursor, limit: 2 })
+          .set(reader)
+          .expect(200);
+        pagedIds.push(...page.body.items.map(({ id }: { id: number }) => id));
+        cursor = page.body.page.nextCursor ?? undefined;
+      } while (cursor);
+      expect(pagedIds, `Library order for ${sort}`).toEqual(ids);
+
+      const unpaged = await server.get(libraryPath).query({ sort }).set(reader).expect(200);
+      expect(unpaged.body.map(({ id }: { id: number }) => id), `Unpaged Library order for ${sort}`).toEqual(ids);
+    }
+
+    const filtered = await server.get(libraryPath).query({
+      sort: 'title',
+      search: 'Alpha',
+      projectId: 'LOCAL-PROJECT-002',
+      lessonType: 'Communication',
+      limit: 1,
+    }).set(reader).expect(200);
+    expect(filtered.body.items.map(({ id }: { id: number }) => id)).toEqual([alphaHarbor.id]);
+    expect(filtered.body.page.nextCursor).toBeNull();
+
+    const oldDefaultFirstPage = await server.get(libraryPath).query({ limit: 2 }).set(reader).expect(200);
+    const secondPageWithExplicitDefault = await server.get(libraryPath).query({
+      sort: 'newest',
+      cursor: oldDefaultFirstPage.body.page.nextCursor,
+      limit: 2,
+    }).set(reader).expect(200);
+    expect(secondPageWithExplicitDefault.body.items.map(({ id }: { id: number }) => id)).toEqual([
+      alphaHarbor.id,
+      alphaOlder.id,
+    ]);
+    const closedInLibrary = await server.get(libraryPath).query({ sort: 'newest' }).set(reader).expect(200);
+    expect(closedInLibrary.body).toContainEqual(expect.objectContaining({
+      id: bravoAtlas.id,
+      status: 'Closed',
+      approvedAt: '2026-01-03T00:00:00.000Z',
+    }));
+
+    await server.get(libraryPath).query({ sort: 'unknown-order' }).set(reader).expect(400);
+  });
+
   it('lets PMO reject an evaluation with a reason and keeps the archived lesson private to its author', async () => {
     const server = request(app!.getHttpServer());
     const created = await server

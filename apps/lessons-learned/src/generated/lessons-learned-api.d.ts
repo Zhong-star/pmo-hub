@@ -148,7 +148,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List published lessons by most recent approval date */
+        /** List published lessons with the selected sort order */
         get: operations["LessonsController_getLibrary"];
         put?: never;
         post?: never;
@@ -1186,6 +1186,8 @@ export interface operations {
                 /** @description Filter lessons without a project. */
                 withoutProject?: boolean;
                 lessonType?: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication";
+                /** @description Sort the filtered published lessons before cursor pagination. */
+                sort?: "newest" | "oldest" | "title" | "project" | "type";
                 /** @description Opt in to the cursor response envelope. */
                 paged?: "true";
                 cursor?: string;

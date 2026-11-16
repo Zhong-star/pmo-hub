@@ -89,6 +89,15 @@ function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
 }
 
 type ModulePage = 'home' | 'my-submissions' | 'pmo-drafts' | 'evaluation-queue' | 'library';
+type LibrarySort = NonNullable<LessonsLibraryFilters['sort']>;
+
+function getLibrarySortCaption(sort: LibrarySort): string {
+  if (sort === 'oldest') return 'Published lessons, oldest approval first';
+  if (sort === 'title') return 'Published lessons, title order';
+  if (sort === 'project') return 'Published lessons, project order';
+  if (sort === 'type') return 'Published lessons, type order';
+  return 'Published lessons, newest approval first';
+}
 
 function readModulePage(): ModulePage {
   const page = new URLSearchParams(window.location.search).get('page');
@@ -194,6 +203,7 @@ export function LessonsLearnedScreen() {
   const [submissionSearch, setSubmissionSearch] = useState('');
   const [submissionProjectFilter, setSubmissionProjectFilter] = useState<SubmissionProjectFilter>({ kind: 'any' });
   const [submissionLessonType, setSubmissionLessonType] = useState<NonNullable<LessonDraft['lessonType']> | ''>('');
+  const [librarySort, setLibrarySort] = useState<LibrarySort>('newest');
   const [submissionStatus, setSubmissionStatus] = useState<LessonDraft['status'] | ''>(
     () => readModulePage() === 'pmo-drafts' ? 'Open' : '',
   );
@@ -327,7 +337,10 @@ export function LessonsLearnedScreen() {
     retry: false,
     refetchOnWindowFocus: true,
   });
-  const libraryFilters: LessonsLibraryFilters = commonSubmissionFilters;
+  const libraryFilters: LessonsLibraryFilters = {
+    ...commonSubmissionFilters,
+    ...(librarySort === 'newest' ? {} : { sort: librarySort }),
+  };
   const libraryQuery = useInfiniteQuery({
     queryKey: ['lessons-learned-library', selectedProfileId, libraryFilters],
     queryFn: ({ pageParam }) => getLibrary(selectedProfileId ?? '', {
@@ -899,7 +912,7 @@ export function LessonsLearnedScreen() {
                         : isPmoEvaluationQueuePage ? 'Evaluation Queue'
                           : isPmoDraftsPage ? 'PMO Drafts' : 'My Submissions'}</h1>
                       <p className="intro">{isLibraryPage
-                        ? 'Browse lessons published by PMO, with the most recently approved first.'
+                        ? 'Browse lessons published by PMO. Search, filter, and sort to find published guidance.'
                         : isPmoEvaluationQueuePage
                           ? 'Lessons awaiting PMO evaluation, with the oldest submission first.'
                           : isPmoDraftsPage
@@ -918,7 +931,7 @@ export function LessonsLearnedScreen() {
 
                   {isLibraryPage && (
                     <>
-                      <div className="submission-filters" role="group" aria-label="Filter Lessons Library">
+                      <div className="submission-filters" role="group" aria-label="Search, filter, and sort Lessons Library">
                         <div className="draft-editor-field">
                           <label htmlFor="library-search">Search title or ID</label>
                           <input
@@ -953,6 +966,20 @@ export function LessonsLearnedScreen() {
                             <option value="Success to Repeat">Success to Repeat</option>
                             <option value="Risk Avoided">Risk Avoided</option>
                             <option value="Communication">Communication</option>
+                          </select>
+                        </div>
+                        <div className="draft-editor-field">
+                          <label htmlFor="library-sort">Sort by</label>
+                          <select
+                            id="library-sort"
+                            value={librarySort}
+                            onChange={(event) => setLibrarySort(event.target.value as LibrarySort)}
+                          >
+                            <option value="newest">Most recently approved</option>
+                            <option value="oldest">Oldest approval</option>
+                            <option value="title">Title</option>
+                            <option value="project">Project</option>
+                            <option value="type">Lesson type</option>
                           </select>
                         </div>
                         {activeLibraryFilterLabels.length > 0 && (
@@ -1084,7 +1111,7 @@ export function LessonsLearnedScreen() {
                     <div className="submission-table-wrapper">
                       <table className="submission-table">
                         <caption className="visually-hidden">{isLibraryPage
-                          ? 'Published lessons, newest approval first'
+                          ? getLibrarySortCaption(librarySort)
                           : isPmoEvaluationQueuePage
                             ? 'Lessons awaiting PMO evaluation, oldest submission first'
                             : 'Lessons available to PMO'}</caption>

@@ -88,4 +88,93 @@ test('Contributor searches and filters published Library lessons without losing 
   await search.fill('no-matching-title');
   await expect(page.getByText('No published lessons match these filters.')).toBeVisible();
   await expect(page.getByText('No lessons have been published yet.')).toHaveCount(0);
+
+  const sortPrefix = `Sort item ${stamp}`;
+  const sortingTitles = [`${sortPrefix} Alpha`, `${sortPrefix} Beta`];
+  await Promise.all(sortingTitles.map((title) => publish(title, null, null, 'Communication')));
+  const sortQuery = new URLSearchParams({ search: sortPrefix, sort: 'title', limit: '1' });
+  const sortFirstResponse = await page.request.get(`${apiBase}/lessons/library?${sortQuery}`, {
+    headers: { 'X-PMO-Local-User-ID': 'local-contributor' },
+  });
+  expect(sortFirstResponse.status()).toBe(200);
+  const sortFirstPage = await sortFirstResponse.json();
+  expect(sortFirstPage.items).toHaveLength(1);
+  expect(sortFirstPage.items[0].title).toBe(sortingTitles[0]);
+  expect(sortFirstPage.page.nextCursor).toBeTruthy();
+  const sortSecondResponse = await page.request.get(
+    `${apiBase}/lessons/library?${new URLSearchParams({
+      search: sortPrefix,
+      sort: 'title',
+      limit: '1',
+      cursor: sortFirstPage.page.nextCursor,
+    })}`,
+    { headers: { 'X-PMO-Local-User-ID': 'local-contributor' } },
+  );
+  expect(sortSecondResponse.status()).toBe(200);
+  const sortSecondPage = await sortSecondResponse.json();
+  expect(sortSecondPage.items).toHaveLength(1);
+  expect(sortSecondPage.items[0].title).toBe(sortingTitles[1]);
+
+  const pageRequests: { sort: string | null; cursor: string | null }[] = [];
+  await page.route(
+    (url) => url.pathname.endsWith('/api/lessons-learned/v1/lessons/library'),
+    async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get('search') !== sortPrefix || url.searchParams.get('sort') !== 'title') {
+        await route.continue();
+        return;
+      }
+      const cursor = url.searchParams.get('cursor');
+      pageRequests.push({ sort: url.searchParams.get('sort'), cursor });
+      if (cursor === null) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ items: sortFirstPage.items, page: { limit: 1, nextCursor: 'title-next' } }),
+        });
+        return;
+      }
+      expect(cursor).toBe('title-next');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: sortSecondPage.items, page: { limit: 1, nextCursor: null } }),
+      });
+    },
+  );
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await search.fill(sortPrefix);
+  const sortOrderResponse = page.waitForResponse((response) => {
+    if (!response.url().includes('/api/lessons-learned/v1/lessons/library?')) return false;
+    const query = new URL(response.url()).searchParams;
+    return query.get('search') === sortPrefix && query.get('sort') === 'title';
+  });
+  await page.getByRole('combobox', { name: 'Sort by' }).selectOption('title');
+  await sortOrderResponse;
+  const sortedTable = page.getByRole('table', { name: 'Published lessons, title order' });
+  await expect(sortedTable).toBeVisible();
+  const firstTitle = sortingTitles[0]!;
+  const finalTitle = sortingTitles[1]!;
+  await expect(sortedTable.getByRole('row', { name: new RegExp(firstTitle) })).toBeVisible();
+  await expect(sortedTable.getByRole('row', { name: new RegExp(finalTitle) })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Load more' }).click();
+  const finalRow = sortedTable.getByRole('row', { name: new RegExp(finalTitle) });
+  await expect(finalRow).toBeVisible();
+  await finalRow.getByRole('link', { name: `View ${finalTitle}` }).click();
+  const sortingDetails = page.getByRole('dialog', { name: 'Lesson details' });
+  await expect(sortingDetails).toBeVisible();
+  await sortingDetails.getByRole('button', { name: 'Close published lesson details' }).click();
+  await expect(sortingDetails).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Sort by' })).toHaveValue('title');
+  await expect(sortedTable.getByRole('row', { name: new RegExp(firstTitle) })).toBeVisible();
+  await expect(sortedTable.getByRole('row', { name: new RegExp(finalTitle) })).toBeVisible();
+  const loadedRows = await sortedTable.getByRole('row').allTextContents();
+  expect(loadedRows.findIndex((row) => row.includes(firstTitle))).toBeLessThan(
+    loadedRows.findIndex((row) => row.includes(finalTitle)),
+  );
+  expect(pageRequests).toEqual([
+    { sort: 'title', cursor: null },
+    { sort: 'title', cursor: 'title-next' },
+  ]);
 });
