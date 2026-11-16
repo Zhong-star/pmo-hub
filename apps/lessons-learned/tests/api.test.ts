@@ -4,6 +4,8 @@ import {
   cancelLesson,
   getHealth,
   getHome,
+  getLibrary,
+  getLibraryProjectSnapshots,
   getMyOpenDrafts,
   getMySubmissions,
   getPmoDrafts,
@@ -25,12 +27,55 @@ import {
   LESSONS_LEARNED_CANCEL_PATH,
   LESSONS_LEARNED_SUBMISSIONS_PATH,
   LESSONS_LEARNED_EVALUATION_QUEUE_PATH,
+  LESSONS_LEARNED_LIBRARY_PATH,
+  LESSONS_LEARNED_LIBRARY_PROJECTS_PATH,
   LESSONS_LEARNED_API_TIMEOUT_MS,
 } from '../src/api';
 
 describe('lessons learned HTTP client', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('requests published Library pages with the active search and filters', async () => {
+    const page = { items: [], page: { limit: 10, nextCursor: null } };
+    const adapter = vi.fn().mockResolvedValue({ data: page, status: 200, statusText: 'OK', headers: {}, config: {} });
+    api.defaults.adapter = adapter;
+
+    await expect(getLibrary('local-contributor', {
+      paged: 'true',
+      cursor: 'next-page',
+      search: 'gestao',
+      projectId: 'LOCAL-PROJECT-001',
+      lessonType: 'Communication',
+    })).resolves.toEqual(page);
+
+    expect(adapter).toHaveBeenCalledWith(expect.objectContaining({
+      url: LESSONS_LEARNED_LIBRARY_PATH,
+      method: 'get',
+      params: {
+        paged: 'true',
+        cursor: 'next-page',
+        search: 'gestao',
+        projectId: 'LOCAL-PROJECT-001',
+        lessonType: 'Communication',
+      },
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
+    }));
+  });
+
+  it('loads project snapshots used by published Library filters', async () => {
+    const projects = [{ id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' }];
+    const adapter = vi.fn().mockResolvedValue({ data: projects, status: 200, statusText: 'OK', headers: {}, config: {} });
+    api.defaults.adapter = adapter;
+
+    await expect(getLibraryProjectSnapshots('local-contributor')).resolves.toEqual(projects);
+
+    expect(adapter).toHaveBeenCalledWith(expect.objectContaining({
+      url: LESSONS_LEARNED_LIBRARY_PROJECTS_PATH,
+      method: 'get',
+      headers: expect.objectContaining({ 'X-PMO-Local-User-ID': 'local-contributor' }),
+    }));
   });
 
   it('follows project cursors and keeps snapshots from later pages available to the filter', async () => {

@@ -158,6 +158,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/lessons/library/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List project snapshots used by published Lessons Library entries */
+        get: operations["LessonsController_getLibraryProjectSnapshots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/lessons-learned/v1/lessons/{id}": {
         parameters: {
             query?: never;
@@ -329,6 +346,8 @@ export interface components {
             title: string;
             /** @example local-contributor */
             authorId: string;
+            /** @description Display name of the author when available. */
+            authorName?: string;
             /** @example local-contributor */
             updatedBy: string;
             /**
@@ -433,6 +452,8 @@ export interface components {
             title: string;
             /** @example local-contributor */
             authorId: string;
+            /** @description Display name of the author when available. */
+            authorName?: string;
             /** @example local-contributor */
             updatedBy: string;
             /**
@@ -1141,6 +1162,13 @@ export interface operations {
     LessonsController_getLibrary: {
         parameters: {
             query?: {
+                /** @description A case- and accent-insensitive title prefix, numeric ID or #ID. */
+                search?: string;
+                /** @description Project snapshot ID. */
+                projectId?: string;
+                /** @description Filter lessons without a project. */
+                withoutProject?: boolean;
+                lessonType?: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication";
                 /** @description Opt in to the cursor response envelope. */
                 paged?: "true";
                 cursor?: string;
@@ -1172,6 +1200,62 @@ export interface operations {
                         message?: string | string[];
                     };
                     "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonsController_getLibraryProjectSnapshots: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonProjectResponse"][];
                 };
             };
             /** @description A local Hub profile must be selected. */

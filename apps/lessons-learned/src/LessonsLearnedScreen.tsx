@@ -11,6 +11,7 @@ import {
   getHome,
   getEvaluationProjectSnapshots,
   getLibrary,
+  getLibraryProjectSnapshots,
   getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
@@ -26,6 +27,7 @@ import {
   type LessonDetails,
   type LessonProject,
   type LessonSubmissionsFilters,
+  type LessonsLibraryFilters,
   type PmoDraftsFilters,
   type PmoEvaluationQueueFilters,
   type CancelLessonBody,
@@ -317,9 +319,14 @@ export function LessonsLearnedScreen() {
     retry: false,
     refetchOnWindowFocus: true,
   });
+  const libraryFilters: LessonsLibraryFilters = commonSubmissionFilters;
   const libraryQuery = useInfiniteQuery({
-    queryKey: ['lessons-learned-library', selectedProfileId],
-    queryFn: ({ pageParam }) => getLibrary(selectedProfileId ?? '', { paged: 'true', cursor: pageParam }),
+    queryKey: ['lessons-learned-library', selectedProfileId, libraryFilters],
+    queryFn: ({ pageParam }) => getLibrary(selectedProfileId ?? '', {
+      ...libraryFilters,
+      paged: 'true',
+      cursor: pageParam,
+    }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => Array.isArray(lastPage) ? undefined : lastPage.page.nextCursor ?? undefined,
     enabled: isHomePage && isLibraryPage,
@@ -344,6 +351,13 @@ export function LessonsLearnedScreen() {
     queryKey: ['lessons-learned-project-options', selectedProfileId, 'evaluation-queue'],
     queryFn: ({ signal }) => getEvaluationProjectSnapshots(selectedProfileId ?? '', signal),
     enabled: isHomePage && isPmoEvaluationQueuePage,
+    networkMode: 'always',
+    retry: false,
+  });
+  const libraryProjectsQuery = useQuery({
+    queryKey: ['lessons-learned-project-options', selectedProfileId, 'library'],
+    queryFn: () => getLibraryProjectSnapshots(selectedProfileId ?? ''),
+    enabled: isHomePage && isLibraryPage,
     networkMode: 'always',
     retry: false,
   });
@@ -387,10 +401,14 @@ export function LessonsLearnedScreen() {
     networkMode: 'always',
     retry: false,
   });
-  const currentProjectOptionsQuery = isPmoEvaluationQueuePage ? evaluationProjectsQuery : projectOptionsQuery;
-  const projectFilterOptions = isPmoEvaluationQueuePage
-    ? getProjectFilterOptions(projectsQuery.data ?? [], (evaluationProjectsQuery.data ?? []).map(({ id, name }) => ({ projectId: id, projectName: name })))
-    : getProjectFilterOptions(projectsQuery.data ?? [], projectOptionsQuery.data ?? []);
+  const currentProjectOptionsQuery = isLibraryPage
+    ? libraryProjectsQuery
+    : isPmoEvaluationQueuePage ? evaluationProjectsQuery : projectOptionsQuery;
+  const projectFilterOptions = isLibraryPage
+    ? libraryProjectsQuery.data ?? []
+    : isPmoEvaluationQueuePage
+      ? getProjectFilterOptions(projectsQuery.data ?? [], (evaluationProjectsQuery.data ?? []).map(({ id, name }) => ({ projectId: id, projectName: name })))
+      : getProjectFilterOptions(projectsQuery.data ?? [], projectOptionsQuery.data ?? []);
   const authorFilterOptions = [...new Set((projectOptionsQuery.data ?? []).map(({ authorId }) => authorId))].sort();
   const currentSubmissionsQuery = isPmoDraftsPage
     ? pmoDraftsQuery
@@ -401,7 +419,16 @@ export function LessonsLearnedScreen() {
     : (isPmoDraftsPage ? pmoDraftsQuery.data : submissionsQuery.data) ?? [];
   const currentSubmissionFilters = isPmoDraftsPage
     ? pmoDraftFilters
-    : isPmoEvaluationQueuePage ? commonSubmissionFilters : isLibraryPage ? {} : submissionsFilters;
+    : isPmoEvaluationQueuePage || isLibraryPage ? commonSubmissionFilters : submissionsFilters;
+  const activeLibraryFilterLabels = [
+    ...(submissionSearch.trim() ? [`Search: “${submissionSearch.trim()}”`] : []),
+    ...(submissionProjectFilter.kind === 'without-project'
+      ? ['Project: No project']
+      : submissionProjectFilter.kind === 'project'
+        ? [`Project: ${projectFilterOptions.find(({ id }) => id === submissionProjectFilter.id)?.name ?? submissionProjectFilter.id}`]
+        : []),
+    ...(submissionLessonType ? [`Type: ${submissionLessonType}`] : []),
+  ];
 
   async function refreshSubmissionQueries(profileId: string, lessonId?: number): Promise<void> {
     if (lessonId !== undefined) {
@@ -852,7 +879,7 @@ export function LessonsLearnedScreen() {
                             ? 'Find lessons across the module. Only Open lessons can be edited or cancelled.'
                             : 'Your lessons. Open drafts can be edited or cancelled.'}</p>
                     </div>
-                    {!isPmoReviewListPage && !isLibraryPage && (
+                    {!isPmoReviewListPage && (
                       <button className="draft-action" type="button" disabled={isSavingCurrentDraft} onClick={() => {
                         setSelectedDraft(null);
                         setIsCreateFormOpen(true);
@@ -861,6 +888,61 @@ export function LessonsLearnedScreen() {
                       </button>
                     )}
                   </div>
+
+                  {isLibraryPage && (
+                    <>
+                      <div className="submission-filters" role="group" aria-label="Filter Lessons Library">
+                        <div className="draft-editor-field">
+                          <label htmlFor="library-search">Search title or ID</label>
+                          <input
+                            id="library-search"
+                            type="search"
+                            value={submissionSearch}
+                            placeholder="Title prefix, ID or #ID"
+                            onChange={(event) => setSubmissionSearch(event.target.value)}
+                          />
+                        </div>
+                        <div className="draft-editor-field">
+                          <label htmlFor="library-project">Project</label>
+                          <select
+                            id="library-project"
+                            value={getProjectFilterOptionValue(submissionProjectFilter)}
+                            onChange={(event) => setSubmissionProjectFilter(readProjectFilterOptionValue(event.target.value))}
+                          >
+                            <option value="">Any project</option>
+                            <option value="without-project">No project</option>
+                            {projectFilterOptions.map((project) => (
+                              <option key={project.id} value={getProjectFilterOptionValue({ kind: 'project', id: project.id })}>
+                                {project.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="draft-editor-field">
+                          <label htmlFor="library-type">Lesson type</label>
+                          <select id="library-type" value={submissionLessonType} onChange={(event) => setSubmissionLessonType(event.target.value as NonNullable<LessonDraft['lessonType']> | '')}>
+                            <option value="">Any type</option>
+                            <option value="Future Prevention">Future Prevention</option>
+                            <option value="Success to Repeat">Success to Repeat</option>
+                            <option value="Risk Avoided">Risk Avoided</option>
+                            <option value="Communication">Communication</option>
+                          </select>
+                        </div>
+                        {activeLibraryFilterLabels.length > 0 && (
+                          <button className="draft-cancel" type="button" onClick={() => {
+                            setSubmissionSearch('');
+                            setSubmissionProjectFilter({ kind: 'any' });
+                            setSubmissionLessonType('');
+                          }}>
+                            Clear filters
+                          </button>
+                        )}
+                      </div>
+                      {activeLibraryFilterLabels.length > 0 && (
+                        <p className="draft-meta" role="status">Active filters: {activeLibraryFilterLabels.join(' · ')}</p>
+                      )}
+                    </>
+                  )}
 
                   {!isLibraryPage && <div className="submission-filters" role="group" aria-label={isPmoEvaluationQueuePage
                     ? 'Filter Evaluation Queue'
@@ -936,7 +1018,7 @@ export function LessonsLearnedScreen() {
                   )}
                   {currentProjectOptionsQuery.isError && !currentProjectOptionsQuery.isFetching && (
                     <div className="draft-error" role="alert">
-                      <p>Past project filter options could not be loaded.</p>
+                      <p>{isLibraryPage ? 'Published project filter options could not be loaded.' : 'Past project filter options could not be loaded.'}</p>
                       <button className="draft-cancel" type="button" onClick={() => void currentProjectOptionsQuery.refetch()}>
                         Retry project filters
                       </button>
@@ -960,7 +1042,9 @@ export function LessonsLearnedScreen() {
                   )}
                   {currentSubmissionsQuery.isSuccess && submissionItems.length === 0 && (
                     <p className="draft-empty">{isLibraryPage
-                      ? 'No lessons have been published yet.'
+                      ? currentSubmissionFilters && Object.keys(currentSubmissionFilters).length > 0
+                        ? 'No published lessons match these filters.'
+                        : 'No lessons have been published yet.'
                       : isPmoEvaluationQueuePage
                         ? Object.keys(currentSubmissionFilters).length
                           ? 'No lessons match these filters.'
@@ -981,7 +1065,7 @@ export function LessonsLearnedScreen() {
                           <tr>
                             <th scope="col">Title</th>
                             <th scope="col">ID</th>
-                            {!isLibraryPage && <th scope="col">Author</th>}
+                            <th scope="col">Author</th>
                             <th scope="col">Project</th>
                             <th scope="col">Type</th>
                             <th scope="col">Status</th>
@@ -1003,9 +1087,12 @@ export function LessonsLearnedScreen() {
                                 >
                                   {draft.title}
                                 </button>
+                                {isLibraryPage && (
+                                  <p className="library-description">{draft.situationObserved || 'No description available.'}</p>
+                                )}
                               </th>
                               <td>#{draft.id}</td>
-                              {!isLibraryPage && <td>{draft.authorId}</td>}
+                              <td>{isLibraryPage ? draft.authorName ?? draft.authorId : draft.authorId}</td>
                               <td>{draft.projectName ?? 'No project'}</td>
                               <td>{draft.lessonType ?? 'Not specified'}</td>
                               <td>{draft.status}</td>

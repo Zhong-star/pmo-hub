@@ -13,6 +13,9 @@ export class LessonDraftResponse {
   @ApiProperty({ type: String, example: 'local-contributor' })
   authorId!: string;
 
+  @ApiPropertyOptional({ type: String, description: 'Display name of the author when available.' })
+  authorName?: string;
+
   @ApiProperty({ type: String, example: 'local-contributor' })
   updatedBy!: string;
 

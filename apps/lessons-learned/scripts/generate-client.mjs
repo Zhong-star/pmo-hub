@@ -14,6 +14,7 @@ const pmoDraftsPath = `${lessonsPath}/pmo-drafts`;
 const evaluationQueuePath = `${lessonsPath}/evaluation-queue`;
 const evaluationProjectsPath = evaluationQueuePath + '/projects';
 const libraryPath = `${lessonsPath}/library`;
+const libraryProjectsPath = libraryPath + '/projects';
 const draftPath = `${lessonsPath}/{id}`;
 const submitPath = `${draftPath}/submit`;
 const returnPath = `${draftPath}/return`;
@@ -41,6 +42,8 @@ const evaluationQueueOperation = contract.paths?.[evaluationQueuePath]?.get;
 const evaluationQueueResponseSchema = evaluationQueueOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const libraryOperation = contract.paths?.[libraryPath]?.get;
 const libraryResponseSchema = libraryOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const libraryProjectsOperation = contract.paths?.[libraryProjectsPath]?.get;
+const libraryProjectsResponseSchema = libraryProjectsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const detailsOperation = contract.paths?.[draftPath]?.get;
 const detailsResponseSchema = detailsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const updateLessonOperation = contract.paths?.[draftPath]?.patch;
@@ -106,6 +109,11 @@ if (!libraryResponseSchema?.oneOf?.some((schema) => schema.$ref === '#/component
   throw new Error('Expected a LessonPage response in the Lessons Learned OpenAPI contract.');
 }
 
+if (!libraryProjectsOperation || libraryProjectsResponseSchema?.type !== 'array' ||
+  libraryProjectsResponseSchema.items?.$ref !== '#/components/schemas/LessonProjectResponse') {
+  throw new Error(`Expected GET ${libraryProjectsPath} with an array of LessonProjectResponse in ${contractPath}`);
+}
+
 if (!detailsOperation || detailsResponseSchema?.$ref !== '#/components/schemas/LessonDetailsResponse') {
   throw new Error(`Expected GET ${draftPath} with LessonDetailsResponse in ${contractPath}`);
 }
@@ -157,6 +165,7 @@ export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '${pmoDraftsPath}' satisfies keyo
 export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '${evaluationQueuePath}' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_PROJECTS_PATH = '${evaluationProjectsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_PATH = '${libraryPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_LIBRARY_PROJECTS_PATH = '${libraryProjectsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_DRAFT_PATH = '${draftPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMIT_PATH = '${submitPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_RETURN_PATH = '${returnPath}' satisfies keyof paths;
@@ -173,6 +182,8 @@ export type LessonSubmissionsFilters = NonNullable<paths[typeof LESSONS_LEARNED_
 export type PmoDraftsFilters = NonNullable<paths[typeof LESSONS_LEARNED_PMO_DRAFTS_PATH]['get']['parameters']['query']>;
 export type LessonPage = components['schemas']['LessonPage'];
 type PageParameters = { paged: 'true'; cursor?: string };
+export type LessonsLibraryFilters = Omit<NonNullable<paths[typeof LESSONS_LEARNED_LIBRARY_PATH]['get']['parameters']['query']>, 'paged' | 'cursor' | 'limit'>;
+type LibraryPageParameters = PageParameters & LessonsLibraryFilters;
 export type PmoEvaluationQueueFilters = Omit<NonNullable<paths[typeof LESSONS_LEARNED_EVALUATION_QUEUE_PATH]['get']['parameters']['query']>, 'paged' | 'cursor' | 'limit'>;
 export type CreateLessonDraftBody = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['post']['requestBody']['content']['application/json'];
 export type LessonProject = paths[typeof LESSONS_LEARNED_PROJECTS_PATH]['get']['responses'][200]['content']['application/json'][number];
@@ -298,10 +309,19 @@ export async function getEvaluationProjectSnapshots(localUserId: string, signal?
 }
 
 export function getLibrary(localUserId: string): Promise<LessonDraft[]>;
-export function getLibrary(localUserId: string, page: PageParameters): Promise<LessonPage | LessonDraft[]>;
-export async function getLibrary(localUserId: string, page?: PageParameters): Promise<LessonPage | LessonDraft[]> {
+export function getLibrary(localUserId: string, page: LibraryPageParameters): Promise<LessonPage | LessonDraft[]>;
+export async function getLibrary(localUserId: string, page?: LibraryPageParameters): Promise<LessonPage | LessonDraft[]> {
   const { data } = await api.get<LessonPage | LessonDraft[]>(LESSONS_LEARNED_LIBRARY_PATH, {
     ...(page ? { params: page } : {}),
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function getLibraryProjectSnapshots(localUserId: string): Promise<LessonProject[]> {
+  const { data } = await api.get<LessonProject[]>(LESSONS_LEARNED_LIBRARY_PROJECTS_PATH, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });

@@ -9,6 +9,7 @@ import {
   createLessonDraft,
   getHome,
   getLibrary,
+  getLibraryProjectSnapshots,
   getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
@@ -31,6 +32,7 @@ vi.mock('../src/api', () => ({
   createLessonDraft: vi.fn(),
   getHome: vi.fn(),
   getLibrary: vi.fn(),
+  getLibraryProjectSnapshots: vi.fn(),
   getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
@@ -128,6 +130,7 @@ beforeEach(() => {
   vi.mocked(getPmoDrafts).mockResolvedValue([]);
   vi.mocked(getPmoEvaluationQueue).mockResolvedValue([]);
   vi.mocked(getEvaluationProjectSnapshots).mockResolvedValue([]);
+  vi.mocked(getLibraryProjectSnapshots).mockResolvedValue([]);
   vi.mocked(returnLesson).mockImplementation(async (_profileId, lessonId) => lessonDraft({
     id: lessonId,
     status: 'Open',
@@ -480,6 +483,79 @@ describe('Lessons Learned access check', () => {
     const details = await screen.findByRole('dialog', { name: 'Lesson details' });
     expect(within(details).getByText('The handover omitted the current runbook.')).toBeInTheDocument();
     expect(within(details).queryByRole('heading', { name: 'History' })).not.toBeInTheDocument();
+  });
+
+  it('searches and filters the published Library while preserving loaded pages when details close', async () => {
+    const first = lessonDraft({
+      id: 91,
+      title: 'Gestão de riscos',
+      authorName: 'Local Contributor',
+      status: 'Approved',
+      approvedAt: '2026-11-14T15:30:00.000Z',
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+      lessonType: 'Communication',
+      situationObserved: 'The team did not record its risk decision.',
+    });
+    const second = lessonDraft({
+      id: 92,
+      title: 'Older published handover',
+      authorName: 'Other Contributor',
+      status: 'Closed',
+      approvedAt: '2026-11-13T15:30:00.000Z',
+      situationObserved: 'The handover missed an owner.',
+    });
+    const page = (items: LessonDraft[], nextCursor: string | null) => ({
+      items,
+      page: { limit: 1, nextCursor },
+    });
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getLibraryProjectSnapshots).mockResolvedValue([
+      { id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' },
+    ]);
+    vi.mocked(getLibrary).mockImplementation(async (_profileId, request) => {
+      if (request?.cursor) return page([second], null);
+      if (request?.search === 'no-match') return page([], null);
+      return page([first], request?.search ? null : 'next-cursor');
+    });
+    vi.mocked(getLessonDetails).mockResolvedValue({ ...lessonDetails(second), history: [] });
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor', 0, 'library');
+
+    const firstRow = await screen.findByRole('row', { name: /Gestão de riscos/ });
+    expect(within(firstRow).getByText('Local Contributor')).toBeInTheDocument();
+    expect(within(firstRow).getByText('The team did not record its risk decision.')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Load more' }));
+    const secondRow = await screen.findByRole('row', { name: /Older published handover/ });
+    await user.click(within(secondRow).getByRole('button', { name: 'View Older published handover' }));
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    await user.click(within(details).getByRole('button', { name: 'Close lesson details' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Lesson details' })).not.toBeInTheDocument());
+    expect(screen.getByRole('row', { name: /Gestão de riscos/ })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /Older published handover/ })).toBeInTheDocument();
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search title or ID' }), 'gestao');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }), 'without-project');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Lesson type' }), 'Communication');
+    await waitFor(() => expect(getLibrary).toHaveBeenLastCalledWith('local-contributor', expect.objectContaining({
+      paged: 'true',
+      cursor: undefined,
+      search: 'gestao',
+      withoutProject: true,
+      lessonType: 'Communication',
+    })));
+    expect(screen.getByRole('status')).toHaveTextContent('Project: No project');
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => expect(getLibrary).toHaveBeenLastCalledWith('local-contributor', {
+      paged: 'true',
+      cursor: undefined,
+    }));
+    await user.type(screen.getByRole('searchbox', { name: 'Search title or ID' }), 'no-match');
+    expect(await screen.findByText('No published lessons match these filters.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create lesson' }));
+    expect(await screen.findByRole('dialog', { name: 'Create lesson' })).toBeInTheDocument();
   });
 
   it('lets PMO approve the exact version shown in lesson details after explicit confirmation', async () => {
