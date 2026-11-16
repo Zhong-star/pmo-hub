@@ -470,24 +470,25 @@ test('Lessons Learned stage 3 returns, publishes and closes a lesson across prof
 
   await enterModule('local-contributor', 'Local PMO');
   await page.getByRole('link', { name: 'Lessons Library' }).click();
-  await page.getByRole('button', { name: `View ${title}` }).click();
+  await page.getByRole('link', { name: `View ${title}` }).click();
   const status = details.getByText('Status', { exact: true }).locator('..').getByRole('definition');
   await expect(status).toHaveText('Approved');
   await expect(details.getByText('Ask the next team to sign off on the checklist.')).toBeVisible();
   await expect(details.getByText('The checklist made handover steps explicit.')).toBeVisible();
   await expect(details.getByRole('heading', { name: 'History' })).toHaveCount(0);
-  await details.getByRole('button', { name: 'Close lesson details' }).click();
+  await details.getByRole('button', { name: 'Close published lesson details' }).click();
 
   await enterModule('local-pmo', 'Local Contributor');
   await page.getByRole('link', { name: 'Lessons Library' }).click();
-  await page.getByRole('button', { name: `View ${title}` }).click();
+  const libraryLesson = page.getByRole('link', { name: `View ${title}` });
+  await libraryLesson.click();
   await details.getByRole('button', { name: 'Close lesson', exact: true }).click();
   await page.getByRole('button', { name: 'Confirm closure' }).click();
-  await expect(page.getByRole('button', { name: `View ${title}` }).locator('..').locator('..')).toContainText('Closed');
+  await expect(page.getByRole('row').filter({ has: libraryLesson })).toContainText('Closed');
 
   await enterModule('local-contributor', 'Local PMO');
   await page.getByRole('link', { name: 'Lessons Library' }).click();
-  await page.getByRole('button', { name: `View ${title}` }).click();
+  await libraryLesson.click();
   await expect(status).toHaveText('Closed');
   await expect(details.getByRole('heading', { name: 'History' })).toHaveCount(0);
 });
