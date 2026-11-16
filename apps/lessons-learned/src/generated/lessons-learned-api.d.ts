@@ -131,7 +131,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List distinct project snapshots in the evaluation queue for filtering */
+        /** List distinct project snapshots in the evaluation queue by ascending project ID */
         get: operations["LessonsController_getEvaluationProjectSnapshots"];
         put?: never;
         post?: never;
@@ -386,6 +386,16 @@ export interface components {
             correlationId: string;
             errors?: components["schemas"]["LessonFieldProblem"][];
         };
+        LessonProjectResponse: {
+            /** @example LOCAL-PROJECT-001 */
+            id: string;
+            /** @example Fictional Atlas Modernization */
+            name: string;
+        };
+        LessonProjectPage: {
+            items: components["schemas"]["LessonProjectResponse"][];
+            page: components["schemas"]["LessonPageInfo"];
+        };
         CreateLessonRequest: {
             /** @example Improve release handover */
             title: string;
@@ -402,12 +412,6 @@ export interface components {
             impact?: string | null;
             recommendation?: string | null;
             applicability?: string | null;
-        };
-        LessonProjectResponse: {
-            /** @example LOCAL-PROJECT-001 */
-            id: string;
-            /** @example Fictional Atlas Modernization */
-            name: string;
         };
         LessonHistoryEventResponse: {
             id: number;
@@ -1061,7 +1065,12 @@ export interface operations {
     };
     LessonsController_getEvaluationProjectSnapshots: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opt in to the cursor response envelope. */
+                paged?: "true";
+                cursor?: string;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1073,7 +1082,21 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LessonProjectResponse"][];
+                    "application/json": components["schemas"]["LessonProjectResponse"][] | components["schemas"]["LessonProjectPage"];
+                };
+            };
+            /** @description Invalid page limit or project cursor. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
                 };
             };
             /** @description A local Hub profile must be selected. */

@@ -1,8 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { ApiProperty } from '@nestjs/swagger';
+import { createHash } from 'node:crypto';
 import type { SelectQueryBuilder } from 'typeorm';
 import type { Lesson } from './lesson.entity';
 import { LessonDraftResponse } from './lesson-response.dto';
+import { LessonProjectResponse } from './project-response.dto';
 
 class LessonPageInfo {
   @ApiProperty({ type: String, nullable: true })
@@ -20,6 +22,14 @@ export class LessonPage {
   page!: LessonPageInfo;
 }
 
+export class LessonProjectPage {
+  @ApiProperty({ type: [LessonProjectResponse] })
+  items!: LessonProjectResponse[];
+
+  @ApiProperty({ type: LessonPageInfo })
+  page!: LessonPageInfo;
+}
+
 export function readPageRequest(paged?: string, cursor?: string, limit?: string) {
   if (paged === undefined && cursor === undefined && limit === undefined) return undefined;
   if (paged !== undefined && paged !== 'true') throw new BadRequestException('Set paged to true.');
@@ -31,11 +41,32 @@ export function readPageRequest(paged?: string, cursor?: string, limit?: string)
 
 export type LessonPageRequest = NonNullable<ReturnType<typeof readPageRequest>>;
 
+const projectCursorPrefix = 'evaluation-projects:';
+
+export function readProjectCursor(cursor: string): string {
+  try {
+    if (typeof cursor !== 'string' || !/^[A-Za-z0-9_-]{1,1024}$/.test(cursor)) throw new Error();
+    const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
+    const id = decoded.slice(projectCursorPrefix.length);
+    if (!decoded.startsWith(projectCursorPrefix) || !id || id.includes('\0') || [...id].length > 128) {
+      throw new Error();
+    }
+    return id;
+  } catch {
+    throw new BadRequestException('Invalid cursor for evaluation projects.');
+  }
+}
+
+export function encodeProjectCursor(id: string): string {
+  return Buffer.from(projectCursorPrefix + id).toString('base64url');
+}
+
 function decodeCursor(cursor: string, scope: string): { key: string; id: number } {
   try {
     if (typeof cursor !== 'string' || !/^[A-Za-z0-9_-]{1,1024}$/.test(cursor)) throw new Error();
     const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-    if (decoded.scope !== scope || typeof decoded.key !== 'string' || !/^-?[0-9]{1,19}$/.test(decoded.key) ||
+    const scopeHash = createHash('sha256').update(scope).digest('hex');
+    if ((decoded.scope !== scope && decoded.scope !== scopeHash) || typeof decoded.key !== 'string' || !/^-?[0-9]{1,19}$/.test(decoded.key) ||
       BigInt(decoded.key) > 9223372036854775807n || BigInt(decoded.key) < -9223372036854775808n ||
       !Number.isInteger(decoded.id) || decoded.id < 1 || decoded.id > 2147483647) throw new Error();
     return decoded;
@@ -66,7 +97,11 @@ export async function paginateLessons(
     .limit(request.limit + 1).getRawAndEntities<{ cursor_key: string }>();
   const last = request.limit - 1;
   const nextCursor = entities.length > request.limit
-    ? Buffer.from(JSON.stringify({ scope, key: raw[last].cursor_key, id: entities[last].id })).toString('base64url')
+    ? Buffer.from(JSON.stringify({
+      scope: createHash('sha256').update(scope).digest('hex'),
+      key: raw[last].cursor_key,
+      id: entities[last].id,
+    })).toString('base64url')
     : null;
   return { items: entities.slice(0, request.limit).map(toResponse), page: { limit: request.limit, nextCursor } };
 }

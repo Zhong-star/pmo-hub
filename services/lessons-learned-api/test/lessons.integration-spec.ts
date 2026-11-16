@@ -1522,6 +1522,34 @@ describe('Lessons Learned draft registration', () => {
     expect(third.body.items[0].id).toBe(newestSubmission.body.id);
     await server.get(path).query({ cursor, search: 'Changed filter' }).set(pmoHeaders).expect(400);
     await server.get(path).query({ limit: 101 }).set(pmoHeaders).expect(400);
+
+    const search = '😀'.repeat(150);
+    const projectId = '😀'.repeat(128);
+    await dataSource!.query('UPDATE lessons SET title = $1, project_id = $2, project_name = $3 WHERE id IN ($4, $5)', [
+      search, projectId, 'Removed project', oldestSubmission.body.id, middleSubmission.body.id,
+    ]);
+    await dataSource!.query('UPDATE lessons SET project_id = $1, project_name = $2 WHERE id = $3', [
+      'Other project', 'Other project', newestSubmission.body.id,
+    ]);
+    const filtered = await server.get(path).query({ search, projectId, limit: 1 }).set(pmoHeaders).expect(200);
+    expect(filtered.body.items[0].id).toBe(oldestSubmission.body.id);
+    const filteredCursor = filtered.body.page.nextCursor;
+    const next = await server.get(path).query({ search, projectId, cursor: filteredCursor }).set(pmoHeaders).expect(200);
+    expect(next.body.items.map(({ id }: { id: number }) => id)).toEqual([middleSubmission.body.id]);
+    await server.get(path).query({ search, cursor: filteredCursor }).set(pmoHeaders).expect(400);
+
+    const projectsPath = `${path}/projects`;
+    const legacyProjects = await server.get(projectsPath).set(pmoHeaders).expect(200);
+    expect(legacyProjects.body).toHaveLength(2);
+    expect(legacyProjects.body).toContainEqual({ id: projectId, name: 'Removed project' });
+    const firstProject = await server.get(projectsPath).query({ limit: 1 }).set(pmoHeaders).expect(200);
+    const projectCursor = firstProject.body.page.nextCursor;
+    expect(typeof projectCursor).toBe('string');
+    const secondProject = await server.get(projectsPath).query({ cursor: projectCursor }).set(pmoHeaders).expect(200);
+    expect([...firstProject.body.items, ...secondProject.body.items]).toEqual(legacyProjects.body);
+    expect(secondProject.body.page.nextCursor).toBeNull();
+    await server.get(projectsPath).query({ cursor: filteredCursor }).set(pmoHeaders).expect(400);
+    await server.get(projectsPath).query({ paged: 'true' }).set('X-PMO-Local-User-ID', 'local-contributor').expect(403);
   });
 
   it('serves the default cursor page without changing the legacy evaluation response', async () => {
@@ -1785,6 +1813,11 @@ describe('Lessons Learned draft registration', () => {
     const details = await server.get(path).set(contributor).expect(200).expect('ETag', /^"/);
     const etag = details.headers.etag;
     const accept = { Accept: 'application/json, application/problem+json' };
+    const negotiated = await server.get(path).set(contributor).set(accept).expect(200);
+    expect(negotiated.body.etag).toBe(negotiated.headers.etag);
+    expect(negotiated.headers.etag).not.toBe(etag);
+    expect(created.headers.etag).not.toBe(etag);
+    await server.get(path).set(contributor).set(accept).expect('ETag', negotiated.headers.etag);
 
     await server.patch(path).set(contributor).set(accept).set('If-Match', etag)
       .send({ title: 'Conflicting preconditions', version: created.body.version + 1 })

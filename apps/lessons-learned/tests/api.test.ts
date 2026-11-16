@@ -8,6 +8,7 @@ import {
   getMySubmissions,
   getPmoDrafts,
   getPmoEvaluationQueue,
+  getEvaluationProjectSnapshots,
   getLessonDetails,
   createLessonDraft,
   getLessonProjects,
@@ -30,6 +31,18 @@ import {
 describe('lessons learned HTTP client', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('follows project cursors and keeps snapshots from later pages available to the filter', async () => {
+    const first = { id: 'active', name: 'Active project' };
+    const second = { id: 'removed', name: 'Removed project' };
+    const adapter = vi.fn()
+      .mockResolvedValueOnce({ data: { items: [first], page: { limit: 50, nextCursor: 'next' } } })
+      .mockResolvedValueOnce({ data: { items: [second], page: { limit: 50, nextCursor: null } } });
+    api.defaults.adapter = adapter;
+
+    await expect(getEvaluationProjectSnapshots('local-pmo')).resolves.toEqual([first, second]);
+    expect(adapter).toHaveBeenNthCalledWith(2, expect.objectContaining({ params: { paged: 'true', cursor: 'next' } }));
   });
 
   it('sends the displayed ETag and presents a 412 as a stale edit to the UI', async () => {

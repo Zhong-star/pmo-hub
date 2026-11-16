@@ -14,7 +14,9 @@ import { LocalAccessService } from '../local-access.service';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../database/database.module';
 import { LessonHistory } from './lesson-history.entity';
 import { Lesson } from './lesson.entity';
-import { paginateLessons, type LessonPage, type LessonPageRequest } from './lesson-pagination';
+import {
+  encodeProjectCursor, paginateLessons, readProjectCursor, type LessonPage, type LessonPageRequest, type LessonProjectPage,
+} from './lesson-pagination';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
 import type { ApproveLessonRequest } from './approve-lesson-request.dto';
 import type { CloseLessonRequest } from './close-lesson-request.dto';
@@ -152,17 +154,27 @@ export class LessonsService {
     return lessons.map((lesson) => this.toResponse(lesson));
   }
 
-  async getEvaluationProjectSnapshots(localUserId: string | undefined): Promise<LessonProject[]> {
+  async getEvaluationProjectSnapshots(
+    localUserId: string | undefined,
+    page?: LessonPageRequest,
+  ): Promise<LessonProject[] | LessonProjectPage> {
     if (this.localAccess.getProfile(localUserId).role !== 'LESSONS_MODERATOR') {
       throw new ForbiddenException('PMO moderator access is required to list evaluation projects.');
     }
-    return this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
+    const query = this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
       .distinctOn(['lesson.project_id'])
       .select('lesson.project_id', 'id').addSelect('lesson.project_name', 'name')
       .where('lesson.status = :status', { status: 'PMOEvaluation' })
       .andWhere('lesson.project_id IS NOT NULL AND lesson.project_name IS NOT NULL')
-      .orderBy('lesson.project_id', 'ASC').addOrderBy('lesson.id', 'DESC')
-      .getRawMany<LessonProject>();
+      .orderBy('lesson.project_id', 'ASC').addOrderBy('lesson.id', 'DESC');
+    if (!page) return query.getRawMany<LessonProject>();
+    if (page.cursor !== undefined) {
+      query.andWhere('lesson.project_id > :projectCursor', { projectCursor: readProjectCursor(page.cursor) });
+    }
+    const projects = await query.limit(page.limit + 1).getRawMany<LessonProject>();
+    const items = projects.slice(0, page.limit);
+    const nextCursor = projects.length > page.limit ? encodeProjectCursor(items[items.length - 1].id) : null;
+    return { items, page: { limit: page.limit, nextCursor } };
   }
 
   private async includeLatestReviewGuidance(

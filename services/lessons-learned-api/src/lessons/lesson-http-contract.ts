@@ -3,7 +3,7 @@ import {
   Injectable, Logger, type ExceptionFilter, type NestInterceptor, type ValidationError,
 } from '@nestjs/common';
 import { ApiHeader, ApiProperty, ApiPropertyOptional, ApiResponse, getSchemaPath } from '@nestjs/swagger';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { STATUS_CODES } from 'node:http';
 import { catchError, tap } from 'rxjs';
 import { LocalAccessException, LocalAccessProblem } from '../local-access-problem';
@@ -73,7 +73,8 @@ function exposeETags(value: unknown, includeInBody: boolean): string | undefined
   if (Array.isArray(value)) {
     if (includeInBody) value.forEach((item) => exposeETags(item, true));
   } else if (isLesson(value)) {
-    const etag = `"lesson-${value.id}-v${value.version}"`;
+    const representation = createHash('sha256').update(JSON.stringify([includeInBody, value])).digest('hex');
+    const etag = `"lesson-${value.id}-v${value.version}-${representation}"`;
     if (includeInBody) value.etag = etag;
     return etag;
   } else if (includeInBody && typeof value === 'object' && value !== null && 'items' in value && Array.isArray(value.items)) {
@@ -82,7 +83,7 @@ function exposeETags(value: unknown, includeInBody: boolean): string | undefined
 }
 
 function applyIfMatch(input: unknown, lessonId: string | undefined, ifMatch: string): void {
-  const tag = /^"lesson-(\d+)-v([1-9]\d*)"$/.exec(ifMatch);
+  const tag = /^"lesson-(\d+)-v([1-9]\d*)(?:-[a-f0-9]{64})?"$/.exec(ifMatch);
   const version = Number(tag?.[2]);
   if (!tag || Number(tag[1]) !== Number(lessonId) || !Number.isSafeInteger(version)) {
     throw new BadRequestException('If-Match must contain the ETag of this lesson.');

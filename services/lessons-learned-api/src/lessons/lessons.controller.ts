@@ -60,11 +60,11 @@ import {
   PmoEvaluationQueueQuery,
 } from './lesson-submissions-query.dto';
 import { ConditionalLessonWrite, LessonHttpContract, LessonProblem, LessonProblemFilter } from './lesson-http-contract';
-import { LessonPage, readPageRequest } from './lesson-pagination';
+import { LessonPage, LessonProjectPage, readPageRequest } from './lesson-pagination';
 import { LESSON_STATUSES, LESSON_TYPES } from './lesson-domain.constants';
 
 @ApiTags('Lessons')
-@ApiExtraModels(LocalAccessProblem, LessonPage, LessonProblem)
+@ApiExtraModels(LocalAccessProblem, LessonPage, LessonProblem, LessonProjectPage)
 @Controller('lessons')
 @UseFilters(LocalAccessProblemFilter, LessonProblemFilter)
 @UseInterceptors(LessonHttpContract)
@@ -191,16 +191,28 @@ export class LessonsController {
 
   @Get('evaluation-queue/projects')
   @Header('Cache-Control', 'no-store')
-  @ApiOperation({ summary: 'List distinct project snapshots in the evaluation queue for filtering' })
+  @ApiOperation({ summary: 'List distinct project snapshots in the evaluation queue by ascending project ID' })
   @ApiSecurity(localProfileScheme)
-  @ApiOkResponse({ type: LessonProjectResponse, isArray: true })
+  @ApiQuery({ name: 'paged', required: false, enum: ['true'], description: 'Opt in to the cursor response envelope.' })
+  @ApiQuery({ name: 'cursor', required: false, type: String })
+  @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } })
+  @ApiOkResponse({ schema: { oneOf: [
+    { type: 'array', items: { $ref: getSchemaPath(LessonProjectResponse) } },
+    { $ref: getSchemaPath(LessonProjectPage) },
+  ] } })
+  @ApiBadRequestResponse({ description: 'Invalid page limit or project cursor.' })
   @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
   @ApiResponse({ status: 403, description: 'The selected profile is not a PMO moderator.' })
   @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
   getEvaluationProjectSnapshots(
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
-  ): Promise<LessonProjectResponse[]> {
-    return this.lessons.getEvaluationProjectSnapshots(typeof header === 'string' ? header : undefined);
+    @Query('paged') paged?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ): Promise<LessonProjectResponse[] | LessonProjectPage> {
+    return this.lessons.getEvaluationProjectSnapshots(
+      typeof header === 'string' ? header : undefined, readPageRequest(paged, cursor, limit),
+    );
   }
 
   @Get('library')

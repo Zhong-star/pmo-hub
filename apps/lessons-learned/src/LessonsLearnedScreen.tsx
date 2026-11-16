@@ -342,7 +342,7 @@ export function LessonsLearnedScreen() {
   });
   const evaluationProjectsQuery = useQuery({
     queryKey: ['lessons-learned-project-options', selectedProfileId, 'evaluation-queue'],
-    queryFn: () => getEvaluationProjectSnapshots(selectedProfileId ?? ''),
+    queryFn: ({ signal }) => getEvaluationProjectSnapshots(selectedProfileId ?? '', signal),
     enabled: isHomePage && isPmoEvaluationQueuePage,
     networkMode: 'always',
     retry: false,
