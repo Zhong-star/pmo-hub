@@ -9,6 +9,7 @@ import {
   createLessonDraft,
   getHome,
   getLibrary,
+  getLibraryLessonDetails,
   getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
@@ -31,6 +32,7 @@ vi.mock('../src/api', () => ({
   createLessonDraft: vi.fn(),
   getHome: vi.fn(),
   getLibrary: vi.fn(),
+  getLibraryLessonDetails: vi.fn(),
   getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
@@ -134,6 +136,10 @@ beforeEach(() => {
     updatedBy: 'local-pmo',
   }));
   vi.mocked(getLibrary).mockResolvedValue([]);
+  vi.mocked(getLibraryLessonDetails).mockImplementation(async (_profileId, lessonId) => ({
+    ...lessonDetails({ id: lessonId }),
+    history: [],
+  }));
   vi.mocked(getLessonDetails).mockImplementation(async (_profileId, lessonId) => lessonDetails({ id: lessonId }));
   vi.mocked(updateLessonDraft).mockImplementation(async (_profileId, _draftId, input) => lessonDraft({
     ...input,
@@ -464,7 +470,7 @@ describe('Lessons Learned access check', () => {
     });
     vi.mocked(getHome).mockResolvedValue(contributor);
     vi.mocked(getLibrary).mockResolvedValue([published]);
-    vi.mocked(getLessonDetails).mockResolvedValue({ ...lessonDetails(published), history: [] });
+    vi.mocked(getLibraryLessonDetails).mockResolvedValue({ ...lessonDetails(published), history: [] });
     const user = userEvent.setup();
 
     renderScreen('local-contributor', 0, 'library');
@@ -475,11 +481,16 @@ describe('Lessons Learned access check', () => {
     const table = await screen.findByRole('table', { name: 'Published lessons, newest approval first' });
     const row = within(table).getByRole('row', { name: /Published release verification/ });
     expect(within(row).getByText('Approved')).toBeInTheDocument();
-    await user.click(within(row).getByRole('button', { name: 'View Published release verification' }));
+    await user.click(within(row).getByRole('link', { name: 'View Published release verification' }));
 
-    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    const details = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    expect(window.location.search).toBe('?page=library&lesson=91');
+    expect(getLibraryLessonDetails).toHaveBeenCalledWith('local-contributor', 91);
     expect(within(details).getByText('The handover omitted the current runbook.')).toBeInTheDocument();
     expect(within(details).queryByRole('heading', { name: 'History' })).not.toBeInTheDocument();
+    await user.click(within(details).getByRole('button', { name: 'Back to Lessons Library' }));
+    await waitFor(() => expect(window.location.search).toBe('?page=library'));
+    expect(within(table).getByRole('link', { name: 'View Published release verification' })).toHaveFocus();
   });
 
   it('lets PMO approve the exact version shown in lesson details after explicit confirmation', async () => {

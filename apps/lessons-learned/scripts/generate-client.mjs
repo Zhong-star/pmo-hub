@@ -14,6 +14,7 @@ const pmoDraftsPath = `${lessonsPath}/pmo-drafts`;
 const evaluationQueuePath = `${lessonsPath}/evaluation-queue`;
 const evaluationProjectsPath = evaluationQueuePath + '/projects';
 const libraryPath = `${lessonsPath}/library`;
+const libraryDetailPath = `${libraryPath}/{id}`;
 const draftPath = `${lessonsPath}/{id}`;
 const submitPath = `${draftPath}/submit`;
 const returnPath = `${draftPath}/return`;
@@ -41,6 +42,8 @@ const evaluationQueueOperation = contract.paths?.[evaluationQueuePath]?.get;
 const evaluationQueueResponseSchema = evaluationQueueOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const libraryOperation = contract.paths?.[libraryPath]?.get;
 const libraryResponseSchema = libraryOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const libraryDetailOperation = contract.paths?.[libraryDetailPath]?.get;
+const libraryDetailResponseSchema = libraryDetailOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const detailsOperation = contract.paths?.[draftPath]?.get;
 const detailsResponseSchema = detailsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const updateLessonOperation = contract.paths?.[draftPath]?.patch;
@@ -106,6 +109,10 @@ if (!libraryResponseSchema?.oneOf?.some((schema) => schema.$ref === '#/component
   throw new Error('Expected a LessonPage response in the Lessons Learned OpenAPI contract.');
 }
 
+if (!libraryDetailOperation || libraryDetailResponseSchema?.$ref !== '#/components/schemas/LessonDetailsResponse') {
+  throw new Error(`Expected GET ${libraryDetailPath} with LessonDetailsResponse in ${contractPath}`);
+}
+
 if (!detailsOperation || detailsResponseSchema?.$ref !== '#/components/schemas/LessonDetailsResponse') {
   throw new Error(`Expected GET ${draftPath} with LessonDetailsResponse in ${contractPath}`);
 }
@@ -157,6 +164,7 @@ export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '${pmoDraftsPath}' satisfies keyo
 export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '${evaluationQueuePath}' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_PROJECTS_PATH = '${evaluationProjectsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_PATH = '${libraryPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_LIBRARY_DETAIL_PATH = '${libraryDetailPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_DRAFT_PATH = '${draftPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMIT_PATH = '${submitPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_RETURN_PATH = '${returnPath}' satisfies keyof paths;
@@ -302,6 +310,15 @@ export function getLibrary(localUserId: string, page: PageParameters): Promise<L
 export async function getLibrary(localUserId: string, page?: PageParameters): Promise<LessonPage | LessonDraft[]> {
   const { data } = await api.get<LessonPage | LessonDraft[]>(LESSONS_LEARNED_LIBRARY_PATH, {
     ...(page ? { params: page } : {}),
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function getLibraryLessonDetails(localUserId: string, lessonId: number): Promise<LessonDetails> {
+  const { data } = await api.get<LessonDetails>(LESSONS_LEARNED_LIBRARY_DETAIL_PATH.replace('{id}', String(lessonId)), {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });

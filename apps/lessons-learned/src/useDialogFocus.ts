@@ -48,7 +48,7 @@ export function useDialogFocus(
       else dialog?.removeAttribute('open');
       if (appShell && !wasAppShellInert) appShell.removeAttribute('inert');
 
-      if (returnFocus?.isConnected) {
+      if (returnFocus?.isConnected && returnFocus !== document.body) {
         returnFocus.focus();
       } else {
         (getReturnFocusTargetRef.current?.() ?? document.querySelector<HTMLElement>('#page-title'))?.focus();

@@ -727,7 +727,7 @@ describe('Lessons Learned draft registration', () => {
       .send({ title: 'Submit a complete lesson' })
       .expect(201);
 
-    const submitted = await server
+    const submittedResponse = await server
       .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .send({
@@ -2262,7 +2262,7 @@ describe('Lessons Learned draft registration', () => {
     const approved = await server
       .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
       .set('X-PMO-Local-User-ID', 'local-pmo')
-      .send({ version: submitted.body.version })
+      .send({ version: submitted.version })
       .expect(200);
 
     expect(approved.body).toMatchObject({
@@ -2554,6 +2554,85 @@ describe('Lessons Learned draft registration', () => {
       .get(`/api/lessons-learned/v1/lessons/${privateSubmission.body.id}`)
       .set('X-PMO-Local-User-ID', 'local-other-contributor')
       .expect(404);
+  });
+
+  it('serves Library detail only for published lessons and keeps private and missing IDs indistinguishable', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Published lesson for the Library detail URL' })
+      .expect(201);
+    const submittedResponse = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The team repeated verification work.',
+        recommendation: 'Assign an owner to maintain the checklist.',
+        applicability: 'Use for releases with shared ownership.',
+      });
+    expect(submittedResponse.status, JSON.stringify(submittedResponse.body)).toBe(200);
+    const submitted = submittedResponse.body;
+    const published = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.version })
+      .expect(200);
+    const privateDraft = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Private lesson outside the Library' })
+      .expect(201);
+
+    for (const [profileId, canReadHistory] of [
+      ['local-contributor', true],
+      ['local-other-contributor', false],
+      ['local-pmo', true],
+    ] as const) {
+      const detailsResponse = await server
+        .get(`/api/lessons-learned/v1/lessons/library/${published.body.id}`)
+        .set('X-PMO-Local-User-ID', profileId);
+      expect(detailsResponse.status, JSON.stringify(detailsResponse.body)).toBe(200);
+      expect(detailsResponse.body).toMatchObject({
+        id: published.body.id,
+        title: published.body.title,
+        authorName: 'Local Contributor',
+        status: 'Approved',
+        approvedAt: published.body.approvedAt,
+        rootCause: 'No checklist owner had been assigned.',
+      });
+      expect(detailsResponse.body.history.length > 0).toBe(canReadHistory);
+    }
+
+    const hiddenLesson = await server
+      .get(`/api/lessons-learned/v1/lessons/library/${privateDraft.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-other-contributor')
+      .expect(404);
+    const missingLesson = await server
+      .get('/api/lessons-learned/v1/lessons/library/2147483000')
+      .set('X-PMO-Local-User-ID', 'local-other-contributor')
+      .expect(404);
+    expect(hiddenLesson.body).toEqual(missingLesson.body);
+
+    await server.get(`/api/lessons-learned/v1/lessons/library/${published.body.id}`).expect(401);
+    await server
+      .get(`/api/lessons-learned/v1/lessons/library/${published.body.id}`)
+      .set('X-PMO-Local-User-ID', 'revoked-profile')
+      .expect(403);
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${privateDraft.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200);
   });
 
   it('lets PMO reject an evaluation with a reason and keeps the archived lesson private to its author', async () => {

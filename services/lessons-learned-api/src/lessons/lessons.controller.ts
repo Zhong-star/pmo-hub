@@ -239,6 +239,23 @@ export class LessonsController {
     return this.lessons.getLibrary(typeof header === 'string' ? header : undefined, readPageRequest(paged, cursor, limit));
   }
 
+  @Get('library/:id')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Get published lesson content and authorized lifecycle history for the Library detail URL' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the published lesson.' })
+  @ApiOkResponse({ type: LessonDetailsResponse })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
+  @ApiResponse({ status: 404, description: 'The published lesson does not exist or is not available in the Library.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  getLibraryLessonDetails(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParseIntPipe) lessonId: number,
+  ): Promise<LessonDetailsResponse> {
+    return this.lessons.getLibraryLessonDetails(typeof header === 'string' ? header : undefined, lessonId);
+  }
+
   @Get(':id')
   @Header('Cache-Control', 'no-store')
   @ApiOperation({ summary: 'Get an author-owned or PMO-accessible lesson and its lifecycle history' })

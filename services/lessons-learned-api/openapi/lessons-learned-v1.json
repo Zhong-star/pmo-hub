@@ -1396,6 +1396,169 @@
         ]
       }
     },
+    "/api/lessons-learned/v1/lessons/library/{id}": {
+      "get": {
+        "operationId": "LessonsController_getLibraryLessonDetails",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The numeric ID of the published lesson.",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonDetailsResponse"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "ETag for the returned lesson version.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The published lesson does not exist or is not available in the Library.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Get published lesson content and authorized lifecycle history for the Library detail URL",
+        "tags": [
+          "Lessons"
+        ]
+      }
+    },
     "/api/lessons-learned/v1/lessons/{id}": {
       "get": {
         "operationId": "LessonsController_getLessonDetails",
@@ -3459,6 +3622,10 @@
             "type": "string",
             "example": "local-contributor"
           },
+          "authorName": {
+            "type": "string",
+            "description": "Display name of the author when available."
+          },
           "updatedBy": {
             "type": "string",
             "example": "local-contributor"
@@ -3880,6 +4047,10 @@
           "authorId": {
             "type": "string",
             "example": "local-contributor"
+          },
+          "authorName": {
+            "type": "string",
+            "description": "Display name of the author when available."
           },
           "updatedBy": {
             "type": "string",

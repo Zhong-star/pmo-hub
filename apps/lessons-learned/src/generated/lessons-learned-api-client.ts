@@ -11,6 +11,7 @@ export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '/api/lessons-learned/v1/lessons/
 export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '/api/lessons-learned/v1/lessons/evaluation-queue' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_PROJECTS_PATH = '/api/lessons-learned/v1/lessons/evaluation-queue/projects' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_PATH = '/api/lessons-learned/v1/lessons/library' satisfies keyof paths;
+export const LESSONS_LEARNED_LIBRARY_DETAIL_PATH = '/api/lessons-learned/v1/lessons/library/{id}' satisfies keyof paths;
 export const LESSONS_LEARNED_DRAFT_PATH = '/api/lessons-learned/v1/lessons/{id}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMIT_PATH = '/api/lessons-learned/v1/lessons/{id}/submit' satisfies keyof paths;
 export const LESSONS_LEARNED_RETURN_PATH = '/api/lessons-learned/v1/lessons/{id}/return' satisfies keyof paths;
@@ -156,6 +157,15 @@ export function getLibrary(localUserId: string, page: PageParameters): Promise<L
 export async function getLibrary(localUserId: string, page?: PageParameters): Promise<LessonPage | LessonDraft[]> {
   const { data } = await api.get<LessonPage | LessonDraft[]>(LESSONS_LEARNED_LIBRARY_PATH, {
     ...(page ? { params: page } : {}),
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
+
+  return data;
+}
+
+export async function getLibraryLessonDetails(localUserId: string, lessonId: number): Promise<LessonDetails> {
+  const { data } = await api.get<LessonDetails>(LESSONS_LEARNED_LIBRARY_DETAIL_PATH.replace('{id}', String(lessonId)), {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
   });

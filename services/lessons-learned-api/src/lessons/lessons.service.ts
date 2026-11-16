@@ -220,6 +220,31 @@ export class LessonsService {
     return lessons.map((lesson) => this.toResponse(lesson));
   }
 
+  async getLibraryLessonDetails(localUserId: string | undefined, lessonId: number): Promise<LessonDetailsResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    const isPmo = profile.role === 'LESSONS_MODERATOR';
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction('REPEATABLE READ', async (manager) => {
+      const lesson = await manager.getRepository(Lesson).findOne({ where: { id: lessonId } });
+      const isPublished = lesson?.approvedAt !== null
+        && (lesson?.status === 'Approved' || lesson?.status === 'Closed');
+      if (!lesson || !isPublished) throw new NotFoundException('Published lesson not found.');
+
+      const canReadHistory = isPmo || lesson.authorId === profile.id;
+      const history = canReadHistory
+        ? await manager.getRepository(LessonHistory).find({
+          where: { lessonId },
+          order: { occurredAt: 'ASC', id: 'ASC' },
+        })
+        : [];
+      return {
+        ...this.toDetailsResponse(lesson, history),
+        authorName: this.localAccess.getDisplayNameForProfile(lesson.authorId) ?? lesson.authorId,
+      };
+    });
+  }
+
   private async listSubmissions(
     filters: PmoDraftsFilter,
     onlyAuthorId?: string,

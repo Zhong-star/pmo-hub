@@ -11,6 +11,7 @@ import {
   getHome,
   getEvaluationProjectSnapshots,
   getLibrary,
+  getLibraryLessonDetails,
   getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
@@ -41,6 +42,7 @@ import { ApprovalDialog } from './ApprovalDialogs';
 import { ClosureDialog } from './ClosureDialog';
 import { LessonSubmissionDetailsDialog, CancelLessonDialog, RejectLessonDialog } from './SubmissionDialogs';
 import { ReturnLessonDialog } from './ReturnLessonDialog';
+import { getLibraryLessonHref, useLibraryNavigation } from './useLibraryNavigation';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
 const HISTORY_POSITION_KEY = '__pmoHubLessonsLearnedHistoryPosition';
@@ -171,6 +173,12 @@ export function LessonsLearnedScreen() {
   const [authorizedSelectionGeneration, setAuthorizedSelectionGeneration] = useState<number | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   const [modulePage, setModulePage] = useState<ModulePage>(readModulePage);
+  const {
+    lessonId: libraryDetailId,
+    openLesson: openLibraryLesson,
+    closeLesson: closeLibraryLesson,
+    clearLesson: clearLibraryLesson,
+  } = useLibraryNavigation();
   const { theme, selectTheme } = useThemePreference();
   const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
@@ -209,7 +217,7 @@ export function LessonsLearnedScreen() {
   const applyPageFromLocation = useCallback(() => {
     const page = readModulePage();
     setModulePage(page);
-    resetSubmissionFilters(page);
+    if (page !== 'library' || modulePage !== 'library') resetSubmissionFilters(page);
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
@@ -219,7 +227,7 @@ export function LessonsLearnedScreen() {
     setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
     setIsModuleMenuOpen(false);
-  }, [resetSubmissionFilters]);
+  }, [modulePage, resetSubmissionFilters]);
 
   const registerNavigationCloseRequest = useCallback((requestClose: (() => boolean) | null) => {
     navigationCloseRequestRef.current = requestClose;
@@ -350,10 +358,23 @@ export function LessonsLearnedScreen() {
   const submissionDetailsQuery = useQuery({
     queryKey: ['lessons-learned-submission-details', selectedProfileId, selectedSubmissionId],
     queryFn: () => getLessonDetails(selectedProfileId ?? '', selectedSubmissionId ?? 0),
-    enabled: isHomePage && (isMySubmissionsPage || isPmoReviewListPage || isLibraryPage) && selectedSubmissionId !== null,
+    enabled: isHomePage && (isMySubmissionsPage || isPmoReviewListPage) && selectedSubmissionId !== null,
     networkMode: 'always',
     retry: false,
   });
+  const libraryDetailsQuery = useQuery({
+    queryKey: ['lessons-learned-library-details', selectedProfileId, libraryDetailId],
+    queryFn: () => getLibraryLessonDetails(selectedProfileId ?? '', libraryDetailId ?? 0),
+    enabled: isHomePage && isLibraryPage && libraryDetailId !== null,
+    networkMode: 'always',
+    retry: false,
+  });
+  const refetchHomeAccess = homeQuery.refetch;
+  useEffect(() => {
+    if (libraryDetailsQuery.isError && isDefinitiveAccessError(libraryDetailsQuery.error)) {
+      void refetchHomeAccess();
+    }
+  }, [libraryDetailsQuery.error, libraryDetailsQuery.isError, refetchHomeAccess]);
   function markCreatePending(profileId: string, isPending: boolean) {
     const nextPendingProfiles = new Set(pendingCreateProfilesRef.current);
     if (isPending) nextPendingProfiles.add(profileId);
@@ -407,6 +428,10 @@ export function LessonsLearnedScreen() {
     if (lessonId !== undefined) {
       queryClient.removeQueries({
         queryKey: ['lessons-learned-submission-details', profileId, lessonId],
+        exact: true,
+      });
+      queryClient.removeQueries({
+        queryKey: ['lessons-learned-library-details', profileId, lessonId],
         exact: true,
       });
     }
@@ -529,6 +554,7 @@ export function LessonsLearnedScreen() {
     await refreshSubmissionQueries(profileId, draftId);
     setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
+    if (isLibraryPage && libraryDetailId !== null) closeLibraryLesson();
     return closed;
   }
 
@@ -650,6 +676,7 @@ export function LessonsLearnedScreen() {
     const nextPosition = currentHistoryPositionRef.current + 1;
     window.history.pushState(withHistoryPosition(window.history.state, nextPosition), '', path);
     currentHistoryPositionRef.current = nextPosition;
+    clearLibraryLesson();
     setModulePage(page);
     resetSubmissionFilters(page);
     setSelectedDraft(null);
@@ -994,15 +1021,31 @@ export function LessonsLearnedScreen() {
                           {submissionItems.map((draft) => (
                             <tr key={draft.id}>
                               <th scope="row">
-                                <button
-                                  className="submission-title-link"
-                                  type="button"
-                                  onClick={() => setSelectedSubmissionId(draft.id)}
-                                  aria-label={`View ${draft.title}`}
-                                  data-lesson-view-id={draft.id}
-                                >
-                                  {draft.title}
-                                </button>
+                                {isLibraryPage ? (
+                                  <a
+                                    className="submission-title-link"
+                                    href={getLibraryLessonHref(draft.id)}
+                                    onClick={(event) => {
+                                      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                                      event.preventDefault();
+                                      openLibraryLesson(draft.id);
+                                    }}
+                                    aria-label={`View ${draft.title}`}
+                                    data-lesson-view-id={draft.id}
+                                  >
+                                    {draft.title}
+                                  </a>
+                                ) : (
+                                  <button
+                                    className="submission-title-link"
+                                    type="button"
+                                    onClick={() => setSelectedSubmissionId(draft.id)}
+                                    aria-label={`View ${draft.title}`}
+                                    data-lesson-view-id={draft.id}
+                                  >
+                                    {draft.title}
+                                  </button>
+                                )}
                               </th>
                               <td>#{draft.id}</td>
                               {!isLibraryPage && <td>{draft.authorId}</td>}
@@ -1177,12 +1220,12 @@ export function LessonsLearnedScreen() {
                       onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
                     />
                   )}
-                  {selectedSubmissionId !== null && (
+                  {(selectedSubmissionId !== null || (isLibraryPage && libraryDetailId !== null)) && (
                     <LessonSubmissionDetailsDialog
-                      lessonId={selectedSubmissionId}
-                      details={submissionDetailsQuery.data}
-                      isLoading={submissionDetailsQuery.isLoading}
-                      hasError={submissionDetailsQuery.isError}
+                      lessonId={isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0}
+                      details={isLibraryPage && libraryDetailId !== null ? libraryDetailsQuery.data : submissionDetailsQuery.data}
+                      isLoading={isLibraryPage && libraryDetailId !== null ? libraryDetailsQuery.isLoading : submissionDetailsQuery.isLoading}
+                      hasError={isLibraryPage && libraryDetailId !== null ? libraryDetailsQuery.isError : submissionDetailsQuery.isError}
                       canEdit={isPmoEvaluationQueuePage && submissionDetailsQuery.data?.status === 'PMOEvaluation'}
                       onEdit={() => {
                         const details = submissionDetailsQuery.data;
@@ -1190,13 +1233,19 @@ export function LessonsLearnedScreen() {
                         setSelectedDraft(details);
                         setSelectedSubmissionId(null);
                       }}
-                      onRetry={() => void submissionDetailsQuery.refetch()}
+                      onRetry={() => void (isLibraryPage && libraryDetailId !== null
+                        ? libraryDetailsQuery.refetch()
+                        : submissionDetailsQuery.refetch())}
                       canApprove={Boolean(isPmo)}
                       onApprove={(lesson) => setSelectedApprovalDraft(lesson)}
                       canClose={Boolean(isPmo)}
                       onCloseLesson={(lesson) => setSelectedClosureDraft(lesson)}
-                      onClose={() => setSelectedSubmissionId(null)}
+                      onClose={() => {
+                        if (isLibraryPage && libraryDetailId !== null) closeLibraryLesson();
+                        else setSelectedSubmissionId(null);
+                      }}
                       onReturn={isPmoEvaluationQueuePage ? setSelectedReturnLesson : undefined}
+                      isLibrarySurface={isLibraryPage && libraryDetailId !== null}
                     />
                   )}
                   {selectedReturnLesson && (

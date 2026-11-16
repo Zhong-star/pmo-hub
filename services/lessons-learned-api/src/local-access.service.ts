@@ -62,6 +62,10 @@ export class LocalAccessService {
     return profile;
   }
 
+  getDisplayNameForProfile(profileId: string): string | null {
+    return this.readProfiles().find((profile) => profile.id === profileId)?.displayName ?? null;
+  }
+
   private isLocalSimulationEnabled(): boolean {
     const configured = process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED;
     if (configured === 'true') return true;
