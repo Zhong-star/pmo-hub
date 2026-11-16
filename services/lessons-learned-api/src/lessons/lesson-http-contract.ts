@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { STATUS_CODES } from 'node:http';
 import { catchError, tap } from 'rxjs';
 import { LocalAccessException, LocalAccessProblem } from '../local-access-problem';
+import { emitsRepresentationTokens } from './lesson-token-format';
 
 const problemMediaType = 'application/problem+json';
 const correlationIdPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
@@ -42,7 +43,7 @@ export function ConditionalLessonWrite() {
   return applyDecorators(
     ApiHeader({ name: 'If-Match', required: false, description: 'Strong ETag from the displayed lesson. Legacy clients can supply version in the body.' }),
     ApiHeader({ name: 'Accept', required: false, description: 'Include application/problem+json for Problem Details errors and application/json for successful writes.' }),
-    ApiResponse({ status: 412, description: 'The displayed lesson version is stale.', content: {
+    ApiResponse({ status: 412, description: 'The displayed lesson representation or its legacy version is stale.', content: {
       [problemMediaType]: { schema: { $ref: getSchemaPath(LessonProblem) } },
       'application/json': { schema: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } } } },
     } }),
@@ -69,16 +70,26 @@ function isLesson(value: unknown): value is LessonRepresentation {
     'version' in value && typeof value.version === 'number' && 'status' in value && typeof value.status === 'string';
 }
 
-function exposeETags(value: unknown, includeInBody: boolean): string | undefined {
+export function lessonRepresentationETag(value: LessonRepresentation, includeInBody: boolean): string {
+  const representation = createHash('sha256').update(JSON.stringify([includeInBody, value])).digest('hex');
+  return `"lesson-${value.id}-v${value.version}-${representation}"`;
+}
+
+export function isRepresentationETag(tag: string): boolean {
+  return /-[a-f0-9]{64}"$/.test(tag);
+}
+
+function exposeETags(value: unknown, includeInBody: boolean, representationTokens: boolean): string | undefined {
   if (Array.isArray(value)) {
-    if (includeInBody) value.forEach((item) => exposeETags(item, true));
+    if (includeInBody) value.forEach((item) => exposeETags(item, true, representationTokens));
   } else if (isLesson(value)) {
-    const representation = createHash('sha256').update(JSON.stringify([includeInBody, value])).digest('hex');
-    const etag = `"lesson-${value.id}-v${value.version}-${representation}"`;
+    const etag = representationTokens
+      ? lessonRepresentationETag(value, includeInBody)
+      : `"lesson-${value.id}-v${value.version}"`;
     if (includeInBody) value.etag = etag;
     return etag;
   } else if (includeInBody && typeof value === 'object' && value !== null && 'items' in value && Array.isArray(value.items)) {
-    value.items.forEach((item) => exposeETags(item, true));
+    value.items.forEach((item) => exposeETags(item, true, representationTokens));
   }
 }
 
@@ -102,6 +113,7 @@ const problemCodes: Record<number, string> = {
 @Injectable()
 export class LessonHttpContract implements NestInterceptor {
   private readonly logger = new Logger(LessonHttpContract.name);
+  private readonly representationTokens = emitsRepresentationTokens();
 
   intercept(context: ExecutionContext, next: CallHandler) {
     const http = context.switchToHttp();
@@ -165,7 +177,7 @@ export class LessonHttpContract implements NestInterceptor {
     }
     return next.handle().pipe(
       tap((value: unknown) => {
-        const etag = exposeETags(value, problemRequested);
+        const etag = exposeETags(value, problemRequested, this.representationTokens);
         if (etag) res.setHeader('ETag', etag);
       }),
       catchError(translateError),

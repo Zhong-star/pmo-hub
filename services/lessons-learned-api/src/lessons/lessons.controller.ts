@@ -295,7 +295,7 @@ export class LessonsController {
     }))
     input: UpdateLessonDraftRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.updateOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch !== undefined);
+    return this.lessons.updateOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 
   @Post(':id/submit')
@@ -338,7 +338,7 @@ export class LessonsController {
     }))
     input: SubmitLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.submitOwnOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch !== undefined);
+    return this.lessons.submitOwnOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 
   @Post(':id/return')
@@ -381,7 +381,7 @@ export class LessonsController {
     }))
     input: ReturnLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.returnForChanges(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch !== undefined);
+    return this.lessons.returnForChanges(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 
   @Post(':id/cancel')
@@ -424,7 +424,7 @@ export class LessonsController {
     }))
     input: CancelLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.cancelOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch !== undefined);
+    return this.lessons.cancelOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 
   @Post(':id/approve')
@@ -449,7 +449,7 @@ export class LessonsController {
     @Body(new ValidationPipe({ transform: true, whitelist: true, expectedType: ApproveLessonRequest }))
     input: ApproveLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.approveEvaluatedLesson(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch !== undefined);
+    return this.lessons.approveEvaluatedLesson(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 
   @Post(':id/reject')
@@ -492,7 +492,7 @@ export class LessonsController {
     }))
     input: RejectLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.rejectEvaluation(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch !== undefined);
+    return this.lessons.rejectEvaluation(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 
   @Post(':id/close')
@@ -517,6 +517,6 @@ export class LessonsController {
     @Body(new ValidationPipe({ transform: true, whitelist: true, expectedType: CloseLessonRequest }))
     input: CloseLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.closeApprovedLesson(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch !== undefined);
+    return this.lessons.closeApprovedLesson(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 }

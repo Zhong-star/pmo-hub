@@ -1731,7 +1731,7 @@
             }
           },
           "412": {
-            "description": "The displayed lesson version is stale.",
+            "description": "The displayed lesson representation or its legacy version is stale.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1975,7 +1975,7 @@
             }
           },
           "412": {
-            "description": "The displayed lesson version is stale.",
+            "description": "The displayed lesson representation or its legacy version is stale.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2219,7 +2219,7 @@
             }
           },
           "412": {
-            "description": "The displayed lesson version is stale.",
+            "description": "The displayed lesson representation or its legacy version is stale.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2463,7 +2463,7 @@
             }
           },
           "412": {
-            "description": "The displayed lesson version is stale.",
+            "description": "The displayed lesson representation or its legacy version is stale.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2728,7 +2728,7 @@
             }
           },
           "412": {
-            "description": "The displayed lesson version is stale.",
+            "description": "The displayed lesson representation or its legacy version is stale.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2972,7 +2972,7 @@
             }
           },
           "412": {
-            "description": "The displayed lesson version is stale.",
+            "description": "The displayed lesson representation or its legacy version is stale.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3237,7 +3237,7 @@
             }
           },
           "412": {
-            "description": "The displayed lesson version is stale.",
+            "description": "The displayed lesson representation or its legacy version is stale.",
             "content": {
               "application/problem+json": {
                 "schema": {

@@ -24,6 +24,7 @@ describe('Lessons Learned draft registration', () => {
   const previousProfilesFile = process.env.LESSONS_LEARNED_LOCAL_USERS_FILE;
   const previousLocalAuthEnabled = process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED;
   const previousProjectsFile = process.env.LESSONS_LEARNED_PROJECTS_FILE;
+  const previousTokenFormat = process.env.LESSONS_LEARNED_TOKEN_FORMAT;
 
   const profiles = [
     { id: 'local-other-contributor', displayName: 'Other Contributor', role: 'LESSONS_USER' },
@@ -43,6 +44,7 @@ describe('Lessons Learned draft registration', () => {
     process.env.LESSONS_LEARNED_LOCAL_USERS_FILE = profilesPath;
     process.env.LESSONS_LEARNED_PROJECTS_FILE = projectsPath;
     process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED = 'true';
+    process.env.LESSONS_LEARNED_TOKEN_FORMAT = 'representation';
 
     container = await new PostgreSqlContainer('postgres:17-alpine')
       .withDatabase('lessons_learned_registration_test')
@@ -72,6 +74,8 @@ describe('Lessons Learned draft registration', () => {
       else process.env.LESSONS_LEARNED_PROJECTS_FILE = previousProjectsFile;
       if (previousLocalAuthEnabled === undefined) delete process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED;
       else process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED = previousLocalAuthEnabled;
+      if (previousTokenFormat === undefined) delete process.env.LESSONS_LEARNED_TOKEN_FORMAT;
+      else process.env.LESSONS_LEARNED_TOKEN_FORMAT = previousTokenFormat;
     }
   }, 120_000);
 
@@ -1840,6 +1844,94 @@ describe('Lessons Learned draft registration', () => {
     await server.patch(path).set(contributor).set(accept).set('If-Match', cancelled.headers.etag)
       .send({ title: 'Current version but invalid state' }).expect(409)
       .expect(({ body }) => expect(body.code).toBe('LESSON_NOT_OPEN'));
+  });
+
+  it('rejects an ETag when the displayed representation changed at the same version', async () => {
+    const server = request(app!.getHttpServer());
+    const headers = { 'X-PMO-Local-User-ID': 'local-contributor', Accept: 'application/json, application/problem+json' };
+    const collection = '/api/lessons-learned/v1/lessons';
+    const created = await server.post(collection).set(headers).send({ title: 'Displayed draft' }).expect(201);
+    const path = `${collection}/${created.body.id}`;
+    const displayed = await server.get(path).set(headers).expect(200);
+
+    // An independent correction to the displayed history does not edit the lesson version.
+    await dataSource!.query('UPDATE lesson_history SET occurred_at = occurred_at - interval \'1 hour\' WHERE lesson_id = $1', [
+      created.body.id,
+    ]);
+    const corrected = await server.get(path).set(headers).expect(200);
+    expect(corrected.body.version).toBe(displayed.body.version);
+    expect(corrected.headers.etag).not.toBe(displayed.headers.etag);
+    await server.patch(path).set(headers).set('If-Match', displayed.headers.etag)
+      .send({ title: 'Must not overwrite' }).expect(412)
+      .expect(({ body }) => expect(body.code).toBe('PRECONDITION_FAILED'));
+    await server.patch(path).set(headers).set('If-Match', corrected.headers.etag)
+      .send({ title: 'Save after reload' }).expect(200);
+  });
+
+  it('continues an open edit and both paginated lists after rolling back to legacy emission', async () => {
+    const active = request(app!.getHttpServer());
+    const contributor = { 'X-PMO-Local-User-ID': 'local-contributor', Accept: 'application/json, application/problem+json' };
+    const pmo = { 'X-PMO-Local-User-ID': 'local-pmo' };
+    const collection = '/api/lessons-learned/v1/lessons';
+    const draft = await active.post(collection).set(contributor).send({ title: 'Open on the new API' }).expect(201);
+    const path = `${collection}/${draft.body.id}`;
+    const displayed = await active.get(path).set(contributor).expect(200);
+
+    for (const title of ['Queued one', 'Queued two', 'Published one', 'Published two']) {
+      const lesson = await active.post(collection).set(contributor).send({ title }).expect(201);
+      const lessonPath = `${collection}/${lesson.body.id}`;
+      const submitted = await active.post(`${lessonPath}/submit`).set(contributor).send({
+        version: lesson.body.version,
+        title,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release omitted the handover.',
+        lessonType: 'Communication',
+        impact: 'Verification was repeated.',
+        recommendation: 'Assign an owner.',
+        applicability: 'Shared releases.',
+      }).expect(200);
+      if (title.startsWith('Published')) {
+        await active.post(`${lessonPath}/approve`).set(pmo).send({ version: submitted.body.version }).expect(200);
+      }
+    }
+
+    process.env.LESSONS_LEARNED_TOKEN_FORMAT = 'legacy';
+    let rollbackApp: INestApplication | undefined;
+    try {
+      const moduleRef = await Test.createTestingModule({
+        imports: [AppModule.register(container!.getConnectionUri())],
+      }).compile();
+      rollbackApp = moduleRef.createNestApplication();
+      configureApp(rollbackApp);
+      await rollbackApp.init();
+      const rollback = request(rollbackApp.getHttpServer());
+      const legacy = await rollback.get(path).set(contributor).expect(200);
+      expect(legacy.headers.etag).toBe(`"lesson-${draft.body.id}-v${draft.body.version}"`);
+      expect(displayed.headers.etag).not.toBe(legacy.headers.etag);
+      const saved = await rollback.patch(path).set(contributor).set('If-Match', displayed.headers.etag)
+        .send({ title: 'Saved after rollback' }).expect(200);
+      await active.patch(path).set(contributor).set('If-Match', saved.headers.etag)
+        .send({ title: 'Saved using a legacy ETag' }).expect(200);
+
+      for (const [endpoint, headers] of [['evaluation-queue', pmo], ['library', contributor]] as const) {
+        const url = `${collection}/${endpoint}`;
+        const first = await active.get(url).query({ limit: 1 }).set(headers).expect(200);
+        const legacyFirst = await rollback.get(url).query({ limit: 1 }).set(headers).expect(200);
+        expect(legacyFirst.body.items[0].id).toBe(first.body.items[0].id);
+        expect(first.body.page.nextCursor).not.toBe(legacyFirst.body.page.nextCursor);
+        const second = await rollback.get(url).query({ cursor: first.body.page.nextCursor }).set(headers).expect(200);
+        const newSecond = await active.get(url).query({ cursor: legacyFirst.body.page.nextCursor }).set(headers).expect(200);
+        expect(second.body.items.map((item: { id: number }) => item.id)).toEqual(
+          newSecond.body.items.map((item: { id: number }) => item.id),
+        );
+        expect(second.body.items).toHaveLength(1);
+        expect(second.body.page.nextCursor).toBeNull();
+      }
+    } finally {
+      process.env.LESSONS_LEARNED_TOKEN_FORMAT = 'representation';
+      await rollbackApp?.close();
+    }
   });
 
   it('keeps the draft content and version when saving cannot read PMO guidance', async () => {

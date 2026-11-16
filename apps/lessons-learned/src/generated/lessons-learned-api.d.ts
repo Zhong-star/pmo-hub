@@ -1376,7 +1376,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["LessonProblem"];
                 };
             };
-            /** @description The displayed lesson version is stale. */
+            /** @description The displayed lesson representation or its legacy version is stale. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -1493,7 +1493,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["LessonProblem"];
                 };
             };
-            /** @description The displayed lesson version is stale. */
+            /** @description The displayed lesson representation or its legacy version is stale. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -1610,7 +1610,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["LessonProblem"];
                 };
             };
-            /** @description The displayed lesson version is stale. */
+            /** @description The displayed lesson representation or its legacy version is stale. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -1727,7 +1727,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["LessonProblem"];
                 };
             };
-            /** @description The displayed lesson version is stale. */
+            /** @description The displayed lesson representation or its legacy version is stale. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -1848,7 +1848,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["LessonProblem"];
                 };
             };
-            /** @description The displayed lesson version is stale. */
+            /** @description The displayed lesson representation or its legacy version is stale. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -1965,7 +1965,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["LessonProblem"];
                 };
             };
-            /** @description The displayed lesson version is stale. */
+            /** @description The displayed lesson representation or its legacy version is stale. */
             412: {
                 headers: {
                     [name: string]: unknown;
@@ -2086,7 +2086,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["LessonProblem"];
                 };
             };
-            /** @description The displayed lesson version is stale. */
+            /** @description The displayed lesson representation or its legacy version is stale. */
             412: {
                 headers: {
                     [name: string]: unknown;

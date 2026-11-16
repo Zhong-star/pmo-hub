@@ -63,7 +63,8 @@ export function encodeProjectCursor(id: string): string {
 
 function decodeCursor(cursor: string, scope: string): { key: string; id: number } {
   try {
-    if (typeof cursor !== 'string' || !/^[A-Za-z0-9_-]{1,1024}$/.test(cursor)) throw new Error();
+    // Legacy cursors embed both filters, including escaped characters.
+    if (typeof cursor !== 'string' || !/^[A-Za-z0-9_-]{1,4096}$/.test(cursor)) throw new Error();
     const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
     const scopeHash = createHash('sha256').update(scope).digest('hex');
     if ((decoded.scope !== scope && decoded.scope !== scopeHash) || typeof decoded.key !== 'string' || !/^-?[0-9]{1,19}$/.test(decoded.key) ||
@@ -82,6 +83,7 @@ export async function paginateLessons(
   timestamp: string,
   direction: 'ASC' | 'DESC',
   toResponse: (lesson: Lesson) => LessonDraftResponse,
+  representationTokens: boolean,
 ): Promise<LessonPage> {
   // Keep PostgreSQL microsecond precision in the cursor instead of rounding through a JavaScript Date.
   const key = `COALESCE((EXTRACT(EPOCH FROM ${timestamp}) * 1000000)::bigint, 9223372036854775807::bigint)`;
@@ -98,7 +100,7 @@ export async function paginateLessons(
   const last = request.limit - 1;
   const nextCursor = entities.length > request.limit
     ? Buffer.from(JSON.stringify({
-      scope: createHash('sha256').update(scope).digest('hex'),
+      scope: representationTokens ? createHash('sha256').update(scope).digest('hex') : scope,
       key: raw[last].cursor_key,
       id: entities[last].id,
     })).toString('base64url')

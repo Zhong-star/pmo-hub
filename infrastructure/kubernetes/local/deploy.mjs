@@ -95,7 +95,7 @@ function migrateDatabase(image, version) {
   console.log(kubectl(['logs', `job/${name}`]));
 }
 
-function resources(layer, { images, withPostgres }) {
+function resources(layer, { images, withPostgres, lessonTokenFormat }) {
   const items = layers[layer].flatMap(({ name, port, path }) => {
     const labels = { app: name, layer };
     return [
@@ -121,6 +121,7 @@ function resources(layer, { images, withPostgres }) {
                 ...(name === 'lessons-learned-api' ? {
                   env: [
                     { name: 'LESSONS_LEARNED_LOCAL_AUTH_ENABLED', value: 'true' },
+                    ...(lessonTokenFormat ? [{ name: 'LESSONS_LEARNED_TOKEN_FORMAT', value: lessonTokenFormat }] : []),
                     ...(withPostgres ? databaseEnv() : []),
                   ],
                 } : {}),
@@ -145,6 +146,10 @@ function release(layer, configuration) {
 
 function deploy(layer, failureTarget, withPostgres) {
   const names = layers[layer].map(({ name }) => name);
+  const lessonTokenFormat = layer === 'backend' ? process.env.LESSONS_LEARNED_TOKEN_FORMAT ?? 'legacy' : undefined;
+  if (lessonTokenFormat && !['legacy', 'representation'].includes(lessonTokenFormat)) {
+    throw new Error('LESSONS_LEARNED_TOKEN_FORMAT must be legacy or representation.');
+  }
   if (failureTarget && !names.includes(failureTarget)) {
     throw new Error(`Choose a failure target in the ${layer} layer.`);
   }
@@ -166,19 +171,30 @@ function deploy(layer, failureTarget, withPostgres) {
     const saved = kubectl(['get', 'configmap', state, '--ignore-not-found', '-o', 'json']);
     const previous = saved ? JSON.parse(saved).data : undefined;
     if (failureTarget && !previous) throw new Error('Deploy a successful release before testing rollback.');
+    if (lessonTokenFormat === 'representation' && !previous?.lessonTokenFormat) {
+      throw new Error('Validate a backend release with legacy token emission before enabling representation tokens.');
+    }
     if (withPostgres) migrateDatabase(images['lessons-learned-api'], version);
     try {
-      release(layer, { images, withPostgres });
+      release(layer, { images, withPostgres, lessonTokenFormat });
       apply({
         apiVersion: 'v1',
         kind: 'ConfigMap',
         metadata: { name: state },
-        data: { images: JSON.stringify(images), withPostgres: String(withPostgres) },
+        data: {
+          images: JSON.stringify(images),
+          withPostgres: String(withPostgres),
+          ...(lessonTokenFormat ? { lessonTokenFormat } : {}),
+        },
       });
     } catch (error) {
       if (!previous) throw new Error('First release failed. No previous release is available.', { cause: error });
       try {
-        release(layer, { images: JSON.parse(previous.images), withPostgres: previous.withPostgres === 'true' });
+        release(layer, {
+          images: JSON.parse(previous.images),
+          withPostgres: previous.withPostgres === 'true',
+          lessonTokenFormat: previous.lessonTokenFormat,
+        });
       } catch (rollbackError) {
         throw new AggregateError([error, rollbackError], `${layer} release and rollback failed.`);
       }
