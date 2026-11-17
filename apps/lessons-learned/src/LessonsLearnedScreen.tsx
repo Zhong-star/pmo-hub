@@ -445,6 +445,12 @@ export function LessonsLearnedScreen() {
     networkMode: 'always',
     retry: false,
   });
+  const isLibraryDetailOpen = isLibraryPage && libraryDetailId !== null;
+  // A cached response cannot authorize showing content or history on a new opening.
+  const isLibraryDetailLoading = libraryDetailsQuery.isPending || libraryDetailsQuery.isFetching;
+  const confirmedLibraryDetails = libraryDetailsQuery.isSuccess && !isLibraryDetailLoading
+    ? libraryDetailsQuery.data
+    : undefined;
   const { mutate: recordView } = useMutation({
     mutationFn: ({ profileId, lessonId, openingId }: { profileId: string; lessonId: number; openingId: string }) =>
       recordLibraryView(profileId, lessonId, { openingId }),
@@ -1446,12 +1452,12 @@ export function LessonsLearnedScreen() {
                       onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
                     />
                   )}
-                  {(selectedSubmissionId !== null || (isLibraryPage && libraryDetailId !== null)) && (
+                  {(selectedSubmissionId !== null || isLibraryDetailOpen) && (
                     <LessonSubmissionDetailsDialog
                       lessonId={isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0}
-                      details={isLibraryPage && libraryDetailId !== null ? libraryDetailsQuery.data : submissionDetailsQuery.data}
-                      isLoading={isLibraryPage && libraryDetailId !== null ? libraryDetailsQuery.isLoading : submissionDetailsQuery.isLoading}
-                      hasError={isLibraryPage && libraryDetailId !== null ? libraryDetailsQuery.isError : submissionDetailsQuery.isError}
+                      details={isLibraryDetailOpen ? confirmedLibraryDetails : submissionDetailsQuery.data}
+                      isLoading={isLibraryDetailOpen ? isLibraryDetailLoading : submissionDetailsQuery.isLoading}
+                      hasError={isLibraryDetailOpen ? !isLibraryDetailLoading && libraryDetailsQuery.isError : submissionDetailsQuery.isError}
                       canEdit={isPmoEvaluationQueuePage && submissionDetailsQuery.data?.status === 'PMOEvaluation'}
                       onEdit={() => {
                         const details = submissionDetailsQuery.data;

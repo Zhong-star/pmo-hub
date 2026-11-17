@@ -99,12 +99,12 @@ function publishedDetails(overrides: Partial<LessonDetails> = {}): LessonDetails
   };
 }
 
-function renderLibrary(path: string, profileId = 'local-contributor') {
+function renderLibrary(path: string, profileId = 'local-contributor', gcTime = 0) {
   window.localStorage.clear();
   window.localStorage.setItem('pmo-hub.local-user-id', profileId);
   window.history.replaceState(null, '', path);
   return render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime } } })}>
       <LessonsLearnedScreen />
     </QueryClientProvider>,
   );
@@ -248,6 +248,56 @@ describe('published Library lesson details', () => {
     await user.keyboard('{Escape}');
     await waitFor(() => expect(window.location.search).toBe('?page=library'));
     expect(screen.getByRole('link', { name: 'View Improve release handover' })).toHaveFocus();
+  });
+
+  it('hides cached content and history while revalidating a reopened detail after access is revoked', async () => {
+    const accessDenied = { response: { status: 403, data: { code: 'ACCESS_DENIED' } } };
+    const historyReason = 'Private review guidance.';
+    const historyText = /Private review guidance/;
+    let rejectRevalidation: (error: unknown) => void = () => {
+      throw new Error('The detail must be requested again.');
+    };
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getLibrary).mockResolvedValue([libraryLesson()]);
+    vi.mocked(getLibraryLessonDetails)
+      .mockResolvedValueOnce(publishedDetails({
+        history: [{
+          id: 1,
+          actorId: 'local-pmo',
+          eventType: 'Returned',
+          previousStatus: 'PMOEvaluation',
+          newStatus: 'Open',
+          reason: historyReason,
+          occurredAt: '2026-11-13T13:00:00.000Z',
+        }],
+      }))
+      .mockImplementationOnce(() => new Promise((_, reject) => { rejectRevalidation = reject; }));
+    renderLibrary('/lessons-learned/?page=library', 'local-pmo', 5 * 60_000);
+    const user = userEvent.setup();
+    const lessonLink = await screen.findByRole('link', { name: 'View Improve release handover' });
+    const dialogName = 'Published lesson details';
+
+    await user.click(lessonLink);
+    const initialDialog = await screen.findByRole('dialog', { name: dialogName });
+    expect(await within(initialDialog).findByText(historyText)).toBeVisible();
+    await waitFor(() => expect(recordLibraryView).toHaveBeenCalledTimes(1));
+    await user.click(within(initialDialog).getByRole('button', { name: 'Close published lesson details' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: dialogName })).not.toBeInTheDocument());
+
+    vi.mocked(getHome).mockRejectedValue(accessDenied);
+    await user.click(lessonLink);
+    await waitFor(() => expect(getLibraryLessonDetails).toHaveBeenCalledTimes(2));
+    const reopenedDialog = within(await screen.findByRole('dialog', { name: dialogName }));
+    expect(reopenedDialog.queryByText(historyText)).not.toBeInTheDocument();
+    expect(reopenedDialog.queryByText('The handover omitted the runbook.')).not.toBeInTheDocument();
+    expect(reopenedDialog.queryByRole('button', { name: /^Close lesson$/ })).not.toBeInTheDocument();
+    expect(reopenedDialog.getByRole('status')).toHaveTextContent('Loading lesson details');
+
+    rejectRevalidation(accessDenied);
+    expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeVisible();
+    expect(screen.queryByRole('dialog', { name: dialogName })).not.toBeInTheDocument();
+    expect(screen.queryByText(historyText)).not.toBeInTheDocument();
+    expect(recordLibraryView).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the PMO closure action available from a published Library detail', async () => {
