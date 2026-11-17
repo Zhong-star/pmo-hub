@@ -3,7 +3,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { LESSON_STATUSES, LESSON_TYPES, type LessonStatus, type LessonType } from './lesson-domain.constants';
 
-class LessonSearchFiltersQuery {
+export class LessonSearchFiltersQuery {
   @ApiPropertyOptional({ type: String, description: 'A title prefix or an exact numeric lesson ID.' })
   @IsOptional()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
@@ -39,6 +39,20 @@ export class LessonSubmissionsQuery extends LessonSearchFiltersQuery {
 
 export class PmoEvaluationQueueQuery extends LessonSearchFiltersQuery {}
 
+export const LESSON_LIBRARY_SORTS = ['newest', 'oldest', 'title', 'project', 'type'] as const;
+export type LessonsLibrarySort = typeof LESSON_LIBRARY_SORTS[number];
+
+export class LessonsLibraryQuery extends LessonSearchFiltersQuery {
+  @ApiPropertyOptional({
+    enum: LESSON_LIBRARY_SORTS,
+    default: 'newest',
+    description: 'Sort the filtered published lessons before cursor pagination.',
+  })
+  @IsOptional()
+  @IsIn(LESSON_LIBRARY_SORTS)
+  sort?: LessonsLibrarySort;
+}
+
 export class PmoDraftsQuery extends LessonSubmissionsQuery {
   @ApiPropertyOptional({ type: String, description: 'Author profile ID.' })
   @IsOptional()
@@ -55,5 +69,7 @@ export type LessonSearchFilters = Pick<
 export type LessonSubmissionsFilter = LessonSearchFilters & Pick<LessonSubmissionsQuery, 'status'>;
 
 export type PmoEvaluationQueueFilter = LessonSearchFilters;
+
+export type LessonsLibraryFilter = LessonSearchFilters & Pick<LessonsLibraryQuery, 'sort'>;
 
 export type PmoDraftsFilter = LessonSubmissionsFilter & Pick<PmoDraftsQuery, 'authorId'>;

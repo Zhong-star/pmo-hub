@@ -17,7 +17,8 @@ import { emitsRepresentationTokens } from './lesson-token-format';
 import { LessonHistory } from './lesson-history.entity';
 import { Lesson } from './lesson.entity';
 import {
-  encodeProjectCursor, paginateLessons, readProjectCursor, type LessonPage, type LessonPageRequest, type LessonProjectPage,
+  encodeProjectCursor, paginateLibraryLessonsByTextKey, paginateLessons, readProjectCursor,
+  type LessonLibraryPage, type LessonPage, type LessonPageRequest, type LessonProjectPage,
 } from './lesson-pagination';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
 import type { ApproveLessonRequest } from './approve-lesson-request.dto';
@@ -28,9 +29,15 @@ import { ProjectCatalogService, type LessonProject } from './project-catalog.ser
 import type { SubmitLessonRequest } from './submit-lesson-request.dto';
 import type { ReturnLessonRequest } from './return-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
-import type { LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse } from './lesson-response.dto';
+import type {
+  LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse,
+  LessonLibraryResponse, RecordLessonLibraryViewResponse,
+} from './lesson-response.dto';
+import type { RecordLibraryViewRequest } from './record-library-view-request.dto';
 import type {
   LessonSearchFilters,
+  LessonsLibraryFilter,
+  LessonsLibrarySort,
   LessonSubmissionsFilter,
   PmoDraftsFilter,
   PmoEvaluationQueueFilter,
@@ -48,6 +55,24 @@ type EvaluationFields = Pick<
   | 'recommendation'
   | 'applicability'
 >;
+
+const libraryTitleWithoutMarks = "REGEXP_REPLACE(NORMALIZE(LOWER(lesson.title), NFD), U&'[\\0300-\\036F\\1AB0-\\1AFF\\1DC0-\\1DFF\\20D0-\\20FF\\FE20-\\FE2F]', '', 'g')";
+const libraryCombiningMarkRanges = [
+  [0x0300, 0x036f],
+  [0x1ab0, 0x1aff],
+  [0x1dc0, 0x1dff],
+  [0x20d0, 0x20ff],
+  [0xfe20, 0xfe2f],
+] as const;
+
+function normalizeLibrarySearch(value: string): string {
+  return [...value.toLowerCase().normalize('NFD')]
+    .filter((character) => {
+      const codePoint = character.codePointAt(0)!;
+      return !libraryCombiningMarkRanges.some(([start, end]) => codePoint >= start && codePoint <= end);
+    })
+    .join('');
+}
 
 @Injectable()
 export class LessonsService {
@@ -204,20 +229,144 @@ export class LessonsService {
     }));
   }
 
-  async getLibrary(localUserId: string | undefined, page?: LessonPageRequest): Promise<LessonDraftResponse[] | LessonPage> {
+  async getLibrary(
+    localUserId: string | undefined,
+    page?: LessonPageRequest,
+    filters: LessonsLibraryFilter = {},
+  ): Promise<LessonLibraryResponse[] | LessonLibraryPage> {
     this.localAccess.getProfile(localUserId);
+    const authorNames = this.localAccess.getDisplayNames();
+    const sort = filters.sort ?? 'newest';
     const query = this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
       .where('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
       .andWhere('lesson.approved_at IS NOT NULL');
+    this.applySearchFilters(query, filters, true);
     if (page) {
-      return paginateLessons(query, page, 'library', 'lesson.approved_at', 'DESC',
-        (lesson) => this.toResponse(lesson), this.representationTokens);
+      const hasFilters = Boolean(filters.search || filters.projectId || filters.withoutProject || filters.lessonType);
+      const filterValues = [
+        filters.search || null,
+        filters.projectId || null,
+        filters.withoutProject ?? false,
+        filters.lessonType || null,
+      ];
+      const legacyScope = hasFilters ? `library:${JSON.stringify(filterValues)}` : 'library';
+      const scope = sort === 'newest'
+        ? legacyScope
+        : `library-sort-v1:${JSON.stringify([sort, ...filterValues])}`;
+      const toResponse = (lesson: Lesson) => this.toLibraryResponse(lesson, authorNames);
+      if (sort === 'newest') {
+        return paginateLessons(query, page, scope, 'lesson.approved_at', 'DESC', toResponse, this.representationTokens);
+      }
+      if (sort === 'oldest') {
+        return paginateLessons(query, page, scope, 'lesson.approved_at', 'ASC', toResponse, this.representationTokens);
+      }
+      return paginateLibraryLessonsByTextKey(query, page, scope, sort, toResponse, this.representationTokens);
     }
-    const lessons = await query
-      .orderBy('lesson.approvedAt', 'DESC')
-      .addOrderBy('lesson.id', 'DESC')
-      .getMany();
-    return lessons.map((lesson) => this.toResponse(lesson));
+    const lessons = await this.orderLibrary(query, sort).getMany();
+    return lessons.map((lesson) => this.toLibraryResponse(lesson, authorNames));
+  }
+
+  private orderLibrary(query: SelectQueryBuilder<Lesson>, sort: LessonsLibrarySort): SelectQueryBuilder<Lesson> {
+    if (sort === 'newest') {
+      return query.orderBy('lesson.approvedAt', 'DESC').addOrderBy('lesson.id', 'DESC');
+    }
+    if (sort === 'oldest') {
+      return query.orderBy('lesson.approvedAt', 'ASC').addOrderBy('lesson.id', 'ASC');
+    }
+    if (sort === 'title') {
+      return query.orderBy('LOWER(lesson.title)', 'ASC')
+        .addOrderBy('lesson.approvedAt', 'DESC')
+        .addOrderBy('lesson.id', 'DESC');
+    }
+    if (sort === 'project') {
+      return query.orderBy('CASE WHEN lesson.projectId IS NULL THEN 1 ELSE 0 END', 'ASC')
+        .addOrderBy("LOWER(COALESCE(lesson.projectName, ''))", 'ASC')
+        .addOrderBy('lesson.approvedAt', 'DESC')
+        .addOrderBy('lesson.id', 'DESC');
+    }
+    return query.orderBy('CASE WHEN lesson.lessonType IS NULL THEN 1 ELSE 0 END', 'ASC')
+      .addOrderBy("LOWER(COALESCE(lesson.lessonType, ''))", 'ASC')
+      .addOrderBy('lesson.approvedAt', 'DESC')
+      .addOrderBy('lesson.id', 'DESC');
+  }
+
+  async getLibraryProjectSnapshots(localUserId: string | undefined): Promise<LessonProject[]> {
+    this.localAccess.getProfile(localUserId);
+    return this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
+      .select('lesson.project_id', 'id')
+      .addSelect('MAX(lesson.project_name)', 'name')
+      .where('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
+      .andWhere('lesson.approved_at IS NOT NULL')
+      .andWhere('lesson.project_id IS NOT NULL')
+      .andWhere('lesson.project_name IS NOT NULL')
+      .groupBy('lesson.project_id')
+      .orderBy('MAX(lesson.project_name)', 'ASC')
+      .addOrderBy('lesson.project_id', 'ASC')
+      .getRawMany<LessonProject>();
+  }
+
+  async getLibraryLessonDetails(localUserId: string | undefined, lessonId: number): Promise<LessonDetailsResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    const isPmo = profile.role === 'LESSONS_MODERATOR';
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction('REPEATABLE READ', async (manager) => {
+      const lesson = await manager.getRepository(Lesson).findOne({ where: { id: lessonId } });
+      const isPublished = lesson?.approvedAt !== null
+        && (lesson?.status === 'Approved' || lesson?.status === 'Closed');
+      if (!lesson || !isPublished) throw new NotFoundException('Published lesson not found.');
+
+      const canReadHistory = isPmo || lesson.authorId === profile.id;
+      const history = canReadHistory
+        ? await manager.getRepository(LessonHistory).find({
+          where: { lessonId },
+          order: { occurredAt: 'ASC', id: 'ASC' },
+        })
+        : [];
+      return {
+        ...this.toDetailsResponse(lesson, history),
+        authorName: this.localAccess.getDisplayNameForProfile(lesson.authorId) ?? lesson.authorId,
+      };
+    });
+  }
+
+  async recordLibraryView(
+    localUserId: string | undefined,
+    lessonId: number,
+    input: RecordLibraryViewRequest,
+  ): Promise<RecordLessonLibraryViewResponse> {
+    this.localAccess.getProfile(localUserId);
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction(async (manager) => {
+      const lesson = await manager.getRepository(Lesson).findOne({
+        where: { id: lessonId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const isPublished = lesson?.approvedAt !== null
+        && (lesson?.status === 'Approved' || lesson?.status === 'Closed');
+      if (!lesson || !isPublished) throw new NotFoundException('Published lesson not found.');
+
+      const inserted = await manager.query(`
+        INSERT INTO lesson_library_views (lesson_id, opening_id)
+        VALUES ($1, $2::uuid)
+        ON CONFLICT (lesson_id, opening_id) DO NOTHING
+        RETURNING opening_id
+      `, [lessonId, input.openingId]) as { opening_id: string }[];
+      if (inserted.length === 0) return { viewCount: lesson.viewCount };
+
+      const updated = await manager.query(`
+        WITH changed AS (
+          UPDATE lessons
+          SET view_count = view_count + 1
+          WHERE id = $1
+          RETURNING view_count
+        )
+        SELECT view_count FROM changed
+      `, [lessonId]) as { view_count: number }[];
+      if (!updated[0]) throw new InternalServerErrorException('The Library view could not be recorded.');
+      return { viewCount: Number(updated[0].view_count) };
+    });
   }
 
   private async listSubmissions(
@@ -234,9 +383,34 @@ export class LessonsService {
     return this.includeLatestReviewGuidance(lessons.map((lesson) => this.toResponse(lesson)));
   }
 
-  private applySearchFilters(query: SelectQueryBuilder<Lesson>, filters: LessonSearchFilters): void {
+  private applySearchFilters(
+    query: SelectQueryBuilder<Lesson>,
+    filters: LessonSearchFilters,
+    librarySearch = false,
+  ): void {
     if (filters.search) {
-      if (/^\d+$/.test(filters.search)) {
+      if (librarySearch) {
+        const exactId = /^#([0-9]+)$/.exec(filters.search);
+        const titlePrefix = normalizeLibrarySearch(filters.search);
+        if (exactId) {
+          const lessonId = Number(exactId[1]);
+          if (Number.isSafeInteger(lessonId) && lessonId > 0 && lessonId <= 2_147_483_647) {
+            query.andWhere('lesson.id = :lessonId', { lessonId });
+          } else {
+            query.andWhere('1 = 0');
+          }
+        } else if (/^[0-9]+$/.test(filters.search)) {
+          const lessonId = Number(filters.search);
+          const titleQuery = `LEFT(${libraryTitleWithoutMarks}, CHAR_LENGTH(:titlePrefix)) = :titlePrefix`;
+          if (Number.isSafeInteger(lessonId) && lessonId <= 2_147_483_647) {
+            query.andWhere(`(lesson.id = :lessonId OR ${titleQuery})`, { lessonId, titlePrefix });
+          } else {
+            query.andWhere(titleQuery, { titlePrefix });
+          }
+        } else {
+          query.andWhere(`LEFT(${libraryTitleWithoutMarks}, CHAR_LENGTH(:titlePrefix)) = :titlePrefix`, { titlePrefix });
+        }
+      } else if (/^\d+$/.test(filters.search)) {
         const lessonId = Number(filters.search);
         if (Number.isSafeInteger(lessonId) && lessonId <= 2_147_483_647) {
           query.andWhere(
@@ -884,6 +1058,14 @@ export class LessonsService {
       createdAt: lesson.createdAt,
       updatedAt: lesson.updatedAt,
       latestReviewGuidance: null,
+    };
+  }
+
+  private toLibraryResponse(lesson: Lesson, authorNames: ReadonlyMap<string, string>): LessonLibraryResponse {
+    return {
+      ...this.toResponse(lesson),
+      authorName: authorNames.get(lesson.authorId) ?? lesson.authorId,
+      viewCount: lesson.viewCount,
     };
   }
 

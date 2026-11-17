@@ -9,6 +9,9 @@ import {
   createLessonDraft,
   getHome,
   getLibrary,
+  getLibraryLessonDetails,
+  getLibraryProjectSnapshots,
+  recordLibraryView,
   getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
@@ -20,6 +23,7 @@ import {
   rejectLesson,
   updateLessonDraft,
   type LessonDraft,
+  type LibraryLesson,
   type LessonDetails,
   type UpdateLessonDraftBody,
 } from '../src/api';
@@ -31,6 +35,9 @@ vi.mock('../src/api', () => ({
   createLessonDraft: vi.fn(),
   getHome: vi.fn(),
   getLibrary: vi.fn(),
+  getLibraryLessonDetails: vi.fn(),
+  getLibraryProjectSnapshots: vi.fn(),
+  recordLibraryView: vi.fn(),
   getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
@@ -75,6 +82,15 @@ function lessonDraft(overrides: Partial<LessonDraft> = {}): LessonDraft {
     createdAt: '2026-11-13T12:00:00.000Z',
     updatedAt: '2026-11-13T12:00:00.000Z',
     approvedAt: null,
+    ...overrides,
+  };
+}
+
+function libraryLesson(overrides: Partial<LibraryLesson> = {}): LibraryLesson {
+  return {
+    ...lessonDraft(overrides),
+    authorName: overrides.authorName ?? 'Local Contributor',
+    viewCount: overrides.viewCount ?? 0,
     ...overrides,
   };
 }
@@ -128,12 +144,18 @@ beforeEach(() => {
   vi.mocked(getPmoDrafts).mockResolvedValue([]);
   vi.mocked(getPmoEvaluationQueue).mockResolvedValue([]);
   vi.mocked(getEvaluationProjectSnapshots).mockResolvedValue([]);
+  vi.mocked(getLibraryProjectSnapshots).mockResolvedValue([]);
   vi.mocked(returnLesson).mockImplementation(async (_profileId, lessonId) => lessonDraft({
     id: lessonId,
     status: 'Open',
     updatedBy: 'local-pmo',
   }));
   vi.mocked(getLibrary).mockResolvedValue([]);
+  vi.mocked(recordLibraryView).mockResolvedValue({ viewCount: 1 });
+  vi.mocked(getLibraryLessonDetails).mockImplementation(async (_profileId, lessonId) => ({
+    ...lessonDetails({ id: lessonId }),
+    history: [],
+  }));
   vi.mocked(getLessonDetails).mockImplementation(async (_profileId, lessonId) => lessonDetails({ id: lessonId }));
   vi.mocked(updateLessonDraft).mockImplementation(async (_profileId, _draftId, input) => lessonDraft({
     ...input,
@@ -453,7 +475,7 @@ describe('Lessons Learned access check', () => {
   });
 
   it('shows the initial Library to Contributors and opens published content without full history', async () => {
-    const published = lessonDraft({
+    const published = libraryLesson({
       id: 91,
       title: 'Published release verification',
       status: 'Approved',
@@ -464,22 +486,175 @@ describe('Lessons Learned access check', () => {
     });
     vi.mocked(getHome).mockResolvedValue(contributor);
     vi.mocked(getLibrary).mockResolvedValue([published]);
-    vi.mocked(getLessonDetails).mockResolvedValue({ ...lessonDetails(published), history: [] });
+    vi.mocked(getLibraryLessonDetails).mockResolvedValue({ ...lessonDetails(published), history: [] });
     const user = userEvent.setup();
 
     renderScreen('local-contributor', 0, 'library');
 
     expect(await screen.findByRole('heading', { name: 'Lessons Library' })).toBeInTheDocument();
-    expect(getLibrary).toHaveBeenCalledWith('local-contributor', { paged: 'true', cursor: undefined });
+    await waitFor(() => expect(getLibrary).toHaveBeenCalledWith('local-contributor', { paged: 'true', cursor: undefined }));
     expect(screen.getByRole('link', { name: 'Lessons Library' })).toHaveAttribute('aria-current', 'page');
     const table = await screen.findByRole('table', { name: 'Published lessons, newest approval first' });
     const row = within(table).getByRole('row', { name: /Published release verification/ });
     expect(within(row).getByText('Approved')).toBeInTheDocument();
-    await user.click(within(row).getByRole('button', { name: 'View Published release verification' }));
+    expect(within(row).getByRole('cell', { name: '0' })).toBeInTheDocument();
+    await user.click(within(row).getByRole('link', { name: 'View Published release verification' }));
 
-    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    const details = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    expect(window.location.search).toBe('?page=library&lesson=91');
+    expect(getLibraryLessonDetails).toHaveBeenCalledWith('local-contributor', 91);
+    await waitFor(() => expect(recordLibraryView).toHaveBeenCalledWith(
+      'local-contributor', 91, { openingId: expect.stringMatching(/^[0-9a-f-]{36}$/i) },
+    ));
+    await waitFor(() => expect(within(screen.getByRole('row', { name: /Published release verification/ }))
+      .getByRole('cell', { name: '1' })).toBeInTheDocument());
     expect(within(details).getByText('The handover omitted the current runbook.')).toBeInTheDocument();
     expect(within(details).queryByRole('heading', { name: 'History' })).not.toBeInTheDocument();
+    await user.click(within(details).getByRole('button', { name: 'Back to Lessons Library' }));
+    await waitFor(() => expect(window.location.search).toBe('?page=library'));
+    expect(within(table).getByRole('link', { name: 'View Published release verification' })).toHaveFocus();
+  });
+
+  it('changes the Library order, starts from the first page, and keeps loaded order when details close', async () => {
+    const newest = libraryLesson({
+      id: 90,
+      title: 'Newest published result',
+      status: 'Approved',
+      approvedAt: '2026-11-15T15:30:00.000Z',
+    });
+    const titleFirst = libraryLesson({
+      id: 91,
+      title: 'Alpha sorted result',
+      status: 'Approved',
+      approvedAt: '2026-11-14T15:30:00.000Z',
+    });
+    const titleSecond = libraryLesson({
+      id: 92,
+      title: 'Beta sorted result',
+      status: 'Closed',
+      approvedAt: '2026-11-13T15:30:00.000Z',
+    });
+    const page = (items: LibraryLesson[], nextCursor: string | null) => ({
+      items,
+      page: { limit: 1, nextCursor },
+    });
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getLibrary).mockImplementation(async (_profileId, request) => {
+      if (request?.sort === 'title') {
+        return request.cursor ? page([titleSecond], null) : page([titleFirst], 'title-next');
+      }
+      return page([newest], null);
+    });
+    vi.mocked(getLibraryLessonDetails).mockResolvedValue({ ...lessonDetails(titleSecond), history: [] });
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor', 0, 'library');
+
+    expect(await screen.findByRole('row', { name: /Newest published result/ })).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort by' }), 'title');
+    await waitFor(() => expect(getLibrary).toHaveBeenLastCalledWith('local-contributor', {
+      paged: 'true',
+      cursor: undefined,
+      sort: 'title',
+    }));
+    expect(await screen.findByRole('row', { name: /Alpha sorted result/ })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Load more' }));
+    const table = screen.getByRole('table', { name: 'Published lessons, title order' });
+    const secondRow = await within(table).findByRole('row', { name: /Beta sorted result/ });
+    await user.click(within(secondRow).getByRole('link', { name: 'View Beta sorted result' }));
+    const details = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    await user.click(within(details).getByRole('button', { name: 'Close published lesson details' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Published lesson details' })).not.toBeInTheDocument());
+    const visibleTitles = within(table).getAllByRole('row').slice(1).map((row) => row.textContent);
+    expect(visibleTitles).toHaveLength(2);
+    expect(visibleTitles[0]).toContain('Alpha sorted result');
+    expect(visibleTitles[1]).toContain('Beta sorted result');
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('title');
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort by' }), 'newest');
+    await waitFor(() => expect(getLibrary).toHaveBeenLastCalledWith('local-contributor', {
+      paged: 'true',
+      cursor: undefined,
+    }));
+    expect(await screen.findByRole('row', { name: /Newest published result/ })).toBeInTheDocument();
+  });
+
+  it('searches and filters the published Library while preserving loaded pages when details close', async () => {
+    const first = libraryLesson({
+      id: 91,
+      title: 'Gestão de riscos',
+      authorName: 'Local Contributor',
+      status: 'Approved',
+      approvedAt: '2026-11-14T15:30:00.000Z',
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+      lessonType: 'Communication',
+      situationObserved: 'The team did not record its risk decision.',
+    });
+    const second = libraryLesson({
+      id: 92,
+      title: 'Older published handover',
+      authorName: 'Other Contributor',
+      status: 'Closed',
+      approvedAt: '2026-11-13T15:30:00.000Z',
+      situationObserved: 'The handover missed an owner.',
+    });
+    const page = (items: LibraryLesson[], nextCursor: string | null) => ({
+      items,
+      page: { limit: 1, nextCursor },
+    });
+    vi.mocked(getHome).mockResolvedValue(contributor);
+    vi.mocked(getLibraryProjectSnapshots).mockResolvedValue([
+      { id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' },
+    ]);
+    vi.mocked(getLibrary).mockImplementation(async (_profileId, request) => {
+      if (request?.cursor) return page([second], null);
+      if (request?.search === 'no-match') return page([], null);
+      return page([first], request?.search ? null : 'next-cursor');
+    });
+    vi.mocked(getLibraryLessonDetails).mockResolvedValue({
+      ...lessonDetails(second),
+      authorName: 'Other Contributor',
+      history: [],
+    });
+    const user = userEvent.setup();
+
+    renderScreen('local-contributor', 0, 'library');
+
+    const firstRow = await screen.findByRole('row', { name: /Gestão de riscos/ });
+    expect(within(firstRow).getByText('Local Contributor')).toBeInTheDocument();
+    expect(within(firstRow).getByText('The team did not record its risk decision.')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Load more' }));
+    const secondRow = await screen.findByRole('row', { name: /Older published handover/ });
+    await user.click(within(secondRow).getByRole('link', { name: 'View Older published handover' }));
+    const details = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    expect(getLibraryLessonDetails).toHaveBeenCalledWith('local-contributor', 92);
+    await user.click(within(details).getByRole('button', { name: 'Close published lesson details' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Published lesson details' })).not.toBeInTheDocument());
+    expect(screen.getByRole('row', { name: /Gestão de riscos/ })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /Older published handover/ })).toBeInTheDocument();
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search title or ID' }), 'gestao');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }), 'without-project');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Lesson type' }), 'Communication');
+    await waitFor(() => expect(getLibrary).toHaveBeenLastCalledWith('local-contributor', expect.objectContaining({
+      paged: 'true',
+      cursor: undefined,
+      search: 'gestao',
+      withoutProject: true,
+      lessonType: 'Communication',
+    })));
+    expect(screen.getByRole('status')).toHaveTextContent('Project: No project');
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => expect(getLibrary).toHaveBeenLastCalledWith('local-contributor', {
+      paged: 'true',
+      cursor: undefined,
+    }));
+    await user.type(screen.getByRole('searchbox', { name: 'Search title or ID' }), 'no-match');
+    expect(await screen.findByText('No published lessons match these filters.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create lesson' }));
+    expect(await screen.findByRole('dialog', { name: 'Create lesson' })).toBeInTheDocument();
   });
 
   it('lets PMO approve the exact version shown in lesson details after explicit confirmation', async () => {

@@ -2556,6 +2556,412 @@ describe('Lessons Learned draft registration', () => {
       .expect(404);
   });
 
+  it('serves Library detail only for published lessons and keeps private and missing IDs indistinguishable', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Published lesson for the Library detail URL' })
+      .expect(201);
+    const submittedResponse = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The team repeated verification work.',
+        recommendation: 'Assign an owner to maintain the checklist.',
+        applicability: 'Use for releases with shared ownership.',
+      });
+    expect(submittedResponse.status, JSON.stringify(submittedResponse.body)).toBe(200);
+    const submitted = submittedResponse.body;
+    const published = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.version })
+      .expect(200);
+    const privateDraft = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Private lesson outside the Library' })
+      .expect(201);
+
+    for (const [profileId, canReadHistory] of [
+      ['local-contributor', true],
+      ['local-other-contributor', false],
+      ['local-pmo', true],
+    ] as const) {
+      const detailsResponse = await server
+        .get(`/api/lessons-learned/v1/lessons/library/${published.body.id}`)
+        .set('X-PMO-Local-User-ID', profileId);
+      expect(detailsResponse.status, JSON.stringify(detailsResponse.body)).toBe(200);
+      expect(detailsResponse.body).toMatchObject({
+        id: published.body.id,
+        title: published.body.title,
+        authorName: 'Local Contributor',
+        status: 'Approved',
+        approvedAt: published.body.approvedAt,
+        rootCause: 'No checklist owner had been assigned.',
+      });
+      expect(detailsResponse.body.history.length > 0).toBe(canReadHistory);
+    }
+
+    const hiddenLesson = await server
+      .get(`/api/lessons-learned/v1/lessons/library/${privateDraft.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-other-contributor')
+      .expect(404);
+    const missingLesson = await server
+      .get('/api/lessons-learned/v1/lessons/library/2147483000')
+      .set('X-PMO-Local-User-ID', 'local-other-contributor')
+      .expect(404);
+    expect(hiddenLesson.body).toEqual(missingLesson.body);
+
+    await server.get(`/api/lessons-learned/v1/lessons/library/${published.body.id}`).expect(401);
+    await server
+      .get(`/api/lessons-learned/v1/lessons/library/${published.body.id}`)
+      .set('X-PMO-Local-User-ID', 'revoked-profile')
+      .expect(403);
+
+    await server
+      .get(`/api/lessons-learned/v1/lessons/${privateDraft.body.id}`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .expect(200);
+  });
+
+  it('counts an authorized Library opening once and exposes the confirmed total on the Library list', async () => {
+    const server = request(app!.getHttpServer());
+    const created = await server
+      .post('/api/lessons-learned/v1/lessons')
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({ title: 'Counted Library opening' })
+      .expect(201);
+    const submitted = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+      .set('X-PMO-Local-User-ID', 'local-contributor')
+      .send({
+        version: created.body.version,
+        title: created.body.title,
+        projectId: null,
+        projectName: null,
+        projectCategory: 'Technology',
+        projectPhase: 'Execution',
+        situationObserved: 'The release handover omitted the runbook.',
+        rootCause: 'No checklist owner had been assigned.',
+        lessonType: 'Future Prevention',
+        impact: 'The next team repeated verification work.',
+        recommendation: 'Assign an owner to review the checklist.',
+        applicability: 'Use for software releases with shared ownership.',
+      })
+      .expect(200);
+    const approved = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: submitted.body.version })
+      .expect(200);
+
+    const libraryPath = '/api/lessons-learned/v1/lessons/library';
+    const detailsPath = `${libraryPath}/${created.body.id}`;
+    const openingId = '854b1b18-1aa1-4ba9-81ae-35131b5de943';
+    const reader = { 'X-PMO-Local-User-ID': 'local-other-contributor' };
+    await server.get(libraryPath).set(reader).expect(200).expect(({ body }) => {
+      expect(body.find(({ id }: { id: number }) => id === created.body.id)?.viewCount).toBe(0);
+    });
+    await server.get('/api/lessons-learned/v1/lessons/mine').set({ 'X-PMO-Local-User-ID': 'local-contributor' })
+      .expect(200).expect(({ body }) => {
+        expect(body.find(({ id }: { id: number }) => id === created.body.id)).not.toHaveProperty('viewCount');
+      });
+    const detailsBefore = await server.get(detailsPath).set(reader).expect(200).expect(({ body }) => {
+      expect(body).not.toHaveProperty('viewCount');
+    });
+    await server.post(`${libraryPath}/0/views`).set(reader).send({ openingId }).expect(400);
+    await server.post(`${libraryPath}/2147483648/views`).set(reader).send({ openingId }).expect(400);
+    await server.post(`${detailsPath}/views`).set(reader).send({ openingId: 'not-a-uuid' }).expect(400);
+    await server.post(`${detailsPath}/views`).send({ openingId }).expect(401);
+
+    const duplicateAttempts = await Promise.all([
+      server.post(`${detailsPath}/views`).set(reader).send({ openingId }),
+      server.post(`${detailsPath}/views`).set(reader).send({ openingId }),
+    ]);
+    expect(duplicateAttempts.map(({ status, body }) => [status, body.viewCount])).toEqual([[200, 1], [200, 1]]);
+    await server.post(`${detailsPath}/views`).set(reader).send({ openingId }).expect(200, { viewCount: 1 });
+    await server.get(detailsPath).set(reader).expect(200).expect('ETag', detailsBefore.headers.etag);
+    await server.get(libraryPath).set(reader).expect(200).expect(({ body }) => {
+      expect(body.find(({ id }: { id: number }) => id === created.body.id)?.viewCount).toBe(1);
+    });
+
+    const closed = await server
+      .post(`/api/lessons-learned/v1/lessons/${created.body.id}/close`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: approved.body.version })
+      .expect(200);
+    expect(closed.body.approvedAt).toBe(approved.body.approvedAt);
+    await server.get(libraryPath).set(reader).expect(200).expect(({ body }) => {
+      expect(body).toContainEqual(expect.objectContaining({ id: created.body.id, status: 'Closed', viewCount: 1 }));
+    });
+  });
+
+  it('searches and filters the complete published Library before cursor pagination', async () => {
+    const server = request(app!.getHttpServer());
+    const publish = async (input: {
+      title: string;
+      projectId?: string | null;
+      projectName?: string | null;
+      lessonType: 'Future Prevention' | 'Communication';
+    }) => {
+      const created = await server
+        .post('/api/lessons-learned/v1/lessons')
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ title: input.title })
+        .expect(201);
+      const submitted = await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          version: created.body.version,
+          title: input.title,
+          projectId: input.projectId ?? null,
+          projectName: input.projectName ?? null,
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The approved lesson includes a searchable description.',
+          rootCause: 'The review team could not find an earlier result.',
+          lessonType: input.lessonType,
+          impact: 'The team repeated avoidable investigation.',
+          recommendation: 'Search the Library before starting.',
+          applicability: 'Use this guidance on similar projects.',
+        })
+        .expect(200);
+      return server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version })
+        .expect(200);
+    };
+    const riskLesson = await publish({
+      title: 'Gestão de riscos',
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+      lessonType: 'Communication',
+    });
+    const numericTitle = await publish({ title: `${riskLesson.body.id} handover checklist`, lessonType: 'Future Prevention' });
+    const hashTitle = await publish({ title: '#planning for handover', lessonType: 'Communication' });
+    await publish({ title: 'Recently approved unrelated lesson', lessonType: 'Communication' });
+
+    const reader = { 'X-PMO-Local-User-ID': 'local-other-contributor' };
+    const libraryPath = '/api/lessons-learned/v1/lessons/library';
+    await server.get(`${libraryPath}/projects`).set(reader).expect(200).expect(({ body }) => {
+      expect(body).toContainEqual({ id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' });
+    });
+    await server.get(libraryPath).query({ search: 'gestao', limit: 1 }).set(reader).expect(200).expect(({ body }) => {
+      expect(body.items.map(({ id }: { id: number }) => id)).toEqual([riskLesson.body.id]);
+      expect(body.items[0].authorName).toBe('Local Contributor');
+      expect(body.page.nextCursor).toBeNull();
+    });
+    await server.get(libraryPath).query({
+      search: 'GESTÃO',
+      projectId: 'LOCAL-PROJECT-001',
+      lessonType: 'Communication',
+    }).set(reader).expect(200).expect(({ body }) => {
+      expect(body.map(({ id }: { id: number }) => id)).toEqual([riskLesson.body.id]);
+    });
+    await server.get(libraryPath).query({ search: String(riskLesson.body.id) }).set(reader).expect(200).expect(({ body }) => {
+      expect(body.map(({ id }: { id: number }) => id)).toContain(riskLesson.body.id);
+      expect(body.map(({ id }: { id: number }) => id)).toContain(numericTitle.body.id);
+    });
+    await server.get(libraryPath).query({ search: `#${riskLesson.body.id}` }).set(reader).expect(200).expect(({ body }) => {
+      expect(body.map(({ id }: { id: number }) => id)).toEqual([riskLesson.body.id]);
+    });
+    await server.get(libraryPath).query({ search: '#plan' }).set(reader).expect(200).expect(({ body }) => {
+      expect(body.map(({ id }: { id: number }) => id)).toEqual([hashTitle.body.id]);
+    });
+    await server.get(libraryPath).query({
+      search: String(riskLesson.body.id),
+      withoutProject: 'true',
+      lessonType: 'Future Prevention',
+      limit: 1,
+    }).set(reader).expect(200).expect(({ body }) => {
+      expect(body.items.map(({ id }: { id: number }) => id)).toEqual([numericTitle.body.id]);
+      expect(body.page.nextCursor).toBeNull();
+    });
+    const closedRiskLesson = await server
+      .post(`/api/lessons-learned/v1/lessons/${riskLesson.body.id}/close`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: riskLesson.body.version })
+      .expect(200);
+    expect(closedRiskLesson.body.approvedAt).toBe(riskLesson.body.approvedAt);
+    await server.get(libraryPath).query({
+      search: 'gestao',
+      projectId: 'LOCAL-PROJECT-001',
+      lessonType: 'Communication',
+    }).set(reader).expect(200).expect(({ body }) => {
+      expect(body).toContainEqual(expect.objectContaining({
+        id: riskLesson.body.id,
+        status: 'Closed',
+        approvedAt: riskLesson.body.approvedAt,
+      }));
+    });
+    const unfilteredFirstPage = await server.get(libraryPath).query({ limit: 1 }).set(reader).expect(200);
+    await server.get(libraryPath).query({ search: 'gestao', cursor: unfilteredFirstPage.body.page.nextCursor, limit: 1 })
+      .set(reader).expect(400);
+  });
+
+  it('sorts the filtered published Library before cursor pagination', async () => {
+    const server = request(app!.getHttpServer());
+    const libraryPath = '/api/lessons-learned/v1/lessons/library';
+    const reader = { 'X-PMO-Local-User-ID': 'local-other-contributor' };
+    const publish = async (input: {
+      title: string;
+      projectId?: string;
+      projectName?: string;
+      lessonType: 'Future Prevention' | 'Communication';
+    }) => {
+      const created = await server
+        .post('/api/lessons-learned/v1/lessons')
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({ title: input.title })
+        .expect(201);
+      const submitted = await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/submit`)
+        .set('X-PMO-Local-User-ID', 'local-contributor')
+        .send({
+          version: created.body.version,
+          title: input.title,
+          projectId: input.projectId ?? null,
+          projectName: input.projectName ?? null,
+          projectCategory: 'Technology',
+          projectPhase: 'Execution',
+          situationObserved: 'The team could not find the right guidance quickly.',
+          rootCause: 'The published lessons had no useful order.',
+          lessonType: input.lessonType,
+          impact: 'The team repeated avoidable work.',
+          recommendation: 'Sort published lessons by the information readers need.',
+          applicability: 'Use this guidance when consulting the Library.',
+        })
+        .expect(200);
+      const approved = await server
+        .post(`/api/lessons-learned/v1/lessons/${created.body.id}/approve`)
+        .set('X-PMO-Local-User-ID', 'local-pmo')
+        .send({ version: submitted.body.version })
+        .expect(200);
+      return approved.body as { id: number; version: number; approvedAt: string };
+    };
+
+    const zuluHarbor = await publish({
+      title: 'Zulu handover',
+      projectId: 'LOCAL-PROJECT-002',
+      projectName: 'Fictional Harbor Migration',
+      lessonType: 'Future Prevention',
+    });
+    const alphaHarbor = await publish({
+      title: 'Alpha checkpoint',
+      projectId: 'LOCAL-PROJECT-002',
+      projectName: 'Fictional Harbor Migration',
+      lessonType: 'Communication',
+    });
+    const alphaNoProject = await publish({ title: 'Alpha checkpoint', lessonType: 'Communication' });
+    const bravoAtlas = await publish({
+      title: 'Bravo handover',
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+      lessonType: 'Future Prevention',
+    });
+    const alphaOlder = await publish({
+      title: 'Alpha older guidance',
+      projectId: 'LOCAL-PROJECT-001',
+      projectName: 'Fictional Atlas Modernization',
+      lessonType: 'Communication',
+    });
+
+    const closed = await server
+      .post(`/api/lessons-learned/v1/lessons/${bravoAtlas.id}/close`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: bravoAtlas.version })
+      .expect(200);
+    expect(closed.body.approvedAt).toBe(bravoAtlas.approvedAt);
+
+    await dataSource!.query(
+      'UPDATE lessons SET approved_at = $2 WHERE id = $1',
+      [zuluHarbor.id, '2026-01-01T00:00:00.000Z'],
+    );
+    await dataSource!.query(
+      'UPDATE lessons SET approved_at = $2 WHERE id = $1',
+      [alphaHarbor.id, '2026-01-02T00:00:00.000Z'],
+    );
+    await dataSource!.query(
+      'UPDATE lessons SET approved_at = $2 WHERE id = $1',
+      [alphaNoProject.id, '2026-01-02T00:00:00.000Z'],
+    );
+    await dataSource!.query(
+      'UPDATE lessons SET approved_at = $2 WHERE id = $1',
+      [bravoAtlas.id, '2026-01-03T00:00:00.000Z'],
+    );
+    await dataSource!.query(
+      'UPDATE lessons SET approved_at = $2 WHERE id = $1',
+      [alphaOlder.id, '2026-01-01T00:00:00.000Z'],
+    );
+
+    const cases = [
+      { sort: 'newest', ids: [bravoAtlas.id, alphaNoProject.id, alphaHarbor.id, alphaOlder.id, zuluHarbor.id] },
+      { sort: 'oldest', ids: [zuluHarbor.id, alphaOlder.id, alphaHarbor.id, alphaNoProject.id, bravoAtlas.id] },
+      { sort: 'title', ids: [alphaNoProject.id, alphaHarbor.id, alphaOlder.id, bravoAtlas.id, zuluHarbor.id] },
+      { sort: 'project', ids: [bravoAtlas.id, alphaOlder.id, alphaHarbor.id, zuluHarbor.id, alphaNoProject.id] },
+      { sort: 'type', ids: [alphaNoProject.id, alphaHarbor.id, alphaOlder.id, bravoAtlas.id, zuluHarbor.id] },
+    ] as const;
+
+    for (const { sort, ids } of cases) {
+      const pagedIds: number[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await server.get(libraryPath)
+          .query({ sort, cursor, limit: 2 })
+          .set(reader)
+          .expect(200);
+        pagedIds.push(...page.body.items.map(({ id }: { id: number }) => id));
+        cursor = page.body.page.nextCursor ?? undefined;
+      } while (cursor);
+      expect(pagedIds, `Library order for ${sort}`).toEqual(ids);
+
+      const unpaged = await server.get(libraryPath).query({ sort }).set(reader).expect(200);
+      expect(unpaged.body.map(({ id }: { id: number }) => id), `Unpaged Library order for ${sort}`).toEqual(ids);
+    }
+
+    const filtered = await server.get(libraryPath).query({
+      sort: 'title',
+      search: 'Alpha',
+      projectId: 'LOCAL-PROJECT-002',
+      lessonType: 'Communication',
+      limit: 1,
+    }).set(reader).expect(200);
+    expect(filtered.body.items.map(({ id }: { id: number }) => id)).toEqual([alphaHarbor.id]);
+    expect(filtered.body.page.nextCursor).toBeNull();
+
+    const oldDefaultFirstPage = await server.get(libraryPath).query({ limit: 2 }).set(reader).expect(200);
+    const secondPageWithExplicitDefault = await server.get(libraryPath).query({
+      sort: 'newest',
+      cursor: oldDefaultFirstPage.body.page.nextCursor,
+      limit: 2,
+    }).set(reader).expect(200);
+    expect(secondPageWithExplicitDefault.body.items.map(({ id }: { id: number }) => id)).toEqual([
+      alphaHarbor.id,
+      alphaOlder.id,
+    ]);
+    const closedInLibrary = await server.get(libraryPath).query({ sort: 'newest' }).set(reader).expect(200);
+    expect(closedInLibrary.body).toContainEqual(expect.objectContaining({
+      id: bravoAtlas.id,
+      status: 'Closed',
+      approvedAt: '2026-01-03T00:00:00.000Z',
+    }));
+
+    await server.get(libraryPath).query({ sort: 'unknown-order' }).set(reader).expect(400);
+  });
+
   it('lets PMO reject an evaluation with a reason and keeps the archived lesson private to its author', async () => {
     const server = request(app!.getHttpServer());
     const created = await server

@@ -386,6 +386,7 @@ type LessonSubmissionDetailsDialogProps = {
   onApprove?: (lesson: LessonDetails) => void;
   canClose?: boolean;
   onCloseLesson?: (lesson: LessonDetails) => void;
+  isLibrarySurface?: boolean;
 };
 
 export function LessonSubmissionDetailsDialog({
@@ -402,6 +403,7 @@ export function LessonSubmissionDetailsDialog({
   onApprove,
   canClose = false,
   onCloseLesson,
+  isLibrarySurface = false,
 }: LessonSubmissionDetailsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -411,21 +413,23 @@ export function LessonSubmissionDetailsDialog({
 
   const fields: Array<[string, string]> = lesson ? [
     ['Title', lesson.title],
-    ['Author', lesson.authorId],
+    ['Author', lesson.authorName ?? lesson.authorId],
     ['Updated by', lesson.updatedBy],
     ['Status', lesson.status],
     ['Project', lesson.projectName ?? 'No project'],
     ['Project category', lesson.projectCategory ?? 'Not provided'],
     ['Project phase', lesson.projectPhase ?? 'Not provided'],
     ['Situation observed', lesson.situationObserved ?? 'Not provided'],
-    ['Root cause', lesson.rootCause ?? 'Not provided'],
+    ...(lesson.rootCause?.trim() ? [['Root cause', lesson.rootCause] as [string, string]] : []),
     ['Lesson type', lesson.lessonType ?? 'Not provided'],
     ['Impact', lesson.impact ?? 'Not provided'],
     ['Recommendation', lesson.recommendation ?? 'Not provided'],
     ['Applicability', lesson.applicability ?? 'Not provided'],
-    ['Created', formatTimestampUtc(lesson.createdAt)],
-    ['Last updated', formatTimestampUtc(lesson.updatedAt)],
-    ...(lesson.approvedAt ? [['Approved', formatTimestampUtc(lesson.approvedAt)] as [string, string]] : []),
+  ] : [];
+  const dates: Array<[string, string]> = lesson ? [
+    ['Created', lesson.createdAt],
+    ['Last updated', lesson.updatedAt],
+    ...(lesson.approvedAt ? [['Approved', lesson.approvedAt] as [string, string]] : []),
   ] : [];
 
   return createPortal(
@@ -434,6 +438,12 @@ export function LessonSubmissionDetailsDialog({
       className="draft-editor-dialog"
       aria-modal="true"
       aria-labelledby="lesson-details-title"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          onClose();
+        }
+      }}
       onCancel={(event) => {
         event.preventDefault();
         onClose();
@@ -442,10 +452,10 @@ export function LessonSubmissionDetailsDialog({
       <div className="draft-editor-form">
         <div className="draft-editor-heading">
           <div>
-            <p className="draft-editor-eyebrow">Lesson #{lesson?.id ?? lessonId}{lesson ? ` · ${lesson.status}` : ''}</p>
-            <h2 id="lesson-details-title">Lesson details</h2>
+            <p className="draft-editor-eyebrow">{isLibrarySurface ? 'Published lesson' : 'Lesson'} #{lesson?.id ?? lessonId}{lesson ? ` · ${lesson.status}` : ''}</p>
+            <h2 id="lesson-details-title">{isLibrarySurface ? 'Published lesson details' : 'Lesson details'}</h2>
           </div>
-          <button ref={closeRef} className="draft-editor-close" type="button" aria-label="Close lesson details" onClick={onClose}>
+          <button ref={closeRef} className="draft-editor-close" type="button" aria-label={isLibrarySurface ? 'Close published lesson details' : 'Close lesson details'} onClick={onClose}>
             ×
           </button>
         </div>
@@ -463,6 +473,12 @@ export function LessonSubmissionDetailsDialog({
                 <div key={label}>
                   <dt>{label}</dt>
                   <dd>{value}</dd>
+                </div>
+              ))}
+              {dates.map(([label, value]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd><time dateTime={value}>{formatTimestampUtc(value)}</time></dd>
                 </div>
               ))}
             </dl>
@@ -501,7 +517,7 @@ export function LessonSubmissionDetailsDialog({
               Close lesson
             </button>
           )}
-          <button className="draft-editor-secondary" type="button" onClick={onClose}>Close details</button>
+          <button className="draft-editor-secondary" type="button" onClick={onClose}>{isLibrarySurface ? 'Back to Lessons Library' : 'Close details'}</button>
         </div>
       </div>
     </dialog>,

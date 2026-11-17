@@ -21,6 +21,9 @@ export class Lesson {
   @Column({ type: 'integer', default: 1 })
   version!: number;
 
+  @Column({ name: 'view_count', type: 'integer', default: 0 })
+  viewCount!: number;
+
   @Column({ name: 'project_id', type: 'varchar', length: 128, nullable: true })
   projectId!: string | null;
 

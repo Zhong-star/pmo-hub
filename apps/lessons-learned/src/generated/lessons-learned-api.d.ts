@@ -148,10 +148,61 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List published lessons by most recent approval date */
+        /** List published lessons with the selected sort order */
         get: operations["LessonsController_getLibrary"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lessons-learned/v1/lessons/library/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List project snapshots used by published Lessons Library entries */
+        get: operations["LessonsController_getLibraryProjectSnapshots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lessons-learned/v1/lessons/library/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get published lesson content and authorized lifecycle history for the Library detail URL */
+        get: operations["LessonsController_getLibraryLessonDetails"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lessons-learned/v1/lessons/library/{id}/views": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record one authorized opening of a published Library lesson */
+        post: operations["LessonsController_recordLibraryView"];
         delete?: never;
         options?: never;
         head?: never;
@@ -322,13 +373,15 @@ export interface components {
             profile: components["schemas"]["LessonsLearnedProfile"];
             navigation: components["schemas"]["LessonsLearnedNavigationItem"][];
         };
-        LessonDraftResponse: {
+        LessonLibraryResponse: {
             /** @example 1 */
             id: number;
             /** @example Improve release handover */
             title: string;
             /** @example local-contributor */
             authorId: string;
+            /** @description Display name of the author. */
+            authorName?: string;
             /** @example local-contributor */
             updatedBy: string;
             /**
@@ -361,10 +414,58 @@ export interface components {
             latestReviewGuidance: string | null;
             /** Format: date-time */
             approvedAt: string | null;
+            /** @example 0 */
+            viewCount: number;
         };
         LessonPageInfo: {
             nextCursor: string | null;
             limit: number;
+        };
+        LessonLibraryPage: {
+            items: components["schemas"]["LessonLibraryResponse"][];
+            page: components["schemas"]["LessonPageInfo"];
+        };
+        LessonDraftResponse: {
+            /** @example 1 */
+            id: number;
+            /** @example Improve release handover */
+            title: string;
+            /** @example local-contributor */
+            authorId: string;
+            /** @description Display name of the author when available. */
+            authorName?: string;
+            /** @example local-contributor */
+            updatedBy: string;
+            /**
+             * @example Open
+             * @enum {string}
+             */
+            status: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived";
+            /** @example 1 */
+            version: number;
+            /** @description Opaque ETag for this lesson version. */
+            etag?: string;
+            projectId: string | null;
+            projectName: string | null;
+            /** @enum {string|null} */
+            projectCategory: "Technology" | "Business" | "Infrastructure" | "Data" | null;
+            /** @enum {string|null} */
+            projectPhase: "Initiation" | "Planning" | "Execution" | "Closure" | "Not Applicable" | null;
+            situationObserved: string | null;
+            rootCause: string | null;
+            /** @enum {string|null} */
+            lessonType: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication" | null;
+            impact: string | null;
+            recommendation: string | null;
+            applicability: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @description Most recent PMO return guidance while the lesson is Open. */
+            latestReviewGuidance: string | null;
+            /** Format: date-time */
+            approvedAt: string | null;
         };
         LessonPage: {
             items: components["schemas"]["LessonDraftResponse"][];
@@ -433,6 +534,8 @@ export interface components {
             title: string;
             /** @example local-contributor */
             authorId: string;
+            /** @description Display name of the author when available. */
+            authorName?: string;
             /** @example local-contributor */
             updatedBy: string;
             /**
@@ -466,6 +569,17 @@ export interface components {
             /** Format: date-time */
             approvedAt: string | null;
             history: components["schemas"]["LessonHistoryEventResponse"][];
+        };
+        RecordLibraryViewRequest: {
+            /**
+             * Format: uuid
+             * @description Stable idempotency key for one Library opening.
+             */
+            openingId: string;
+        };
+        RecordLessonLibraryViewResponse: {
+            /** @example 1 */
+            viewCount: number;
         };
         UpdateLessonDraftRequest: {
             /** @example Improve release handover */
@@ -1141,6 +1255,15 @@ export interface operations {
     LessonsController_getLibrary: {
         parameters: {
             query?: {
+                /** @description A case- and accent-insensitive title prefix, numeric ID or #ID. */
+                search?: string;
+                /** @description Project snapshot ID. */
+                projectId?: string;
+                /** @description Filter lessons without a project. */
+                withoutProject?: boolean;
+                lessonType?: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication";
+                /** @description Sort the filtered published lessons before cursor pagination. */
+                sort?: "newest" | "oldest" | "title" | "project" | "type";
                 /** @description Opt in to the cursor response envelope. */
                 paged?: "true";
                 cursor?: string;
@@ -1157,7 +1280,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LessonDraftResponse"][] | components["schemas"]["LessonPage"];
+                    "application/json": components["schemas"]["LessonLibraryResponse"][] | components["schemas"]["LessonLibraryPage"];
                 };
             };
             /** @description Invalid page limit or cursor for this query. */
@@ -1185,6 +1308,244 @@ export interface operations {
             };
             /** @description The selected profile has no active Lessons Learned access. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonsController_getLibraryProjectSnapshots: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonProjectResponse"][];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonsController_getLibraryLessonDetails: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric ID of the published lesson. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    /** @description ETag for the returned lesson version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonDetailsResponse"];
+                };
+            };
+            /** @description The lesson ID is outside the supported range. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The published lesson does not exist or is not available in the Library. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonsController_recordLibraryView: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Positive PostgreSQL integer lesson ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordLibraryViewRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    /** @description ETag for the returned lesson version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordLessonLibraryViewResponse"];
+                };
+            };
+            /** @description The lesson ID or opening UUID is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The published lesson does not exist or is not available in the Library. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
