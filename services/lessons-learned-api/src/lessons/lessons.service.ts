@@ -34,11 +34,15 @@ import type { SubmitLessonRequest } from './submit-lesson-request.dto';
 import type { ReturnLessonRequest } from './return-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import type {
+  ContributorProfileResponse,
   LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse,
-  LessonLibraryResponse, LessonVoteResponse, PmoDashboardLessonResponse, PmoDashboardResponse, RecordLessonLibraryViewResponse,
+  LessonLibraryResponse, LessonVoteResponse, PmoDashboardLessonResponse, PmoDashboardResponse,
+  ProfileSummaryResponse, RecordLessonLibraryViewResponse,
 } from './lesson-response.dto';
 import type { RecordLibraryViewRequest } from './record-library-view-request.dto';
 import type {
+  ContributorProfileFilter,
+  ContributorProfileSort,
   LessonSearchFilters,
   LessonsLibraryFilter,
   LessonsLibrarySort,
@@ -48,6 +52,7 @@ import type {
   PmoDashboardSort,
   PmoDraftsFilter,
   PmoEvaluationQueueFilter,
+  ProfileSearchFilter,
 } from './lesson-submissions-query.dto';
 
 type EvaluationFields = Pick<
@@ -79,6 +84,17 @@ function normalizeLibrarySearch(value: string): string {
       return !libraryCombiningMarkRanges.some(([start, end]) => codePoint >= start && codePoint <= end);
     })
     .join('');
+}
+
+function deriveProfileInitials(displayName: string): string {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]![0]}${parts[parts.length - 1]![0]}`.toUpperCase();
+  }
+  if (parts.length === 1) {
+    return parts[0]!.slice(0, 2).toUpperCase();
+  }
+  return '?';
 }
 
 @Injectable()
@@ -292,6 +308,205 @@ export class LessonsService {
         projects,
       };
     });
+  }
+
+  async searchProfiles(
+    localUserId: string | undefined,
+    filters: ProfileSearchFilter = {},
+  ): Promise<ProfileSummaryResponse[]> {
+    this.localAccess.getProfile(localUserId);
+    const dataSource = this.requireDataSource();
+
+    const search = filters.search?.trim();
+    const normalizedSearch = search ? normalizeLibrarySearch(search) : '';
+    const matchingProfiles = this.localAccess.listProfiles()
+      .filter((profile) => !normalizedSearch || normalizeLibrarySearch(profile.displayName).includes(normalizedSearch))
+      .sort((left, right) => (
+        left.displayName.localeCompare(right.displayName, 'en', { sensitivity: 'base' })
+        || left.id.localeCompare(right.id)
+      ));
+
+    if (matchingProfiles.length === 0) return [];
+
+    const aggregates = await this.getPublicProfileAggregates(
+      matchingProfiles.map((profile) => profile.id),
+      dataSource.manager,
+    );
+
+    return matchingProfiles.map((profile) => {
+      const stats = aggregates.get(profile.id);
+      return {
+        id: profile.id,
+        displayName: profile.displayName,
+        initials: deriveProfileInitials(profile.displayName),
+        role: profile.role,
+        publishedLessonsCount: stats?.publishedLessonsCount ?? 0,
+        votesReceivedCount: stats?.votesReceivedCount ?? 0,
+        viewsReceivedCount: stats?.viewsReceivedCount ?? 0,
+      };
+    });
+  }
+
+  async getContributorProfile(
+    localUserId: string | undefined,
+    targetUserId: string,
+    filters: ContributorProfileFilter = {},
+  ): Promise<ContributorProfileResponse> {
+    const caller = this.localAccess.getProfile(localUserId);
+    const target = this.localAccess.listProfiles().find((profile) => profile.id === targetUserId);
+    if (!target) {
+      throw new NotFoundException('Contributor profile not found.');
+    }
+
+    const includesPrivateLessons = caller.role === 'LESSONS_MODERATOR' || caller.id === target.id;
+    const authorNames = this.localAccess.getDisplayNames();
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction('REPEATABLE READ', async (manager) => {
+      const aggregates = await this.getPublicProfileAggregates([target.id], manager);
+      const stats = aggregates.get(target.id);
+
+      const profileSummary: ProfileSummaryResponse = {
+        id: target.id,
+        displayName: target.displayName,
+        initials: deriveProfileInitials(target.displayName),
+        role: target.role,
+        publishedLessonsCount: stats?.publishedLessonsCount ?? 0,
+        votesReceivedCount: stats?.votesReceivedCount ?? 0,
+        viewsReceivedCount: stats?.viewsReceivedCount ?? 0,
+      };
+
+      const projectQuery = manager.getRepository(Lesson).createQueryBuilder('lesson')
+        .select('lesson.project_id', 'id')
+        .addSelect('MAX(lesson.project_name)', 'name')
+        .where('lesson.author_id = :authorId', { authorId: target.id })
+        .andWhere('lesson.project_id IS NOT NULL')
+        .andWhere('lesson.project_name IS NOT NULL');
+      if (!includesPrivateLessons) {
+        projectQuery
+          .andWhere('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
+          .andWhere('lesson.approved_at IS NOT NULL');
+      }
+      const projects = await projectQuery
+        .groupBy('lesson.project_id')
+        .orderBy('MAX(lesson.project_name)', 'ASC')
+        .addOrderBy('lesson.project_id', 'ASC')
+        .getRawMany<LessonProject>();
+
+      const query = manager.getRepository(Lesson).createQueryBuilder('lesson')
+        .where('lesson.author_id = :authorId', { authorId: target.id });
+      if (!includesPrivateLessons) {
+        query
+          .andWhere('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
+          .andWhere('lesson.approved_at IS NOT NULL');
+      }
+      this.applySearchFilters(query, {
+        projectId: filters.projectId,
+        withoutProject: filters.withoutProject,
+        lessonType: filters.lessonType,
+      });
+
+      const lessons = await query.getMany();
+      const baseWithGuidance = includesPrivateLessons
+        ? await this.includeLatestReviewGuidance(
+          lessons.map((lesson) => this.toResponse(lesson)),
+          manager.getRepository(LessonHistory),
+        )
+        : [];
+      const guidanceById = new Map(baseWithGuidance.map((item) => [item.id, item.latestReviewGuidance]));
+
+      const libraryItems = await this.attachVoteSummaries(
+        lessons.map((lesson) => ({
+          ...this.toLibraryResponse(lesson, authorNames),
+          latestReviewGuidance: guidanceById.get(lesson.id) ?? null,
+        })),
+        caller.id,
+        manager,
+      );
+
+      const getRelevantTimestamp = (item: LessonLibraryResponse): number => {
+        if (!includesPrivateLessons) {
+          return item.approvedAt ? item.approvedAt.getTime() : item.updatedAt.getTime();
+        }
+        return Math.max(item.approvedAt ? item.approvedAt.getTime() : 0, item.updatedAt.getTime());
+      };
+
+      const sort: ContributorProfileSort = filters.sort ?? 'recent';
+      libraryItems.sort((left, right) => {
+        const byRecent = () => (getRelevantTimestamp(right) - getRelevantTimestamp(left)) || (right.id - left.id);
+        if (sort === 'recent') return byRecent();
+        if (sort === 'oldest') {
+          return (getRelevantTimestamp(left) - getRelevantTimestamp(right)) || (left.id - right.id);
+        }
+        if (sort === 'most-voted') {
+          return (right.votesCount - left.votesCount)
+            || (getRelevantTimestamp(right) - getRelevantTimestamp(left))
+            || (left.id - right.id);
+        }
+        if (sort === 'title') {
+          return left.title.toLowerCase().localeCompare(right.title.toLowerCase()) || byRecent();
+        }
+        if (sort === 'project') {
+          const leftNull = left.projectId === null ? 1 : 0;
+          const rightNull = right.projectId === null ? 1 : 0;
+          return (leftNull - rightNull)
+            || (left.projectName ?? '').toLowerCase().localeCompare((right.projectName ?? '').toLowerCase())
+            || byRecent();
+        }
+        const leftNull = left.lessonType === null ? 1 : 0;
+        const rightNull = right.lessonType === null ? 1 : 0;
+        return (leftNull - rightNull)
+          || (left.lessonType ?? '').toLowerCase().localeCompare((right.lessonType ?? '').toLowerCase())
+          || byRecent();
+      });
+
+      return {
+        profile: profileSummary,
+        rankingPosition: null,
+        includesPrivateLessons,
+        items: libraryItems,
+        projects,
+      };
+    });
+  }
+
+  private async getPublicProfileAggregates(
+    authorIds: string[],
+    manager: EntityManager,
+  ): Promise<Map<string, { publishedLessonsCount: number; votesReceivedCount: number; viewsReceivedCount: number }>> {
+    const result = new Map<string, { publishedLessonsCount: number; votesReceivedCount: number; viewsReceivedCount: number }>();
+    if (authorIds.length === 0) return result;
+    const rows = await manager.query(`
+      SELECT
+        l.author_id,
+        COUNT(*)::int AS published_lessons_count,
+        COALESCE(SUM(l.view_count), 0)::int AS views_received_count,
+        COALESCE(SUM(v.votes_count), 0)::int AS votes_received_count
+      FROM lessons l
+      LEFT JOIN (
+        SELECT lesson_id, COUNT(*)::int AS votes_count
+        FROM lesson_votes
+        GROUP BY lesson_id
+      ) v ON v.lesson_id = l.id
+      WHERE l.author_id = ANY($1::text[])
+        AND l.status IN ('Approved', 'Closed')
+        AND l.approved_at IS NOT NULL
+      GROUP BY l.author_id
+    `, [authorIds]) as {
+      author_id: string;
+      published_lessons_count: number;
+      views_received_count: number;
+      votes_received_count: number;
+    }[];
+
+    for (const row of rows) {
+      result.set(row.author_id, {
+        publishedLessonsCount: Number(row.published_lessons_count),
+        votesReceivedCount: Number(row.votes_received_count),
+        viewsReceivedCount: Number(row.views_received_count),
+      });
+    }
+    return result;
   }
 
   async getPmoEvaluationQueue(

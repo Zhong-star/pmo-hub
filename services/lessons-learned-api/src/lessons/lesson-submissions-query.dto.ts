@@ -98,6 +98,56 @@ export class PmoDashboardQuery extends LessonSubmissionsQuery {
   sort?: PmoDashboardSort;
 }
 
+export class ProfileSearchQuery {
+  @ApiPropertyOptional({
+    type: String,
+    description: 'Case- and accent-insensitive name filter for authorized module profiles.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MaxLength(150)
+  search?: string;
+}
+
+export const CONTRIBUTOR_PROFILE_SORTS = [
+  'recent',
+  'oldest',
+  'most-voted',
+  'title',
+  'project',
+  'type',
+] as const;
+export type ContributorProfileSort = typeof CONTRIBUTOR_PROFILE_SORTS[number];
+
+export class ContributorProfileQuery {
+  @ApiPropertyOptional({ type: String, description: 'Project snapshot ID.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  projectId?: string;
+
+  @ApiPropertyOptional({ type: Boolean, description: 'Filter to lessons without a project.' })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' ? true : value === 'false' ? false : value)
+  @IsBoolean()
+  withoutProject?: boolean;
+
+  @ApiPropertyOptional({ enum: LESSON_TYPES })
+  @IsOptional()
+  @IsIn(LESSON_TYPES)
+  lessonType?: LessonType;
+
+  @ApiPropertyOptional({
+    enum: CONTRIBUTOR_PROFILE_SORTS,
+    default: 'recent',
+    description: 'Sort order for visible lessons in the Contributor Profile.',
+  })
+  @IsOptional()
+  @IsIn(CONTRIBUTOR_PROFILE_SORTS)
+  sort?: ContributorProfileSort;
+}
+
 export type LessonSearchFilters = Pick<
   LessonSearchFiltersQuery,
   'search' | 'projectId' | 'withoutProject' | 'lessonType'
@@ -112,3 +162,10 @@ export type LessonsLibraryFilter = LessonSearchFilters & Pick<LessonsLibraryQuer
 export type PmoDraftsFilter = LessonSubmissionsFilter & Pick<PmoDraftsQuery, 'authorId'>;
 
 export type PmoDashboardFilter = LessonSubmissionsFilter & Pick<PmoDashboardQuery, 'card' | 'sort'>;
+
+export type ProfileSearchFilter = Pick<ProfileSearchQuery, 'search'>;
+
+export type ContributorProfileFilter = Pick<
+  ContributorProfileQuery,
+  'projectId' | 'withoutProject' | 'lessonType' | 'sort'
+>;

@@ -391,6 +391,7 @@ type LessonSubmissionDetailsDialogProps = {
   onToggleVote?: (lesson: LessonDetails) => void;
   isVotePending?: boolean;
   voteError?: string | null;
+  onOpenAuthorProfile?: (authorId: string) => void;
   profileId?: string;
   isPmo?: boolean;
   onPublicCommentCountChange?: (lessonId: number, publicCommentCount: number) => void;
@@ -414,6 +415,7 @@ export function LessonSubmissionDetailsDialog({
   onToggleVote,
   isVotePending = false,
   voteError = null,
+  onOpenAuthorProfile,
   profileId,
   isPmo = false,
   onPublicCommentCountChange,
@@ -507,7 +509,18 @@ export function LessonSubmissionDetailsDialog({
               {fields.map(([label, value]) => (
                 <div key={label}>
                   <dt>{label}</dt>
-                  <dd>{value}</dd>
+                  <dd>
+                    {label === 'Author' && onOpenAuthorProfile ? (
+                      <button
+                        type="button"
+                        className="author-profile-link"
+                        aria-label={`View profile of ${value}`}
+                        onClick={() => onOpenAuthorProfile(lesson.authorId)}
+                      >
+                        {value}
+                      </button>
+                    ) : value}
+                  </dd>
                 </div>
               ))}
               {dates.map(([label, value]) => (

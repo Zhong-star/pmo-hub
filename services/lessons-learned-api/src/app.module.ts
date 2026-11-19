@@ -9,6 +9,7 @@ import { LessonNotificationsController } from './lessons/lesson-notifications.co
 import { LessonNotificationsService } from './lessons/lesson-notifications.service';
 import { LessonsController } from './lessons/lessons.controller';
 import { PmoDashboardController } from './lessons/pmo-dashboard.controller';
+import { ProfilesController } from './lessons/profiles.controller';
 import { LessonsService } from './lessons/lessons.service';
 import { ProjectCatalogService } from './lessons/project-catalog.service';
 import { LocalAccessService } from './local-access.service';
@@ -19,6 +20,7 @@ import { LocalAccessService } from './local-access.service';
     HomeController,
     LessonsController,
     PmoDashboardController,
+    ProfilesController,
     LessonNotificationsController,
   ],
   providers: [

@@ -40,6 +40,8 @@ vi.mock('../src/api', () => ({
   getMySubmissions: vi.fn(),
   getNotifications: vi.fn().mockResolvedValue({ items: [], page: { limit: 20, nextCursor: null }, unreadCount: 0 }),
   getPmoDashboard: vi.fn(),
+  getProfiles: vi.fn(),
+  getContributorProfile: vi.fn(),
   getPmoDrafts: vi.fn(),
   getPmoEvaluationQueue: vi.fn(),
   hideLessonComment: vi.fn(),
