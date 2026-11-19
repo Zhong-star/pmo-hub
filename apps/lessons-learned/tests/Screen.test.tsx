@@ -494,7 +494,8 @@ describe('Lessons Learned access check', () => {
 
     renderScreen('local-contributor', 0, 'evaluation-queue');
 
-    expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('The PMO Review Queue is restricted to PMO moderators.');
     expect(screen.queryByRole('link', { name: 'Evaluation Queue' })).not.toBeInTheDocument();
     expect(getPmoEvaluationQueue).not.toHaveBeenCalled();
   });
