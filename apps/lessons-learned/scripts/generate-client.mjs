@@ -14,6 +14,7 @@ const pmoDraftsPath = `${lessonsPath}/pmo-drafts`;
 const pmoDashboardPath = '/api/lessons-learned/v1/pmo/dashboard';
 const profilesPath = '/api/lessons-learned/v1/profiles';
 const profileDetailPath = `${profilesPath}/{userId}`;
+const rankingsPath = '/api/lessons-learned/v1/rankings';
 const evaluationQueuePath = `${lessonsPath}/evaluation-queue`;
 const evaluationProjectsPath = evaluationQueuePath + '/projects';
 const libraryPath = `${lessonsPath}/library`;
@@ -53,6 +54,8 @@ const profilesOperation = contract.paths?.[profilesPath]?.get;
 const profilesResponseSchema = profilesOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const profileDetailOperation = contract.paths?.[profileDetailPath]?.get;
 const profileDetailResponseSchema = profileDetailOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const rankingsOperation = contract.paths?.[rankingsPath]?.get;
+const rankingsResponseSchema = rankingsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const evaluationQueueOperation = contract.paths?.[evaluationQueuePath]?.get;
 const evaluationQueueResponseSchema = evaluationQueueOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const libraryOperation = contract.paths?.[libraryPath]?.get;
@@ -147,6 +150,10 @@ if (!profilesOperation || profilesResponseSchema?.type !== 'array' ||
 
 if (!profileDetailOperation || profileDetailResponseSchema?.$ref !== '#/components/schemas/ContributorProfileResponse') {
   throw new Error(`Expected GET ${profileDetailPath} with ContributorProfileResponse in ${contractPath}`);
+}
+
+if (!rankingsOperation || rankingsResponseSchema?.$ref !== '#/components/schemas/RankingsResponse') {
+  throw new Error(`Expected GET ${rankingsPath} with RankingsResponse in ${contractPath}`);
 }
 
 if (!evaluationQueueResponseSchema?.oneOf?.some((schema) => schema.$ref === '#/components/schemas/LessonPage')) {
@@ -251,6 +258,7 @@ export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '${pmoDraftsPath}' satisfies keyo
 export const LESSONS_LEARNED_PMO_DASHBOARD_PATH = '${pmoDashboardPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_PROFILES_PATH = '${profilesPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_PROFILE_DETAIL_PATH = '${profileDetailPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_RANKINGS_PATH = '${rankingsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '${evaluationQueuePath}' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_PROJECTS_PATH = '${evaluationProjectsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_PATH = '${libraryPath}' satisfies keyof paths;
@@ -286,6 +294,9 @@ export type ProfileSummary = paths[typeof LESSONS_LEARNED_PROFILES_PATH]['get'][
 export type ContributorProfileFilters = NonNullable<paths[typeof LESSONS_LEARNED_PROFILE_DETAIL_PATH]['get']['parameters']['query']>;
 export type ContributorProfileSort = NonNullable<ContributorProfileFilters['sort']>;
 export type ContributorProfileResponse = paths[typeof LESSONS_LEARNED_PROFILE_DETAIL_PATH]['get']['responses'][200]['content']['application/json'];
+export type RankingsResponse = paths[typeof LESSONS_LEARNED_RANKINGS_PATH]['get']['responses'][200]['content']['application/json'];
+export type RankedLesson = RankingsResponse['mostVotedLessons'][number];
+export type RankedContributor = RankingsResponse['topContributors'][number];
 export type LessonPage = components['schemas']['LessonPage'];
 export type LibraryLesson = components['schemas']['LessonLibraryResponse'];
 export type LibraryPage = components['schemas']['LessonLibraryPage'];
@@ -416,6 +427,15 @@ export async function getContributorProfile(
       params: filters,
     },
   );
+
+  return data;
+}
+
+export async function getRankings(localUserId: string): Promise<RankingsResponse> {
+  const { data } = await api.get<RankingsResponse>(LESSONS_LEARNED_RANKINGS_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
 
   return data;
 }

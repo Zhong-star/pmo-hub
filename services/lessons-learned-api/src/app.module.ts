@@ -7,12 +7,13 @@ import { LessonCommentsService } from './lessons/lesson-comments.service';
 import { LessonsController } from './lessons/lessons.controller';
 import { PmoDashboardController } from './lessons/pmo-dashboard.controller';
 import { ProfilesController } from './lessons/profiles.controller';
+import { RankingsController } from './lessons/rankings.controller';
 import { LessonsService } from './lessons/lessons.service';
 import { ProjectCatalogService } from './lessons/project-catalog.service';
 import { LocalAccessService } from './local-access.service';
 
 @Module({
-  controllers: [HealthController, HomeController, LessonsController, PmoDashboardController, ProfilesController],
+  controllers: [HealthController, HomeController, LessonsController, PmoDashboardController, ProfilesController, RankingsController],
   providers: [LocalAccessService, LessonsService, LessonCommentsService, ProjectCatalogService],
 })
 export class AppModule {

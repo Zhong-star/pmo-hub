@@ -231,3 +231,75 @@ export class ContributorProfileResponse {
   @ApiProperty({ type: LessonProjectResponse, isArray: true })
   projects!: LessonProjectResponse[];
 }
+
+export class RankedLessonResponse {
+  @ApiProperty({ type: Number, minimum: 1, maximum: 3, example: 1 })
+  position!: number;
+
+  @ApiProperty({ type: Number, example: 1 })
+  id!: number;
+
+  @ApiProperty({ type: String, maxLength: 150, example: 'Improve release handover' })
+  title!: string;
+
+  @ApiProperty({ type: String, example: 'local-contributor' })
+  authorId!: string;
+
+  @ApiProperty({ type: String, example: 'Local Contributor' })
+  authorName!: string;
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 200 })
+  projectName!: string | null;
+
+  @ApiProperty({ type: String, enum: LESSON_TYPES, nullable: true })
+  lessonType!: LessonType | null;
+
+  @ApiProperty({ type: String, enum: ['Approved', 'Closed'], example: 'Approved' })
+  status!: 'Approved' | 'Closed';
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  approvedAt!: Date;
+
+  @ApiProperty({ type: Number, minimum: 1, example: 3 })
+  votesCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 10 })
+  viewCount!: number;
+}
+
+export class RankedContributorResponse {
+  @ApiProperty({ type: Number, minimum: 1, maximum: 3, example: 1 })
+  position!: number;
+
+  @ApiProperty({ type: String, example: 'local-contributor' })
+  id!: string;
+
+  @ApiProperty({ type: String, example: 'Local Contributor' })
+  displayName!: string;
+
+  @ApiProperty({ type: String, example: 'LC' })
+  initials!: string;
+
+  @ApiProperty({ type: String, enum: ['LESSONS_USER', 'LESSONS_MODERATOR'], example: 'LESSONS_USER' })
+  role!: 'LESSONS_USER' | 'LESSONS_MODERATOR';
+
+  @ApiProperty({ type: Number, minimum: 1, example: 2 })
+  publishedLessonsCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 5 })
+  votesReceivedCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 12 })
+  viewsReceivedCount!: number;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  latestApprovedAt!: Date;
+}
+
+export class RankingsResponse {
+  @ApiProperty({ type: RankedLessonResponse, isArray: true, maxItems: 3 })
+  mostVotedLessons!: RankedLessonResponse[];
+
+  @ApiProperty({ type: RankedContributorResponse, isArray: true, maxItems: 3 })
+  topContributors!: RankedContributorResponse[];
+}

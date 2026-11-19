@@ -450,6 +450,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/rankings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Top 3 Most Voted Lessons and Top 3 Contributors rankings */
+        get: operations["RankingsController_getRankings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1033,6 +1050,59 @@ export interface components {
             includesPrivateLessons: boolean;
             items: components["schemas"]["LessonLibraryResponse"][];
             projects: components["schemas"]["LessonProjectResponse"][];
+        };
+        RankedLessonResponse: {
+            /** @example 1 */
+            position: number;
+            /** @example 1 */
+            id: number;
+            /** @example Improve release handover */
+            title: string;
+            /** @example local-contributor */
+            authorId: string;
+            /** @example Local Contributor */
+            authorName: string;
+            projectName: string | null;
+            /** @enum {string|null} */
+            lessonType: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication" | null;
+            /**
+             * @example Approved
+             * @enum {string}
+             */
+            status: "Approved" | "Closed";
+            /** Format: date-time */
+            approvedAt: string;
+            /** @example 3 */
+            votesCount: number;
+            /** @example 10 */
+            viewCount: number;
+        };
+        RankedContributorResponse: {
+            /** @example 1 */
+            position: number;
+            /** @example local-contributor */
+            id: string;
+            /** @example Local Contributor */
+            displayName: string;
+            /** @example LC */
+            initials: string;
+            /**
+             * @example LESSONS_USER
+             * @enum {string}
+             */
+            role: "LESSONS_USER" | "LESSONS_MODERATOR";
+            /** @example 2 */
+            publishedLessonsCount: number;
+            /** @example 5 */
+            votesReceivedCount: number;
+            /** @example 12 */
+            viewsReceivedCount: number;
+            /** Format: date-time */
+            latestApprovedAt: string;
+        };
+        RankingsResponse: {
+            mostVotedLessons: components["schemas"]["RankedLessonResponse"][];
+            topContributors: components["schemas"]["RankedContributorResponse"][];
         };
     };
     responses: never;
@@ -3639,6 +3709,62 @@ export interface operations {
             };
             /** @description Contributor profile not found. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    RankingsController_getRankings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RankingsResponse"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile does not have access to Lessons Learned. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

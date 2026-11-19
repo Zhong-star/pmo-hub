@@ -9,6 +9,7 @@ import {
   getLibrary,
   getLibraryLessonDetails,
   getLibraryProjectSnapshots,
+  getRankings,
   recordLibraryView,
   type LessonDetails,
   type LessonDraft,
@@ -28,6 +29,7 @@ vi.mock('../src/api', () => ({
   getPmoDashboard: vi.fn(),
   getProfiles: vi.fn(),
   getContributorProfile: vi.fn(),
+  getRankings: vi.fn().mockResolvedValue({ mostVotedLessons: [], topContributors: [] }),
   hideLessonComment: vi.fn(),
   recordLibraryView: vi.fn(),
   removeLessonVote: vi.fn(),
@@ -91,6 +93,7 @@ function renderLibrary() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getLibraryProjectSnapshots).mockResolvedValue([]);
+  vi.mocked(getRankings).mockResolvedValue({ mostVotedLessons: [], topContributors: [] });
   vi.mocked(recordLibraryView).mockResolvedValue({ viewCount: 1 });
 });
 

@@ -33,7 +33,8 @@ import type {
   ContributorProfileResponse,
   LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse,
   LessonLibraryResponse, LessonVoteResponse, PmoDashboardLessonResponse, PmoDashboardResponse,
-  ProfileSummaryResponse, RecordLessonLibraryViewResponse,
+  ProfileSummaryResponse, RankedContributorResponse, RankedLessonResponse, RankingsResponse,
+  RecordLessonLibraryViewResponse,
 } from './lesson-response.dto';
 import type { RecordLibraryViewRequest } from './record-library-view-request.dto';
 import type {
@@ -455,9 +456,12 @@ export class LessonsService {
           || byRecent();
       });
 
+      const rankedContributors = await this.getRankedContributors(manager);
+      const rankingPosition = rankedContributors.find((item) => item.id === target.id)?.position ?? null;
+
       return {
         profile: profileSummary,
-        rankingPosition: null,
+        rankingPosition,
         includesPrivateLessons,
         items: libraryItems,
         projects,
@@ -465,18 +469,130 @@ export class LessonsService {
     });
   }
 
+  async getRankings(localUserId: string | undefined): Promise<RankingsResponse> {
+    this.localAccess.getProfile(localUserId);
+    const authorNames = this.localAccess.getDisplayNames();
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction('REPEATABLE READ', async (manager) => {
+      const lessonRows = await manager.query(`
+        SELECT
+          l.id,
+          l.title,
+          l.author_id,
+          l.project_name,
+          l.lesson_type,
+          l.status,
+          l.approved_at,
+          l.view_count,
+          v.votes_count
+        FROM lessons l
+        INNER JOIN (
+          SELECT lesson_id, COUNT(*)::int AS votes_count
+          FROM lesson_votes
+          GROUP BY lesson_id
+          HAVING COUNT(*) >= 1
+        ) v ON v.lesson_id = l.id
+        WHERE l.status IN ('Approved', 'Closed')
+          AND l.approved_at IS NOT NULL
+        ORDER BY v.votes_count DESC, l.approved_at DESC, l.id ASC
+        LIMIT 3
+      `) as {
+        id: number;
+        title: string;
+        author_id: string;
+        project_name: string | null;
+        lesson_type: Lesson['lessonType'];
+        status: 'Approved' | 'Closed';
+        approved_at: Date | string;
+        view_count: number;
+        votes_count: number;
+      }[];
+
+      const mostVotedLessons: RankedLessonResponse[] = lessonRows.map((row, index) => ({
+        position: index + 1,
+        id: Number(row.id),
+        title: row.title,
+        authorId: row.author_id,
+        authorName: authorNames.get(row.author_id) ?? row.author_id,
+        projectName: row.project_name,
+        lessonType: row.lesson_type,
+        status: row.status,
+        approvedAt: row.approved_at instanceof Date ? row.approved_at : new Date(row.approved_at),
+        votesCount: Number(row.votes_count),
+        viewCount: Number(row.view_count),
+      }));
+
+      const rankedContributors = await this.getRankedContributors(manager);
+      const topContributors = rankedContributors.slice(0, 3);
+
+      return {
+        mostVotedLessons,
+        topContributors,
+      };
+    });
+  }
+
+  private async getRankedContributors(manager: EntityManager): Promise<RankedContributorResponse[]> {
+    const authorizedProfiles = this.localAccess.listProfiles();
+    if (authorizedProfiles.length === 0) return [];
+
+    const aggregates = await this.getPublicProfileAggregates(
+      authorizedProfiles.map((profile) => profile.id),
+      manager,
+    );
+
+    const eligible = authorizedProfiles.flatMap((profile) => {
+      const stats = aggregates.get(profile.id);
+      if (!stats || stats.publishedLessonsCount < 1 || !stats.latestApprovedAt) return [];
+      return [{
+        id: profile.id,
+        displayName: profile.displayName,
+        initials: deriveProfileInitials(profile.displayName),
+        role: profile.role,
+        publishedLessonsCount: stats.publishedLessonsCount,
+        votesReceivedCount: stats.votesReceivedCount,
+        viewsReceivedCount: stats.viewsReceivedCount,
+        latestApprovedAt: stats.latestApprovedAt,
+      }];
+    });
+
+    eligible.sort((left, right) => (
+      (right.publishedLessonsCount - left.publishedLessonsCount)
+      || (right.latestApprovedAt.getTime() - left.latestApprovedAt.getTime())
+      || left.displayName.localeCompare(right.displayName, 'en', { sensitivity: 'base' })
+      || left.id.localeCompare(right.id)
+    ));
+
+    return eligible.map((contributor, index) => ({
+      position: index + 1,
+      ...contributor,
+    }));
+  }
+
   private async getPublicProfileAggregates(
     authorIds: string[],
     manager: EntityManager,
-  ): Promise<Map<string, { publishedLessonsCount: number; votesReceivedCount: number; viewsReceivedCount: number }>> {
-    const result = new Map<string, { publishedLessonsCount: number; votesReceivedCount: number; viewsReceivedCount: number }>();
+  ): Promise<Map<string, {
+    publishedLessonsCount: number;
+    votesReceivedCount: number;
+    viewsReceivedCount: number;
+    latestApprovedAt: Date | null;
+  }>> {
+    const result = new Map<string, {
+      publishedLessonsCount: number;
+      votesReceivedCount: number;
+      viewsReceivedCount: number;
+      latestApprovedAt: Date | null;
+    }>();
     if (authorIds.length === 0) return result;
     const rows = await manager.query(`
       SELECT
         l.author_id,
         COUNT(*)::int AS published_lessons_count,
         COALESCE(SUM(l.view_count), 0)::int AS views_received_count,
-        COALESCE(SUM(v.votes_count), 0)::int AS votes_received_count
+        COALESCE(SUM(v.votes_count), 0)::int AS votes_received_count,
+        MAX(l.approved_at) AS latest_approved_at
       FROM lessons l
       LEFT JOIN (
         SELECT lesson_id, COUNT(*)::int AS votes_count
@@ -492,6 +608,7 @@ export class LessonsService {
       published_lessons_count: number;
       views_received_count: number;
       votes_received_count: number;
+      latest_approved_at: Date | string | null;
     }[];
 
     for (const row of rows) {
@@ -499,6 +616,9 @@ export class LessonsService {
         publishedLessonsCount: Number(row.published_lessons_count),
         votesReceivedCount: Number(row.votes_received_count),
         viewsReceivedCount: Number(row.views_received_count),
+        latestApprovedAt: row.latest_approved_at
+          ? (row.latest_approved_at instanceof Date ? row.latest_approved_at : new Date(row.latest_approved_at))
+          : null,
       });
     }
     return result;
