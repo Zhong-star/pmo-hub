@@ -11,6 +11,7 @@ import {
   getLibrary,
   getLibraryLessonDetails,
   getLibraryProjectSnapshots,
+  getRankings,
   recordLibraryView,
   getLessonDetails,
   getLessonProjects,
@@ -54,6 +55,7 @@ vi.mock('../src/api', () => ({
   getPmoDashboard: vi.fn(),
   getProfiles: vi.fn(),
   getContributorProfile: vi.fn(),
+  getRankings: vi.fn().mockResolvedValue({ mostVotedLessons: [], topContributors: [] }),
   getPmoEvaluationQueue: vi.fn(),
   getEvaluationProjectSnapshots: vi.fn(),
   hideLessonComment: vi.fn(),
@@ -167,6 +169,7 @@ beforeEach(() => {
   vi.mocked(getPmoEvaluationQueue).mockResolvedValue([]);
   vi.mocked(getEvaluationProjectSnapshots).mockResolvedValue([]);
   vi.mocked(getLibraryProjectSnapshots).mockResolvedValue([]);
+  vi.mocked(getRankings).mockResolvedValue({ mostVotedLessons: [], topContributors: [] });
   vi.mocked(returnLesson).mockImplementation(async (_profileId, lessonId) => lessonDraft({
     id: lessonId,
     status: 'Open',

@@ -42,6 +42,7 @@ vi.mock('../src/api', () => ({
   getPmoDashboard: vi.fn(),
   getProfiles: vi.fn(),
   getContributorProfile: vi.fn(),
+  getRankings: vi.fn().mockResolvedValue({ mostVotedLessons: [], topContributors: [] }),
   getPmoEvaluationQueue: vi.fn(),
   getEvaluationProjectSnapshots: vi.fn(),
   hideLessonComment: vi.fn(),

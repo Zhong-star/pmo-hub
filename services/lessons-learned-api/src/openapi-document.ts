@@ -19,6 +19,7 @@ export function createOpenApiDocument(app: INestApplication) {
     '/api/lessons-learned/v1/lessons',
     '/api/lessons-learned/v1/pmo',
     '/api/lessons-learned/v1/profiles',
+    '/api/lessons-learned/v1/rankings',
     '/api/lessons-learned/v1/notifications',
   ];
   for (const [path, routes] of Object.entries(document.paths)) {

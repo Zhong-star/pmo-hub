@@ -11,6 +11,7 @@ import { LessonNotificationsService } from './lessons/lesson-notifications.servi
 import { LessonsController } from './lessons/lessons.controller';
 import { PmoDashboardController } from './lessons/pmo-dashboard.controller';
 import { ProfilesController } from './lessons/profiles.controller';
+import { RankingsController } from './lessons/rankings.controller';
 import { LessonsService } from './lessons/lessons.service';
 import { ProjectCatalogService } from './lessons/project-catalog.service';
 import { LocalAccessService } from './local-access.service';
@@ -22,6 +23,7 @@ import { LocalAccessService } from './local-access.service';
     LessonsController,
     PmoDashboardController,
     ProfilesController,
+    RankingsController,
     LessonNotificationsController,
   ],
   providers: [
