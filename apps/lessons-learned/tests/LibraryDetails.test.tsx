@@ -39,6 +39,7 @@ vi.mock('../src/api', () => ({
   getMyOpenDrafts: vi.fn(),
   getMySubmissions: vi.fn(),
   getPmoDrafts: vi.fn(),
+  getPmoDashboard: vi.fn(),
   getPmoEvaluationQueue: vi.fn(),
   getEvaluationProjectSnapshots: vi.fn(),
   hideLessonComment: vi.fn(),

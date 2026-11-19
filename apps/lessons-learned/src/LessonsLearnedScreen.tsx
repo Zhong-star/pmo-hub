@@ -19,6 +19,7 @@ import {
   getMyOpenDrafts,
   getMySubmissions,
   getPmoDrafts,
+  getPmoDashboard,
   getPmoEvaluationQueue,
   returnLesson as returnLessonRequest,
   rejectLesson as rejectLessonRequest,
@@ -33,6 +34,9 @@ import {
   type LessonSubmissionsFilters,
   type LessonsLibraryFilters,
   type PmoDraftsFilters,
+  type PmoDashboardCard,
+  type PmoDashboardFilters,
+  type PmoDashboardSort,
   type PmoEvaluationQueueFilters,
   type CancelLessonBody,
   type ApproveLessonBody,
@@ -47,6 +51,7 @@ import { ApprovalDialog } from './ApprovalDialogs';
 import { ClosureDialog } from './ClosureDialog';
 import { LessonSubmissionDetailsDialog, CancelLessonDialog, RejectLessonDialog } from './SubmissionDialogs';
 import { ReturnLessonDialog } from './ReturnLessonDialog';
+import { PmoDashboardView } from './PmoDashboardView';
 import { getLibraryLessonHref, useLibraryNavigation } from './useLibraryNavigation';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
@@ -91,7 +96,7 @@ function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
   return role === 'LESSONS_MODERATOR' ? 'PMO' : 'Contributor';
 }
 
-type ModulePage = 'home' | 'my-submissions' | 'pmo-drafts' | 'evaluation-queue' | 'library';
+type ModulePage = 'home' | 'my-submissions' | 'pmo-drafts' | 'evaluation-queue' | 'pmo-dashboard' | 'library';
 type LibrarySort = NonNullable<LessonsLibraryFilters['sort']>;
 
 function getLibrarySortCaption(sort: LibrarySort): string {
@@ -107,6 +112,7 @@ function readModulePage(): ModulePage {
   if (page === 'my-submissions') return 'my-submissions';
   if (page === 'pmo-drafts') return 'pmo-drafts';
   if (page === 'evaluation-queue') return 'evaluation-queue';
+  if (page === 'pmo-dashboard') return 'pmo-dashboard';
   if (page === 'library') return 'library';
   return 'home';
 }
@@ -258,6 +264,8 @@ export function LessonsLearnedScreen() {
   const [submissionProjectFilter, setSubmissionProjectFilter] = useState<SubmissionProjectFilter>({ kind: 'any' });
   const [submissionLessonType, setSubmissionLessonType] = useState<NonNullable<LessonDraft['lessonType']> | ''>('');
   const [librarySort, setLibrarySort] = useState<LibrarySort>('newest');
+  const [dashboardCard, setDashboardCard] = useState<PmoDashboardCard | ''>('');
+  const [dashboardSort, setDashboardSort] = useState<PmoDashboardSort>('activity');
   const [submissionStatus, setSubmissionStatus] = useState<LessonDraft['status'] | ''>(
     () => readModulePage() === 'pmo-drafts' ? 'Open' : '',
   );
@@ -278,6 +286,8 @@ export function LessonsLearnedScreen() {
     setSubmissionLessonType('');
     setSubmissionStatus(destination === 'pmo-drafts' ? 'Open' : '');
     setSubmissionAuthorFilter('');
+    setDashboardCard('');
+    setDashboardSort('activity');
   }, []);
 
   const applyPageFromLocation = useCallback(() => {
@@ -342,6 +352,8 @@ export function LessonsLearnedScreen() {
   const isPmo = homeQuery.data?.profile.role === 'LESSONS_MODERATOR';
   const isPmoDraftsPage = modulePage === 'pmo-drafts' && isPmo;
   const isPmoEvaluationQueuePage = modulePage === 'evaluation-queue' && isPmo;
+  const isPmoDashboardPage = modulePage === 'pmo-dashboard' && isPmo;
+  const isPmoDashboardDenied = modulePage === 'pmo-dashboard' && !isPmo;
   const isPmoReviewListPage = isPmoDraftsPage || isPmoEvaluationQueuePage;
   const isMySubmissionsPage = modulePage === 'my-submissions';
   const isLibraryPage = modulePage === 'library';
@@ -362,6 +374,11 @@ export function LessonsLearnedScreen() {
     ...submissionsFilters,
     ...(submissionAuthorFilter ? { authorId: submissionAuthorFilter } : {}),
   };
+  const pmoDashboardFilters: PmoDashboardFilters = {
+    ...submissionsFilters,
+    ...(dashboardCard ? { card: dashboardCard } : {}),
+    ...(dashboardSort === 'activity' ? {} : { sort: dashboardSort }),
+  };
   const submissionsQuery = useQuery({
     queryKey: ['lessons-learned-my-submissions', selectedProfileId, submissionsFilters],
     queryFn: () => Object.keys(submissionsFilters).length
@@ -376,6 +393,16 @@ export function LessonsLearnedScreen() {
     queryKey: ['lessons-learned-pmo-drafts', selectedProfileId, pmoDraftFilters],
     queryFn: () => getPmoDrafts(selectedProfileId ?? '', pmoDraftFilters),
     enabled: isHomePage && isPmoDraftsPage,
+    networkMode: 'always',
+    retry: false,
+    refetchOnWindowFocus: true,
+  });
+  const pmoDashboardQuery = useQuery({
+    queryKey: ['lessons-learned-pmo-dashboard', selectedProfileId, pmoDashboardFilters],
+    queryFn: () => Object.keys(pmoDashboardFilters).length
+      ? getPmoDashboard(selectedProfileId ?? '', pmoDashboardFilters)
+      : getPmoDashboard(selectedProfileId ?? ''),
+    enabled: isHomePage && isPmoDashboardPage,
     networkMode: 'always',
     retry: false,
     refetchOnWindowFocus: true,
@@ -443,7 +470,7 @@ export function LessonsLearnedScreen() {
   const submissionDetailsQuery = useQuery({
     queryKey: ['lessons-learned-submission-details', selectedProfileId, selectedSubmissionId],
     queryFn: () => getLessonDetails(selectedProfileId ?? '', selectedSubmissionId ?? 0),
-    enabled: isHomePage && (isMySubmissionsPage || isPmoReviewListPage) && selectedSubmissionId !== null,
+    enabled: isHomePage && (isMySubmissionsPage || isPmoReviewListPage || isPmoDashboardPage) && selectedSubmissionId !== null,
     networkMode: 'always',
     retry: false,
   });
@@ -545,7 +572,7 @@ export function LessonsLearnedScreen() {
   const projectsQuery = useQuery({
     queryKey: ['lessons-learned-projects', selectedProfileId],
     queryFn: () => getLessonProjects(selectedProfileId ?? ''),
-    enabled: isHomePage && (isMySubmissionsPage || isPmoReviewListPage),
+    enabled: isHomePage && (isMySubmissionsPage || isPmoReviewListPage || isPmoDashboardPage),
     networkMode: 'always',
     retry: false,
   });
@@ -603,6 +630,7 @@ export function LessonsLearnedScreen() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-my-submissions', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-pmo-drafts', profileId] }),
+      queryClient.invalidateQueries({ queryKey: ['lessons-learned-pmo-dashboard', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-evaluation-queue', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-project-options', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-library', profileId] }),
@@ -944,6 +972,15 @@ export function LessonsLearnedScreen() {
                 Evaluation Queue
               </a>
             )}
+            {isPmo && (
+              <a
+                href="/lessons-learned/?page=pmo-dashboard"
+                aria-current={isPmoDashboardPage ? 'page' : undefined}
+                onClick={(event) => navigateTo('pmo-dashboard', event)}
+              >
+                PMO Dashboard
+              </a>
+            )}
           </WorkspaceSidebar>
         )}
         <main ref={panelRef} className={isHomePage ? 'workspace-panel' : 'module-access'} tabIndex={isHomePage ? 0 : undefined}>
@@ -1028,7 +1065,22 @@ export function LessonsLearnedScreen() {
 
         {isHomePage && (
           <>
-              {modulePage === 'home' || (!isPmo && (modulePage === 'pmo-drafts' || modulePage === 'evaluation-queue')) ? (
+              {isPmoDashboardDenied ? (
+                <div className="api-status unavailable" role="alert" aria-live="assertive">
+                  <span className="status-indicator is-unavailable" aria-hidden="true" />
+                  <div>
+                    <h1 id="page-title">Access denied</h1>
+                    <p>The PMO Dashboard is restricted to PMO moderators.</p>
+                    <a
+                      className="primary-link"
+                      href="/lessons-learned/"
+                      onClick={(event) => navigateTo('home', event)}
+                    >
+                      Back to Home
+                    </a>
+                  </div>
+                </div>
+              ) : modulePage === 'home' || (!isPmo && (modulePage === 'pmo-drafts' || modulePage === 'evaluation-queue')) ? (
                 <>
                   <h1 id="page-title">Home</h1>
                   <p className="intro">Welcome, {homeQuery.data.profile.displayName}</p>
@@ -1037,6 +1089,43 @@ export function LessonsLearnedScreen() {
                 </>
               ) : (
                 <section className="submissions-page" aria-labelledby="page-title">
+                  {isPmoDashboardPage ? (
+                    <PmoDashboardView
+                      data={pmoDashboardQuery.data}
+                      isLoading={pmoDashboardQuery.isPending}
+                      isError={pmoDashboardQuery.isError}
+                      onRetry={() => void pmoDashboardQuery.refetch()}
+                      search={submissionSearch}
+                      onSearchChange={setSubmissionSearch}
+                      projectFilter={submissionProjectFilter}
+                      onProjectFilterChange={setSubmissionProjectFilter}
+                      projectOptions={getProjectFilterOptions(
+                        projectsQuery.data ?? [],
+                        (pmoDashboardQuery.data?.projects ?? []).map((project) => ({
+                          projectId: project.id,
+                          projectName: project.name,
+                        })),
+                      )}
+                      lessonType={submissionLessonType}
+                      onLessonTypeChange={setSubmissionLessonType}
+                      status={submissionStatus}
+                      onStatusChange={setSubmissionStatus}
+                      activeCard={dashboardCard}
+                      onCardToggle={(card) => setDashboardCard((current) => current === card ? '' : card)}
+                      sort={dashboardSort}
+                      onSortChange={setDashboardSort}
+                      onClearFilters={() => {
+                        setSubmissionSearch('');
+                        setSubmissionProjectFilter({ kind: 'any' });
+                        setSubmissionLessonType('');
+                        setSubmissionStatus('');
+                        setDashboardCard('');
+                      }}
+                      onOpenReviewQueue={(event) => navigateTo('evaluation-queue', event)}
+                      onViewLesson={(lessonId) => setSelectedSubmissionId(lessonId)}
+                    />
+                  ) : (
+                    <>
                   <div className="submissions-header">
                     <div>
                       <h1 id="page-title" tabIndex={-1}>{isLibraryPage
@@ -1417,6 +1506,8 @@ export function LessonsLearnedScreen() {
                         </li>
                       ))}
                     </ul>
+                  )}
+                    </>
                   )}
                   {isEditorOpen && (
                     <DraftEditor

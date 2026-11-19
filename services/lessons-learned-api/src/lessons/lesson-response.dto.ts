@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LESSON_STATUSES, LESSON_TYPES, type LessonStatus, type LessonType } from './lesson-domain.constants';
+import { LessonProjectResponse } from './project-response.dto';
 
 export type { LessonStatus } from './lesson-domain.constants';
 
@@ -124,4 +125,46 @@ export class LessonLibraryResponse extends LessonDraftResponse {
 export class RecordLessonLibraryViewResponse {
   @ApiProperty({ type: Number, minimum: 0, example: 1 })
   viewCount!: number;
+}
+
+export class PmoDashboardLessonResponse extends LessonLibraryResponse {
+  @ApiProperty({ type: String, format: 'date-time', description: 'Most recent relevant activity timestamp (UTC).' })
+  lastActivityAt!: Date;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true, description: 'Most recent closure history event timestamp (UTC).' })
+  latestClosedAt!: Date | null;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true, description: 'Most recent return history event timestamp (UTC).' })
+  latestReturnedAt!: Date | null;
+}
+
+export class PmoDashboardSummaryResponse {
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  awaitingEvaluation!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  recentlyApproved!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  recentlyClosed!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  recentlyReturned!: number;
+}
+
+export class PmoDashboardResponse {
+  @ApiProperty({ type: Number, example: 30, description: 'Fixed calendar day window in UTC.' })
+  windowDays!: number;
+
+  @ApiProperty({ type: String, format: 'date-time', description: 'UTC start timestamp of the 30-day window.' })
+  windowStartAt!: Date;
+
+  @ApiProperty({ type: PmoDashboardSummaryResponse })
+  summary!: PmoDashboardSummaryResponse;
+
+  @ApiProperty({ type: PmoDashboardLessonResponse, isArray: true })
+  items!: PmoDashboardLessonResponse[];
+
+  @ApiProperty({ type: LessonProjectResponse, isArray: true })
+  projects!: LessonProjectResponse[];
 }
