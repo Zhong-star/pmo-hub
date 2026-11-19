@@ -329,6 +329,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/lessons/{id}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List paginated root comments (newest first) with chronological single-level replies */
+        get: operations["LessonsController_listComments"];
+        put?: never;
+        /** Post a top-level comment on an accessible lesson */
+        post: operations["LessonsController_createComment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lessons-learned/v1/lessons/{id}/comments/{commentId}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post a single-level reply to a top-level comment on an accessible lesson */
+        post: operations["LessonsController_createReply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lessons-learned/v1/lessons/{id}/comments/{commentId}/hide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hide a comment or reply as a PMO moderator with a mandatory reason */
+        post: operations["LessonsController_hideComment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -373,6 +425,62 @@ export interface components {
             profile: components["schemas"]["LessonsLearnedProfile"];
             navigation: components["schemas"]["LessonsLearnedNavigationItem"][];
         };
+        LessonCommentModerationResponse: {
+            /** Format: date-time */
+            hiddenAt: string;
+            /** @example local-pmo */
+            hiddenByUserId: string;
+            /** @example Local PMO */
+            hiddenByDisplayName: string;
+            reason: string;
+        };
+        LessonCommentItemResponse: {
+            /** @example 1 */
+            id: number;
+            /** @example 42 */
+            lessonId: number;
+            /** @example null */
+            parentCommentId: number | null;
+            /** @example local-contributor */
+            authorId: string | null;
+            /** @example Local Contributor */
+            authorDisplayName: string | null;
+            body: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** @example false */
+            isHidden: boolean;
+            moderation: components["schemas"]["LessonCommentModerationResponse"] | null;
+        };
+        LessonCommentThreadResponse: {
+            /** @example 1 */
+            id: number;
+            /** @example 42 */
+            lessonId: number;
+            /** @example null */
+            parentCommentId: number | null;
+            /** @example local-contributor */
+            authorId: string | null;
+            /** @example Local Contributor */
+            authorDisplayName: string | null;
+            body: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** @example false */
+            isHidden: boolean;
+            moderation: components["schemas"]["LessonCommentModerationResponse"] | null;
+            replies: components["schemas"]["LessonCommentItemResponse"][];
+        };
+        LessonCommentPageInfo: {
+            nextCursor: string | null;
+            limit: number;
+        };
+        LessonCommentPageResponse: {
+            items: components["schemas"]["LessonCommentThreadResponse"][];
+            page: components["schemas"]["LessonCommentPageInfo"];
+            /** @example 0 */
+            publicCommentCount: number;
+        };
         LessonLibraryResponse: {
             /** @example 1 */
             id: number;
@@ -416,6 +524,8 @@ export interface components {
             approvedAt: string | null;
             /** @example 0 */
             viewCount: number;
+            /** @example 0 */
+            commentCount: number;
         };
         LessonPageInfo: {
             nextCursor: string | null;
@@ -569,6 +679,8 @@ export interface components {
             /** Format: date-time */
             approvedAt: string | null;
             history: components["schemas"]["LessonHistoryEventResponse"][];
+            /** @example 0 */
+            commentCount: number;
         };
         RecordLibraryViewRequest: {
             /**
@@ -704,6 +816,14 @@ export interface components {
         CloseLessonRequest: {
             /** @example 7 */
             version?: number;
+        };
+        CreateLessonCommentRequest: {
+            /** @example We adopted this checklist on the last release and avoided two handover gaps. */
+            body: string;
+        };
+        HideLessonCommentRequest: {
+            /** @example Contains confidential client details not permitted in the repository. */
+            reason: string;
         };
     };
     responses: never;
@@ -2458,6 +2578,411 @@ export interface operations {
                         code?: string;
                         message?: string;
                     };
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonsController_listComments: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                /** @description PMO-only flag to include hidden comments and moderation audit details. */
+                includeHidden?: "true" | "false";
+            };
+            header?: never;
+            path: {
+                /** @description The numeric ID of the lesson. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    /** @description ETag for the returned lesson version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonCommentPageResponse"];
+                };
+            };
+            /** @description Invalid lesson ID, page limit, cursor, or includeHidden flag. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile is not authorized or requested hidden comments without PMO access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The lesson does not exist or is not visible to the selected profile. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonsController_createComment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric ID of the lesson. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLessonCommentRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    /** @description ETag for the returned lesson version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonCommentThreadResponse"];
+                };
+            };
+            /** @description Comment text must contain 1 to 2,000 non-whitespace characters. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The lesson does not exist or is not visible to the selected profile. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonsController_createReply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric ID of the lesson. */
+                id: number;
+                /** @description The numeric ID of the parent root comment. */
+                commentId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLessonCommentRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    /** @description ETag for the returned lesson version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonCommentItemResponse"];
+                };
+            };
+            /** @description Reply text is invalid or attempts to reply to another reply. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The lesson or parent comment does not exist or is not visible. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The parent comment is hidden and cannot receive new replies. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonsController_hideComment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric ID of the lesson. */
+                id: number;
+                /** @description The numeric ID of the comment or reply to hide. */
+                commentId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HideLessonCommentRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    /** @description ETag for the returned lesson version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonCommentItemResponse"];
+                };
+            };
+            /** @description A moderation reason between 1 and 1,000 characters is required. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile is not a PMO moderator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The lesson or comment does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The comment is already hidden. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
                 };
             };
             /** @description Lessons Learned persistence is unavailable. */

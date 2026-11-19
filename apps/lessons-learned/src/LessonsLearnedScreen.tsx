@@ -215,6 +215,17 @@ function updateLibraryPageViewCount(
   return Array.isArray(page) ? page.map(update) : { ...page, items: page.items.map(update) };
 }
 
+function updateLibraryPageCommentCount(
+  page: LibraryPage | LibraryLesson[],
+  lessonId: number,
+  commentCount: number,
+): LibraryPage | LibraryLesson[] {
+  const update = (lesson: LibraryLesson) => lesson.id === lessonId
+    ? { ...lesson, commentCount }
+    : lesson;
+  return Array.isArray(page) ? page.map(update) : { ...page, items: page.items.map(update) };
+}
+
 export function LessonsLearnedScreen() {
   const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
   const [selectionGeneration, setSelectionGeneration] = useState(0);
@@ -472,6 +483,16 @@ export function LessonsLearnedScreen() {
       if (currentOpening?.openingId === opening.openingId) currentOpening.status = 'failed';
     },
   });
+  const handlePublicCommentCountChange = useCallback((lessonId: number, commentCount: number) => {
+    if (!selectedProfileId) return;
+    queryClient.setQueriesData<InfiniteData<LibraryPage | LibraryLesson[]>>(
+      { queryKey: ['lessons-learned-library', selectedProfileId] },
+      (current) => current ? {
+        ...current,
+        pages: current.pages.map((page) => updateLibraryPageCommentCount(page, lessonId, commentCount)),
+      } : current,
+    );
+  }, [queryClient, selectedProfileId]);
   useEffect(() => {
     if (!isHomePage || !isLibraryPage || isLegacyLibrary || !libraryDetailsQuery.isSuccess || !selectedProfileId || libraryDetailId === null) return;
     const opening = libraryOpeningRef.current;
@@ -1236,6 +1257,7 @@ export function LessonsLearnedScreen() {
                             <th scope="col">Status</th>
                             {isLibraryPage && <th scope="col">Approved</th>}
                             {isLibraryPage && !isLegacyLibrary && <th scope="col">Views</th>}
+                            {isLibraryPage && !isLegacyLibrary && <th scope="col">Comments</th>}
                             {isPmoDraftsPage && <th scope="col">Updated</th>}
                             {isPmoReviewListPage && <th scope="col">Actions</th>}
                           </tr>
@@ -1282,6 +1304,7 @@ export function LessonsLearnedScreen() {
                                 ? <time dateTime={draft.approvedAt}>{formatUpdatedAt(draft.approvedAt)}</time>
                                 : 'Not available'}</td>}
                               {isLibraryPage && !isLegacyLibrary && <td>{isLibraryLesson(draft) ? draft.viewCount : 0}</td>}
+                              {isLibraryPage && !isLegacyLibrary && <td>{isLibraryLesson(draft) ? draft.commentCount : 0}</td>}
                               {isPmoDraftsPage && <td><time dateTime={draft.updatedAt}>{formatUpdatedAt(draft.updatedAt)}</time></td>}
                               {isPmoReviewListPage && <td>
                                 <div className="submission-actions">
@@ -1473,6 +1496,9 @@ export function LessonsLearnedScreen() {
                       }}
                       onReturn={isPmoEvaluationQueuePage ? setSelectedReturnLesson : undefined}
                       isLibrarySurface={isLibraryPage && libraryDetailId !== null}
+                      profileId={selectedProfileId ?? undefined}
+                      isPmo={Boolean(isPmo)}
+                      onPublicCommentCountChange={handlePublicCommentCountChange}
                     />
                   )}
                   {selectedReturnLesson && (

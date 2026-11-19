@@ -105,6 +105,9 @@ export class LessonHistoryEventResponse {
 export class LessonDetailsResponse extends LessonDraftResponse {
   @ApiProperty({ type: LessonHistoryEventResponse, isArray: true })
   history!: LessonHistoryEventResponse[];
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  commentCount!: number;
 }
 
 export class LessonLibraryResponse extends LessonDraftResponse {
@@ -113,6 +116,9 @@ export class LessonLibraryResponse extends LessonDraftResponse {
 
   @ApiProperty({ type: Number, minimum: 0, example: 0 })
   viewCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  commentCount!: number;
 }
 
 export class RecordLessonLibraryViewResponse {

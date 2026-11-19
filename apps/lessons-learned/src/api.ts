@@ -21,6 +21,10 @@ export {
   updateLessonDraft,
   submitLesson,
   returnLesson,
+  getLessonComments,
+  createLessonComment,
+  createLessonCommentReply,
+  hideLessonComment,
   LESSONS_LEARNED_API_TIMEOUT_MS,
   LESSONS_LEARNED_HEALTH_PATH,
   LESSONS_LEARNED_HOME_PATH,
@@ -39,6 +43,9 @@ export {
   LESSONS_LEARNED_APPROVE_PATH,
   LESSONS_LEARNED_REJECT_PATH,
   LESSONS_LEARNED_CLOSE_PATH,
+  LESSONS_LEARNED_COMMENTS_PATH,
+  LESSONS_LEARNED_COMMENT_REPLIES_PATH,
+  LESSONS_LEARNED_COMMENT_HIDE_PATH,
 } from './generated/lessons-learned-api-client';
 
 export type {
@@ -63,4 +70,11 @@ export type {
   CloseLessonBody,
   RecordLibraryViewBody,
   RecordLibraryViewResponse,
+  LessonCommentModeration,
+  LessonCommentItem,
+  LessonCommentThread,
+  LessonCommentPage,
+  LessonCommentsQuery,
+  CreateLessonCommentBody,
+  HideLessonCommentBody,
 } from './generated/lessons-learned-api-client';

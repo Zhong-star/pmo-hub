@@ -253,17 +253,21 @@ export class LessonsService {
       const scope = sort === 'newest'
         ? legacyScope
         : `library-sort-v1:${JSON.stringify([sort, ...filterValues])}`;
-      const toResponse = (lesson: Lesson) => this.toLibraryResponse(lesson, authorNames);
-      if (sort === 'newest') {
-        return paginateLessons(query, page, scope, 'lesson.approved_at', 'DESC', toResponse, this.representationTokens);
-      }
-      if (sort === 'oldest') {
-        return paginateLessons(query, page, scope, 'lesson.approved_at', 'ASC', toResponse, this.representationTokens);
-      }
-      return paginateLibraryLessonsByTextKey(query, page, scope, sort, toResponse, this.representationTokens);
+      const toResponse = (lesson: Lesson) => this.toLibraryResponse(lesson, authorNames, 0);
+      const pagedResult = sort === 'newest'
+        ? await paginateLessons(query, page, scope, 'lesson.approved_at', 'DESC', toResponse, this.representationTokens)
+        : sort === 'oldest'
+          ? await paginateLessons(query, page, scope, 'lesson.approved_at', 'ASC', toResponse, this.representationTokens)
+          : await paginateLibraryLessonsByTextKey(query, page, scope, sort, toResponse, this.representationTokens);
+      const counts = await this.getPublicCommentCounts(pagedResult.items.map(({ id }) => id));
+      return {
+        ...pagedResult,
+        items: pagedResult.items.map((item) => ({ ...item, commentCount: counts.get(item.id) ?? 0 })),
+      };
     }
     const lessons = await this.orderLibrary(query, sort).getMany();
-    return lessons.map((lesson) => this.toLibraryResponse(lesson, authorNames));
+    const counts = await this.getPublicCommentCounts(lessons.map(({ id }) => id));
+    return lessons.map((lesson) => this.toLibraryResponse(lesson, authorNames, counts.get(lesson.id) ?? 0));
   }
 
   private orderLibrary(query: SelectQueryBuilder<Lesson>, sort: LessonsLibrarySort): SelectQueryBuilder<Lesson> {
@@ -323,8 +327,9 @@ export class LessonsService {
           order: { occurredAt: 'ASC', id: 'ASC' },
         })
         : [];
+      const commentCount = await this.getPublicCommentCount(lessonId, manager);
       return {
-        ...this.toDetailsResponse(lesson, history),
+        ...this.toDetailsResponse(lesson, history, commentCount),
         authorName: this.localAccess.getDisplayNameForProfile(lesson.authorId) ?? lesson.authorId,
       };
     });
@@ -454,11 +459,12 @@ export class LessonsService {
           order: { occurredAt: 'ASC', id: 'ASC' },
         })
         : [];
-      return this.toDetailsResponse(lesson, history);
+      const commentCount = await this.getPublicCommentCount(lessonId, manager);
+      return this.toDetailsResponse(lesson, history, commentCount);
     });
   }
 
-  private toDetailsResponse(lesson: Lesson, history: LessonHistory[]): LessonDetailsResponse {
+  private toDetailsResponse(lesson: Lesson, history: LessonHistory[], commentCount = 0): LessonDetailsResponse {
     const historyResponse: LessonHistoryEventResponse[] = history.map((event) => ({
       id: event.id,
       actorId: event.actorId,
@@ -472,7 +478,7 @@ export class LessonsService {
     const latestReviewGuidance = lesson.status === 'Open'
       ? [...history].reverse().find((event) => event.eventType === 'Returned' && event.newStatus === 'Open')?.reason ?? null
       : null;
-    return { ...this.toResponse(lesson), latestReviewGuidance, history: historyResponse };
+    return { ...this.toResponse(lesson), latestReviewGuidance, history: historyResponse, commentCount };
   }
 
   async cancelOpenDraft(
@@ -987,7 +993,8 @@ export class LessonsService {
       where: { lessonId: current.id },
       order: { occurredAt: 'ASC', id: 'ASC' },
     });
-    const details = this.toDetailsResponse(current, history);
+    const commentCount = await this.getPublicCommentCount(current.id, historyRepository.manager);
+    const details = this.toDetailsResponse(current, history, commentCount);
     if (matches(details) || matches({ ...draft, latestReviewGuidance: details.latestReviewGuidance })) return;
     throw this.staleVersionConflict();
   }
@@ -1061,11 +1068,39 @@ export class LessonsService {
     };
   }
 
-  private toLibraryResponse(lesson: Lesson, authorNames: ReadonlyMap<string, string>): LessonLibraryResponse {
+  private async getPublicCommentCounts(lessonIds: number[]): Promise<Map<number, number>> {
+    if (lessonIds.length === 0) return new Map();
+    const rows = await this.requireDataSource().query(
+      `SELECT lesson_id, COUNT(*)::int AS count
+       FROM lesson_comments
+       WHERE lesson_id = ANY($1::int[]) AND hidden_at IS NULL
+       GROUP BY lesson_id`,
+      [lessonIds],
+    ) as { lesson_id: number; count: number | string }[];
+    return new Map(rows.map((row) => [Number(row.lesson_id), Number(row.count)]));
+  }
+
+  private async getPublicCommentCount(
+    lessonId: number,
+    queryable: Pick<DataSource, 'query'> = this.requireDataSource(),
+  ): Promise<number> {
+    const rows = await queryable.query(
+      'SELECT COUNT(*)::int AS count FROM lesson_comments WHERE lesson_id = $1 AND hidden_at IS NULL',
+      [lessonId],
+    ) as { count: number | string }[];
+    return Number(rows[0]?.count ?? 0);
+  }
+
+  private toLibraryResponse(
+    lesson: Lesson,
+    authorNames: ReadonlyMap<string, string>,
+    commentCount: number,
+  ): LessonLibraryResponse {
     return {
       ...this.toResponse(lesson),
       authorName: authorNames.get(lesson.authorId) ?? lesson.authorId,
       viewCount: lesson.viewCount,
+      commentCount,
     };
   }
 

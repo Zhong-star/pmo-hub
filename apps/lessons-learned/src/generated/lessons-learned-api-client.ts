@@ -21,6 +21,9 @@ export const LESSONS_LEARNED_CANCEL_PATH = '/api/lessons-learned/v1/lessons/{id}
 export const LESSONS_LEARNED_APPROVE_PATH = '/api/lessons-learned/v1/lessons/{id}/approve' satisfies keyof paths;
 export const LESSONS_LEARNED_REJECT_PATH = '/api/lessons-learned/v1/lessons/{id}/reject' satisfies keyof paths;
 export const LESSONS_LEARNED_CLOSE_PATH = '/api/lessons-learned/v1/lessons/{id}/close' satisfies keyof paths;
+export const LESSONS_LEARNED_COMMENTS_PATH = '/api/lessons-learned/v1/lessons/{id}/comments' satisfies keyof paths;
+export const LESSONS_LEARNED_COMMENT_REPLIES_PATH = '/api/lessons-learned/v1/lessons/{id}/comments/{commentId}/replies' satisfies keyof paths;
+export const LESSONS_LEARNED_COMMENT_HIDE_PATH = '/api/lessons-learned/v1/lessons/{id}/comments/{commentId}/hide' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
@@ -46,6 +49,13 @@ export type RejectLessonBody = paths[typeof LESSONS_LEARNED_REJECT_PATH]['post']
 export type CloseLessonBody = paths[typeof LESSONS_LEARNED_CLOSE_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
 export type RecordLibraryViewBody = paths[typeof LESSONS_LEARNED_LIBRARY_VIEW_PATH]['post']['requestBody']['content']['application/json'];
 export type RecordLibraryViewResponse = paths[typeof LESSONS_LEARNED_LIBRARY_VIEW_PATH]['post']['responses'][200]['content']['application/json'];
+export type LessonCommentModeration = components['schemas']['LessonCommentModerationResponse'];
+export type LessonCommentItem = components['schemas']['LessonCommentItemResponse'];
+export type LessonCommentThread = components['schemas']['LessonCommentThreadResponse'];
+export type LessonCommentPage = components['schemas']['LessonCommentPageResponse'];
+export type LessonCommentsQuery = NonNullable<paths[typeof LESSONS_LEARNED_COMMENTS_PATH]['get']['parameters']['query']>;
+export type CreateLessonCommentBody = paths[typeof LESSONS_LEARNED_COMMENTS_PATH]['post']['requestBody']['content']['application/json'];
+export type HideLessonCommentBody = paths[typeof LESSONS_LEARNED_COMMENT_HIDE_PATH]['post']['requestBody']['content']['application/json'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -331,6 +341,80 @@ export async function closeLesson(
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId, ...(etag ? { 'If-Match': etag } : {}) },
   });
+
+  return data;
+}
+
+export async function getLessonComments(
+  localUserId: string,
+  lessonId: number,
+  query: LessonCommentsQuery = {},
+): Promise<LessonCommentPage> {
+  const { data } = await api.get<LessonCommentPage>(
+    LESSONS_LEARNED_COMMENTS_PATH.replace('{id}', String(lessonId)),
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+      params: query,
+    },
+  );
+
+  return data;
+}
+
+export async function createLessonComment(
+  localUserId: string,
+  lessonId: number,
+  input: CreateLessonCommentBody,
+): Promise<LessonCommentThread> {
+  const { data } = await api.post<LessonCommentThread>(
+    LESSONS_LEARNED_COMMENTS_PATH.replace('{id}', String(lessonId)),
+    input,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function createLessonCommentReply(
+  localUserId: string,
+  lessonId: number,
+  commentId: number,
+  input: CreateLessonCommentBody,
+): Promise<LessonCommentItem> {
+  const { data } = await api.post<LessonCommentItem>(
+    LESSONS_LEARNED_COMMENT_REPLIES_PATH
+      .replace('{id}', String(lessonId))
+      .replace('{commentId}', String(commentId)),
+    input,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function hideLessonComment(
+  localUserId: string,
+  lessonId: number,
+  commentId: number,
+  input: HideLessonCommentBody,
+): Promise<LessonCommentItem> {
+  const { data } = await api.post<LessonCommentItem>(
+    LESSONS_LEARNED_COMMENT_HIDE_PATH
+      .replace('{id}', String(lessonId))
+      .replace('{commentId}', String(commentId)),
+    input,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
 
   return data;
 }
