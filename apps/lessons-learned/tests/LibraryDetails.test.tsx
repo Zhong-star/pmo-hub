@@ -27,12 +27,15 @@ vi.mock('../src/api', () => ({
   closeLesson: vi.fn(),
   cancelLesson: vi.fn(),
   createLessonDraft: vi.fn(),
+  createLessonComment: vi.fn(),
+  createLessonCommentReply: vi.fn(),
   getHome: vi.fn(),
   getLibrary: vi.fn(),
   getLibraryLessonDetails: vi.fn(),
   getLibraryProjectSnapshots: vi.fn(),
   recordLibraryView: vi.fn(),
   removeLessonVote: vi.fn(),
+  getLessonComments: vi.fn().mockResolvedValue({ items: [], page: { limit: 20, nextCursor: null }, publicCommentCount: 0 }),
   getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
@@ -43,6 +46,7 @@ vi.mock('../src/api', () => ({
   getContributorProfile: vi.fn(),
   getPmoEvaluationQueue: vi.fn(),
   getEvaluationProjectSnapshots: vi.fn(),
+  hideLessonComment: vi.fn(),
   returnLesson: vi.fn(),
   rejectLesson: vi.fn(),
   submitLesson: vi.fn(),
@@ -92,6 +96,7 @@ function libraryLesson(overrides: Partial<LibraryLesson> = {}): LibraryLesson {
     viewCount: overrides.viewCount ?? 0,
     votesCount: overrides.votesCount ?? 0,
     hasVoted: overrides.hasVoted ?? false,
+    commentCount: overrides.commentCount ?? 0,
     ...overrides,
   };
 }
@@ -104,6 +109,7 @@ function publishedDetails(overrides: Partial<LessonDetails> = {}): LessonDetails
     history: [],
     votesCount: overrides.votesCount ?? 0,
     hasVoted: overrides.hasVoted ?? false,
+    commentCount: overrides.commentCount ?? 0,
     ...overrides,
   };
 }

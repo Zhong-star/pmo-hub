@@ -18,13 +18,17 @@ import {
 vi.mock('../src/api', () => ({
   castLessonVote: vi.fn(),
   closeLesson: vi.fn(),
+  createLessonComment: vi.fn(),
+  createLessonCommentReply: vi.fn(),
   getHome: vi.fn(),
+  getLessonComments: vi.fn().mockResolvedValue({ items: [], page: { limit: 20, nextCursor: null }, publicCommentCount: 0 }),
   getLibrary: vi.fn(),
   getLibraryLessonDetails: vi.fn(),
   getLibraryProjectSnapshots: vi.fn(),
   getPmoDashboard: vi.fn(),
   getProfiles: vi.fn(),
   getContributorProfile: vi.fn(),
+  hideLessonComment: vi.fn(),
   recordLibraryView: vi.fn(),
   removeLessonVote: vi.fn(),
 }));
@@ -67,6 +71,7 @@ function libraryLesson(overrides: Partial<LibraryLesson> = {}): LibraryLesson {
     viewCount: overrides.viewCount ?? 0,
     votesCount: overrides.votesCount ?? 0,
     hasVoted: overrides.hasVoted ?? false,
+    commentCount: overrides.commentCount ?? 0,
     ...overrides,
   };
 }
@@ -140,7 +145,7 @@ describe('PMO closure from the Lessons Library', () => {
     vi.mocked(getLibrary).mockResolvedValue([approved]);
     vi.mocked(getLibraryLessonDetails)
       .mockResolvedValueOnce({ ...approved, history: [] })
-      .mockResolvedValueOnce({ ...latest, history: [], votesCount: 0, hasVoted: false });
+      .mockResolvedValueOnce({ ...latest, history: [], votesCount: 0, hasVoted: false, commentCount: 0 });
     vi.mocked(closeLesson).mockRejectedValue({
       response: { status: 409, data: { code: 'STALE_LESSON_VERSION' } },
     });
