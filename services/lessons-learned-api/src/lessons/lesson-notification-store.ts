@@ -1,7 +1,11 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, IsNull, type EntityManager } from 'typeorm';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../database/database.module';
-import type { LessonNotificationEventType } from './lesson-notification.entity';
+import { LessonNotification, type LessonNotificationEventType } from './lesson-notification.entity';
+
+export function countUnreadNotifications(manager: EntityManager, recipientUserId: string): Promise<number> {
+  return manager.getRepository(LessonNotification).countBy({ recipientUserId, readAt: IsNull() });
+}
 
 export interface RecordLessonNotificationInput {
   recipientUserId: string;

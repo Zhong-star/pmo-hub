@@ -10,6 +10,7 @@ import type {
   LessonsLearnedHomeResponse,
 } from './home-response.dto';
 import { LessonHistory } from './lessons/lesson-history.entity';
+import { countUnreadNotifications } from './lessons/lesson-notification-store';
 import { LessonNotification } from './lessons/lesson-notification.entity';
 import { Lesson } from './lessons/lesson.entity';
 import { LocalAccessService, type LessonsLearnedRole } from './local-access.service';
@@ -240,11 +241,7 @@ export class HomeService {
       'REPEATABLE READ',
       async (manager) => {
         // 1. Unread notifications strictly scoped to caller
-        const unreadCountRows = await manager.query(
-          'SELECT COUNT(*)::int AS count FROM lesson_notifications WHERE recipient_user_id = $1 AND read_at IS NULL',
-          [profile.id],
-        ) as { count: number | string }[];
-        const unreadCount = Number(unreadCountRows[0]?.count ?? 0);
+        const unreadCount = await countUnreadNotifications(manager, profile.id);
 
         const unreadEntities = await manager
           .getRepository(LessonNotification)

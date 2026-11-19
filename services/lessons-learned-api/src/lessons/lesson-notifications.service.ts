@@ -19,6 +19,7 @@ import type {
   MarkNotificationsReadBatchResponse,
 } from './lesson-notification-response.dto';
 import {
+  countUnreadNotifications,
   LessonNotificationStore,
   type RecordLessonNotificationInput,
 } from './lesson-notification-store';
@@ -143,11 +144,7 @@ export class LessonNotificationsService {
         ? encodeNotificationCursor(scope, raw[limit - 1].notification_cursor_key, pageItems[limit - 1].id)
         : null;
 
-      const unreadRows = await manager.query(
-        'SELECT COUNT(*)::int AS count FROM lesson_notifications WHERE recipient_user_id = $1 AND read_at IS NULL',
-        [profile.id],
-      ) as { count: number | string }[];
-      const unreadCount = Number(unreadRows[0]?.count ?? 0);
+      const unreadCount = await countUnreadNotifications(manager, profile.id);
 
       return {
         items: pageItems.map((item) => this.toItemResponse(item)),
@@ -182,11 +179,7 @@ export class LessonNotificationsService {
         await repo.save(notification);
       }
 
-      const unreadRows = await manager.query(
-        'SELECT COUNT(*)::int AS count FROM lesson_notifications WHERE recipient_user_id = $1 AND read_at IS NULL',
-        [profile.id],
-      ) as { count: number | string }[];
-      const unreadCount = Number(unreadRows[0]?.count ?? 0);
+      const unreadCount = await countUnreadNotifications(manager, profile.id);
 
       return {
         notification: this.toItemResponse(notification),
@@ -234,11 +227,7 @@ export class LessonNotificationsService {
         await repo.save(notifications.filter((item) => updatedIds.includes(item.id)));
       }
 
-      const unreadRows = await manager.query(
-        'SELECT COUNT(*)::int AS count FROM lesson_notifications WHERE recipient_user_id = $1 AND read_at IS NULL',
-        [profile.id],
-      ) as { count: number | string }[];
-      const unreadCount = Number(unreadRows[0]?.count ?? 0);
+      const unreadCount = await countUnreadNotifications(manager, profile.id);
 
       return {
         updatedIds,

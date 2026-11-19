@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useController, useForm } from 'react-hook-form';
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import {
   createLessonComment,
   createLessonCommentReply,
@@ -14,6 +15,7 @@ type LessonCommentsSectionProps = {
   isPmo: boolean;
   initialPublicCommentCount: number;
   onPublicCommentCountChange?: (lessonId: number, publicCommentCount: number) => void;
+  closeGuardRef?: RefObject<(() => boolean) | null>;
 };
 
 const MAX_COMMENT_LENGTH = 2000;
@@ -47,26 +49,40 @@ export function LessonCommentsSection({
   isPmo,
   initialPublicCommentCount,
   onPublicCommentCountChange,
+  closeGuardRef,
 }: LessonCommentsSectionProps) {
   const queryClient = useQueryClient();
   const [showHidden, setShowHidden] = useState(false);
 
-  const [newCommentBody, setNewCommentBody] = useState('');
+  const { control, setFocus, setValue } = useForm({
+    defaultValues: { comment: '', reply: '', reason: '' },
+  });
+  const { field: commentField } = useController({ control, name: 'comment' });
+  const { field: replyField } = useController({ control, name: 'reply' });
+  const { field: reasonField } = useController({ control, name: 'reason' });
+  const newCommentBody = commentField.value;
+  const replyBody = replyField.value;
+  const hideReason = reasonField.value;
   const [newCommentError, setNewCommentError] = useState<string | null>(null);
   const [isPostingComment, setIsPostingComment] = useState(false);
-  const newCommentRef = useRef<HTMLTextAreaElement>(null);
 
   const [replyTargetId, setReplyTargetId] = useState<number | null>(null);
-  const [replyBody, setReplyBody] = useState('');
   const [replyError, setReplyError] = useState<string | null>(null);
   const [isPostingReply, setIsPostingReply] = useState(false);
-  const replyRef = useRef<HTMLTextAreaElement>(null);
 
   const [hideTargetId, setHideTargetId] = useState<number | null>(null);
-  const [hideReason, setHideReason] = useState('');
   const [hideError, setHideError] = useState<string | null>(null);
   const [isHiding, setIsHiding] = useState(false);
-  const hideReasonRef = useRef<HTMLTextAreaElement>(null);
+  const writingRef = useRef(false);
+  const isWriting = isPostingComment || isPostingReply || isHiding;
+
+  useEffect(() => {
+    if (!closeGuardRef) return;
+    closeGuardRef.current = () => !writingRef.current && (
+      !(newCommentBody || replyBody || hideReason) || window.confirm('Discard your unsaved discussion changes?')
+    );
+    return () => { closeGuardRef.current = null; };
+  }, [closeGuardRef, newCommentBody, replyBody, hideReason]);
 
   const effectiveShowHidden = isPmo && showHidden;
   const queryKey = ['lessons-learned-comments', profileId, lessonId, effectiveShowHidden] as const;
@@ -101,52 +117,55 @@ export function LessonCommentsSection({
 
   async function handleCreateComment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isPostingComment) return;
+    if (writingRef.current) return;
     if (!newCommentBody.trim()) {
       setNewCommentError('Enter a comment before posting.');
-      newCommentRef.current?.focus();
+      setFocus('comment');
       return;
     }
     if (newCommentBody.length > MAX_COMMENT_LENGTH) {
       setNewCommentError('Comments must be 2,000 characters or fewer.');
-      newCommentRef.current?.focus();
+      setFocus('comment');
       return;
     }
 
+    writingRef.current = true;
     setIsPostingComment(true);
     setNewCommentError(null);
     try {
       await createLessonComment(profileId, lessonId, { body: newCommentBody });
-      setNewCommentBody('');
+      setValue('comment', '');
       await refreshComments();
     } catch (error) {
       setNewCommentError(
         getFieldError(error, 'body') ?? 'Your comment could not be posted. Your text is still here; try again.',
       );
     } finally {
+      writingRef.current = false;
       setIsPostingComment(false);
     }
   }
 
   async function handleCreateReply(event: FormEvent<HTMLFormElement>, parentCommentId: number) {
     event.preventDefault();
-    if (isPostingReply) return;
+    if (writingRef.current) return;
     if (!replyBody.trim()) {
       setReplyError('Enter a reply before posting.');
-      replyRef.current?.focus();
+      setFocus('reply');
       return;
     }
     if (replyBody.length > MAX_COMMENT_LENGTH) {
       setReplyError('Replies must be 2,000 characters or fewer.');
-      replyRef.current?.focus();
+      setFocus('reply');
       return;
     }
 
+    writingRef.current = true;
     setIsPostingReply(true);
     setReplyError(null);
     try {
       await createLessonCommentReply(profileId, lessonId, parentCommentId, { body: replyBody });
-      setReplyBody('');
+      setValue('reply', '');
       setReplyTargetId(null);
       await refreshComments();
     } catch (error) {
@@ -154,29 +173,31 @@ export function LessonCommentsSection({
         getFieldError(error, 'body') ?? 'Your reply could not be posted. Your text is still here; try again.',
       );
     } finally {
+      writingRef.current = false;
       setIsPostingReply(false);
     }
   }
 
   async function handleHideComment(event: FormEvent<HTMLFormElement>, commentId: number) {
     event.preventDefault();
-    if (isHiding) return;
+    if (writingRef.current) return;
     if (!hideReason.trim()) {
       setHideError('Enter a reason for hiding this comment.');
-      hideReasonRef.current?.focus();
+      setFocus('reason');
       return;
     }
     if (hideReason.length > MAX_MODERATION_REASON_LENGTH) {
       setHideError('Moderation reason must be 1,000 characters or fewer.');
-      hideReasonRef.current?.focus();
+      setFocus('reason');
       return;
     }
 
+    writingRef.current = true;
     setIsHiding(true);
     setHideError(null);
     try {
       await hideLessonComment(profileId, lessonId, commentId, { reason: hideReason });
-      setHideReason('');
+      setValue('reason', '');
       setHideTargetId(null);
       await refreshComments();
     } catch (error) {
@@ -184,6 +205,7 @@ export function LessonCommentsSection({
         getFieldError(error, 'reason') ?? 'The comment could not be hidden. Your reason is still here; try again.',
       );
     } finally {
+      writingRef.current = false;
       setIsHiding(false);
     }
   }
@@ -209,15 +231,14 @@ export function LessonCommentsSection({
         <div className="draft-editor-field">
           <label htmlFor={`hide-comment-reason-${commentId}`}>Reason for hiding</label>
           <textarea
-            ref={hideReasonRef}
+            {...reasonField}
             id={`hide-comment-reason-${commentId}`}
             required
-            value={hideReason}
             aria-invalid={hideError ? 'true' : undefined}
             aria-describedby={hideError ? `hide-comment-error-${commentId}` : `hide-comment-count-${commentId}`}
             disabled={isHiding}
             onChange={(event) => {
-              setHideReason(event.target.value);
+              reasonField.onChange(event);
               setHideError(null);
             }}
           />
@@ -236,13 +257,13 @@ export function LessonCommentsSection({
             disabled={isHiding}
             onClick={() => {
               setHideTargetId(null);
-              setHideReason('');
+              setValue('reason', '');
               setHideError(null);
             }}
           >
             Cancel
           </button>
-          <button className="draft-editor-primary" type="submit" disabled={isHiding}>
+          <button className="draft-editor-primary" type="submit" disabled={isWriting}>
             {isHiding ? 'Hiding…' : 'Confirm hide'}
           </button>
         </div>
@@ -262,7 +283,7 @@ export function LessonCommentsSection({
               onChange={(event) => {
                 setShowHidden(event.target.checked);
                 setHideTargetId(null);
-                setHideReason('');
+                setValue('reason', '');
                 setHideError(null);
               }}
             />
@@ -275,14 +296,13 @@ export function LessonCommentsSection({
         <div className="draft-editor-field">
           <label htmlFor={`new-comment-${lessonId}`}>Add a comment</label>
           <textarea
-            ref={newCommentRef}
+            {...commentField}
             id={`new-comment-${lessonId}`}
-            value={newCommentBody}
             aria-invalid={newCommentError ? 'true' : undefined}
             aria-describedby={newCommentError ? `new-comment-error-${lessonId}` : `new-comment-count-${lessonId}`}
             disabled={isPostingComment}
             onChange={(event) => {
-              setNewCommentBody(event.target.value);
+              commentField.onChange(event);
               setNewCommentError(null);
             }}
           />
@@ -295,7 +315,7 @@ export function LessonCommentsSection({
           )}
         </div>
         <div className="comment-inline-actions">
-          <button className="draft-editor-primary" type="submit" disabled={isPostingComment}>
+          <button className="draft-editor-primary" type="submit" disabled={isWriting}>
             {isPostingComment ? 'Posting…' : 'Post comment'}
           </button>
         </div>
@@ -332,7 +352,7 @@ export function LessonCommentsSection({
                         type="button"
                         onClick={() => {
                           setReplyTargetId(replyTargetId === thread.id ? null : thread.id);
-                          setReplyBody('');
+                          setValue('reply', '');
                           setReplyError(null);
                         }}
                       >
@@ -344,7 +364,7 @@ export function LessonCommentsSection({
                           type="button"
                           onClick={() => {
                             setHideTargetId(hideTargetId === thread.id ? null : thread.id);
-                            setHideReason('');
+                            setValue('reason', '');
                             setHideError(null);
                           }}
                         >
@@ -363,14 +383,13 @@ export function LessonCommentsSection({
                       <div className="draft-editor-field">
                         <label htmlFor={`reply-body-${thread.id}`}>Write a reply</label>
                         <textarea
-                          ref={replyRef}
+                          {...replyField}
                           id={`reply-body-${thread.id}`}
-                          value={replyBody}
                           aria-invalid={replyError ? 'true' : undefined}
                           aria-describedby={replyError ? `reply-error-${thread.id}` : `reply-count-${thread.id}`}
                           disabled={isPostingReply}
                           onChange={(event) => {
-                            setReplyBody(event.target.value);
+                            replyField.onChange(event);
                             setReplyError(null);
                           }}
                         />
@@ -389,13 +408,13 @@ export function LessonCommentsSection({
                           disabled={isPostingReply}
                           onClick={() => {
                             setReplyTargetId(null);
-                            setReplyBody('');
+                            setValue('reply', '');
                             setReplyError(null);
                           }}
                         >
                           Cancel
                         </button>
-                        <button className="draft-editor-primary" type="submit" disabled={isPostingReply}>
+                        <button className="draft-editor-primary" type="submit" disabled={isWriting}>
                           {isPostingReply ? 'Posting…' : 'Post reply'}
                         </button>
                       </div>
@@ -421,7 +440,7 @@ export function LessonCommentsSection({
                             type="button"
                             onClick={() => {
                               setHideTargetId(hideTargetId === reply.id ? null : reply.id);
-                              setHideReason('');
+                              setValue('reason', '');
                               setHideError(null);
                             }}
                           >

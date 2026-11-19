@@ -16,6 +16,7 @@ type PmoDashboardViewProps = {
   data?: PmoDashboardResponse;
   isLoading: boolean;
   isError: boolean;
+  errorMessage?: string;
   onRetry: () => void;
   search: string;
   onSearchChange: (value: string) => void;
@@ -92,6 +93,7 @@ export function PmoDashboardView({
   data,
   isLoading,
   isError,
+  errorMessage,
   onRetry,
   search,
   onSearchChange,
@@ -122,12 +124,7 @@ export function PmoDashboardView({
   if (status) activeFilterLabels.push(`Status: ${formatStatusLabel(status)}`);
   if (activeCard) activeFilterLabels.push(`Card: ${CARD_LABELS[activeCard]}`);
 
-  const summary = data?.summary ?? {
-    awaitingEvaluation: 0,
-    recentlyApproved: 0,
-    recentlyClosed: 0,
-    recentlyReturned: 0,
-  };
+  const summary = data?.summary;
   const items = data?.items ?? [];
 
   return (
@@ -159,10 +156,11 @@ export function PmoDashboardView({
               type="button"
               className="dashboard-summary-card"
               aria-pressed={isPressed}
-              onClick={() => onCardToggle(card.key)}
+              aria-disabled={!summary}
+              onClick={() => { if (summary) onCardToggle(card.key); }}
             >
               <span className="dashboard-summary-card__label">{card.label}</span>
-              <span className="dashboard-summary-card__count">{summary[card.field]}</span>
+              <span className="dashboard-summary-card__count">{summary?.[card.field] ?? '—'}</span>
               <span className="dashboard-summary-card__subtitle">{card.subtitle}</span>
             </button>
           );
@@ -255,7 +253,9 @@ export function PmoDashboardView({
 
       {isError && (
         <div className="draft-error" role="alert">
-          <p>The PMO Dashboard could not be loaded.</p>
+          <p>{errorMessage ?? (data
+            ? 'Could not refresh. Showing the last loaded results.'
+            : 'The PMO Dashboard could not be loaded.')}</p>
           <button className="draft-cancel" type="button" onClick={onRetry}>Retry</button>
         </div>
       )}
@@ -268,7 +268,7 @@ export function PmoDashboardView({
         </p>
       )}
 
-      {!isLoading && !isError && items.length > 0 && (
+      {!isLoading && items.length > 0 && (
         <div className="submission-table-wrapper">
           <table className="submission-table">
             <caption className="visually-hidden">{getSortCaption(sort)}</caption>

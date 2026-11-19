@@ -56,7 +56,7 @@ export function HomeView({ home, theme, onThemeChange, onOpenLesson, onNavigate 
     <div className="home-view">
       <div className="home-header">
         <div>
-          <h1 id="page-title">Home</h1>
+          <h1 id="page-title" tabIndex={-1}>Home</h1>
           <p className="intro">Welcome, {home.profile.displayName}</p>
           <p className="active-role">Active role: <strong>{getRoleLabel(home.profile.role)}</strong></p>
         </div>

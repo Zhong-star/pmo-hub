@@ -14,6 +14,7 @@ const utcDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
   timeStyle: 'short',
   timeZone: 'UTC',
 });
+const notificationBatchLimit = 100;
 
 function formatUtcTimestamp(value: string): string {
   const parsed = new Date(value);
@@ -53,6 +54,7 @@ export function NotificationsMenu({
   const [pendingSingleIds, setPendingSingleIds] = useState<Set<number>>(() => new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const readInFlight = useRef(false);
   const previousNavigationKeyRef = useRef(navigationKey);
 
   const queryKey = ['lessons-learned-notifications', profileId] as const;
@@ -124,11 +126,13 @@ export function NotificationsMenu({
         result.unreadCount,
         result.notification.readAt ?? new Date().toISOString(),
       );
+      void queryClient.invalidateQueries({ queryKey: ['lessons-learned-home', profileId] });
     },
     onError: () => {
       setActionError('Could not mark the notification as read. Please try again.');
     },
     onSettled: (_data, _error, notificationId) => {
+      readInFlight.current = false;
       setPendingSingleIds((current) => {
         const next = new Set(current);
         next.delete(notificationId);
@@ -138,23 +142,35 @@ export function NotificationsMenu({
   });
 
   const batchReadMutation = useMutation({
-    mutationFn: (notificationIds: number[]) =>
-      markNotificationsReadBatch(profileId, { notificationIds }),
+    mutationFn: async (notificationIds: number[]) => {
+      for (let start = 0; start < notificationIds.length; start += notificationBatchLimit) {
+        const result = await markNotificationsReadBatch(profileId, {
+          notificationIds: notificationIds.slice(start, start + notificationBatchLimit),
+        });
+        updateCacheReadState(new Set(result.updatedIds), result.unreadCount, new Date().toISOString());
+      }
+    },
     networkMode: 'always',
     onMutate: () => {
       setActionError(null);
     },
-    onSuccess: (result) => {
-      updateCacheReadState(
-        new Set(result.updatedIds),
-        result.unreadCount,
-        new Date().toISOString(),
-      );
-    },
     onError: () => {
-      setActionError('Could not mark loaded notifications as read. Please try again.');
+      setActionError('Some notifications could not be marked as read. Please try again.');
+    },
+    onSettled: () => {
+      readInFlight.current = false;
+      void queryClient.invalidateQueries({ queryKey: ['lessons-learned-home', profileId] });
     },
   });
+
+  function markRead(notificationId?: number) {
+    if (readInFlight.current) return;
+    readInFlight.current = true;
+    if (notificationId === undefined) batchReadMutation.mutate(loadedUnreadIds);
+    else singleReadMutation.mutate(notificationId);
+  }
+
+  const isMarkingRead = singleReadMutation.isPending || batchReadMutation.isPending;
 
   function toggleMenu() {
     const nextOpen = !isOpen;
@@ -166,6 +182,7 @@ export function NotificationsMenu({
   }
 
   function handleSelectNotification(notification: LessonNotificationItem) {
+    triggerRef.current?.focus();
     setIsOpen(false);
     onOpenLesson(notification.lessonId);
   }
@@ -220,8 +237,8 @@ export function NotificationsMenu({
             <button
               type="button"
               className="notifications-menu__batch-button"
-              disabled={loadedUnreadIds.length === 0 || batchReadMutation.isPending}
-              onClick={() => batchReadMutation.mutate(loadedUnreadIds)}
+              disabled={loadedUnreadIds.length === 0 || isMarkingRead}
+              onClick={() => markRead()}
             >
               {batchReadMutation.isPending ? 'Marking…' : 'Mark loaded as read'}
             </button>
@@ -297,8 +314,8 @@ export function NotificationsMenu({
                           type="button"
                           className="notifications-menu__mark-read"
                           aria-label={`Mark notification for #${item.lessonId} as read`}
-                          disabled={isSinglePending || batchReadMutation.isPending}
-                          onClick={() => singleReadMutation.mutate(item.id)}
+                          disabled={isMarkingRead}
+                          onClick={() => markRead(item.id)}
                         >
                           {isSinglePending ? 'Marking…' : 'Mark as read'}
                         </button>

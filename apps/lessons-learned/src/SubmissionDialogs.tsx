@@ -378,6 +378,7 @@ type LessonSubmissionDetailsDialogProps = {
   details?: LessonDetails;
   isLoading: boolean;
   hasError: boolean;
+  errorStatus?: number | null;
   canEdit?: boolean;
   onEdit?: () => void;
   onRetry: () => void;
@@ -402,6 +403,7 @@ export function LessonSubmissionDetailsDialog({
   details: lessonData,
   isLoading,
   hasError,
+  errorStatus,
   canEdit = false,
   onEdit,
   onRetry,
@@ -422,12 +424,17 @@ export function LessonSubmissionDetailsDialog({
 }: LessonSubmissionDetailsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const closeGuardRef = useRef<(() => boolean) | null>(null);
   const lesson = hasError ? undefined : lessonData;
   const isPublished = Boolean(
     lesson && (lesson.status === 'Approved' || lesson.status === 'Closed') && lesson.approvedAt,
   );
 
   useDialogFocus(dialogRef, closeRef);
+
+  function requestClose() {
+    if (closeGuardRef.current?.() !== false) onClose();
+  }
 
   const fields: Array<[string, string]> = lesson ? [
     ['Title', lesson.title],
@@ -459,12 +466,12 @@ export function LessonSubmissionDetailsDialog({
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.preventDefault();
-          onClose();
+          requestClose();
         }
       }}
       onCancel={(event) => {
         event.preventDefault();
-        onClose();
+        requestClose();
       }}
     >
       <div className="draft-editor-form">
@@ -473,13 +480,15 @@ export function LessonSubmissionDetailsDialog({
             <p className="draft-editor-eyebrow">{isLibrarySurface ? 'Published lesson' : 'Lesson'} #{lesson?.id ?? lessonId}{lesson ? ` · ${lesson.status}` : ''}</p>
             <h2 id="lesson-details-title">{isLibrarySurface ? 'Published lesson details' : 'Lesson details'}</h2>
           </div>
-          <button ref={closeRef} className="draft-editor-close" type="button" aria-label={isLibrarySurface ? 'Close published lesson details' : 'Close lesson details'} onClick={onClose}>
+          <button ref={closeRef} className="draft-editor-close" type="button" aria-label={isLibrarySurface ? 'Close published lesson details' : 'Close lesson details'} onClick={requestClose}>
             ×
           </button>
         </div>
         {isLoading && <p role="status">Loading lesson details…</p>}
         {hasError && (
           <div className="draft-error" role="alert">
+            {errorStatus === 404 && <strong>Lesson not found</strong>}
+            {(errorStatus === 401 || errorStatus === 403) && <strong>Access denied</strong>}
             <p>Lesson details and history could not be loaded.</p>
             <button className="draft-cancel" type="button" onClick={onRetry}>Retry</button>
           </div>
@@ -551,6 +560,7 @@ export function LessonSubmissionDetailsDialog({
                 isPmo={isPmo}
                 initialPublicCommentCount={lesson.commentCount ?? 0}
                 onPublicCommentCountChange={onPublicCommentCountChange}
+                closeGuardRef={closeGuardRef}
               />
             )}
           </>
@@ -574,7 +584,7 @@ export function LessonSubmissionDetailsDialog({
               Close lesson
             </button>
           )}
-          <button className="draft-editor-secondary" type="button" onClick={onClose}>{isLibrarySurface ? 'Back to Lessons Library' : 'Close details'}</button>
+          <button className="draft-editor-secondary" type="button" onClick={requestClose}>{isLibrarySurface ? 'Back to Lessons Library' : 'Close details'}</button>
         </div>
       </div>
     </dialog>,

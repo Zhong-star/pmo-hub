@@ -166,6 +166,25 @@ describe('PMO Dashboard operational API', () => {
       });
   });
 
+  it('includes events at midnight on the first UTC calendar date and excludes events just before it', async () => {
+    const now = new Date();
+    const firstIncluded = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 29));
+    const lastExcluded = new Date(firstIncluded.getTime() - 1);
+    const included = await approveLesson(await submitLesson(await createCompleteDraft({ title: 'Start of UTC window' })));
+    const excluded = await approveLesson(await submitLesson(await createCompleteDraft({ title: 'Before UTC window' })));
+    await dataSource!.query('UPDATE lessons SET approved_at = $1 WHERE id = $2', [firstIncluded, included.id]);
+    await dataSource!.query('UPDATE lessons SET approved_at = $1 WHERE id = $2', [lastExcluded, excluded.id]);
+
+    const { body } = await request(app!.getHttpServer())
+      .get('/api/lessons-learned/v1/pmo/dashboard')
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .query({ card: 'recently-approved' })
+      .expect(200);
+    expect(body.windowStartAt).toBe(firstIncluded.toISOString());
+    expect(body.summary.recentlyApproved).toBe(1);
+    expect(body.items.map((item: { id: number }) => item.id)).toEqual([included.id]);
+  });
+
   it('computes the 4 summary cards strictly over a 30-day UTC window using approval date and history events, and sorts by most recent activity DESC', async () => {
     const now = Date.now();
     const daysAgo = (days: number) => new Date(now - days * 24 * 60 * 60 * 1000).toISOString();

@@ -1,8 +1,18 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { submitLessonForReview } from './fixtures/lessons-library';
 
 const localProfilesFile = process.env.LESSONS_LEARNED_E2E_LOCAL_USERS_FILE;
 if (!localProfilesFile) throw new Error('The Lessons Learned E2E profile fixture was not initialized.');
+
+async function tabTo(page: Page, target: Locator) {
+  await expect(target).toBeVisible();
+  for (let remaining = 30; remaining > 0; remaining -= 1) {
+    if (await target.evaluate((element) => element === document.activeElement)) return;
+    await page.keyboard.press('Tab');
+  }
+  await expect(target).toBeFocused();
+}
 
 async function getThemeContrastRatios(page: import('@playwright/test').Page) {
   return page.evaluate(() => {
@@ -20,17 +30,24 @@ async function getThemeContrastRatios(page: import('@playwright/test').Page) {
       return (values[0]! + .05) / (values[1]! + .05);
     }
 
-    const card = document.querySelector<HTMLElement>('.module-card') ?? document.querySelector<HTMLElement>('main')!;
+    function backgroundOf(element: HTMLElement): string {
+      const current = getComputedStyle(element).backgroundColor;
+      return current === 'rgba(0, 0, 0, 0)' && element.parentElement
+        ? backgroundOf(element.parentElement)
+        : current;
+    }
+
+    const card = document.querySelector<HTMLElement>('.module-card, .welcome-card') ?? document.querySelector<HTMLElement>('main')!;
     const themeMenu = document.querySelector<HTMLElement>('.hub-header__profile-menu')!;
     const activeTheme = document.querySelector<HTMLButtonElement>('.hub-header__profile-menu button[aria-pressed="true"]')!;
     const inactiveTheme = document.querySelector<HTMLButtonElement>('.hub-header__profile-menu button[aria-pressed="false"]')!;
-    const primaryAction = document.querySelector<HTMLElement>('.primary-link, .module-action')!;
+    const primaryAction = document.querySelector<HTMLElement>('.home-primary-button, .module-action')!;
     const header = document.querySelector<HTMLElement>('.hub-header')!;
     const focusedThemeButton = document.querySelector<HTMLButtonElement>('.hub-header__profile-menu button:focus-visible');
 
     return {
-      heading: contrast(getComputedStyle(document.querySelector('#page-title')!).color, getComputedStyle(card).backgroundColor),
-      intro: contrast(getComputedStyle(document.querySelector('.intro')!).color, getComputedStyle(card).backgroundColor),
+      heading: contrast(getComputedStyle(document.querySelector('#page-title')!).color, backgroundOf(card)),
+      intro: contrast(getComputedStyle(document.querySelector('.intro, .profile-bar h2')!).color, backgroundOf(card)),
       primaryAction: contrast(getComputedStyle(primaryAction).color, getComputedStyle(primaryAction).backgroundColor),
       activeTheme: contrast(getComputedStyle(activeTheme).color, getComputedStyle(activeTheme).backgroundColor),
       inactiveTheme: contrast(getComputedStyle(inactiveTheme).color, getComputedStyle(themeMenu).backgroundColor),
@@ -96,14 +113,21 @@ test('Contributor creates a title-only lesson and completes it from the edit mod
   await page.getByRole('button', { name: `Reopen ${title}` }).click();
   await expect(page.getByRole('dialog', { name: 'Edit lesson' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue(title);
+  await page.getByRole('button', { name: 'Submit for PMO Review' }).click();
+  await expect(page.getByRole('alert', { name: 'Submission errors' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Title' })).toBeEditable();
   await page.getByRole('combobox', { name: 'Project category' }).selectOption('Technology');
   await page.getByRole('combobox', { name: 'Project phase' }).selectOption('Execution');
   await page.getByRole('textbox', { name: 'Situation observed' }).fill('The release handover did not include the latest runbook.');
-  await page.getByRole('textbox', { name: 'Root cause' }).fill('The team had no shared release checklist.');
   await page.getByRole('dialog', { name: 'Edit lesson' }).getByRole('combobox', { name: 'Lesson type' }).selectOption('Future Prevention');
   await page.getByRole('textbox', { name: 'Impact' }).fill('Operators spent extra time locating the current procedure.');
   await page.getByRole('textbox', { name: 'Recommendation' }).fill('Review the runbook before each release.');
   await page.getByRole('textbox', { name: 'Applicability' }).fill('Apply to software releases with an on-call handover.');
+  await page.getByRole('button', { name: 'Submit for PMO Review' }).click();
+  const rootCause = page.getByRole('textbox', { name: 'Root cause' });
+  await expect(rootCause).toHaveAttribute('aria-invalid', 'true');
+  await expect(rootCause).toHaveAccessibleDescription(/Root cause is required for Future Prevention/);
+  await rootCause.fill('The team had no shared release checklist.');
   await page.getByRole('button', { name: 'Save Draft' }).click();
   await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Root cause' })).toHaveValue('The team had no shared release checklist.');
@@ -401,10 +425,14 @@ test('a stale draft ETag preserves unsaved text until the author explicitly relo
   await expect(input).toHaveValue('Saved in another tab');
 });
 
-test('Lessons Learned stage 3 returns, publishes and closes a lesson across profiles', async ({ page }) => {
+test('FT-009, FT-011–013, FT-016, FT-020–025, FT-030: submits, returns, publishes, collaborates and closes across roles', async ({ page }) => {
+  test.setTimeout(60_000);
+  page.setDefaultTimeout(8_000);
   expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
   const title = `Stage 3 review ${Date.now()}`;
   const guidance = 'Describe how the next team can verify the handover.';
+  const comment = 'The checklist also helped the operations team.';
+  const reply = 'We will add the checklist to the handover kit.';
   const enterModule = async (profile: string, currentProfile?: string) => {
     if (currentProfile) {
       await page.getByRole('button', { name: currentProfile }).click();
@@ -414,7 +442,8 @@ test('Lessons Learned stage 3 returns, publishes and closes a lesson across prof
     }
     await page.getByRole('combobox', { name: 'Local profile' }).selectOption(profile);
     await page.getByRole('button', { name: 'Continue' }).click();
-    await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+    await expect(page.getByRole('link', { name: 'Open Lessons Learned' })).toBeVisible();
+    await page.goto('/lessons-learned/');
     await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   };
   const openEvaluation = async () => {
@@ -444,14 +473,24 @@ test('Lessons Learned stage 3 returns, publishes and closes a lesson across prof
   await openEvaluation();
   await details.getByRole('button', { name: 'Return for changes' }).click();
   await page.getByRole('textbox', { name: 'Guidance for author' }).fill(guidance);
+  await page.route('**/lessons/*/return', (route) => route.abort(), { times: 1 });
+  await page.getByRole('button', { name: 'Confirm return' }).click();
+  await expect(page.getByRole('alert')).toContainText('The lesson could not be returned.');
+  await expect(page.getByRole('textbox', { name: 'Guidance for author' })).toHaveValue(guidance);
   await page.getByRole('button', { name: 'Confirm return' }).click();
   await expect(page.getByRole('button', { name: `View ${title}` })).toHaveCount(0);
 
   await enterModule('local-developer', 'Local PMO');
+  await expect(page.getByRole('region', { name: 'Returned lessons' })).toContainText(title);
+  await expect(page.getByRole('button', { name: /^Notifications/ })).toBeVisible();
   await page.getByRole('link', { name: 'My Submissions' }).click();
   await expect(page.getByText(guidance, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: `Reopen ${title}` }).click();
   await editor.getByRole('textbox', { name: 'Recommendation' }).fill('Ask the next team to sign off on the checklist.');
+  await page.route('**/lessons/*/submit', (route) => route.abort(), { times: 1 });
+  await editor.getByRole('button', { name: 'Submit for PMO Review' }).click();
+  await expect(editor.getByRole('alert')).toContainText('The lesson could not be submitted.');
+  await expect(editor.getByRole('textbox', { name: 'Recommendation' })).toHaveValue('Ask the next team to sign off on the checklist.');
   await editor.getByRole('button', { name: 'Submit for PMO Review' }).click();
   await expect(page.getByRole('status')).toContainText('Lesson submitted for PMO review.');
   await page.getByRole('button', { name: 'Close editor' }).click();
@@ -476,12 +515,86 @@ test('Lessons Learned stage 3 returns, publishes and closes a lesson across prof
   await expect(details.getByText('Ask the next team to sign off on the checklist.')).toBeVisible();
   await expect(details.getByText('The checklist made handover steps explicit.')).toBeVisible();
   await expect(details.getByRole('heading', { name: 'History' })).toHaveCount(0);
-  await details.getByRole('button', { name: 'Close published lesson details' }).click();
+  await expect(details.getByRole('button', { name: 'Hide comment' })).toHaveCount(0);
 
-  await enterModule('local-pmo', 'Local Contributor');
+  const vote = details.getByRole('button', { name: `Vote for ${title} (0)` });
+  await page.route('**/lessons/*/vote', (route) => route.abort(), { times: 1 });
+  await vote.click();
+  await expect(details.getByRole('alert')).toContainText(/vote/i);
+  await expect(vote).toHaveAttribute('aria-pressed', 'false');
+  await vote.click();
+  const removeVote = details.getByRole('button', { name: `Remove vote for ${title} (1)` });
+  await expect(removeVote).toHaveAttribute('aria-pressed', 'true');
+  await removeVote.click();
+  await expect(vote).toHaveAttribute('aria-pressed', 'false');
+  await vote.click();
+  await expect(removeVote).toBeEnabled();
+
+  await expect(details.getByText('No comments yet.')).toBeVisible();
+  await details.getByRole('textbox', { name: 'Add a comment' }).fill(comment);
+  await page.route('**/lessons/*/comments', (route) => route.abort(), { times: 1 });
+  await details.getByRole('button', { name: 'Post comment' }).click();
+  await expect(details.getByRole('alert')).toContainText('Your comment could not be posted.');
+  await expect(details.getByRole('textbox', { name: 'Add a comment' })).toHaveValue(comment);
+  await expect(details.getByText('No comments yet.')).toBeVisible();
+  await details.getByRole('button', { name: 'Post comment' }).click();
+  await expect(details.getByText(comment, { exact: true })).toBeVisible();
+  await expect(details.getByRole('button', { name: 'Post comment' })).toBeEnabled();
+  await details.getByRole('button', { name: 'Close published lesson details' }).click();
+  await expect(details).toBeHidden();
+  await expect(page.getByRole('list', { name: 'Most Voted Lessons podium' })).toContainText(title);
+  await page.getByRole('button', { name: 'Top Contributors' }).click();
+  await page.getByRole('list', { name: 'Top Contributors podium' }).getByRole('button', { name: 'Local Developer' }).click();
+  await expect(page.getByRole('heading', { name: 'Local Developer', exact: true })).toBeVisible();
+  await expect(page.getByText(title, { exact: true })).toBeVisible();
+
+  await enterModule('local-developer', 'Local Contributor');
+  const summary = page.getByRole('region', { name: 'Unread notifications summary' });
+  await expect(summary).toContainText(title);
+  await page.getByRole('button', { name: /^Notifications/ }).click();
+  const alerts = page.getByRole('region', { name: 'Notifications', exact: true });
+  const commentNotification = alerts.getByRole('listitem').filter({ hasText: 'New comment' }).filter({ hasText: title });
+  const markRead = commentNotification.getByRole('button', { name: /Mark notification/ });
+  await page.route('**/notifications/*/read', (route) => route.abort(), { times: 1 });
+  await markRead.click();
+  await expect(alerts.getByRole('alert')).toContainText('Could not mark the notification as read.');
+  await expect(commentNotification.getByText('Unread', { exact: true })).toBeVisible();
+  await markRead.click();
+  await expect(commentNotification.getByText('Read', { exact: true })).toBeVisible();
+  const openCommentNotification = commentNotification.getByRole('button', { name: /Open lesson/ });
+  await openCommentNotification.click();
+  await expect(details.getByText(comment, { exact: true })).toBeVisible();
+  await details.getByRole('button', { name: 'Reply', exact: true }).click();
+  await details.getByRole('textbox', { name: 'Write a reply' }).fill(reply);
+  await page.route('**/comments/*/replies', (route) => route.abort(), { times: 1 });
+  await details.getByRole('button', { name: 'Post reply' }).click();
+  await expect(details.getByRole('alert')).toContainText('Your reply could not be posted.');
+  await expect(details.getByRole('textbox', { name: 'Write a reply' })).toHaveValue(reply);
+  await details.getByRole('button', { name: 'Post reply' }).click();
+  await expect(details.getByText(reply, { exact: true })).toBeVisible();
+  await expect(details.getByRole('button', { name: 'Post comment' })).toBeEnabled();
+  await details.getByRole('button', { name: 'Close lesson details' }).click();
+  await expect(details).toBeHidden();
+
+  await enterModule('local-pmo', 'Local Developer');
+  await page.getByRole('link', { name: 'PMO Dashboard' }).click();
+  await expect(page.getByRole('heading', { name: 'PMO Dashboard' })).toBeVisible();
+  await page.getByRole('button', { name: /Recently Approved/ }).click();
+  await expect(page.getByRole('button', { name: `View ${title}` })).toBeVisible();
   await page.getByRole('link', { name: 'Lessons Library' }).click();
   const libraryLesson = page.getByRole('link', { name: `View ${title}` });
   await libraryLesson.click();
+  await details.getByRole('button', { name: 'Hide comment', exact: true }).click();
+  await details.getByRole('textbox', { name: 'Reason for hiding' }).fill('Keep discussion focused on the handover.');
+  await page.route('**/comments/*/hide', (route) => route.abort(), { times: 1 });
+  await details.getByRole('button', { name: 'Confirm hide' }).click();
+  await expect(details.getByRole('alert')).toContainText('The comment could not be hidden.');
+  await expect(details.getByRole('textbox', { name: 'Reason for hiding' })).toHaveValue('Keep discussion focused on the handover.');
+  await details.getByRole('button', { name: 'Confirm hide' }).click();
+  await expect(details.getByText('Comment hidden by PMO')).toBeVisible();
+  await expect(details.getByText(reply, { exact: true })).toBeVisible();
+  await details.getByRole('checkbox', { name: 'Show hidden comments' }).check();
+  await expect(details.getByText('Keep discussion focused on the handover.')).toBeVisible();
   await details.getByRole('button', { name: 'Close lesson', exact: true }).click();
   await page.getByRole('button', { name: 'Confirm closure' }).click();
   await expect(page.getByRole('row').filter({ has: libraryLesson })).toContainText('Closed');
@@ -491,6 +604,94 @@ test('Lessons Learned stage 3 returns, publishes and closes a lesson across prof
   await libraryLesson.click();
   await expect(status).toHaveText('Closed');
   await expect(details.getByRole('heading', { name: 'History' })).toHaveCount(0);
+
+  await page.goto('/lessons-learned/?page=pmo-dashboard');
+  await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
+  await page.goto('/lessons-learned/?page=evaluation-queue');
+  await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
+});
+
+test('FT-014: PMO rejects with a reason, and other Contributors cannot read the archived lesson', async ({ page, request }) => {
+  const title = `Rejected review ${Date.now()}`;
+  const reason = 'The example is specific to an individual incident.';
+  const lesson = await submitLessonForReview(request, title);
+  await page.addInitScript(() => localStorage.setItem('pmo-hub.local-user-id', 'local-pmo'));
+  await page.goto('/lessons-learned/?page=evaluation-queue');
+
+  await page.getByRole('button', { name: `Reject ${title}` }).click();
+  const dialog = page.getByRole('dialog', { name: 'Reject lesson' });
+  const reasonField = dialog.getByRole('textbox', { name: 'Reason for rejection' });
+  const confirm = dialog.getByRole('button', { name: 'Confirm rejection' });
+  await confirm.click();
+  await expect(reasonField).toHaveAttribute('aria-invalid', 'true');
+  await reasonField.fill(reason);
+  await confirm.click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('button', { name: `Reject ${title}` })).toHaveCount(0);
+
+  const path = `http://127.0.0.1:5199/api/lessons-learned/v1/lessons/${lesson.id}`;
+  const denied = await request.get(path, { headers: { 'X-PMO-Local-User-ID': 'local-developer' } });
+  expect(denied.status()).toBe(404);
+  const archived = await request.get(path, { headers: { 'X-PMO-Local-User-ID': 'local-contributor' } });
+  expect(archived.status()).toBe(200);
+  await expect(archived.json()).resolves.toMatchObject({
+    status: 'Archived',
+    history: expect.arrayContaining([expect.objectContaining({ eventType: 'Rejected', reason })]),
+  });
+});
+
+test('FT-027–028, FT-030: keyboard draft creation recovers from failure and restores focus', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.addInitScript(() => localStorage.setItem('pmo-hub.local-user-id', 'local-contributor'));
+  await page.goto('/lessons-learned/?page=my-submissions');
+  const title = `Keyboard recovery ${Date.now()}`;
+  const open = page.getByRole('button', { name: 'Create lesson' });
+  await tabTo(page, open);
+  await expect(open).toHaveCSS('outline-style', 'solid');
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Create lesson' });
+  const titleField = dialog.getByRole('textbox', { name: 'Title' });
+  await expect(titleField).toBeFocused();
+  const close = dialog.getByRole('button', { name: 'Close editor' });
+  const save = dialog.getByRole('button', { name: 'Save Draft' });
+  await page.keyboard.press('Shift+Tab');
+  await expect(close).toBeFocused();
+  const closeBounds = await close.boundingBox();
+  expect(closeBounds?.width).toBeGreaterThanOrEqual(44);
+  expect(closeBounds?.height).toBeGreaterThanOrEqual(44);
+  await page.keyboard.press('Shift+Tab');
+  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Tab');
+  await page.keyboard.insertText(title);
+
+  const requestGate = Promise.withResolvers<void>();
+  await page.route('**/api/lessons-learned/v1/lessons', async (route) => {
+    await requestGate.promise;
+    await route.abort();
+  }, { times: 1 });
+  await tabTo(page, save);
+  await page.keyboard.press('Enter');
+  try {
+    await expect(dialog.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('Draft saved.', { exact: true })).toHaveCount(0);
+  } finally {
+    requestGate.resolve();
+  }
+  await expect(dialog.getByRole('alert')).toContainText(/could not be saved/i);
+  await expect(titleField).toHaveValue(title);
+
+  page.once('dialog', (confirmation) => confirmation.dismiss());
+  await page.keyboard.press('Escape');
+  await expect(titleField).toHaveValue(title);
+  await tabTo(page, save);
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Edit lesson' }).getByRole('status')).toHaveText('Draft saved.');
+  await page.keyboard.press('Escape');
+  await expect(open).toBeFocused();
 });
 
 test('PMO edits a lesson during evaluation without changing its author or queue position', async ({ page }) => {
@@ -613,8 +814,8 @@ test('profile menu theme is keyboard operable, readable, and shared across both 
 
   const profileTrigger = page.getByRole('button', { name: 'Local Contributor' });
   const selectDarkWithKeyboard = async () => {
-    const lightTheme = page.getByRole('button', { name: 'Light' });
-    const darkTheme = page.getByRole('button', { name: 'Dark' });
+    const lightTheme = page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Light' });
+    const darkTheme = page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' });
     if (!(await darkTheme.isVisible())) {
       await profileTrigger.focus();
       await page.keyboard.press('Enter');
@@ -632,12 +833,14 @@ test('profile menu theme is keyboard operable, readable, and shared across both 
   const assertReadableTheme = async () => {
     const ratios = await getThemeContrastRatios(page);
     const { focus, ...textAndControlRatios } = ratios;
-    expect(Object.values(textAndControlRatios).every((ratio) => ratio >= 4.5)).toBe(true);
+    for (const [element, ratio] of Object.entries(textAndControlRatios)) {
+      expect(ratio, `${element} contrast`).toBeGreaterThanOrEqual(4.5);
+    }
     if (focus !== null) expect(focus).toBeGreaterThanOrEqual(3);
   };
   const selectLightWithKeyboard = async () => {
-    const lightTheme = page.getByRole('button', { name: 'Light' });
-    const darkTheme = page.getByRole('button', { name: 'Dark' });
+    const lightTheme = page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Light' });
+    const darkTheme = page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' });
     await expect(darkTheme).toBeFocused();
     await page.keyboard.press('Shift+Tab');
     await expect(lightTheme).toBeFocused();
@@ -647,8 +850,8 @@ test('profile menu theme is keyboard operable, readable, and shared across both 
   };
 
   await profileTrigger.click();
-  await expect(page.getByRole('button', { name: 'Light' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Light' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'false');
   await assertReadableTheme();
 
   await selectDarkWithKeyboard();
@@ -661,22 +864,22 @@ test('profile menu theme is keyboard operable, readable, and shared across both 
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.getByRole('button', { name: 'Local Contributor' }).focus();
   await page.keyboard.press('Enter');
-  const darkTheme = page.getByRole('button', { name: 'Dark' });
+  const darkTheme = page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' });
   await expect(darkTheme).toHaveAttribute('aria-pressed', 'true');
   await assertReadableTheme();
   await darkTheme.focus();
   await selectLightWithKeyboard();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  await expect(page.locator('.primary-link')).toHaveCSS('background-color', 'rgb(24, 104, 219)');
+  await expect(page.locator('.home-primary-button')).toHaveCSS('background-color', 'rgb(24, 104, 219)');
   await assertReadableTheme();
 
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  if (!(await page.getByRole('button', { name: 'Light' }).isVisible())) {
+  if (!(await page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Light' }).isVisible())) {
     await page.getByRole('button', { name: 'Local Contributor' }).click();
   }
-  await expect(page.getByRole('button', { name: 'Light' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Light' })).toHaveAttribute('aria-pressed', 'true');
   await selectDarkWithKeyboard();
   await page.goForward();
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
@@ -684,7 +887,7 @@ test('profile menu theme is keyboard operable, readable, and shared across both 
 
   await page.reload();
   await page.getByRole('button', { name: 'Local Contributor' }).click();
-  await expect(page.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
   const freshTab = await page.context().newPage();
@@ -705,7 +908,7 @@ test('migrates the existing Lessons Learned theme preference to the shared sessi
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.getByRole('button', { name: 'Local Contributor' }).click();
-  await expect(page.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => sessionStorage.getItem('pmo-hub.theme'))).toBe('dark');
   expect(await page.evaluate(() => sessionStorage.getItem('pmo-hub.lessons-learned.theme'))).toBeNull();
 });
