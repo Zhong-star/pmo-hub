@@ -329,6 +329,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/pmo/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get PMO operational dashboard with 30-day UTC summary cards and filtered lessons */
+        get: operations["PmoDashboardController_getPmoDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -704,6 +721,90 @@ export interface components {
         CloseLessonRequest: {
             /** @example 7 */
             version?: number;
+        };
+        PmoDashboardLessonResponse: {
+            /** @example 1 */
+            id: number;
+            /** @example Improve release handover */
+            title: string;
+            /** @example local-contributor */
+            authorId: string;
+            /** @description Display name of the author. */
+            authorName?: string;
+            /** @example local-contributor */
+            updatedBy: string;
+            /**
+             * @example Open
+             * @enum {string}
+             */
+            status: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived";
+            /** @example 1 */
+            version: number;
+            /** @description Opaque ETag for this lesson version. */
+            etag?: string;
+            projectId: string | null;
+            projectName: string | null;
+            /** @enum {string|null} */
+            projectCategory: "Technology" | "Business" | "Infrastructure" | "Data" | null;
+            /** @enum {string|null} */
+            projectPhase: "Initiation" | "Planning" | "Execution" | "Closure" | "Not Applicable" | null;
+            situationObserved: string | null;
+            rootCause: string | null;
+            /** @enum {string|null} */
+            lessonType: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication" | null;
+            impact: string | null;
+            recommendation: string | null;
+            applicability: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @description Most recent PMO return guidance while the lesson is Open. */
+            latestReviewGuidance: string | null;
+            /** Format: date-time */
+            approvedAt: string | null;
+            /** @example 0 */
+            viewCount: number;
+            /**
+             * Format: date-time
+             * @description Most recent relevant activity timestamp (UTC).
+             */
+            lastActivityAt: string;
+            /**
+             * Format: date-time
+             * @description Most recent closure history event timestamp (UTC).
+             */
+            latestClosedAt: string | null;
+            /**
+             * Format: date-time
+             * @description Most recent return history event timestamp (UTC).
+             */
+            latestReturnedAt: string | null;
+        };
+        PmoDashboardSummaryResponse: {
+            /** @example 0 */
+            awaitingEvaluation: number;
+            /** @example 0 */
+            recentlyApproved: number;
+            /** @example 0 */
+            recentlyClosed: number;
+            /** @example 0 */
+            recentlyReturned: number;
+        };
+        PmoDashboardResponse: {
+            /**
+             * @description Fixed calendar day window in UTC.
+             * @example 30
+             */
+            windowDays: number;
+            /**
+             * Format: date-time
+             * @description UTC start timestamp of the 30-day window.
+             */
+            windowStartAt: string;
+            summary: components["schemas"]["PmoDashboardSummaryResponse"];
+            items: components["schemas"]["PmoDashboardLessonResponse"][];
+            projects: components["schemas"]["LessonProjectResponse"][];
         };
     };
     responses: never;
@@ -2458,6 +2559,89 @@ export interface operations {
                         code?: string;
                         message?: string;
                     };
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    PmoDashboardController_getPmoDashboard: {
+        parameters: {
+            query?: {
+                /** @description A case- and accent-insensitive title prefix, numeric ID or #ID. */
+                search?: string;
+                /** @description Project snapshot ID. */
+                projectId?: string;
+                /** @description Filter to lessons without a project. */
+                withoutProject?: boolean;
+                lessonType?: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication";
+                status?: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived";
+                /** @description Optional quick-filter matching one of the four summary cards. */
+                card?: "awaiting-evaluation" | "recently-approved" | "recently-closed" | "recently-returned";
+                /** @description Sort order for the PMO Dashboard list. */
+                sort?: "activity" | "oldest-activity" | "title" | "status" | "project" | "type";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PmoDashboardResponse"];
+                };
+            };
+            /** @description Invalid PMO Dashboard query parameter. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile is not a PMO moderator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
                 };
             };
             /** @description Lessons Learned persistence is unavailable. */

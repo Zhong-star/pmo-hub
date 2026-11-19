@@ -11,6 +11,7 @@ const lessonsPath = '/api/lessons-learned/v1/lessons';
 const projectsPath = `${lessonsPath}/projects`;
 const submissionsPath = `${lessonsPath}/mine`;
 const pmoDraftsPath = `${lessonsPath}/pmo-drafts`;
+const pmoDashboardPath = '/api/lessons-learned/v1/pmo/dashboard';
 const evaluationQueuePath = `${lessonsPath}/evaluation-queue`;
 const evaluationProjectsPath = evaluationQueuePath + '/projects';
 const libraryPath = `${lessonsPath}/library`;
@@ -40,6 +41,8 @@ const submissionsOperation = contract.paths?.[submissionsPath]?.get;
 const submissionsResponseSchema = submissionsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const pmoDraftsOperation = contract.paths?.[pmoDraftsPath]?.get;
 const pmoDraftsResponseSchema = pmoDraftsOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const pmoDashboardOperation = contract.paths?.[pmoDashboardPath]?.get;
+const pmoDashboardResponseSchema = pmoDashboardOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const evaluationQueueOperation = contract.paths?.[evaluationQueuePath]?.get;
 const evaluationQueueResponseSchema = evaluationQueueOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const libraryOperation = contract.paths?.[libraryPath]?.get;
@@ -106,6 +109,10 @@ if (!submissionsOperation || submissionsResponseSchema?.type !== 'array' ||
 if (!pmoDraftsOperation || pmoDraftsResponseSchema?.type !== 'array' ||
   pmoDraftsResponseSchema.items?.$ref !== '#/components/schemas/LessonDraftResponse') {
   throw new Error(`Expected GET ${pmoDraftsPath} with an array of LessonDraftResponse in ${contractPath}`);
+}
+
+if (!pmoDashboardOperation || pmoDashboardResponseSchema?.$ref !== '#/components/schemas/PmoDashboardResponse') {
+  throw new Error(`Expected GET ${pmoDashboardPath} with PmoDashboardResponse in ${contractPath}`);
 }
 
 if (!evaluationQueueResponseSchema?.oneOf?.some((schema) => schema.$ref === '#/components/schemas/LessonPage')) {
@@ -180,6 +187,7 @@ export const LESSONS_LEARNED_LESSONS_PATH = '${lessonsPath}' satisfies keyof pat
 export const LESSONS_LEARNED_PROJECTS_PATH = '${projectsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMISSIONS_PATH = '${submissionsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '${pmoDraftsPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_PMO_DASHBOARD_PATH = '${pmoDashboardPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '${evaluationQueuePath}' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_PROJECTS_PATH = '${evaluationProjectsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_PATH = '${libraryPath}' satisfies keyof paths;
@@ -200,6 +208,12 @@ export type LessonDetails = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['get']['res
 export type LessonHistoryEvent = LessonDetails['history'][number];
 export type LessonSubmissionsFilters = NonNullable<paths[typeof LESSONS_LEARNED_SUBMISSIONS_PATH]['get']['parameters']['query']>;
 export type PmoDraftsFilters = NonNullable<paths[typeof LESSONS_LEARNED_PMO_DRAFTS_PATH]['get']['parameters']['query']>;
+export type PmoDashboardFilters = NonNullable<paths[typeof LESSONS_LEARNED_PMO_DASHBOARD_PATH]['get']['parameters']['query']>;
+export type PmoDashboardCard = NonNullable<PmoDashboardFilters['card']>;
+export type PmoDashboardSort = NonNullable<PmoDashboardFilters['sort']>;
+export type PmoDashboardResponse = paths[typeof LESSONS_LEARNED_PMO_DASHBOARD_PATH]['get']['responses'][200]['content']['application/json'];
+export type PmoDashboardSummary = PmoDashboardResponse['summary'];
+export type PmoDashboardLesson = PmoDashboardResponse['items'][number];
 export type LessonPage = components['schemas']['LessonPage'];
 export type LibraryLesson = components['schemas']['LessonLibraryResponse'];
 export type LibraryPage = components['schemas']['LessonLibraryPage'];
@@ -281,6 +295,16 @@ export async function getMySubmissions(localUserId: string, filters: LessonSubmi
 
 export async function getPmoDrafts(localUserId: string, filters: PmoDraftsFilters = {}): Promise<LessonDraft[]> {
   const { data } = await api.get<LessonDraft[]>(LESSONS_LEARNED_PMO_DRAFTS_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+    params: filters,
+  });
+
+  return data;
+}
+
+export async function getPmoDashboard(localUserId: string, filters: PmoDashboardFilters = {}): Promise<PmoDashboardResponse> {
+  const { data } = await api.get<PmoDashboardResponse>(LESSONS_LEARNED_PMO_DASHBOARD_PATH, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
     params: filters,

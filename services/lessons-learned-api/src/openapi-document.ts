@@ -15,9 +15,12 @@ export function createOpenApiDocument(app: INestApplication) {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  const collection = '/api/lessons-learned/v1/lessons';
+  const problemCollections = [
+    '/api/lessons-learned/v1/lessons',
+    '/api/lessons-learned/v1/pmo',
+  ];
   for (const [path, routes] of Object.entries(document.paths)) {
-    if (path !== collection && !path.startsWith(`${collection}/`)) continue;
+    if (!problemCollections.some((collection) => path === collection || path.startsWith(`${collection}/`))) continue;
     for (const operation of [routes.get, routes.patch, routes.post]) {
       if (!operation) continue;
       for (const [code, response] of Object.entries(operation.responses)) {
