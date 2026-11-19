@@ -20,6 +20,8 @@ import {
   type LessonNotificationPage,
 } from '../src/api';
 
+import { emptyHomeSections } from './homeFixtures';
+
 vi.mock('../src/api', () => ({
   approveLesson: vi.fn(),
   cancelLesson: vi.fn(),
@@ -58,6 +60,7 @@ vi.mock('../src/api', () => ({
 const contributor = {
   profile: { id: 'local-contributor', displayName: 'Local Contributor', role: 'LESSONS_USER' as const },
   navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
+  ...emptyHomeSections,
 };
 
 function makeNotification(overrides: Partial<LessonNotificationItem> = {}): LessonNotificationItem {

@@ -21,6 +21,8 @@ import {
   type LessonDetails,
 } from '../src/api';
 
+import { emptyHomeSections } from './homeFixtures';
+
 vi.mock('../src/api', () => ({
   approveLesson: vi.fn(),
   castLessonVote: vi.fn(),
@@ -59,11 +61,13 @@ vi.mock('../src/api', () => ({
 const contributor = {
   profile: { id: 'local-contributor', displayName: 'Local Contributor', role: 'LESSONS_USER' as const },
   navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
+  ...emptyHomeSections,
 };
 
 const pmo = {
   profile: { id: 'local-pmo', displayName: 'Local PMO', role: 'LESSONS_MODERATOR' as const },
   navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
+  ...emptyHomeSections,
 };
 
 function publishedLesson(overrides: Partial<LessonDraft> = {}): LessonDraft {

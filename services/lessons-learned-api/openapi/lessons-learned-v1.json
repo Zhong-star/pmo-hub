@@ -6595,6 +6595,307 @@
           "current"
         ]
       },
+      "LessonNotificationItemResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "LESSON_RETURNED",
+              "LESSON_APPROVED",
+              "LESSON_REJECTED",
+              "COMMENT_ADDED",
+              "REPLY_ADDED"
+            ],
+            "example": "LESSON_APPROVED"
+          },
+          "actorUserId": {
+            "type": "string",
+            "example": "local-pmo"
+          },
+          "actorDisplayName": {
+            "type": "string",
+            "example": "Local PMO"
+          },
+          "lessonId": {
+            "type": "number",
+            "example": 42
+          },
+          "lessonTitle": {
+            "type": "string",
+            "example": "Release checklist alignment"
+          },
+          "summary": {
+            "type": "string",
+            "example": "Local PMO approved your lesson."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "readAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "isRead": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "id",
+          "eventType",
+          "actorUserId",
+          "actorDisplayName",
+          "lessonId",
+          "lessonTitle",
+          "summary",
+          "createdAt",
+          "readAt",
+          "isRead"
+        ]
+      },
+      "HomeNotificationsSummary": {
+        "type": "object",
+        "properties": {
+          "unreadCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 2
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LessonNotificationItemResponse"
+            }
+          }
+        },
+        "required": [
+          "unreadCount",
+          "items"
+        ]
+      },
+      "HomeLessonSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 42
+          },
+          "title": {
+            "type": "string",
+            "example": "Release checklist alignment"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Open",
+              "PMOEvaluation",
+              "Approved",
+              "Closed",
+              "Archived"
+            ],
+            "example": "Open"
+          },
+          "authorId": {
+            "type": "string",
+            "example": "local-contributor"
+          },
+          "authorName": {
+            "type": "string",
+            "nullable": true,
+            "example": "Local Contributor"
+          },
+          "projectName": {
+            "type": "string",
+            "nullable": true,
+            "example": "Core Platform"
+          },
+          "lessonType": {
+            "type": "string",
+            "enum": [
+              "Future Prevention",
+              "Success to Repeat",
+              "Risk Avoided",
+              "Communication"
+            ],
+            "nullable": true,
+            "example": "Future Prevention"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "latestReviewGuidance": {
+            "type": "string",
+            "nullable": true,
+            "example": "Clarify root cause details."
+          },
+          "isReturned": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "authorId",
+          "authorName",
+          "projectName",
+          "lessonType",
+          "updatedAt",
+          "approvedAt",
+          "latestReviewGuidance",
+          "isReturned"
+        ]
+      },
+      "HomeHighlights": {
+        "type": "object",
+        "properties": {
+          "returnedCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 1
+          },
+          "returnedLessons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeLessonSummary"
+            }
+          },
+          "openDraftCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 1
+          },
+          "pendingEvaluationCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 0
+          },
+          "pendingEvaluationLessons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeLessonSummary"
+            }
+          }
+        },
+        "required": [
+          "returnedCount",
+          "returnedLessons",
+          "openDraftCount",
+          "pendingEvaluationCount",
+          "pendingEvaluationLessons"
+        ]
+      },
+      "HomePrimaryAction": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "review-returned",
+              "continue-draft",
+              "evaluate-pending",
+              "create-lesson",
+              "explore-library"
+            ],
+            "example": "create-lesson"
+          },
+          "label": {
+            "type": "string",
+            "example": "Create lesson"
+          },
+          "description": {
+            "type": "string",
+            "example": "Capture your first lesson learned to share with the team."
+          },
+          "targetPage": {
+            "type": "string",
+            "enum": [
+              "home",
+              "my-submissions",
+              "pmo-drafts",
+              "evaluation-queue",
+              "pmo-dashboard",
+              "library",
+              "profiles",
+              "create-lesson"
+            ],
+            "example": "create-lesson"
+          },
+          "lessonId": {
+            "type": "number",
+            "nullable": true,
+            "example": null
+          }
+        },
+        "required": [
+          "kind",
+          "label",
+          "description",
+          "targetPage",
+          "lessonId"
+        ]
+      },
+      "HomeShortcut": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "home",
+              "my-submissions",
+              "pmo-drafts",
+              "evaluation-queue",
+              "pmo-dashboard",
+              "library",
+              "profiles",
+              "create-lesson"
+            ],
+            "example": "library"
+          },
+          "label": {
+            "type": "string",
+            "example": "Lessons Library"
+          },
+          "description": {
+            "type": "string",
+            "example": "Search and explore published lessons."
+          },
+          "targetPage": {
+            "type": "string",
+            "enum": [
+              "home",
+              "my-submissions",
+              "pmo-drafts",
+              "evaluation-queue",
+              "pmo-dashboard",
+              "library",
+              "profiles",
+              "create-lesson"
+            ],
+            "example": "library"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "description",
+          "targetPage"
+        ]
+      },
       "LessonsLearnedHomeResponse": {
         "type": "object",
         "properties": {
@@ -6606,11 +6907,37 @@
             "items": {
               "$ref": "#/components/schemas/LessonsLearnedNavigationItem"
             }
+          },
+          "notifications": {
+            "$ref": "#/components/schemas/HomeNotificationsSummary"
+          },
+          "recentWork": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeLessonSummary"
+            }
+          },
+          "highlights": {
+            "$ref": "#/components/schemas/HomeHighlights"
+          },
+          "primaryAction": {
+            "$ref": "#/components/schemas/HomePrimaryAction"
+          },
+          "shortcuts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeShortcut"
+            }
           }
         },
         "required": [
           "profile",
-          "navigation"
+          "navigation",
+          "notifications",
+          "recentWork",
+          "highlights",
+          "primaryAction",
+          "shortcuts"
         ]
       },
       "LessonCommentModerationResponse": {
@@ -8426,71 +8753,6 @@
           "includesPrivateLessons",
           "items",
           "projects"
-        ]
-      },
-      "LessonNotificationItemResponse": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number",
-            "example": 1
-          },
-          "eventType": {
-            "type": "string",
-            "enum": [
-              "LESSON_RETURNED",
-              "LESSON_APPROVED",
-              "LESSON_REJECTED",
-              "COMMENT_ADDED",
-              "REPLY_ADDED"
-            ],
-            "example": "LESSON_APPROVED"
-          },
-          "actorUserId": {
-            "type": "string",
-            "example": "local-pmo"
-          },
-          "actorDisplayName": {
-            "type": "string",
-            "example": "Local PMO"
-          },
-          "lessonId": {
-            "type": "number",
-            "example": 42
-          },
-          "lessonTitle": {
-            "type": "string",
-            "example": "Release checklist alignment"
-          },
-          "summary": {
-            "type": "string",
-            "example": "Local PMO approved your lesson."
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "readAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "isRead": {
-            "type": "boolean",
-            "example": false
-          }
-        },
-        "required": [
-          "id",
-          "eventType",
-          "actorUserId",
-          "actorDisplayName",
-          "lessonId",
-          "lessonTitle",
-          "summary",
-          "createdAt",
-          "readAt",
-          "isRead"
         ]
       },
       "LessonNotificationPageMetadataResponse": {

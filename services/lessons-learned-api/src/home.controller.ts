@@ -8,7 +8,7 @@ import {
   localProfileHeader,
   localProfileScheme,
 } from './local-access-problem';
-import { LocalAccessService } from './local-access.service';
+import { HomeService } from './home.service';
 
 function accessProblem(status: number, description: string) {
   return ApiResponse({
@@ -26,7 +26,7 @@ function accessProblem(status: number, description: string) {
 @Controller()
 @UseFilters(LocalAccessProblemFilter)
 export class HomeController {
-  constructor(@Inject(LocalAccessService) private readonly localAccess: LocalAccessService) {}
+  constructor(@Inject(HomeService) private readonly homeService: HomeService) {}
 
   @Get('home')
   @Header('Cache-Control', 'no-store')
@@ -37,7 +37,7 @@ export class HomeController {
   @accessProblem(403, 'The selected profile has no active Lessons Learned access.')
   @accessProblem(500, 'The Lessons Learned local access configuration is invalid.')
   @accessProblem(503, 'Local simulated identity is disabled for this runtime.')
-  getHome(@Headers(localProfileHeader.toLowerCase()) header?: string | string[]): LessonsLearnedHomeResponse {
-    return this.localAccess.getHome(typeof header === 'string' ? header : undefined);
+  getHome(@Headers(localProfileHeader.toLowerCase()) header?: string | string[]): Promise<LessonsLearnedHomeResponse> {
+    return this.homeService.getHome(typeof header === 'string' ? header : undefined);
   }
 }
