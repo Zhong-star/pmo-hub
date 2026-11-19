@@ -159,19 +159,28 @@ describe('Lessons Learned health API', () => {
       .expect({ status: 'ok' });
   });
 
-  it('authorizes a Contributor and returns only the Home destination', async () => {
+  it('authorizes a Contributor and returns the role-aware Home payload', async () => {
     await request(app.getHttpServer())
       .get('/api/lessons-learned/v1/home')
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .expect('Cache-Control', 'no-store')
       .expect(200)
-      .expect({
-        profile: {
+      .expect(({ body }) => {
+        expect(body.profile).toEqual({
           id: 'local-contributor',
           displayName: 'Local Contributor',
           role: 'LESSONS_USER',
-        },
-        navigation: [{ id: 'home', label: 'Home', current: true }],
+        });
+        expect(body.navigation).toEqual([{ id: 'home', label: 'Home', current: true }]);
+        expect(body.notifications).toEqual({ unreadCount: 0, items: [] });
+        expect(body.recentWork).toEqual([]);
+        expect(body.primaryAction).toMatchObject({ kind: 'create-lesson', targetPage: 'create-lesson', lessonId: null });
+        expect((body.shortcuts as { id: string }[]).map((s) => s.id)).toEqual([
+          'create-lesson',
+          'my-submissions',
+          'library',
+          'profiles',
+        ]);
       });
   });
 

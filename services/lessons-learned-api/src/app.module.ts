@@ -3,6 +3,7 @@ import { getLessonsLearnedDatabaseUrl } from './database/database-options';
 import { LessonsLearnedDatabaseModule } from './database/database.module';
 import { HealthController } from './health.controller';
 import { HomeController } from './home.controller';
+import { HomeService } from './home.service';
 import { LessonCommentsService } from './lessons/lesson-comments.service';
 import { LessonNotificationStore } from './lessons/lesson-notification-store';
 import { LessonNotificationsController } from './lessons/lesson-notifications.controller';
@@ -27,6 +28,7 @@ import { LocalAccessService } from './local-access.service';
   ],
   providers: [
     LocalAccessService,
+    HomeService,
     LessonNotificationStore,
     LessonNotificationsService,
     LessonsService,

@@ -558,9 +558,118 @@ export interface components {
             /** @example true */
             current: boolean;
         };
+        LessonNotificationItemResponse: {
+            /** @example 1 */
+            id: number;
+            /**
+             * @example LESSON_APPROVED
+             * @enum {string}
+             */
+            eventType: "LESSON_RETURNED" | "LESSON_APPROVED" | "LESSON_REJECTED" | "COMMENT_ADDED" | "REPLY_ADDED";
+            /** @example local-pmo */
+            actorUserId: string;
+            /** @example Local PMO */
+            actorDisplayName: string;
+            /** @example 42 */
+            lessonId: number;
+            /** @example Release checklist alignment */
+            lessonTitle: string;
+            /** @example Local PMO approved your lesson. */
+            summary: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            readAt: string | null;
+            /** @example false */
+            isRead: boolean;
+        };
+        HomeNotificationsSummary: {
+            /** @example 2 */
+            unreadCount: number;
+            items: components["schemas"]["LessonNotificationItemResponse"][];
+        };
+        HomeLessonSummary: {
+            /** @example 42 */
+            id: number;
+            /** @example Release checklist alignment */
+            title: string;
+            /**
+             * @example Open
+             * @enum {string}
+             */
+            status: "Open" | "PMOEvaluation" | "Approved" | "Closed" | "Archived";
+            /** @example local-contributor */
+            authorId: string;
+            /** @example Local Contributor */
+            authorName: string | null;
+            /** @example Core Platform */
+            projectName: string | null;
+            /**
+             * @example Future Prevention
+             * @enum {string|null}
+             */
+            lessonType: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication" | null;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            approvedAt: string | null;
+            /** @example Clarify root cause details. */
+            latestReviewGuidance: string | null;
+            /** @example false */
+            isReturned: boolean;
+        };
+        HomeHighlights: {
+            /** @example 1 */
+            returnedCount: number;
+            returnedLessons: components["schemas"]["HomeLessonSummary"][];
+            /** @example 1 */
+            openDraftCount: number;
+            /** @example 0 */
+            pendingEvaluationCount: number;
+            pendingEvaluationLessons: components["schemas"]["HomeLessonSummary"][];
+        };
+        HomePrimaryAction: {
+            /**
+             * @example create-lesson
+             * @enum {string}
+             */
+            kind: "review-returned" | "continue-draft" | "evaluate-pending" | "create-lesson" | "explore-library";
+            /** @example Create lesson */
+            label: string;
+            /** @example Capture your first lesson learned to share with the team. */
+            description: string;
+            /**
+             * @example create-lesson
+             * @enum {string}
+             */
+            targetPage: "home" | "my-submissions" | "pmo-drafts" | "evaluation-queue" | "pmo-dashboard" | "library" | "profiles" | "create-lesson";
+            /** @example null */
+            lessonId: number | null;
+        };
+        HomeShortcut: {
+            /**
+             * @example library
+             * @enum {string}
+             */
+            id: "home" | "my-submissions" | "pmo-drafts" | "evaluation-queue" | "pmo-dashboard" | "library" | "profiles" | "create-lesson";
+            /** @example Lessons Library */
+            label: string;
+            /** @example Search and explore published lessons. */
+            description: string;
+            /**
+             * @example library
+             * @enum {string}
+             */
+            targetPage: "home" | "my-submissions" | "pmo-drafts" | "evaluation-queue" | "pmo-dashboard" | "library" | "profiles" | "create-lesson";
+        };
         LessonsLearnedHomeResponse: {
             profile: components["schemas"]["LessonsLearnedProfile"];
             navigation: components["schemas"]["LessonsLearnedNavigationItem"][];
+            notifications: components["schemas"]["HomeNotificationsSummary"];
+            recentWork: components["schemas"]["HomeLessonSummary"][];
+            highlights: components["schemas"]["HomeHighlights"];
+            primaryAction: components["schemas"]["HomePrimaryAction"];
+            shortcuts: components["schemas"]["HomeShortcut"][];
         };
         LessonCommentModerationResponse: {
             /** Format: date-time */
@@ -1154,31 +1263,6 @@ export interface components {
         RankingsResponse: {
             mostVotedLessons: components["schemas"]["RankedLessonResponse"][];
             topContributors: components["schemas"]["RankedContributorResponse"][];
-        };
-        LessonNotificationItemResponse: {
-            /** @example 1 */
-            id: number;
-            /**
-             * @example LESSON_APPROVED
-             * @enum {string}
-             */
-            eventType: "LESSON_RETURNED" | "LESSON_APPROVED" | "LESSON_REJECTED" | "COMMENT_ADDED" | "REPLY_ADDED";
-            /** @example local-pmo */
-            actorUserId: string;
-            /** @example Local PMO */
-            actorDisplayName: string;
-            /** @example 42 */
-            lessonId: number;
-            /** @example Release checklist alignment */
-            lessonTitle: string;
-            /** @example Local PMO approved your lesson. */
-            summary: string;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            readAt: string | null;
-            /** @example false */
-            isRead: boolean;
         };
         LessonNotificationPageMetadataResponse: {
             /** @example 20 */

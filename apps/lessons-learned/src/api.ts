@@ -66,6 +66,13 @@ export {
 } from './generated/lessons-learned-api-client';
 
 export type {
+  HomeResponse,
+  HomeNotificationsSummary,
+  HomeLessonSummary,
+  HomeHighlights,
+  HomePrimaryAction,
+  HomeShortcut,
+  HomeTargetPage,
   CreateLessonDraftBody,
   LessonDraft,
   LessonPage,

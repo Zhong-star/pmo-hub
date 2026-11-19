@@ -2,6 +2,7 @@ import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { emptyHomeSections } from './homeFixtures';
 import { LessonsLearnedScreen } from '../src/LessonsLearnedScreen';
 import {
   getContributorProfile,
@@ -54,6 +55,7 @@ vi.mock('../src/api', () => ({
 }));
 
 const contributor = {
+  ...emptyHomeSections,
   profile: { id: 'local-contributor', displayName: 'Local Contributor', role: 'LESSONS_USER' as const },
   navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
 };

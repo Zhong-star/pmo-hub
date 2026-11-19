@@ -54,8 +54,10 @@ import {
   type SubmitLessonBody,
   type ReturnLessonBody,
   type UpdateLessonDraftBody,
+  type HomeTargetPage,
 } from './api';
 import { DraftEditor } from './DraftEditor';
+import { HomeView } from './HomeView';
 import { ApprovalDialog } from './ApprovalDialogs';
 import { ClosureDialog } from './ClosureDialog';
 import { LessonSubmissionDetailsDialog, CancelLessonDialog, RejectLessonDialog } from './SubmissionDialogs';
@@ -102,10 +104,6 @@ function isDefinitiveAccessError(error: unknown): boolean {
     || errorCode === 'ACCESS_DENIED'
     || errorCode === 'ACCESS_CONFIGURATION_ERROR'
     || errorCode === 'LOCAL_AUTH_DISABLED';
-}
-
-function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
-  return role === 'LESSONS_MODERATOR' ? 'PMO' : 'Contributor';
 }
 
 type ModulePage = 'home' | 'my-submissions' | 'pmo-drafts' | 'evaluation-queue' | 'pmo-dashboard' | 'library' | 'profiles';
@@ -1213,6 +1211,22 @@ export function LessonsLearnedScreen() {
     setSelectedSubmissionId(lessonId);
   }
 
+  // Home openings use the operational Lesson Detail path, which never records a view (D7).
+  function openLessonFromHome(lessonId: number) {
+    openLessonFromNotification(lessonId);
+  }
+
+  function navigateFromHome(targetPage: HomeTargetPage) {
+    if (navigationCloseRequestRef.current && !navigationCloseRequestRef.current()) return;
+    if (targetPage === 'create-lesson') {
+      navigateModulePage('my-submissions');
+      setSelectedDraft(null);
+      setIsCreateFormOpen(true);
+      return;
+    }
+    navigateModulePage(targetPage);
+  }
+
   return (
     <div className={isHomePage ? 'app-shell workspace-shell' : 'app-shell'}>
       <HubHeader
@@ -1399,12 +1413,13 @@ export function LessonsLearnedScreen() {
                   </div>
                 </div>
               ) : modulePage === 'home' || (!isPmo && (modulePage === 'pmo-drafts' || modulePage === 'evaluation-queue')) ? (
-                <>
-                  <h1 id="page-title">Home</h1>
-                  <p className="intro">Welcome, {homeQuery.data.profile.displayName}</p>
-                  <p className="active-role">Active role: <strong>{getRoleLabel(homeQuery.data.profile.role)}</strong></p>
-                  <a className="primary-link" href="/">Back to PMO Hub</a>
-                </>
+                <HomeView
+                  home={homeQuery.data}
+                  theme={theme}
+                  onThemeChange={selectTheme}
+                  onOpenLesson={openLessonFromHome}
+                  onNavigate={navigateFromHome}
+                />
               ) : (
                 <section className="submissions-page" aria-labelledby="page-title">
                   {isPmoDashboardPage ? (

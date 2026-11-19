@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import { LessonsLearnedHomeResponse } from './home-response.dto';
 import { LocalAccessException } from './local-access-problem';
 
 export type LessonsLearnedRole = 'LESSONS_USER' | 'LESSONS_MODERATOR';
@@ -25,19 +24,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 @Injectable()
 export class LocalAccessService {
-  getHome(localUserId: string | undefined): LessonsLearnedHomeResponse {
-    const profile = this.getProfile(localUserId);
-
-    return {
-      profile: {
-        id: profile.id,
-        displayName: profile.displayName,
-        role: profile.role,
-      },
-      navigation: [{ id: 'home', label: 'Home', current: true }],
-    };
-  }
-
   getProfile(localUserId: string | undefined): LocalProfile {
     if (!this.isLocalSimulationEnabled()) {
       throw new LocalAccessException(
