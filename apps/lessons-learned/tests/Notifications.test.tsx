@@ -262,6 +262,34 @@ describe('Notifications menu and D7/D8 behaviors', () => {
     expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument();
   });
 
+  it('marks more than 100 loaded items in bounded requests and retries only the remaining unread items', async () => {
+    const user = userEvent.setup();
+    const ids = Array.from({ length: 101 }, (_, index) => index + 1);
+    vi.mocked(getNotifications).mockResolvedValue({
+      items: ids.map((id) => makeNotification({ id })),
+      page: { limit: 100, nextCursor: null },
+      unreadCount: ids.length,
+    });
+    vi.mocked(markNotificationsReadBatch)
+      .mockResolvedValueOnce({ updatedIds: ids.slice(0, 100), unreadCount: 1 })
+      .mockRejectedValueOnce(new Error('Unavailable'))
+      .mockResolvedValueOnce({ updatedIds: [101], unreadCount: 0 });
+
+    renderScreen();
+    await user.click(await screen.findByRole('button', { name: 'Notifications (101 unread)' }));
+    const menu = within(screen.getByRole('region', { name: 'Notifications' }));
+    const markLoaded = menu.getByRole('button', { name: 'Mark loaded as read' });
+    await user.click(markLoaded);
+    expect(await menu.findByRole('alert')).toHaveTextContent('Some notifications could not be marked as read.');
+    expect(markNotificationsReadBatch).toHaveBeenNthCalledWith(1, 'local-contributor', { notificationIds: ids.slice(0, 100) });
+    expect(markNotificationsReadBatch).toHaveBeenNthCalledWith(2, 'local-contributor', { notificationIds: [101] });
+    expect(screen.getByRole('button', { name: 'Notifications (1 unread)' })).toBeInTheDocument();
+
+    await user.click(markLoaded);
+    await screen.findByRole('button', { name: 'Notifications' });
+    expect(markNotificationsReadBatch).toHaveBeenNthCalledWith(3, 'local-contributor', { notificationIds: [101] });
+  });
+
   it('opens Lesson Detail from a notification with fresh access revalidation and WITHOUT incrementing views (D7)', async () => {
     const user = userEvent.setup();
     vi.mocked(getNotifications).mockResolvedValue({

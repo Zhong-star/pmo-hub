@@ -28,6 +28,11 @@ test('Module menu works by pointer and keyboard on narrow screens', async ({ pag
   await expect(navigation).toBeVisible();
   expect((await panel.boundingBox())!.y).toBeGreaterThan(closedTop);
   await expect(homeLink).toHaveAttribute('href', '/lessons-learned/');
+  await homeLink.focus();
+  await page.keyboard.press('Escape');
+  await expect(menuButton).toBeFocused();
+  await expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+  await menuButton.click();
   await homeLink.click();
 
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
@@ -35,8 +40,8 @@ test('Module menu works by pointer and keyboard on narrow screens', async ({ pag
   await expect(navigation).toBeHidden();
 });
 
-test('Lessons Learned navigation stays beside Home on wide screens', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
+test('Lessons Learned navigation stays beside Home at 1280 × 720 and after desktop resize', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.addInitScript(() => localStorage.setItem('pmo-hub.local-user-id', 'local-contributor'));
   await page.goto('/lessons-learned/');
 
@@ -62,9 +67,17 @@ test('Lessons Learned navigation stays beside Home on wide screens', async ({ pa
   expect(sidebarBounds!.x + sidebarBounds!.width).toBeLessThan(contentBounds!.x);
   expect(sidebarBounds!.x).toBe(0);
   expect(sidebarBounds!.y).toBe(headerBounds!.height);
-  expect(sidebarBounds!.y + sidebarBounds!.height).toBe(900);
+  expect(sidebarBounds!.y + sidebarBounds!.height).toBe(720);
   expect(panelBounds!.x + panelBounds!.width).toBe(1280);
-  expect(panelBounds!.y + panelBounds!.height).toBe(900);
+  expect(panelBounds!.y + panelBounds!.height).toBe(720);
+  const primary = page.getByRole('region', { name: 'Recommended next action' }).getByRole('button');
+  expect((await primary.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await expect(navigation).toBeVisible();
+  expect((await panel.boundingBox())!.x + (await panel.boundingBox())!.width).toBe(1600);
+  await page.setViewportSize({ width: 720, height: 600 });
+  await expect(menuButton).toBeVisible();
+  await expect(navigation).toBeHidden();
 });
 
 test('My Submissions scrolls inside the desktop panel and opens the draft editor', async ({ page }) => {

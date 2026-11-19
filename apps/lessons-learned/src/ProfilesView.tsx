@@ -50,6 +50,7 @@ type ProfileSearchViewProps = {
   profiles?: ProfileSummary[];
   isLoading: boolean;
   isError: boolean;
+  errorMessage?: string;
   onRetry: () => void;
   search: string;
   onSearchChange: (value: string) => void;
@@ -60,6 +61,7 @@ export function ProfileSearchView({
   profiles,
   isLoading,
   isError,
+  errorMessage,
   onRetry,
   search,
   onSearchChange,
@@ -102,7 +104,9 @@ export function ProfileSearchView({
       {isLoading && <p role="status">Loading profiles…</p>}
       {isError && (
         <div className="draft-error" role="alert">
-          <p>Profiles could not be loaded.</p>
+          <p>{errorMessage ?? (profiles
+            ? 'Could not refresh. Showing the last loaded results.'
+            : 'Profiles could not be loaded.')}</p>
           <button className="draft-cancel" type="button" onClick={onRetry}>Retry</button>
         </div>
       )}
@@ -111,7 +115,7 @@ export function ProfileSearchView({
           {hasSearch ? 'No authorized profiles match this search.' : 'No authorized profiles are available.'}
         </p>
       )}
-      {!isLoading && !isError && items.length > 0 && (
+      {!isLoading && items.length > 0 && (
         <ul className="profile-cards-grid" aria-label="Authorized module profiles">
           {items.map((profile) => (
             <li key={profile.id} className="profile-card">
@@ -157,6 +161,7 @@ type ContributorProfileViewProps = {
   isLoading: boolean;
   isNotFound: boolean;
   isError: boolean;
+  errorMessage?: string;
   onRetry: () => void;
   backLabel: string;
   onBack: () => void;
@@ -178,6 +183,7 @@ export function ContributorProfileView({
   isLoading,
   isNotFound,
   isError,
+  errorMessage,
   onRetry,
   backLabel,
   onBack,
@@ -217,13 +223,15 @@ export function ContributorProfileView({
 
       {!isLoading && isError && !isNotFound && (
         <div className="draft-error" role="alert">
-          <h1 id="page-title" tabIndex={-1}>Contributor profile</h1>
-          <p>The contributor profile could not be loaded.</p>
+          {!data && <h1 id="page-title" tabIndex={-1}>Contributor profile</h1>}
+          <p>{errorMessage ?? (data
+            ? 'Could not refresh. Showing the last loaded results.'
+            : 'The contributor profile could not be loaded.')}</p>
           <button type="button" className="draft-cancel" onClick={onRetry}>Retry</button>
         </div>
       )}
 
-      {!isLoading && !isError && data && (
+      {!isLoading && data && (
         <>
           <div className="profile-hero">
             <span className="profile-avatar profile-avatar--large" aria-hidden="true">

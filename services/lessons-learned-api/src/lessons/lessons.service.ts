@@ -187,7 +187,9 @@ export class LessonsService {
     }
 
     const windowDays = 30;
-    const windowStartAt = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+    const windowStartAt = new Date();
+    windowStartAt.setUTCHours(0, 0, 0, 0);
+    windowStartAt.setUTCDate(windowStartAt.getUTCDate() - windowDays + 1);
     const windowStartMs = windowStartAt.getTime();
     const authorNames = this.localAccess.getDisplayNames();
     const dataSource = this.requireDataSource();

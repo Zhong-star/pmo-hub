@@ -96,6 +96,12 @@ function getApiErrorStatus(error: unknown): number | null {
   return typeof response.status === 'number' ? response.status : null;
 }
 
+function getReadErrorLabel(error: unknown): string | undefined {
+  const status = getApiErrorStatus(error);
+  if (status === 401 || status === 403) return 'Access denied.';
+  if (status === 404) return 'The requested resource was not found.';
+}
+
 function isDefinitiveAccessError(error: unknown): boolean {
   const errorCode = getApiErrorCode(error);
   return getApiErrorStatus(error) === 401
@@ -413,7 +419,7 @@ export function LessonsLearnedScreen() {
   const isPmoDraftsPage = modulePage === 'pmo-drafts' && isPmo;
   const isPmoEvaluationQueuePage = modulePage === 'evaluation-queue' && isPmo;
   const isPmoDashboardPage = modulePage === 'pmo-dashboard' && isPmo;
-  const isPmoDashboardDenied = modulePage === 'pmo-dashboard' && !isPmo;
+  const isPmoSurfaceDenied = !isPmo && (modulePage === 'pmo-dashboard' || modulePage === 'evaluation-queue');
   const isPmoReviewListPage = isPmoDraftsPage || isPmoEvaluationQueuePage;
   const isMySubmissionsPage = modulePage === 'my-submissions';
   const isLibraryPage = modulePage === 'library';
@@ -605,6 +611,19 @@ export function LessonsLearnedScreen() {
   const confirmedLibraryDetails = libraryDetailsQuery.isSuccess && !isLibraryDetailLoading
     ? libraryDetailsQuery.data
     : undefined;
+  const activeDetailQuery = isLibraryDetailOpen
+    ? libraryDetailsQuery
+    : isProfilePublishedDetailOpen ? profilePublishedDetailsQuery : submissionDetailsQuery;
+  const detailErrorStatus = getApiErrorStatus(activeDetailQuery.error);
+  const canEditSubmission = (
+    (isPmoEvaluationQueuePage || modulePage === 'home')
+    && isPmo && confirmedSubmissionDetails?.status === 'PMOEvaluation'
+  ) || (
+    confirmedSubmissionDetails?.status === 'Open' && (
+      (isPmo && isPmoDraftsPage)
+      || (modulePage === 'home' && (isPmo || confirmedSubmissionDetails.authorId === selectedProfileId))
+    )
+  );
   const { mutate: recordView } = useMutation({
     mutationFn: ({ profileId, lessonId, openingId }: { profileId: string; lessonId: number; openingId: string }) =>
       recordLibraryView(profileId, lessonId, { openingId }),
@@ -691,6 +710,13 @@ export function LessonsLearnedScreen() {
     if (opening?.status === 'ready' && activeDetailId !== opening.lessonId) opening.status = 'failed';
   }, [isContributorProfilePage, isLibraryPage, libraryDetailId, selectedProfilePublishedLessonId]);
   const refetchHomeAccess = homeQuery.refetch;
+  const previousPageRef = useRef(modulePage);
+  useEffect(() => {
+    if (modulePage === 'home' && previousPageRef.current !== 'home' && isHomePage) {
+      void refetchHomeAccess();
+    }
+    previousPageRef.current = modulePage;
+  }, [modulePage, isHomePage, refetchHomeAccess]);
   useEffect(() => {
     if (
       (libraryDetailsQuery.isError && isDefinitiveAccessError(libraryDetailsQuery.error))
@@ -834,7 +860,8 @@ export function LessonsLearnedScreen() {
     ? pmoDraftsQuery
     : isPmoEvaluationQueuePage ? evaluationQueueQuery : isLibraryPage ? libraryQuery : submissionsQuery;
   const pagedQuery = isPmoEvaluationQueuePage ? evaluationQueueQuery : isLibraryPage ? libraryQuery : undefined;
-  const submissionItems = pagedQuery
+  const submissionsReadError = getReadErrorLabel(currentSubmissionsQuery.error);
+  const submissionItems = submissionsReadError ? [] : pagedQuery
     ? flattenLessonPages(pagedQuery.data?.pages ?? [])
     : (isPmoDraftsPage ? pmoDraftsQuery.data : submissionsQuery.data) ?? [];
   const currentSubmissionFilters = isPmoDraftsPage
@@ -1258,7 +1285,7 @@ export function LessonsLearnedScreen() {
                 href="/lessons-learned/"
                 aria-current={(
                   modulePage === 'home'
-                  || (!isPmo && (modulePage === 'pmo-drafts' || modulePage === 'evaluation-queue'))
+                  || (!isPmo && modulePage === 'pmo-drafts')
                 ) && destination.current ? 'page' : undefined}
                 onClick={(event) => navigateTo('home', event)}
               >
@@ -1397,12 +1424,12 @@ export function LessonsLearnedScreen() {
 
         {isHomePage && (
           <>
-              {isPmoDashboardDenied ? (
+              {isPmoSurfaceDenied ? (
                 <div className="api-status unavailable" role="alert" aria-live="assertive">
                   <span className="status-indicator is-unavailable" aria-hidden="true" />
                   <div>
                     <h1 id="page-title">Access denied</h1>
-                    <p>The PMO Dashboard is restricted to PMO moderators.</p>
+                    <p>The {modulePage === 'pmo-dashboard' ? 'PMO Dashboard' : 'PMO Review Queue'} is restricted to PMO moderators.</p>
                     <a
                       className="primary-link"
                       href="/lessons-learned/"
@@ -1412,7 +1439,7 @@ export function LessonsLearnedScreen() {
                     </a>
                   </div>
                 </div>
-              ) : modulePage === 'home' || (!isPmo && (modulePage === 'pmo-drafts' || modulePage === 'evaluation-queue')) ? (
+              ) : modulePage === 'home' || (!isPmo && modulePage === 'pmo-drafts') ? (
                 <HomeView
                   home={homeQuery.data}
                   theme={theme}
@@ -1424,9 +1451,10 @@ export function LessonsLearnedScreen() {
                 <section className="submissions-page" aria-labelledby="page-title">
                   {isPmoDashboardPage ? (
                     <PmoDashboardView
-                      data={pmoDashboardQuery.data}
+                      data={getReadErrorLabel(pmoDashboardQuery.error) ? undefined : pmoDashboardQuery.data}
                       isLoading={pmoDashboardQuery.isPending}
                       isError={pmoDashboardQuery.isError}
+                      errorMessage={getReadErrorLabel(pmoDashboardQuery.error)}
                       onRetry={() => void pmoDashboardQuery.refetch()}
                       search={submissionSearch}
                       onSearchChange={setSubmissionSearch}
@@ -1459,9 +1487,10 @@ export function LessonsLearnedScreen() {
                     />
                   ) : isProfileSearchPage ? (
                     <ProfileSearchView
-                      profiles={profilesQuery.data}
+                      profiles={getReadErrorLabel(profilesQuery.error) ? undefined : profilesQuery.data}
                       isLoading={profilesQuery.isPending}
                       isError={profilesQuery.isError}
+                      errorMessage={getReadErrorLabel(profilesQuery.error)}
                       onRetry={() => void profilesQuery.refetch()}
                       search={profileSearch}
                       onSearchChange={setProfileSearch}
@@ -1469,10 +1498,11 @@ export function LessonsLearnedScreen() {
                     />
                   ) : isContributorProfilePage ? (
                     <ContributorProfileView
-                      data={contributorProfileQuery.data}
+                      data={getReadErrorLabel(contributorProfileQuery.error) ? undefined : contributorProfileQuery.data}
                       isLoading={contributorProfileQuery.isPending}
                       isNotFound={contributorProfileQuery.isError && getApiErrorStatus(contributorProfileQuery.error) === 404}
                       isError={contributorProfileQuery.isError}
+                      errorMessage={getReadErrorLabel(contributorProfileQuery.error)}
                       onRetry={() => void contributorProfileQuery.refetch()}
                       backLabel={profileOrigin.label}
                       onBack={returnFromContributorProfile}
@@ -1684,11 +1714,13 @@ export function LessonsLearnedScreen() {
                       : isPmoDraftsPage ? 'Loading PMO Drafts…' : 'Loading your submissions…'}</p>}
                   {currentSubmissionsQuery.isError && !pagedQuery?.isFetchNextPageError && (
                     <div className="draft-error" role="alert">
-                      <p>{isLibraryPage
+                      <p>{submissionsReadError ?? (currentSubmissionsQuery.data
+                        ? 'Could not refresh. Showing the last loaded results.'
+                        : isLibraryPage
                         ? 'The Lessons Library could not be loaded.'
                         : isPmoEvaluationQueuePage
                           ? 'The evaluation queue could not be loaded.'
-                          : isPmoDraftsPage ? 'PMO Drafts could not be loaded.' : 'Your submissions could not be loaded.'}</p>
+                          : isPmoDraftsPage ? 'PMO Drafts could not be loaded.' : 'Your submissions could not be loaded.')}</p>
                       <button className="draft-cancel" type="button" onClick={() => void currentSubmissionsQuery.refetch()}>Retry</button>
                     </div>
                   )}
@@ -1999,10 +2031,16 @@ export function LessonsLearnedScreen() {
                     : isProfilePublishedDetailOpen
                       ? !isProfilePublishedDetailLoading && profilePublishedDetailsQuery.isError
                       : !isSubmissionDetailLoading && submissionDetailsQuery.isError}
-                  canEdit={isPmoEvaluationQueuePage && confirmedSubmissionDetails?.status === 'PMOEvaluation'}
+                  errorStatus={detailErrorStatus}
+                  canEdit={Boolean(canEditSubmission)}
                   onEdit={() => {
                     const details = confirmedSubmissionDetails;
-                    if (!isPmoEvaluationQueuePage || details?.status !== 'PMOEvaluation') return;
+                    if (!canEditSubmission || !details) return;
+                    if (modulePage === 'home') {
+                      navigateModulePage(details.status === 'PMOEvaluation'
+                        ? 'evaluation-queue'
+                        : isPmo ? 'pmo-drafts' : 'my-submissions');
+                    }
                     setSelectedDraft(details);
                     setSelectedSubmissionId(null);
                   }}
@@ -2020,7 +2058,7 @@ export function LessonsLearnedScreen() {
                     else if (isProfilePublishedDetailOpen) setSelectedProfilePublishedLessonId(null);
                     else setSelectedSubmissionId(null);
                   }}
-                  onReturn={isPmoEvaluationQueuePage ? setSelectedReturnLesson : undefined}
+                  onReturn={isPmo && (isPmoEvaluationQueuePage || modulePage === 'home') ? setSelectedReturnLesson : undefined}
                   isLibrarySurface={isLibraryPage && libraryDetailId !== null}
                   onToggleVote={(lesson) => void toggleLessonVote(lesson)}
                   isVotePending={pendingVoteIds.has(isLibraryPage && libraryDetailId !== null

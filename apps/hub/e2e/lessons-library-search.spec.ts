@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { publishLesson } from './fixtures/lessons-library';
 
-test('Contributor searches and filters published Library lessons without losing state in details', async ({ page }) => {
+test('FT-017–019, FT-026: Contributor searches and filters the Library without losing list context', async ({ page }) => {
   expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
   const apiBase = 'http://127.0.0.1:5199/api/lessons-learned/v1';
   const stamp = Date.now();
@@ -10,7 +10,7 @@ test('Contributor searches and filters published Library lessons without losing 
   const wrongTypeTitle = `Gestão de riscos sem tipo correspondente ${stamp}`;
   const unrelatedTitle = `Capacity planning ${stamp}`;
 
-  await publishLesson(page.request, targetTitle, { authorId: 'local-developer', lessonType: 'Communication' });
+  const target = await publishLesson(page.request, targetTitle, { authorId: 'local-developer', lessonType: 'Communication' });
   await publishLesson(page.request, wrongProjectTitle, {
     authorId: 'local-developer',
     projectId: 'LOCAL-PROJECT-001',
@@ -60,6 +60,10 @@ test('Contributor searches and filters published Library lessons without losing 
   await expect(page.getByRole('combobox', { name: 'Project' })).toHaveValue('');
   await expect(page.getByRole('combobox', { name: 'Lesson type' })).toHaveValue('');
   await expect(table.getByRole('row', { name: new RegExp(wrongProjectTitle) })).toBeVisible();
+
+  await search.fill(String(target.id));
+  await expect(table.getByRole('row', { name: new RegExp(targetTitle) })).toBeVisible();
+  await expect(table.getByRole('row', { name: new RegExp(wrongProjectTitle) })).toHaveCount(0);
 
   await search.fill('no-matching-title');
   await expect(page.getByText('No published lessons match these filters.')).toBeVisible();
