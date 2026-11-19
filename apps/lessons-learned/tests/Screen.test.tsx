@@ -34,12 +34,15 @@ vi.mock('../src/api', () => ({
   closeLesson: vi.fn(),
   cancelLesson: vi.fn(),
   createLessonDraft: vi.fn(),
+  createLessonComment: vi.fn(),
+  createLessonCommentReply: vi.fn(),
   getHome: vi.fn(),
   getLibrary: vi.fn(),
   getLibraryLessonDetails: vi.fn(),
   getLibraryProjectSnapshots: vi.fn(),
   recordLibraryView: vi.fn(),
   removeLessonVote: vi.fn(),
+  getLessonComments: vi.fn().mockResolvedValue({ items: [], page: { limit: 20, nextCursor: null }, publicCommentCount: 0 }),
   getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
@@ -48,6 +51,7 @@ vi.mock('../src/api', () => ({
   getPmoDashboard: vi.fn(),
   getPmoEvaluationQueue: vi.fn(),
   getEvaluationProjectSnapshots: vi.fn(),
+  hideLessonComment: vi.fn(),
   returnLesson: vi.fn(),
   rejectLesson: vi.fn(),
   updateLessonDraft: vi.fn(),
@@ -96,6 +100,7 @@ function libraryLesson(overrides: Partial<LibraryLesson> = {}): LibraryLesson {
     viewCount: overrides.viewCount ?? 0,
     votesCount: overrides.votesCount ?? 0,
     hasVoted: overrides.hasVoted ?? false,
+    commentCount: overrides.commentCount ?? 0,
     ...overrides,
   };
 }
@@ -115,6 +120,7 @@ function lessonDetails(overrides: Partial<LessonDetails> = {}): LessonDetails {
     }],
     votesCount: overrides.votesCount ?? 0,
     hasVoted: overrides.hasVoted ?? false,
+    commentCount: overrides.commentCount ?? 0,
     ...overrides,
   };
 }
@@ -504,7 +510,7 @@ describe('Lessons Learned access check', () => {
     const table = await screen.findByRole('table', { name: 'Published lessons, newest approval first' });
     const row = within(table).getByRole('row', { name: /Published release verification/ });
     expect(within(row).getByText('Approved')).toBeInTheDocument();
-    expect(within(row).getByRole('cell', { name: '0' })).toBeInTheDocument();
+    expect(within(row).getAllByRole('cell', { name: '0' })).toHaveLength(2);
     await user.click(within(row).getByRole('link', { name: 'View Published release verification' }));
 
     const details = await screen.findByRole('dialog', { name: 'Published lesson details' });

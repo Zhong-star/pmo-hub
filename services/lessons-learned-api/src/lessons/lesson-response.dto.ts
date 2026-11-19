@@ -112,6 +112,9 @@ export class LessonDetailsResponse extends LessonDraftResponse {
 
   @ApiProperty({ type: Boolean, example: false })
   hasVoted!: boolean;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  commentCount!: number;
 }
 
 export class LessonLibraryResponse extends LessonDraftResponse {
@@ -126,6 +129,9 @@ export class LessonLibraryResponse extends LessonDraftResponse {
 
   @ApiProperty({ type: Boolean, example: false })
   hasVoted!: boolean;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  commentCount!: number;
 }
 
 export class RecordLessonLibraryViewResponse {

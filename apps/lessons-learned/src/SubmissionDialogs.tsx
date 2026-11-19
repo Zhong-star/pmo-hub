@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { CancelLessonBody, LessonDetails, LessonDraft, RejectLessonBody } from './api';
+import { LessonCommentsSection } from './LessonCommentsSection';
 import { useDialogFocus } from './useDialogFocus';
 import './DraftEditor.css';
 
@@ -390,6 +391,9 @@ type LessonSubmissionDetailsDialogProps = {
   onToggleVote?: (lesson: LessonDetails) => void;
   isVotePending?: boolean;
   voteError?: string | null;
+  profileId?: string;
+  isPmo?: boolean;
+  onPublicCommentCountChange?: (lessonId: number, publicCommentCount: number) => void;
 };
 
 export function LessonSubmissionDetailsDialog({
@@ -410,6 +414,9 @@ export function LessonSubmissionDetailsDialog({
   onToggleVote,
   isVotePending = false,
   voteError = null,
+  profileId,
+  isPmo = false,
+  onPublicCommentCountChange,
 }: LessonSubmissionDetailsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -523,6 +530,15 @@ export function LessonSubmissionDetailsDialog({
                   ))}
                 </ol>
               </section>
+            )}
+            {profileId && (
+              <LessonCommentsSection
+                lessonId={lesson.id}
+                profileId={profileId}
+                isPmo={isPmo}
+                initialPublicCommentCount={lesson.commentCount ?? 0}
+                onPublicCommentCountChange={onPublicCommentCountChange}
+              />
             )}
           </>
         )}

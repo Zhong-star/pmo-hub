@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import type { DataSourceOptions } from 'typeorm';
+import { LessonComment } from '../lessons/lesson-comment.entity';
 import { LessonHistory } from '../lessons/lesson-history.entity';
 import { Lesson } from '../lessons/lesson.entity';
 
@@ -16,7 +17,7 @@ export function createLessonsLearnedDataSourceOptions(databaseUrl: string): Data
   return {
     type: 'postgres',
     url: databaseUrl,
-    entities: [Lesson, LessonHistory],
+    entities: [Lesson, LessonHistory, LessonComment],
     migrations: [resolve(__dirname, 'migrations/*{.js,.ts}')],
     migrationsRun: false,
     synchronize: false,
