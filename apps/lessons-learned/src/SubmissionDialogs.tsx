@@ -390,6 +390,7 @@ type LessonSubmissionDetailsDialogProps = {
   onToggleVote?: (lesson: LessonDetails) => void;
   isVotePending?: boolean;
   voteError?: string | null;
+  onOpenAuthorProfile?: (authorId: string) => void;
 };
 
 export function LessonSubmissionDetailsDialog({
@@ -410,6 +411,7 @@ export function LessonSubmissionDetailsDialog({
   onToggleVote,
   isVotePending = false,
   voteError = null,
+  onOpenAuthorProfile,
 }: LessonSubmissionDetailsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -500,7 +502,18 @@ export function LessonSubmissionDetailsDialog({
               {fields.map(([label, value]) => (
                 <div key={label}>
                   <dt>{label}</dt>
-                  <dd>{value}</dd>
+                  <dd>
+                    {label === 'Author' && onOpenAuthorProfile ? (
+                      <button
+                        type="button"
+                        className="author-profile-link"
+                        aria-label={`View profile of ${value}`}
+                        onClick={() => onOpenAuthorProfile(lesson.authorId)}
+                      >
+                        {value}
+                      </button>
+                    ) : value}
+                  </dd>
                 </div>
               ))}
               {dates.map(([label, value]) => (

@@ -23,6 +23,8 @@ vi.mock('../src/api', () => ({
   getLibraryLessonDetails: vi.fn(),
   getLibraryProjectSnapshots: vi.fn(),
   getPmoDashboard: vi.fn(),
+  getProfiles: vi.fn(),
+  getContributorProfile: vi.fn(),
   recordLibraryView: vi.fn(),
   removeLessonVote: vi.fn(),
 }));

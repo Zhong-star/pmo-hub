@@ -185,3 +185,43 @@ export class PmoDashboardResponse {
   @ApiProperty({ type: LessonProjectResponse, isArray: true })
   projects!: LessonProjectResponse[];
 }
+
+export class ProfileSummaryResponse {
+  @ApiProperty({ type: String, example: 'local-contributor' })
+  id!: string;
+
+  @ApiProperty({ type: String, example: 'Local Contributor' })
+  displayName!: string;
+
+  @ApiProperty({ type: String, example: 'LC' })
+  initials!: string;
+
+  @ApiProperty({ type: String, enum: ['LESSONS_USER', 'LESSONS_MODERATOR'], example: 'LESSONS_USER' })
+  role!: 'LESSONS_USER' | 'LESSONS_MODERATOR';
+
+  @ApiProperty({ type: Number, minimum: 0, example: 2 })
+  publishedLessonsCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 5 })
+  votesReceivedCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 12 })
+  viewsReceivedCount!: number;
+}
+
+export class ContributorProfileResponse {
+  @ApiProperty({ type: ProfileSummaryResponse })
+  profile!: ProfileSummaryResponse;
+
+  @ApiProperty({ type: Number, nullable: true, minimum: 1, example: null, description: 'Contributor ranking position when applicable.' })
+  rankingPosition!: number | null;
+
+  @ApiProperty({ type: Boolean, example: false, description: 'Whether the viewer can see unpublished lessons authored by this user.' })
+  includesPrivateLessons!: boolean;
+
+  @ApiProperty({ type: LessonLibraryResponse, isArray: true })
+  items!: LessonLibraryResponse[];
+
+  @ApiProperty({ type: LessonProjectResponse, isArray: true })
+  projects!: LessonProjectResponse[];
+}

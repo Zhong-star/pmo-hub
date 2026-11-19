@@ -5,12 +5,13 @@ import { HealthController } from './health.controller';
 import { HomeController } from './home.controller';
 import { LessonsController } from './lessons/lessons.controller';
 import { PmoDashboardController } from './lessons/pmo-dashboard.controller';
+import { ProfilesController } from './lessons/profiles.controller';
 import { LessonsService } from './lessons/lessons.service';
 import { ProjectCatalogService } from './lessons/project-catalog.service';
 import { LocalAccessService } from './local-access.service';
 
 @Module({
-  controllers: [HealthController, HomeController, LessonsController, PmoDashboardController],
+  controllers: [HealthController, HomeController, LessonsController, PmoDashboardController, ProfilesController],
   providers: [LocalAccessService, LessonsService, ProjectCatalogService],
 })
 export class AppModule {

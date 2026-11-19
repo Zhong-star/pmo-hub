@@ -9,6 +9,8 @@ export const LESSONS_LEARNED_PROJECTS_PATH = '/api/lessons-learned/v1/lessons/pr
 export const LESSONS_LEARNED_SUBMISSIONS_PATH = '/api/lessons-learned/v1/lessons/mine' satisfies keyof paths;
 export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '/api/lessons-learned/v1/lessons/pmo-drafts' satisfies keyof paths;
 export const LESSONS_LEARNED_PMO_DASHBOARD_PATH = '/api/lessons-learned/v1/pmo/dashboard' satisfies keyof paths;
+export const LESSONS_LEARNED_PROFILES_PATH = '/api/lessons-learned/v1/profiles' satisfies keyof paths;
+export const LESSONS_LEARNED_PROFILE_DETAIL_PATH = '/api/lessons-learned/v1/profiles/{userId}' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '/api/lessons-learned/v1/lessons/evaluation-queue' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_PROJECTS_PATH = '/api/lessons-learned/v1/lessons/evaluation-queue/projects' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_PATH = '/api/lessons-learned/v1/lessons/library' satisfies keyof paths;
@@ -36,6 +38,11 @@ export type PmoDashboardSort = NonNullable<PmoDashboardFilters['sort']>;
 export type PmoDashboardResponse = paths[typeof LESSONS_LEARNED_PMO_DASHBOARD_PATH]['get']['responses'][200]['content']['application/json'];
 export type PmoDashboardSummary = PmoDashboardResponse['summary'];
 export type PmoDashboardLesson = PmoDashboardResponse['items'][number];
+export type ProfileSearchFilters = NonNullable<paths[typeof LESSONS_LEARNED_PROFILES_PATH]['get']['parameters']['query']>;
+export type ProfileSummary = paths[typeof LESSONS_LEARNED_PROFILES_PATH]['get']['responses'][200]['content']['application/json'][number];
+export type ContributorProfileFilters = NonNullable<paths[typeof LESSONS_LEARNED_PROFILE_DETAIL_PATH]['get']['parameters']['query']>;
+export type ContributorProfileSort = NonNullable<ContributorProfileFilters['sort']>;
+export type ContributorProfileResponse = paths[typeof LESSONS_LEARNED_PROFILE_DETAIL_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonPage = components['schemas']['LessonPage'];
 export type LibraryLesson = components['schemas']['LessonLibraryResponse'];
 export type LibraryPage = components['schemas']['LessonLibraryPage'];
@@ -132,6 +139,33 @@ export async function getPmoDashboard(localUserId: string, filters: PmoDashboard
     headers: { 'X-PMO-Local-User-ID': localUserId },
     params: filters,
   });
+
+  return data;
+}
+
+export async function getProfiles(localUserId: string, filters: ProfileSearchFilters = {}): Promise<ProfileSummary[]> {
+  const { data } = await api.get<ProfileSummary[]>(LESSONS_LEARNED_PROFILES_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+    params: filters,
+  });
+
+  return data;
+}
+
+export async function getContributorProfile(
+  localUserId: string,
+  userId: string,
+  filters: ContributorProfileFilters = {},
+): Promise<ContributorProfileResponse> {
+  const { data } = await api.get<ContributorProfileResponse>(
+    LESSONS_LEARNED_PROFILE_DETAIL_PATH.replace('{userId}', encodeURIComponent(userId)),
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+      params: filters,
+    },
+  );
 
   return data;
 }
