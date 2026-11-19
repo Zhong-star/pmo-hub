@@ -5931,6 +5931,115 @@
         ]
       }
     },
+    "/api/lessons-learned/v1/rankings": {
+      "get": {
+        "operationId": "RankingsController_getRankings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RankingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The selected profile does not have access to Lessons Learned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Get Top 3 Most Voted Lessons and Top 3 Contributors rankings",
+        "tags": [
+          "Rankings"
+        ]
+      }
+    },
     "/api/lessons-learned/v1/notifications": {
       "get": {
         "operationId": "LessonNotificationsController_listNotifications",
@@ -8426,6 +8535,168 @@
           "includesPrivateLessons",
           "items",
           "projects"
+        ]
+      },
+      "RankedLessonResponse": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 3,
+            "example": 1
+          },
+          "id": {
+            "type": "number",
+            "example": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 150,
+            "example": "Improve release handover"
+          },
+          "authorId": {
+            "type": "string",
+            "example": "local-contributor"
+          },
+          "authorName": {
+            "type": "string",
+            "example": "Local Contributor"
+          },
+          "projectName": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200
+          },
+          "lessonType": {
+            "type": "string",
+            "enum": [
+              "Future Prevention",
+              "Success to Repeat",
+              "Risk Avoided",
+              "Communication"
+            ],
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Approved",
+              "Closed"
+            ],
+            "example": "Approved"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "votesCount": {
+            "type": "number",
+            "minimum": 1,
+            "example": 3
+          },
+          "viewCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 10
+          }
+        },
+        "required": [
+          "position",
+          "id",
+          "title",
+          "authorId",
+          "authorName",
+          "projectName",
+          "lessonType",
+          "status",
+          "approvedAt",
+          "votesCount",
+          "viewCount"
+        ]
+      },
+      "RankedContributorResponse": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 3,
+            "example": 1
+          },
+          "id": {
+            "type": "string",
+            "example": "local-contributor"
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Local Contributor"
+          },
+          "initials": {
+            "type": "string",
+            "example": "LC"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "LESSONS_USER",
+              "LESSONS_MODERATOR"
+            ],
+            "example": "LESSONS_USER"
+          },
+          "publishedLessonsCount": {
+            "type": "number",
+            "minimum": 1,
+            "example": 2
+          },
+          "votesReceivedCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 5
+          },
+          "viewsReceivedCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 12
+          },
+          "latestApprovedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "position",
+          "id",
+          "displayName",
+          "initials",
+          "role",
+          "publishedLessonsCount",
+          "votesReceivedCount",
+          "viewsReceivedCount",
+          "latestApprovedAt"
+        ]
+      },
+      "RankingsResponse": {
+        "type": "object",
+        "properties": {
+          "mostVotedLessons": {
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankedLessonResponse"
+            }
+          },
+          "topContributors": {
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankedContributorResponse"
+            }
+          }
+        },
+        "required": [
+          "mostVotedLessons",
+          "topContributors"
         ]
       },
       "LessonNotificationItemResponse": {

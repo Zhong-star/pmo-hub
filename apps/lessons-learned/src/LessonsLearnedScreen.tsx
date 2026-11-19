@@ -24,6 +24,7 @@ import {
   getPmoDashboard,
   getProfiles,
   getContributorProfile,
+  getRankings,
   getPmoEvaluationQueue,
   returnLesson as returnLessonRequest,
   rejectLesson as rejectLessonRequest,
@@ -62,6 +63,7 @@ import { ReturnLessonDialog } from './ReturnLessonDialog';
 import { PmoDashboardView } from './PmoDashboardView';
 import { NotificationsMenu } from './NotificationsMenu';
 import { ContributorProfileView, ProfileSearchView, type ProfileProjectFilter } from './ProfilesView';
+import { RankingsSection } from './RankingsSection';
 import { getLibraryLessonHref, useLibraryNavigation } from './useLibraryNavigation';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
@@ -539,6 +541,14 @@ export function LessonsLearnedScreen() {
     retry: false,
     refetchOnWindowFocus: true,
   });
+  const rankingsQuery = useQuery({
+    queryKey: ['lessons-learned-rankings', selectedProfileId],
+    queryFn: () => getRankings(selectedProfileId ?? ''),
+    enabled: isHomePage && isLibraryPage && !isLegacyLibrary,
+    networkMode: 'always',
+    retry: false,
+    refetchOnWindowFocus: true,
+  });
   const projectOptionsQuery = useQuery({
     queryKey: [
       'lessons-learned-project-options',
@@ -634,6 +644,7 @@ export function LessonsLearnedScreen() {
         },
       );
       void queryClient.invalidateQueries({ queryKey: ['lessons-learned-profiles', opening.profileId] });
+      void queryClient.invalidateQueries({ queryKey: ['lessons-learned-rankings', opening.profileId] });
     },
     onError: (_error, opening) => {
       const currentOpening = libraryOpeningRef.current;
@@ -772,6 +783,7 @@ export function LessonsLearnedScreen() {
         : await removeLessonVote(profileId, lesson.id);
       applyVoteToCaches(profileId, lesson.id, updated.votesCount, updated.hasVoted);
       void queryClient.invalidateQueries({ queryKey: ['lessons-learned-profiles', profileId] });
+      void queryClient.invalidateQueries({ queryKey: ['lessons-learned-rankings', profileId] });
     } catch {
       applyVoteToCaches(profileId, lesson.id, previous.votesCount, previous.hasVoted);
       if (selectedProfileIdRef.current === profileId) {
@@ -870,6 +882,7 @@ export function LessonsLearnedScreen() {
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-project-options', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-library', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-profiles', profileId] }),
+      queryClient.invalidateQueries({ queryKey: ['lessons-learned-rankings', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-contributor-profile', profileId] }),
     ]);
   }
@@ -1492,6 +1505,14 @@ export function LessonsLearnedScreen() {
 
                   {isLibraryPage && !isLegacyLibrary && (
                     <>
+                      <RankingsSection
+                        data={rankingsQuery.data}
+                        isLoading={rankingsQuery.isPending}
+                        isError={rankingsQuery.isError}
+                        onRetry={() => void rankingsQuery.refetch()}
+                        onOpenLesson={openLibraryLessonFromList}
+                        onOpenContributor={(userId) => openContributorProfile(userId, { page: 'library', label: 'Back to Lessons Library' })}
+                      />
                       <div className="submission-filters" role="group" aria-label="Search, filter, and sort Lessons Library">
                         <div className="draft-editor-field">
                           <label htmlFor="library-search">Search title or ID</label>

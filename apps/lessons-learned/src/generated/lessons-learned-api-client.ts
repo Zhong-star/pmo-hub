@@ -11,6 +11,7 @@ export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '/api/lessons-learned/v1/lessons/
 export const LESSONS_LEARNED_PMO_DASHBOARD_PATH = '/api/lessons-learned/v1/pmo/dashboard' satisfies keyof paths;
 export const LESSONS_LEARNED_PROFILES_PATH = '/api/lessons-learned/v1/profiles' satisfies keyof paths;
 export const LESSONS_LEARNED_PROFILE_DETAIL_PATH = '/api/lessons-learned/v1/profiles/{userId}' satisfies keyof paths;
+export const LESSONS_LEARNED_RANKINGS_PATH = '/api/lessons-learned/v1/rankings' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '/api/lessons-learned/v1/lessons/evaluation-queue' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_PROJECTS_PATH = '/api/lessons-learned/v1/lessons/evaluation-queue/projects' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_PATH = '/api/lessons-learned/v1/lessons/library' satisfies keyof paths;
@@ -49,6 +50,9 @@ export type ProfileSummary = paths[typeof LESSONS_LEARNED_PROFILES_PATH]['get'][
 export type ContributorProfileFilters = NonNullable<paths[typeof LESSONS_LEARNED_PROFILE_DETAIL_PATH]['get']['parameters']['query']>;
 export type ContributorProfileSort = NonNullable<ContributorProfileFilters['sort']>;
 export type ContributorProfileResponse = paths[typeof LESSONS_LEARNED_PROFILE_DETAIL_PATH]['get']['responses'][200]['content']['application/json'];
+export type RankingsResponse = paths[typeof LESSONS_LEARNED_RANKINGS_PATH]['get']['responses'][200]['content']['application/json'];
+export type RankedLesson = RankingsResponse['mostVotedLessons'][number];
+export type RankedContributor = RankingsResponse['topContributors'][number];
 export type LessonPage = components['schemas']['LessonPage'];
 export type LibraryLesson = components['schemas']['LessonLibraryResponse'];
 export type LibraryPage = components['schemas']['LessonLibraryPage'];
@@ -186,6 +190,15 @@ export async function getContributorProfile(
       params: filters,
     },
   );
+
+  return data;
+}
+
+export async function getRankings(localUserId: string): Promise<RankingsResponse> {
+  const { data } = await api.get<RankingsResponse>(LESSONS_LEARNED_RANKINGS_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+  });
 
   return data;
 }

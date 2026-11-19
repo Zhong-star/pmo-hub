@@ -12,6 +12,7 @@ import {
   getMyOpenDrafts,
   getMySubmissions,
   getNotifications,
+  getRankings,
   markNotificationAsRead,
   markNotificationsReadBatch,
   recordLibraryView,
@@ -44,6 +45,7 @@ vi.mock('../src/api', () => ({
   getPmoEvaluationQueue: vi.fn(),
   getProfiles: vi.fn(),
   getContributorProfile: vi.fn(),
+  getRankings: vi.fn().mockResolvedValue({ mostVotedLessons: [], topContributors: [] }),
   hideLessonComment: vi.fn(),
   markNotificationAsRead: vi.fn(),
   markNotificationsReadBatch: vi.fn(),
@@ -127,6 +129,7 @@ describe('Notifications menu and D7/D8 behaviors', () => {
     vi.mocked(getLessonProjects).mockResolvedValue([]);
     vi.mocked(getLibrary).mockResolvedValue({ items: [], page: { limit: 20, nextCursor: null } });
     vi.mocked(getLibraryProjectSnapshots).mockResolvedValue([]);
+    vi.mocked(getRankings).mockResolvedValue({ mostVotedLessons: [], topContributors: [] });
     vi.mocked(getNotifications).mockResolvedValue({
       items: [],
       page: { limit: 20, nextCursor: null },
