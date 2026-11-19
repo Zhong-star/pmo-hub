@@ -32,6 +32,9 @@ const votePath = `${draftPath}/vote`;
 const commentsPath = `${draftPath}/comments`;
 const commentRepliesPath = `${commentsPath}/{commentId}/replies`;
 const commentHidePath = `${commentsPath}/{commentId}/hide`;
+const notificationsPath = '/api/lessons-learned/v1/notifications';
+const notificationReadPath = `${notificationsPath}/{id}/read`;
+const notificationsReadBatchPath = `${notificationsPath}/read-batch`;
 const contract = JSON.parse(await readFile(contractPath, 'utf8'));
 const operation = contract.paths?.[healthPath]?.get;
 const responseSchema = operation?.responses?.['200']?.content?.['application/json']?.schema;
@@ -105,6 +108,13 @@ const createReplyResponseSchema = createReplyOperation?.responses?.['201']?.cont
 const hideCommentOperation = contract.paths?.[commentHidePath]?.post;
 const hideCommentRequestSchema = hideCommentOperation?.requestBody?.content?.['application/json']?.schema;
 const hideCommentResponseSchema = hideCommentOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const listNotificationsOperation = contract.paths?.[notificationsPath]?.get;
+const listNotificationsResponseSchema = listNotificationsOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const markNotificationReadOperation = contract.paths?.[notificationReadPath]?.post;
+const markNotificationReadResponseSchema = markNotificationReadOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const markNotificationsReadBatchOperation = contract.paths?.[notificationsReadBatchPath]?.post;
+const markNotificationsReadBatchRequestSchema = markNotificationsReadBatchOperation?.requestBody?.content?.['application/json']?.schema;
+const markNotificationsReadBatchResponseSchema = markNotificationsReadBatchOperation?.responses?.['200']?.content?.['application/json']?.schema;
 
 if (!operation || responseSchema?.$ref !== '#/components/schemas/HealthResponse') {
   throw new Error(`Expected GET ${healthPath} with a HealthResponse schema in ${contractPath}`);
@@ -245,6 +255,19 @@ if (!hideCommentOperation || hideCommentRequestSchema?.$ref !== '#/components/sc
   throw new Error(`Expected POST ${commentHidePath} with HideLessonCommentRequest and LessonCommentItemResponse in ${contractPath}`);
 }
 
+if (!listNotificationsOperation || listNotificationsResponseSchema?.$ref !== '#/components/schemas/LessonNotificationPageResponse') {
+  throw new Error(`Expected GET ${notificationsPath} with LessonNotificationPageResponse in ${contractPath}`);
+}
+
+if (!markNotificationReadOperation || markNotificationReadResponseSchema?.$ref !== '#/components/schemas/MarkNotificationReadResponse') {
+  throw new Error(`Expected POST ${notificationReadPath} with MarkNotificationReadResponse in ${contractPath}`);
+}
+
+if (!markNotificationsReadBatchOperation || markNotificationsReadBatchRequestSchema?.$ref !== '#/components/schemas/MarkNotificationsReadBatchRequest' ||
+  markNotificationsReadBatchResponseSchema?.$ref !== '#/components/schemas/MarkNotificationsReadBatchResponse') {
+  throw new Error(`Expected POST ${notificationsReadBatchPath} with MarkNotificationsReadBatchRequest and MarkNotificationsReadBatchResponse in ${contractPath}`);
+}
+
 const generatedClient = `/* This file is generated from services/lessons-learned-api/openapi/lessons-learned-v1.json. Do not edit directly. */
 import axios from 'axios';
 import type { components, paths } from './lessons-learned-api';
@@ -276,6 +299,9 @@ export const LESSONS_LEARNED_VOTE_PATH = '${votePath}' satisfies keyof paths;
 export const LESSONS_LEARNED_COMMENTS_PATH = '${commentsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_COMMENT_REPLIES_PATH = '${commentRepliesPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_COMMENT_HIDE_PATH = '${commentHidePath}' satisfies keyof paths;
+export const LESSONS_LEARNED_NOTIFICATIONS_PATH = '${notificationsPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_NOTIFICATION_READ_PATH = '${notificationReadPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_NOTIFICATIONS_READ_BATCH_PATH = '${notificationsReadBatchPath}' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
@@ -323,6 +349,13 @@ export type LessonCommentPage = components['schemas']['LessonCommentPageResponse
 export type LessonCommentsQuery = NonNullable<paths[typeof LESSONS_LEARNED_COMMENTS_PATH]['get']['parameters']['query']>;
 export type CreateLessonCommentBody = paths[typeof LESSONS_LEARNED_COMMENTS_PATH]['post']['requestBody']['content']['application/json'];
 export type HideLessonCommentBody = paths[typeof LESSONS_LEARNED_COMMENT_HIDE_PATH]['post']['requestBody']['content']['application/json'];
+export type LessonNotificationItem = components['schemas']['LessonNotificationItemResponse'];
+export type LessonNotificationEventType = LessonNotificationItem['eventType'];
+export type LessonNotificationPage = components['schemas']['LessonNotificationPageResponse'];
+export type LessonNotificationsQuery = NonNullable<paths[typeof LESSONS_LEARNED_NOTIFICATIONS_PATH]['get']['parameters']['query']>;
+export type MarkNotificationReadResponse = components['schemas']['MarkNotificationReadResponse'];
+export type MarkNotificationsReadBatchBody = paths[typeof LESSONS_LEARNED_NOTIFICATIONS_READ_BATCH_PATH]['post']['requestBody']['content']['application/json'];
+export type MarkNotificationsReadBatchResponse = components['schemas']['MarkNotificationsReadBatchResponse'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -753,6 +786,56 @@ export async function hideLessonComment(
     LESSONS_LEARNED_COMMENT_HIDE_PATH
       .replace('{id}', String(lessonId))
       .replace('{commentId}', String(commentId)),
+    input,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function getNotifications(
+  localUserId: string,
+  query: LessonNotificationsQuery = {},
+  signal?: AbortSignal,
+): Promise<LessonNotificationPage> {
+  const { data } = await api.get<LessonNotificationPage>(
+    LESSONS_LEARNED_NOTIFICATIONS_PATH,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+      params: query,
+      signal,
+    },
+  );
+
+  return data;
+}
+
+export async function markNotificationAsRead(
+  localUserId: string,
+  notificationId: number,
+): Promise<MarkNotificationReadResponse> {
+  const { data } = await api.post<MarkNotificationReadResponse>(
+    LESSONS_LEARNED_NOTIFICATION_READ_PATH.replace('{id}', String(notificationId)),
+    undefined,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function markNotificationsReadBatch(
+  localUserId: string,
+  input: MarkNotificationsReadBatchBody,
+): Promise<MarkNotificationsReadBatchResponse> {
+  const { data } = await api.post<MarkNotificationsReadBatchResponse>(
+    LESSONS_LEARNED_NOTIFICATIONS_READ_BATCH_PATH,
     input,
     {
       timeout: LESSONS_LEARNED_API_TIMEOUT_MS,

@@ -31,6 +31,9 @@ export {
   createLessonComment,
   createLessonCommentReply,
   hideLessonComment,
+  getNotifications,
+  markNotificationAsRead,
+  markNotificationsReadBatch,
   LESSONS_LEARNED_API_TIMEOUT_MS,
   LESSONS_LEARNED_HEALTH_PATH,
   LESSONS_LEARNED_HOME_PATH,
@@ -57,6 +60,9 @@ export {
   LESSONS_LEARNED_COMMENTS_PATH,
   LESSONS_LEARNED_COMMENT_REPLIES_PATH,
   LESSONS_LEARNED_COMMENT_HIDE_PATH,
+  LESSONS_LEARNED_NOTIFICATIONS_PATH,
+  LESSONS_LEARNED_NOTIFICATION_READ_PATH,
+  LESSONS_LEARNED_NOTIFICATIONS_READ_BATCH_PATH,
 } from './generated/lessons-learned-api-client';
 
 export type {
@@ -103,4 +109,11 @@ export type {
   LessonCommentsQuery,
   CreateLessonCommentBody,
   HideLessonCommentBody,
+  LessonNotificationEventType,
+  LessonNotificationItem,
+  LessonNotificationPage,
+  LessonNotificationsQuery,
+  MarkNotificationReadResponse,
+  MarkNotificationsReadBatchBody,
+  MarkNotificationsReadBatchResponse,
 } from './generated/lessons-learned-api-client';

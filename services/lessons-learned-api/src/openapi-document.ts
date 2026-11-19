@@ -20,6 +20,7 @@ export function createOpenApiDocument(app: INestApplication) {
     '/api/lessons-learned/v1/pmo',
     '/api/lessons-learned/v1/profiles',
     '/api/lessons-learned/v1/rankings',
+    '/api/lessons-learned/v1/notifications',
   ];
   for (const [path, routes] of Object.entries(document.paths)) {
     if (!problemCollections.some((collection) => path === collection || path.startsWith(`${collection}/`))) continue;
@@ -38,7 +39,7 @@ export function createOpenApiDocument(app: INestApplication) {
             ...response.content,
             'application/problem+json': { schema: { $ref: getSchemaPath(LessonProblem) } },
           };
-        } else if (path.includes('/{id}') || code === '201') {
+        } else if (path.startsWith('/api/lessons-learned/v1/lessons') && (path.includes('/{id}') || code === '201')) {
           response.headers = {
             ...response.headers,
             ETag: { description: 'ETag for the returned lesson version.', schema: { type: 'string' } },

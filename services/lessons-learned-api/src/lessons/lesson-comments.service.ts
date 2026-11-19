@@ -20,6 +20,10 @@ import type {
   LessonCommentThreadResponse,
 } from './lesson-comment-response.dto';
 import { LessonComment } from './lesson-comment.entity';
+import {
+  formatNotificationSnippet,
+  LessonNotificationsService,
+} from './lesson-notifications.service';
 import { Lesson } from './lesson.entity';
 
 interface CommentCursor {
@@ -76,6 +80,7 @@ export class LessonCommentsService {
   constructor(
     @Inject(LocalAccessService) private readonly localAccess: LocalAccessService,
     @Optional() @Inject(LESSONS_LEARNED_DATA_SOURCE) private readonly dataSource?: DataSource,
+    @Optional() @Inject(LessonNotificationsService) private readonly notifications?: LessonNotificationsService,
   ) {}
 
   async listComments(
@@ -179,10 +184,10 @@ export class LessonCommentsService {
     const profile = this.localAccess.getProfile(localUserId);
     const dataSource = this.requireDataSource();
 
-    const created = await dataSource.transaction(async (manager) => {
-      await this.requireAccessibleLesson(manager, lessonId, profile);
+    const { lesson, created } = await dataSource.transaction(async (manager) => {
+      const accessibleLesson = await this.requireAccessibleLesson(manager, lessonId, profile);
       const repo = manager.getRepository(LessonComment);
-      return repo.save(
+      const savedComment = await repo.save(
         repo.create({
           lessonId,
           parentCommentId: null,
@@ -195,6 +200,18 @@ export class LessonCommentsService {
           hiddenReason: null,
         }),
       );
+      return { lesson: accessibleLesson, created: savedComment };
+    });
+
+    await this.notifications?.recordNotification({
+      recipientUserId: lesson.authorId,
+      actorUserId: profile.id,
+      actorDisplayName: profile.displayName,
+      eventType: 'COMMENT_ADDED',
+      lessonId: lesson.id,
+      lessonTitleSnapshot: lesson.title,
+      summary: `${profile.displayName} commented: ${formatNotificationSnippet(created.body)}`,
+      sourceEventKey: `comment:${created.id}`,
     });
 
     return {
@@ -212,30 +229,30 @@ export class LessonCommentsService {
     const profile = this.localAccess.getProfile(localUserId);
     const dataSource = this.requireDataSource();
 
-    const created = await dataSource.transaction(async (manager) => {
-      await this.requireAccessibleLesson(manager, lessonId, profile);
+    const { lesson, parent, created } = await dataSource.transaction(async (manager) => {
+      const accessibleLesson = await this.requireAccessibleLesson(manager, lessonId, profile);
       const repo = manager.getRepository(LessonComment);
-      const parent = await repo.findOne({ where: { id: parentCommentId, lessonId } });
-      if (!parent) {
+      const parentComment = await repo.findOne({ where: { id: parentCommentId, lessonId } });
+      if (!parentComment) {
         throw new NotFoundException('Comment not found.');
       }
-      if (parent.parentCommentId !== null) {
+      if (parentComment.parentCommentId !== null) {
         throw new BadRequestException({
           code: 'REPLY_DEPTH_EXCEEDED',
           message: 'Replies can only be added to top-level comments.',
         });
       }
-      if (parent.hiddenAt !== null) {
+      if (parentComment.hiddenAt !== null) {
         throw new ConflictException({
           code: 'COMMENT_HIDDEN',
           message: 'Cannot reply to a hidden comment.',
         });
       }
 
-      return repo.save(
+      const savedReply = await repo.save(
         repo.create({
           lessonId,
-          parentCommentId: parent.id,
+          parentCommentId: parentComment.id,
           authorUserId: profile.id,
           authorDisplayName: profile.displayName,
           body: input.body,
@@ -245,6 +262,18 @@ export class LessonCommentsService {
           hiddenReason: null,
         }),
       );
+      return { lesson: accessibleLesson, parent: parentComment, created: savedReply };
+    });
+
+    await this.notifications?.recordNotification({
+      recipientUserId: parent.authorUserId,
+      actorUserId: profile.id,
+      actorDisplayName: profile.displayName,
+      eventType: 'REPLY_ADDED',
+      lessonId: lesson.id,
+      lessonTitleSnapshot: lesson.title,
+      summary: `${profile.displayName} replied: ${formatNotificationSnippet(created.body)}`,
+      sourceEventKey: `comment:${created.id}`,
     });
 
     return this.toCommentItemResponse(created, false);

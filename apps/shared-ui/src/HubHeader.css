@@ -61,6 +61,12 @@
   font-size: 17px;
 }
 
+.hub-header__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .hub-header__profile {
   position: relative;
 }

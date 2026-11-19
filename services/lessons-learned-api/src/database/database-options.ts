@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import type { DataSourceOptions } from 'typeorm';
 import { LessonComment } from '../lessons/lesson-comment.entity';
 import { LessonHistory } from '../lessons/lesson-history.entity';
+import { LessonNotification } from '../lessons/lesson-notification.entity';
 import { Lesson } from '../lessons/lesson.entity';
 
 export const LESSONS_LEARNED_DATABASE_URL_ENV = 'LESSONS_LEARNED_DATABASE_URL';
@@ -17,7 +18,7 @@ export function createLessonsLearnedDataSourceOptions(databaseUrl: string): Data
   return {
     type: 'postgres',
     url: databaseUrl,
-    entities: [Lesson, LessonHistory, LessonComment],
+    entities: [Lesson, LessonHistory, LessonComment, LessonNotification],
     migrations: [resolve(__dirname, 'migrations/*{.js,.ts}')],
     migrationsRun: false,
     synchronize: false,
