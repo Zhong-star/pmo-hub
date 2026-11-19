@@ -21,7 +21,7 @@ export function HubHeader({ profileName, onChangeProfile, theme, onThemeChange }
         <span>PMO Hub</span>
       </a>
 
-      {canChangeProfile && profileName && onChangeProfile ? (
+      {canChangeProfile && profileName && onChangeProfile && (
         <div
           className="hub-header__profile"
           onKeyDown={(event) => {
@@ -77,8 +77,6 @@ export function HubHeader({ profileName, onChangeProfile, theme, onThemeChange }
             </button>
           </div>
         </div>
-      ) : (
-        <span className="hub-header__context">Select a local profile</span>
       )}
     </header>
   );
