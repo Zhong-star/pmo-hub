@@ -24,6 +24,7 @@ const cancelPath = `${draftPath}/cancel`;
 const approvePath = `${draftPath}/approve`;
 const rejectPath = `${draftPath}/reject`;
 const closePath = `${draftPath}/close`;
+const votePath = `${draftPath}/vote`;
 const contract = JSON.parse(await readFile(contractPath, 'utf8'));
 const operation = contract.paths?.[healthPath]?.get;
 const responseSchema = operation?.responses?.['200']?.content?.['application/json']?.schema;
@@ -74,6 +75,10 @@ const rejectLessonResponseSchema = rejectLessonOperation?.responses?.['200']?.co
 const closeLessonOperation = contract.paths?.[closePath]?.post;
 const closeLessonRequestSchema = closeLessonOperation?.requestBody?.content?.['application/json']?.schema;
 const closeLessonResponseSchema = closeLessonOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const castVoteOperation = contract.paths?.[votePath]?.put;
+const castVoteResponseSchema = castVoteOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const removeVoteOperation = contract.paths?.[votePath]?.delete;
+const removeVoteResponseSchema = removeVoteOperation?.responses?.['200']?.content?.['application/json']?.schema;
 
 if (!operation || responseSchema?.$ref !== '#/components/schemas/HealthResponse') {
   throw new Error(`Expected GET ${healthPath} with a HealthResponse schema in ${contractPath}`);
@@ -170,6 +175,14 @@ if (!closeLessonOperation || closeLessonRequestSchema?.$ref !== '#/components/sc
   throw new Error(`Expected POST ${closePath} with CloseLessonRequest and LessonDraftResponse in ${contractPath}`);
 }
 
+if (!castVoteOperation || castVoteResponseSchema?.$ref !== '#/components/schemas/LessonVoteResponse') {
+  throw new Error(`Expected PUT ${votePath} with LessonVoteResponse in ${contractPath}`);
+}
+
+if (!removeVoteOperation || removeVoteResponseSchema?.$ref !== '#/components/schemas/LessonVoteResponse') {
+  throw new Error(`Expected DELETE ${votePath} with LessonVoteResponse in ${contractPath}`);
+}
+
 const generatedClient = `/* This file is generated from services/lessons-learned-api/openapi/lessons-learned-v1.json. Do not edit directly. */
 import axios from 'axios';
 import type { components, paths } from './lessons-learned-api';
@@ -193,6 +206,7 @@ export const LESSONS_LEARNED_CANCEL_PATH = '${cancelPath}' satisfies keyof paths
 export const LESSONS_LEARNED_APPROVE_PATH = '${approvePath}' satisfies keyof paths;
 export const LESSONS_LEARNED_REJECT_PATH = '${rejectPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_CLOSE_PATH = '${closePath}' satisfies keyof paths;
+export const LESSONS_LEARNED_VOTE_PATH = '${votePath}' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
@@ -218,6 +232,7 @@ export type RejectLessonBody = paths[typeof LESSONS_LEARNED_REJECT_PATH]['post']
 export type CloseLessonBody = paths[typeof LESSONS_LEARNED_CLOSE_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
 export type RecordLibraryViewBody = paths[typeof LESSONS_LEARNED_LIBRARY_VIEW_PATH]['post']['requestBody']['content']['application/json'];
 export type RecordLibraryViewResponse = paths[typeof LESSONS_LEARNED_LIBRARY_VIEW_PATH]['post']['responses'][200]['content']['application/json'];
+export type LessonVoteResponse = paths[typeof LESSONS_LEARNED_VOTE_PATH]['put']['responses'][200]['content']['application/json'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -503,6 +518,37 @@ export async function closeLesson(
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId, ...(etag ? { 'If-Match': etag } : {}) },
   });
+
+  return data;
+}
+
+export async function castLessonVote(
+  localUserId: string,
+  lessonId: number,
+): Promise<LessonVoteResponse> {
+  const { data } = await api.put<LessonVoteResponse>(
+    LESSONS_LEARNED_VOTE_PATH.replace('{id}', String(lessonId)),
+    undefined,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function removeLessonVote(
+  localUserId: string,
+  lessonId: number,
+): Promise<LessonVoteResponse> {
+  const { data } = await api.delete<LessonVoteResponse>(
+    LESSONS_LEARNED_VOTE_PATH.replace('{id}', String(lessonId)),
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
 
   return data;
 }

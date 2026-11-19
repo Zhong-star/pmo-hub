@@ -105,6 +105,12 @@ export class LessonHistoryEventResponse {
 export class LessonDetailsResponse extends LessonDraftResponse {
   @ApiProperty({ type: LessonHistoryEventResponse, isArray: true })
   history!: LessonHistoryEventResponse[];
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  votesCount!: number;
+
+  @ApiProperty({ type: Boolean, example: false })
+  hasVoted!: boolean;
 }
 
 export class LessonLibraryResponse extends LessonDraftResponse {
@@ -113,9 +119,26 @@ export class LessonLibraryResponse extends LessonDraftResponse {
 
   @ApiProperty({ type: Number, minimum: 0, example: 0 })
   viewCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  votesCount!: number;
+
+  @ApiProperty({ type: Boolean, example: false })
+  hasVoted!: boolean;
 }
 
 export class RecordLessonLibraryViewResponse {
   @ApiProperty({ type: Number, minimum: 0, example: 1 })
   viewCount!: number;
+}
+
+export class LessonVoteResponse {
+  @ApiProperty({ type: Number, example: 1 })
+  lessonId!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 1 })
+  votesCount!: number;
+
+  @ApiProperty({ type: Boolean, example: true })
+  hasVoted!: boolean;
 }

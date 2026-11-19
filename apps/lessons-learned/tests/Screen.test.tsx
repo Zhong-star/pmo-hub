@@ -30,6 +30,7 @@ import {
 
 vi.mock('../src/api', () => ({
   approveLesson: vi.fn(),
+  castLessonVote: vi.fn(),
   closeLesson: vi.fn(),
   cancelLesson: vi.fn(),
   createLessonDraft: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock('../src/api', () => ({
   getLibraryLessonDetails: vi.fn(),
   getLibraryProjectSnapshots: vi.fn(),
   recordLibraryView: vi.fn(),
+  removeLessonVote: vi.fn(),
   getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
@@ -91,6 +93,8 @@ function libraryLesson(overrides: Partial<LibraryLesson> = {}): LibraryLesson {
     ...lessonDraft(overrides),
     authorName: overrides.authorName ?? 'Local Contributor',
     viewCount: overrides.viewCount ?? 0,
+    votesCount: overrides.votesCount ?? 0,
+    hasVoted: overrides.hasVoted ?? false,
     ...overrides,
   };
 }
@@ -108,6 +112,8 @@ function lessonDetails(overrides: Partial<LessonDetails> = {}): LessonDetails {
       reason: null,
       occurredAt: draft.createdAt,
     }],
+    votesCount: overrides.votesCount ?? 0,
+    hasVoted: overrides.hasVoted ?? false,
     ...overrides,
   };
 }

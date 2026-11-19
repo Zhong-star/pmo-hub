@@ -9,7 +9,7 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { DataSource, In, type Repository, type SelectQueryBuilder } from 'typeorm';
+import { DataSource, In, type EntityManager, type Repository, type SelectQueryBuilder } from 'typeorm';
 import { LocalAccessService } from '../local-access.service';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../database/database.module';
 import { isRepresentationETag, lessonRepresentationETag } from './lesson-http-contract';
@@ -17,7 +17,7 @@ import { emitsRepresentationTokens } from './lesson-token-format';
 import { LessonHistory } from './lesson-history.entity';
 import { Lesson } from './lesson.entity';
 import {
-  encodeProjectCursor, paginateLibraryLessonsByTextKey, paginateLessons, readProjectCursor,
+  encodeProjectCursor, paginateLibraryLessonsByTextKey, paginateLibraryLessonsByVotes, paginateLessons, readProjectCursor,
   type LessonLibraryPage, type LessonPage, type LessonPageRequest, type LessonProjectPage,
 } from './lesson-pagination';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
@@ -31,7 +31,7 @@ import type { ReturnLessonRequest } from './return-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import type {
   LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse,
-  LessonLibraryResponse, RecordLessonLibraryViewResponse,
+  LessonLibraryResponse, LessonVoteResponse, RecordLessonLibraryViewResponse,
 } from './lesson-response.dto';
 import type { RecordLibraryViewRequest } from './record-library-view-request.dto';
 import type {
@@ -234,10 +234,11 @@ export class LessonsService {
     page?: LessonPageRequest,
     filters: LessonsLibraryFilter = {},
   ): Promise<LessonLibraryResponse[] | LessonLibraryPage> {
-    this.localAccess.getProfile(localUserId);
+    const profile = this.localAccess.getProfile(localUserId);
     const authorNames = this.localAccess.getDisplayNames();
     const sort = filters.sort ?? 'newest';
-    const query = this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
+    const dataSource = this.requireDataSource();
+    const query = dataSource.getRepository(Lesson).createQueryBuilder('lesson')
       .where('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
       .andWhere('lesson.approved_at IS NOT NULL');
     this.applySearchFilters(query, filters, true);
@@ -254,16 +255,24 @@ export class LessonsService {
         ? legacyScope
         : `library-sort-v1:${JSON.stringify([sort, ...filterValues])}`;
       const toResponse = (lesson: Lesson) => this.toLibraryResponse(lesson, authorNames);
-      if (sort === 'newest') {
-        return paginateLessons(query, page, scope, 'lesson.approved_at', 'DESC', toResponse, this.representationTokens);
-      }
-      if (sort === 'oldest') {
-        return paginateLessons(query, page, scope, 'lesson.approved_at', 'ASC', toResponse, this.representationTokens);
-      }
-      return paginateLibraryLessonsByTextKey(query, page, scope, sort, toResponse, this.representationTokens);
+      const result = sort === 'newest'
+        ? await paginateLessons(query, page, scope, 'lesson.approved_at', 'DESC', toResponse, this.representationTokens)
+        : sort === 'oldest'
+          ? await paginateLessons(query, page, scope, 'lesson.approved_at', 'ASC', toResponse, this.representationTokens)
+          : sort === 'most-voted'
+            ? await paginateLibraryLessonsByVotes(query, page, scope, toResponse, this.representationTokens)
+            : await paginateLibraryLessonsByTextKey(query, page, scope, sort, toResponse, this.representationTokens);
+      return {
+        ...result,
+        items: await this.attachVoteSummaries(result.items, profile.id, dataSource.manager),
+      };
     }
     const lessons = await this.orderLibrary(query, sort).getMany();
-    return lessons.map((lesson) => this.toLibraryResponse(lesson, authorNames));
+    return this.attachVoteSummaries(
+      lessons.map((lesson) => this.toLibraryResponse(lesson, authorNames)),
+      profile.id,
+      dataSource.manager,
+    );
   }
 
   private orderLibrary(query: SelectQueryBuilder<Lesson>, sort: LessonsLibrarySort): SelectQueryBuilder<Lesson> {
@@ -272,6 +281,13 @@ export class LessonsService {
     }
     if (sort === 'oldest') {
       return query.orderBy('lesson.approvedAt', 'ASC').addOrderBy('lesson.id', 'ASC');
+    }
+    if (sort === 'most-voted') {
+      return query
+        .addSelect('(SELECT COUNT(*)::integer FROM lesson_votes lv WHERE lv.lesson_id = lesson.id)', 'library_sort_votes')
+        .orderBy('library_sort_votes', 'DESC')
+        .addOrderBy('lesson.approvedAt', 'DESC')
+        .addOrderBy('lesson.id', 'ASC');
     }
     if (sort === 'title') {
       return query.orderBy('LOWER(lesson.title)', 'ASC')
@@ -323,9 +339,67 @@ export class LessonsService {
           order: { occurredAt: 'ASC', id: 'ASC' },
         })
         : [];
+      const voteSummary = await this.getVoteSummary(lessonId, profile.id, manager);
       return {
-        ...this.toDetailsResponse(lesson, history),
+        ...this.toDetailsResponse(lesson, history, voteSummary),
         authorName: this.localAccess.getDisplayNameForProfile(lesson.authorId) ?? lesson.authorId,
+      };
+    });
+  }
+
+  async castVote(localUserId: string | undefined, lessonId: number): Promise<LessonVoteResponse> {
+    return this.updateVote(localUserId, lessonId, 'cast');
+  }
+
+  async removeVote(localUserId: string | undefined, lessonId: number): Promise<LessonVoteResponse> {
+    return this.updateVote(localUserId, lessonId, 'remove');
+  }
+
+  private async updateVote(
+    localUserId: string | undefined,
+    lessonId: number,
+    action: 'cast' | 'remove',
+  ): Promise<LessonVoteResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction(async (manager) => {
+      const lesson = await manager.getRepository(Lesson).findOne({
+        where: { id: lessonId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const isPmo = profile.role === 'LESSONS_MODERATOR';
+      const isAuthor = lesson?.authorId === profile.id;
+      const isPublished = lesson?.approvedAt !== null
+        && (lesson?.status === 'Approved' || lesson?.status === 'Closed');
+      if (!lesson || (!isPublished && !isPmo && !isAuthor)) {
+        throw new NotFoundException('Lesson not found.');
+      }
+      if (!isPublished) {
+        throw new ConflictException({
+          code: 'LESSON_NOT_PUBLISHED',
+          message: 'Only published lessons can be voted on.',
+        });
+      }
+
+      if (action === 'cast') {
+        await manager.query(`
+          INSERT INTO lesson_votes (lesson_id, user_id)
+          VALUES ($1, $2)
+          ON CONFLICT (lesson_id, user_id) DO NOTHING
+        `, [lessonId, profile.id]);
+      } else {
+        await manager.query(`
+          DELETE FROM lesson_votes
+          WHERE lesson_id = $1 AND user_id = $2
+        `, [lessonId, profile.id]);
+      }
+
+      const summary = await this.getVoteSummary(lessonId, profile.id, manager);
+      return {
+        lessonId,
+        votesCount: summary.votesCount,
+        hasVoted: summary.hasVoted,
       };
     });
   }
@@ -454,11 +528,16 @@ export class LessonsService {
           order: { occurredAt: 'ASC', id: 'ASC' },
         })
         : [];
-      return this.toDetailsResponse(lesson, history);
+      const voteSummary = await this.getVoteSummary(lessonId, profile.id, manager);
+      return this.toDetailsResponse(lesson, history, voteSummary);
     });
   }
 
-  private toDetailsResponse(lesson: Lesson, history: LessonHistory[]): LessonDetailsResponse {
+  private toDetailsResponse(
+    lesson: Lesson,
+    history: LessonHistory[],
+    voteSummary: { votesCount: number; hasVoted: boolean } = { votesCount: 0, hasVoted: false },
+  ): LessonDetailsResponse {
     const historyResponse: LessonHistoryEventResponse[] = history.map((event) => ({
       id: event.id,
       actorId: event.actorId,
@@ -472,7 +551,13 @@ export class LessonsService {
     const latestReviewGuidance = lesson.status === 'Open'
       ? [...history].reverse().find((event) => event.eventType === 'Returned' && event.newStatus === 'Open')?.reason ?? null
       : null;
-    return { ...this.toResponse(lesson), latestReviewGuidance, history: historyResponse };
+    return {
+      ...this.toResponse(lesson),
+      latestReviewGuidance,
+      history: historyResponse,
+      votesCount: voteSummary.votesCount,
+      hasVoted: voteSummary.hasVoted,
+    };
   }
 
   async cancelOpenDraft(
@@ -1061,11 +1146,64 @@ export class LessonsService {
     };
   }
 
+  private async getVoteSummary(
+    lessonId: number,
+    userId: string,
+    manager: EntityManager,
+  ): Promise<{ votesCount: number; hasVoted: boolean }> {
+    const summaries = await this.getVoteSummaries([lessonId], userId, manager);
+    return summaries.get(lessonId) ?? { votesCount: 0, hasVoted: false };
+  }
+
+  private async getVoteSummaries(
+    lessonIds: number[],
+    userId: string,
+    manager: EntityManager,
+  ): Promise<Map<number, { votesCount: number; hasVoted: boolean }>> {
+    const result = new Map<number, { votesCount: number; hasVoted: boolean }>();
+    if (lessonIds.length === 0) return result;
+    const rows = await manager.query(`
+      SELECT
+        lesson_id,
+        COUNT(*)::int AS votes_count,
+        BOOL_OR(user_id = $2) AS has_voted
+      FROM lesson_votes
+      WHERE lesson_id = ANY($1::int[])
+      GROUP BY lesson_id
+    `, [lessonIds, userId]) as { lesson_id: number; votes_count: number; has_voted: boolean }[];
+    for (const row of rows) {
+      result.set(Number(row.lesson_id), {
+        votesCount: Number(row.votes_count),
+        hasVoted: Boolean(row.has_voted),
+      });
+    }
+    return result;
+  }
+
+  private async attachVoteSummaries(
+    items: LessonLibraryResponse[],
+    userId: string,
+    manager: EntityManager,
+  ): Promise<LessonLibraryResponse[]> {
+    if (items.length === 0) return items;
+    const summaries = await this.getVoteSummaries(items.map((item) => item.id), userId, manager);
+    return items.map((item) => {
+      const summary = summaries.get(item.id);
+      return {
+        ...item,
+        votesCount: summary?.votesCount ?? 0,
+        hasVoted: summary?.hasVoted ?? false,
+      };
+    });
+  }
+
   private toLibraryResponse(lesson: Lesson, authorNames: ReadonlyMap<string, string>): LessonLibraryResponse {
     return {
       ...this.toResponse(lesson),
       authorName: authorNames.get(lesson.authorId) ?? lesson.authorId,
       viewCount: lesson.viewCount,
+      votesCount: 0,
+      hasVoted: false,
     };
   }
 

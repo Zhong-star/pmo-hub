@@ -21,6 +21,7 @@ export const LESSONS_LEARNED_CANCEL_PATH = '/api/lessons-learned/v1/lessons/{id}
 export const LESSONS_LEARNED_APPROVE_PATH = '/api/lessons-learned/v1/lessons/{id}/approve' satisfies keyof paths;
 export const LESSONS_LEARNED_REJECT_PATH = '/api/lessons-learned/v1/lessons/{id}/reject' satisfies keyof paths;
 export const LESSONS_LEARNED_CLOSE_PATH = '/api/lessons-learned/v1/lessons/{id}/close' satisfies keyof paths;
+export const LESSONS_LEARNED_VOTE_PATH = '/api/lessons-learned/v1/lessons/{id}/vote' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
@@ -46,6 +47,7 @@ export type RejectLessonBody = paths[typeof LESSONS_LEARNED_REJECT_PATH]['post']
 export type CloseLessonBody = paths[typeof LESSONS_LEARNED_CLOSE_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
 export type RecordLibraryViewBody = paths[typeof LESSONS_LEARNED_LIBRARY_VIEW_PATH]['post']['requestBody']['content']['application/json'];
 export type RecordLibraryViewResponse = paths[typeof LESSONS_LEARNED_LIBRARY_VIEW_PATH]['post']['responses'][200]['content']['application/json'];
+export type LessonVoteResponse = paths[typeof LESSONS_LEARNED_VOTE_PATH]['put']['responses'][200]['content']['application/json'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -331,6 +333,37 @@ export async function closeLesson(
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId, ...(etag ? { 'If-Match': etag } : {}) },
   });
+
+  return data;
+}
+
+export async function castLessonVote(
+  localUserId: string,
+  lessonId: number,
+): Promise<LessonVoteResponse> {
+  const { data } = await api.put<LessonVoteResponse>(
+    LESSONS_LEARNED_VOTE_PATH.replace('{id}', String(lessonId)),
+    undefined,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function removeLessonVote(
+  localUserId: string,
+  lessonId: number,
+): Promise<LessonVoteResponse> {
+  const { data } = await api.delete<LessonVoteResponse>(
+    LESSONS_LEARNED_VOTE_PATH.replace('{id}', String(lessonId)),
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
 
   return data;
 }

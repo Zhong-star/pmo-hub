@@ -39,7 +39,7 @@ export class LessonSubmissionsQuery extends LessonSearchFiltersQuery {
 
 export class PmoEvaluationQueueQuery extends LessonSearchFiltersQuery {}
 
-export const LESSON_LIBRARY_SORTS = ['newest', 'oldest', 'title', 'project', 'type'] as const;
+export const LESSON_LIBRARY_SORTS = ['newest', 'oldest', 'most-voted', 'title', 'project', 'type'] as const;
 export type LessonsLibrarySort = typeof LESSON_LIBRARY_SORTS[number];
 
 export class LessonsLibraryQuery extends LessonSearchFiltersQuery {

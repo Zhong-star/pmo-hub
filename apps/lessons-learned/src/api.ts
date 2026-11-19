@@ -1,7 +1,9 @@
 export {
   api,
   approveLesson,
+  castLessonVote,
   closeLesson,
+  removeLessonVote,
   getHealth,
   getEvaluationProjectSnapshots,
   getHome,
@@ -39,6 +41,7 @@ export {
   LESSONS_LEARNED_APPROVE_PATH,
   LESSONS_LEARNED_REJECT_PATH,
   LESSONS_LEARNED_CLOSE_PATH,
+  LESSONS_LEARNED_VOTE_PATH,
 } from './generated/lessons-learned-api-client';
 
 export type {
@@ -63,4 +66,5 @@ export type {
   CloseLessonBody,
   RecordLibraryViewBody,
   RecordLibraryViewResponse,
+  LessonVoteResponse,
 } from './generated/lessons-learned-api-client';

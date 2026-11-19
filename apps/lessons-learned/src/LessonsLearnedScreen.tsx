@@ -5,6 +5,7 @@ import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { useThemePreference } from '../../shared-ui/src/theme';
 import {
   approveLesson as approveLessonRequest,
+  castLessonVote,
   closeLesson as closeLessonRequest,
   cancelLesson as cancelLessonRequest,
   createLessonDraft,
@@ -14,6 +15,7 @@ import {
   getLibraryLessonDetails,
   getLibraryProjectSnapshots,
   recordLibraryView,
+  removeLessonVote,
   getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
@@ -96,6 +98,7 @@ type LibrarySort = NonNullable<LessonsLibraryFilters['sort']>;
 
 function getLibrarySortCaption(sort: LibrarySort): string {
   if (sort === 'oldest') return 'Published lessons, oldest approval first';
+  if (sort === 'most-voted') return 'Published lessons, most voted first';
   if (sort === 'title') return 'Published lessons, title order';
   if (sort === 'project') return 'Published lessons, project order';
   if (sort === 'type') return 'Published lessons, type order';
@@ -215,6 +218,18 @@ function updateLibraryPageViewCount(
   return Array.isArray(page) ? page.map(update) : { ...page, items: page.items.map(update) };
 }
 
+function updateLibraryPageVote(
+  page: LibraryPage | LibraryLesson[],
+  lessonId: number,
+  votesCount: number,
+  hasVoted: boolean,
+): LibraryPage | LibraryLesson[] {
+  const update = (lesson: LibraryLesson) => lesson.id === lessonId
+    ? { ...lesson, votesCount, hasVoted }
+    : lesson;
+  return Array.isArray(page) ? page.map(update) : { ...page, items: page.items.map(update) };
+}
+
 export function LessonsLearnedScreen() {
   const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
   const [selectionGeneration, setSelectionGeneration] = useState(0);
@@ -260,6 +275,9 @@ export function LessonsLearnedScreen() {
   const selectionGenerationRef = useRef(selectionGeneration);
   const pendingCreateProfilesRef = useRef(new Set<string>());
   const [pendingCreateProfiles, setPendingCreateProfiles] = useState<Set<string>>(new Set());
+  const pendingVoteIdsRef = useRef(new Set<number>());
+  const [pendingVoteIds, setPendingVoteIds] = useState<Set<number>>(new Set());
+  const [voteError, setVoteError] = useState<{ lessonId: number; message: string } | null>(null);
   const queryClient = useQueryClient();
   const resetSubmissionFilters = useCallback((destination: ModulePage) => {
     setSubmissionSearch('');
@@ -503,6 +521,62 @@ export function LessonsLearnedScreen() {
     setPendingCreateProfiles(nextPendingProfiles);
   }
 
+  function markVotePending(lessonId: number, isPending: boolean) {
+    const next = new Set(pendingVoteIdsRef.current);
+    if (isPending) next.add(lessonId);
+    else next.delete(lessonId);
+    pendingVoteIdsRef.current = next;
+    setPendingVoteIds(next);
+  }
+
+  function applyVoteToCaches(profileId: string, lessonId: number, votesCount: number, hasVoted: boolean) {
+    queryClient.setQueriesData<InfiniteData<LibraryPage | LibraryLesson[]>>(
+      { queryKey: ['lessons-learned-library', profileId] },
+      (current) => current ? {
+        ...current,
+        pages: current.pages.map((page) => updateLibraryPageVote(page, lessonId, votesCount, hasVoted)),
+      } : current,
+    );
+    queryClient.setQueriesData<LessonDetails>(
+      { queryKey: ['lessons-learned-library-details', profileId, lessonId] },
+      (current) => current ? { ...current, votesCount, hasVoted } : current,
+    );
+    queryClient.setQueriesData<LessonDetails>(
+      { queryKey: ['lessons-learned-submission-details', profileId, lessonId] },
+      (current) => current ? { ...current, votesCount, hasVoted } : current,
+    );
+  }
+
+  async function toggleLessonVote(lesson: { id: number; votesCount: number; hasVoted: boolean }) {
+    const profileId = selectedProfileIdRef.current;
+    if (!profileId || pendingVoteIdsRef.current.has(lesson.id)) return;
+
+    const previous = { votesCount: lesson.votesCount, hasVoted: lesson.hasVoted };
+    const nextHasVoted = !previous.hasVoted;
+    const nextVotesCount = Math.max(0, previous.votesCount + (nextHasVoted ? 1 : -1));
+
+    markVotePending(lesson.id, true);
+    setVoteError((current) => (current?.lessonId === lesson.id ? null : current));
+    applyVoteToCaches(profileId, lesson.id, nextVotesCount, nextHasVoted);
+
+    try {
+      const updated = nextHasVoted
+        ? await castLessonVote(profileId, lesson.id)
+        : await removeLessonVote(profileId, lesson.id);
+      applyVoteToCaches(profileId, lesson.id, updated.votesCount, updated.hasVoted);
+    } catch {
+      applyVoteToCaches(profileId, lesson.id, previous.votesCount, previous.hasVoted);
+      if (selectedProfileIdRef.current === profileId) {
+        setVoteError({
+          lessonId: lesson.id,
+          message: 'Your vote could not be updated. Please try again.',
+        });
+      }
+    } finally {
+      markVotePending(lesson.id, false);
+    }
+  }
+
   const updateSelectedProfile = useCallback((profileId: string | null) => {
     if (profileId === selectedProfileIdRef.current) return;
     selectedProfileIdRef.current = profileId;
@@ -517,6 +591,7 @@ export function LessonsLearnedScreen() {
     setSelectedRejectionDraft(null);
     setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
+    setVoteError(null);
     resetSubmissionFilters(modulePage);
   }, [modulePage, resetSubmissionFilters]);
 
@@ -1088,6 +1163,7 @@ export function LessonsLearnedScreen() {
                           >
                             <option value="newest">Most recently approved</option>
                             <option value="oldest">Oldest approval</option>
+                            <option value="most-voted">Most voted</option>
                             <option value="title">Title</option>
                             <option value="project">Project</option>
                             <option value="type">Lesson type</option>
@@ -1218,6 +1294,11 @@ export function LessonsLearnedScreen() {
                           ? Object.keys(currentSubmissionFilters).length ? 'No lessons match these filters.' : 'No lessons are available.'
                           : Object.keys(currentSubmissionFilters).length ? 'No submissions match these filters.' : 'You have no submissions yet.'}</p>
                   )}
+                  {isLibraryPage && voteError && !isLibraryDetailOpen && (
+                    <div className="draft-error" role="alert">
+                      <p>{voteError.message}</p>
+                    </div>
+                  )}
                   {isSubmissionTablePage && submissionItems.length > 0 && (
                     <div className="submission-table-wrapper">
                       <table className="submission-table">
@@ -1236,6 +1317,7 @@ export function LessonsLearnedScreen() {
                             <th scope="col">Status</th>
                             {isLibraryPage && <th scope="col">Approved</th>}
                             {isLibraryPage && !isLegacyLibrary && <th scope="col">Views</th>}
+                            {isLibraryPage && !isLegacyLibrary && <th scope="col">Votes</th>}
                             {isPmoDraftsPage && <th scope="col">Updated</th>}
                             {isPmoReviewListPage && <th scope="col">Actions</th>}
                           </tr>
@@ -1282,6 +1364,26 @@ export function LessonsLearnedScreen() {
                                 ? <time dateTime={draft.approvedAt}>{formatUpdatedAt(draft.approvedAt)}</time>
                                 : 'Not available'}</td>}
                               {isLibraryPage && !isLegacyLibrary && <td>{isLibraryLesson(draft) ? draft.viewCount : 0}</td>}
+                              {isLibraryPage && !isLegacyLibrary && (
+                                <td>
+                                  {isLibraryLesson(draft) ? (
+                                    <button
+                                      type="button"
+                                      className={draft.hasVoted ? 'vote-button is-voted' : 'vote-button'}
+                                      aria-pressed={draft.hasVoted}
+                                      aria-label={draft.hasVoted
+                                        ? `Remove vote for ${draft.title} (${draft.votesCount})`
+                                        : `Vote for ${draft.title} (${draft.votesCount})`}
+                                      disabled={pendingVoteIds.has(draft.id)}
+                                      onClick={() => void toggleLessonVote(draft)}
+                                    >
+                                      <span aria-hidden="true">{draft.hasVoted ? '★' : '☆'}</span>
+                                      <span>{draft.hasVoted ? 'Voted' : 'Vote'}</span>
+                                      <span className="vote-count">{draft.votesCount}</span>
+                                    </button>
+                                  ) : 0}
+                                </td>
+                              )}
                               {isPmoDraftsPage && <td><time dateTime={draft.updatedAt}>{formatUpdatedAt(draft.updatedAt)}</time></td>}
                               {isPmoReviewListPage && <td>
                                 <div className="submission-actions">
@@ -1473,6 +1575,11 @@ export function LessonsLearnedScreen() {
                       }}
                       onReturn={isPmoEvaluationQueuePage ? setSelectedReturnLesson : undefined}
                       isLibrarySurface={isLibraryPage && libraryDetailId !== null}
+                      onToggleVote={(lesson) => void toggleLessonVote(lesson)}
+                      isVotePending={pendingVoteIds.has(isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0)}
+                      voteError={voteError?.lessonId === (isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0)
+                        ? voteError.message
+                        : null}
                     />
                   )}
                   {selectedReturnLesson && (
