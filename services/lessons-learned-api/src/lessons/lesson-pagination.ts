@@ -201,3 +201,78 @@ export async function paginateLibraryLessonsByTextKey<T extends LessonDraftRespo
     : null;
   return { items: entities.slice(0, request.limit).map(toResponse), page: { limit: request.limit, nextCursor } };
 }
+
+interface LibraryVotesCursor {
+  scope: string;
+  votes: number;
+  approvedAt: string;
+  id: number;
+}
+
+function decodeLibraryVotesCursor(
+  cursor: string,
+  scope: string,
+): LibraryVotesCursor {
+  try {
+    if (typeof cursor !== 'string' || !/^[A-Za-z0-9_-]{1,4096}$/.test(cursor)) throw new Error();
+    const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    const scopeHash = createHash('sha256').update(scope).digest('hex');
+    if (
+      (decoded.scope !== scope && decoded.scope !== scopeHash) ||
+      !Number.isInteger(decoded.votes) || decoded.votes < 0 || decoded.votes > 2147483647 ||
+      typeof decoded.approvedAt !== 'string' || !/^-?[0-9]{1,19}$/.test(decoded.approvedAt) ||
+      BigInt(decoded.approvedAt) > 9223372036854775807n || BigInt(decoded.approvedAt) < -9223372036854775808n ||
+      !Number.isInteger(decoded.id) || decoded.id < 1 || decoded.id > 2147483647
+    ) throw new Error();
+    return decoded as LibraryVotesCursor;
+  } catch {
+    throw new BadRequestException('Invalid cursor for this lesson query.');
+  }
+}
+
+export async function paginateLibraryLessonsByVotes<T extends LessonDraftResponse = LessonDraftResponse>(
+  query: SelectQueryBuilder<Lesson>,
+  request: LessonPageRequest,
+  scope: string,
+  toResponse: (lesson: Lesson) => T,
+  representationTokens: boolean,
+): Promise<LessonPage<T>> {
+  const votesExpression = '(SELECT COUNT(*)::integer FROM lesson_votes lv WHERE lv.lesson_id = lesson.id)';
+  const approvalExpression = 'COALESCE((EXTRACT(EPOCH FROM lesson.approvedAt) * 1000000)::bigint, 9223372036854775807::bigint)';
+
+  if (request.cursor !== undefined) {
+    const cursor = decodeLibraryVotesCursor(request.cursor, scope);
+    query.andWhere(`(
+      ${votesExpression} < :sortVotes OR
+      (${votesExpression} = :sortVotes AND ${approvalExpression} < CAST(:approvedAt AS bigint)) OR
+      (${votesExpression} = :sortVotes AND ${approvalExpression} = CAST(:approvedAt AS bigint) AND lesson.id > :sortId)
+    )`, {
+      sortVotes: cursor.votes,
+      approvedAt: cursor.approvedAt,
+      sortId: cursor.id,
+    });
+  }
+
+  const { raw, entities } = await query
+    .addSelect(votesExpression, 'library_sort_votes')
+    .addSelect(approvalExpression, 'library_sort_approved_at')
+    .orderBy('library_sort_votes', 'DESC')
+    .addOrderBy('library_sort_approved_at', 'DESC')
+    .addOrderBy('lesson.id', 'ASC')
+    .limit(request.limit + 1)
+    .getRawAndEntities<{
+      library_sort_votes: string | number;
+      library_sort_approved_at: string;
+    }>();
+
+  const last = request.limit - 1;
+  const nextCursor = entities.length > request.limit
+    ? Buffer.from(JSON.stringify({
+      scope: representationTokens ? createHash('sha256').update(scope).digest('hex') : scope,
+      votes: Number(raw[last].library_sort_votes),
+      approvedAt: raw[last].library_sort_approved_at,
+      id: entities[last].id,
+    })).toString('base64url')
+    : null;
+  return { items: entities.slice(0, request.limit).map(toResponse), page: { limit: request.limit, nextCursor } };
+}

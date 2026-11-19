@@ -16,6 +16,7 @@ import {
 } from '../src/api';
 
 vi.mock('../src/api', () => ({
+  castLessonVote: vi.fn(),
   closeLesson: vi.fn(),
   getHome: vi.fn(),
   getLibrary: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('../src/api', () => ({
   getLibraryProjectSnapshots: vi.fn(),
   getPmoDashboard: vi.fn(),
   recordLibraryView: vi.fn(),
+  removeLessonVote: vi.fn(),
 }));
 
 const pmo = {
@@ -61,6 +63,8 @@ function libraryLesson(overrides: Partial<LibraryLesson> = {}): LibraryLesson {
     ...lessonDraft(overrides),
     authorName: overrides.authorName ?? 'Local Contributor',
     viewCount: overrides.viewCount ?? 0,
+    votesCount: overrides.votesCount ?? 0,
+    hasVoted: overrides.hasVoted ?? false,
     ...overrides,
   };
 }
@@ -134,7 +138,7 @@ describe('PMO closure from the Lessons Library', () => {
     vi.mocked(getLibrary).mockResolvedValue([approved]);
     vi.mocked(getLibraryLessonDetails)
       .mockResolvedValueOnce({ ...approved, history: [] })
-      .mockResolvedValueOnce({ ...latest, history: [] });
+      .mockResolvedValueOnce({ ...latest, history: [], votesCount: 0, hasVoted: false });
     vi.mocked(closeLesson).mockRejectedValue({
       response: { status: 409, data: { code: 'STALE_LESSON_VERSION' } },
     });

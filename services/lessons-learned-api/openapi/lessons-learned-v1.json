@@ -1263,6 +1263,7 @@
               "enum": [
                 "newest",
                 "oldest",
+                "most-voted",
                 "title",
                 "project",
                 "type"
@@ -3884,6 +3885,474 @@
         ]
       }
     },
+    "/api/lessons-learned/v1/lessons/{id}/vote": {
+      "put": {
+        "operationId": "LessonsController_castVote",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Positive PostgreSQL integer lesson ID.",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonVoteResponse"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "ETag for the returned lesson version.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The lesson ID is outside the supported range.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The lesson does not exist or is not visible to the selected profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Only published lessons (Approved or Closed) can be voted on.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Cast a single vote on a published lesson for the selected profile",
+        "tags": [
+          "Lessons"
+        ]
+      },
+      "delete": {
+        "operationId": "LessonsController_removeVote",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Positive PostgreSQL integer lesson ID.",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonVoteResponse"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "ETag for the returned lesson version.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The lesson ID is outside the supported range.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile must be selected.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The selected profile has no active Lessons Learned access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The lesson does not exist or is not visible to the selected profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Only published lessons (Approved or Closed) can be voted on.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Lessons Learned persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonProblem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Remove the selected profile’s vote from a published lesson",
+        "tags": [
+          "Lessons"
+        ]
+      }
+    },
     "/api/lessons-learned/v1/pmo/dashboard": {
       "get": {
         "operationId": "PmoDashboardController_getPmoDashboard",
@@ -4387,6 +4856,15 @@
             "type": "number",
             "minimum": 0,
             "example": 0
+          },
+          "votesCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 0
+          },
+          "hasVoted": {
+            "type": "boolean",
+            "example": false
           }
         },
         "required": [
@@ -4410,7 +4888,9 @@
           "updatedAt",
           "latestReviewGuidance",
           "approvedAt",
-          "viewCount"
+          "viewCount",
+          "votesCount",
+          "hasVoted"
         ]
       },
       "LessonPageInfo": {
@@ -4991,6 +5471,15 @@
             "items": {
               "$ref": "#/components/schemas/LessonHistoryEventResponse"
             }
+          },
+          "votesCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 0
+          },
+          "hasVoted": {
+            "type": "boolean",
+            "example": false
           }
         },
         "required": [
@@ -5014,7 +5503,9 @@
           "updatedAt",
           "latestReviewGuidance",
           "approvedAt",
-          "history"
+          "history",
+          "votesCount",
+          "hasVoted"
         ]
       },
       "RecordLibraryViewRequest": {
@@ -5434,6 +5925,29 @@
           }
         }
       },
+      "LessonVoteResponse": {
+        "type": "object",
+        "properties": {
+          "lessonId": {
+            "type": "number",
+            "example": 1
+          },
+          "votesCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 1
+          },
+          "hasVoted": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "lessonId",
+          "votesCount",
+          "hasVoted"
+        ]
+      },
       "PmoDashboardLessonResponse": {
         "type": "object",
         "properties": {
@@ -5568,6 +6082,15 @@
             "minimum": 0,
             "example": 0
           },
+          "votesCount": {
+            "type": "number",
+            "minimum": 0,
+            "example": 0
+          },
+          "hasVoted": {
+            "type": "boolean",
+            "example": false
+          },
           "lastActivityAt": {
             "type": "string",
             "format": "date-time",
@@ -5608,6 +6131,8 @@
           "latestReviewGuidance",
           "approvedAt",
           "viewCount",
+          "votesCount",
+          "hasVoted",
           "lastActivityAt",
           "latestClosedAt",
           "latestReturnedAt"

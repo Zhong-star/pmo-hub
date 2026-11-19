@@ -21,7 +21,7 @@ export function createOpenApiDocument(app: INestApplication) {
   ];
   for (const [path, routes] of Object.entries(document.paths)) {
     if (!problemCollections.some((collection) => path === collection || path.startsWith(`${collection}/`))) continue;
-    for (const operation of [routes.get, routes.patch, routes.post]) {
+    for (const operation of [routes.get, routes.patch, routes.post, routes.put, routes.delete]) {
       if (!operation) continue;
       for (const [code, response] of Object.entries(operation.responses)) {
         if (!response || '$ref' in response) continue;

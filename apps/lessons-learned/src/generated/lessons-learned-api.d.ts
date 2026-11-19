@@ -329,6 +329,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/lessons/{id}/vote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Cast a single vote on a published lesson for the selected profile */
+        put: operations["LessonsController_castVote"];
+        post?: never;
+        /** Remove the selected profile’s vote from a published lesson */
+        delete: operations["LessonsController_removeVote"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/lessons-learned/v1/pmo/dashboard": {
         parameters: {
             query?: never;
@@ -433,6 +451,10 @@ export interface components {
             approvedAt: string | null;
             /** @example 0 */
             viewCount: number;
+            /** @example 0 */
+            votesCount: number;
+            /** @example false */
+            hasVoted: boolean;
         };
         LessonPageInfo: {
             nextCursor: string | null;
@@ -586,6 +608,10 @@ export interface components {
             /** Format: date-time */
             approvedAt: string | null;
             history: components["schemas"]["LessonHistoryEventResponse"][];
+            /** @example 0 */
+            votesCount: number;
+            /** @example false */
+            hasVoted: boolean;
         };
         RecordLibraryViewRequest: {
             /**
@@ -722,6 +748,14 @@ export interface components {
             /** @example 7 */
             version?: number;
         };
+        LessonVoteResponse: {
+            /** @example 1 */
+            lessonId: number;
+            /** @example 1 */
+            votesCount: number;
+            /** @example true */
+            hasVoted: boolean;
+        };
         PmoDashboardLessonResponse: {
             /** @example 1 */
             id: number;
@@ -765,6 +799,10 @@ export interface components {
             approvedAt: string | null;
             /** @example 0 */
             viewCount: number;
+            /** @example 0 */
+            votesCount: number;
+            /** @example false */
+            hasVoted: boolean;
             /**
              * Format: date-time
              * @description Most recent relevant activity timestamp (UTC).
@@ -1364,7 +1402,7 @@ export interface operations {
                 withoutProject?: boolean;
                 lessonType?: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication";
                 /** @description Sort the filtered published lessons before cursor pagination. */
-                sort?: "newest" | "oldest" | "title" | "project" | "type";
+                sort?: "newest" | "oldest" | "most-voted" | "title" | "project" | "type";
                 /** @description Opt in to the cursor response envelope. */
                 paged?: "true";
                 cursor?: string;
@@ -2559,6 +2597,212 @@ export interface operations {
                         code?: string;
                         message?: string;
                     };
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonsController_castVote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Positive PostgreSQL integer lesson ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    /** @description ETag for the returned lesson version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonVoteResponse"];
+                };
+            };
+            /** @description The lesson ID is outside the supported range. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The lesson does not exist or is not visible to the selected profile. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Only published lessons (Approved or Closed) can be voted on. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonsController_removeVote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Positive PostgreSQL integer lesson ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    /** @description ETag for the returned lesson version. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonVoteResponse"];
+                };
+            };
+            /** @description The lesson ID is outside the supported range. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile has no active Lessons Learned access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The lesson does not exist or is not visible to the selected profile. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Only published lessons (Approved or Closed) can be voted on. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
                 };
             };
             /** @description Lessons Learned persistence is unavailable. */

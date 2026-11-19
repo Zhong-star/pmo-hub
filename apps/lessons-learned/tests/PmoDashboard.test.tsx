@@ -18,6 +18,7 @@ import {
 
 vi.mock('../src/api', () => ({
   approveLesson: vi.fn(),
+  castLessonVote: vi.fn(),
   closeLesson: vi.fn(),
   cancelLesson: vi.fn(),
   createLessonDraft: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('../src/api', () => ({
   getLibraryLessonDetails: vi.fn(),
   getLibraryProjectSnapshots: vi.fn(),
   recordLibraryView: vi.fn(),
+  removeLessonVote: vi.fn(),
   getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
@@ -60,6 +62,8 @@ function dashboardLesson(overrides: Partial<PmoDashboardLesson> = {}): PmoDashbo
     status: 'Approved',
     version: 3,
     viewCount: 5,
+    votesCount: 0,
+    hasVoted: false,
     projectId: 'LOCAL-PROJECT-001',
     projectName: 'Fictional Atlas Modernization',
     projectCategory: 'Technology',

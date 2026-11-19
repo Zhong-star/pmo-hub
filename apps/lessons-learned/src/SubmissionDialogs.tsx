@@ -387,6 +387,9 @@ type LessonSubmissionDetailsDialogProps = {
   canClose?: boolean;
   onCloseLesson?: (lesson: LessonDetails) => void;
   isLibrarySurface?: boolean;
+  onToggleVote?: (lesson: LessonDetails) => void;
+  isVotePending?: boolean;
+  voteError?: string | null;
 };
 
 export function LessonSubmissionDetailsDialog({
@@ -404,10 +407,16 @@ export function LessonSubmissionDetailsDialog({
   canClose = false,
   onCloseLesson,
   isLibrarySurface = false,
+  onToggleVote,
+  isVotePending = false,
+  voteError = null,
 }: LessonSubmissionDetailsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const lesson = hasError ? undefined : lessonData;
+  const isPublished = Boolean(
+    lesson && (lesson.status === 'Approved' || lesson.status === 'Closed') && lesson.approvedAt,
+  );
 
   useDialogFocus(dialogRef, closeRef);
 
@@ -468,6 +477,25 @@ export function LessonSubmissionDetailsDialog({
         )}
         {lesson && (
           <>
+            {isPublished && onToggleVote && (
+              <div className="lesson-vote-bar">
+                <button
+                  type="button"
+                  className={lesson.hasVoted ? 'vote-button is-voted' : 'vote-button'}
+                  aria-pressed={lesson.hasVoted}
+                  aria-label={lesson.hasVoted
+                    ? `Remove vote for ${lesson.title} (${lesson.votesCount})`
+                    : `Vote for ${lesson.title} (${lesson.votesCount})`}
+                  disabled={isVotePending}
+                  onClick={() => onToggleVote(lesson)}
+                >
+                  <span aria-hidden="true">{lesson.hasVoted ? '★' : '☆'}</span>
+                  <span>{lesson.hasVoted ? 'Voted' : 'Vote'}</span>
+                  <span className="vote-count">{lesson.votesCount}</span>
+                </button>
+                {voteError && <p className="draft-error" role="alert">{voteError}</p>}
+              </div>
+            )}
             <dl className="submission-detail-list">
               {fields.map(([label, value]) => (
                 <div key={label}>

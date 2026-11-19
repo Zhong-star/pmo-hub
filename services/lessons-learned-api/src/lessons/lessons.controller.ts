@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Header,
@@ -11,6 +12,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseFilters,
   UseInterceptors,
@@ -42,7 +44,7 @@ import { ApproveLessonRequest } from './approve-lesson-request.dto';
 import { CloseLessonRequest } from './close-lesson-request.dto';
 import { CancelLessonRequest } from './cancel-lesson-request.dto';
 import {
-  LessonDetailsResponse, LessonDraftResponse, LessonLibraryResponse, RecordLessonLibraryViewResponse,
+  LessonDetailsResponse, LessonDraftResponse, LessonLibraryResponse, LessonVoteResponse, RecordLessonLibraryViewResponse,
 } from './lesson-response.dto';
 import { LessonConflictResponse } from './lesson-conflict-response.dto';
 import { LessonSubmissionValidationResponse } from './lesson-submission-validation-response.dto';
@@ -589,5 +591,45 @@ export class LessonsController {
     input: CloseLessonRequest,
   ): Promise<LessonDraftResponse> {
     return this.lessons.closeApprovedLesson(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
+  }
+
+  @Put(':id/vote')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Cast a single vote on a published lesson for the selected profile' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'Positive PostgreSQL integer lesson ID.' })
+  @ApiOkResponse({ type: LessonVoteResponse })
+  @ApiBadRequestResponse({ description: 'The lesson ID is outside the supported range.' })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not visible to the selected profile.' })
+  @ApiConflictResponse({ description: 'Only published lessons (Approved or Closed) can be voted on.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  castVote(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParsePositivePostgresIntegerPipe) lessonId: number,
+  ): Promise<LessonVoteResponse> {
+    return this.lessons.castVote(typeof header === 'string' ? header : undefined, lessonId);
+  }
+
+  @Delete(':id/vote')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Remove the selected profile’s vote from a published lesson' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'Positive PostgreSQL integer lesson ID.' })
+  @ApiOkResponse({ type: LessonVoteResponse })
+  @ApiBadRequestResponse({ description: 'The lesson ID is outside the supported range.' })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not visible to the selected profile.' })
+  @ApiConflictResponse({ description: 'Only published lessons (Approved or Closed) can be voted on.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  removeVote(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParsePositivePostgresIntegerPipe) lessonId: number,
+  ): Promise<LessonVoteResponse> {
+    return this.lessons.removeVote(typeof header === 'string' ? header : undefined, lessonId);
   }
 }
