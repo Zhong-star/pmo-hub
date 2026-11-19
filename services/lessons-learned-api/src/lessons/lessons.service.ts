@@ -31,7 +31,7 @@ import type { ReturnLessonRequest } from './return-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import type {
   LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse,
-  LessonLibraryResponse, LessonVoteResponse, RecordLessonLibraryViewResponse,
+  LessonLibraryResponse, LessonVoteResponse, PmoDashboardLessonResponse, PmoDashboardResponse, RecordLessonLibraryViewResponse,
 } from './lesson-response.dto';
 import type { RecordLibraryViewRequest } from './record-library-view-request.dto';
 import type {
@@ -39,6 +39,9 @@ import type {
   LessonsLibraryFilter,
   LessonsLibrarySort,
   LessonSubmissionsFilter,
+  PmoDashboardCard,
+  PmoDashboardFilter,
+  PmoDashboardSort,
   PmoDraftsFilter,
   PmoEvaluationQueueFilter,
 } from './lesson-submissions-query.dto';
@@ -150,6 +153,140 @@ export class LessonsService {
       throw new ForbiddenException('PMO moderator access is required to list module lessons.');
     }
     return this.listSubmissions(filters);
+  }
+
+  async getPmoDashboard(
+    localUserId: string | undefined,
+    filters: PmoDashboardFilter = {},
+  ): Promise<PmoDashboardResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    if (profile.role !== 'LESSONS_MODERATOR') {
+      throw new ForbiddenException('PMO moderator access is required to view the PMO Dashboard.');
+    }
+
+    const windowDays = 30;
+    const windowStartAt = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+    const windowStartMs = windowStartAt.getTime();
+    const authorNames = this.localAccess.getDisplayNames();
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction('REPEATABLE READ', async (manager) => {
+      const query = manager.getRepository(Lesson).createQueryBuilder('lesson')
+        .addSelect(
+          `(SELECT MAX(h.occurred_at) FROM lesson_history h WHERE h.lesson_id = lesson.id)`,
+          'latest_history_at',
+        )
+        .addSelect(
+          `(SELECT MAX(h.occurred_at) FROM lesson_history h WHERE h.lesson_id = lesson.id AND h.event_type = 'Closed')`,
+          'latest_closed_at',
+        )
+        .addSelect(
+          `(SELECT MAX(h.occurred_at) FROM lesson_history h WHERE h.lesson_id = lesson.id AND h.event_type = 'Returned')`,
+          'latest_returned_at',
+        );
+
+      this.applySearchFilters(query, filters, true);
+      if (filters.status) query.andWhere('lesson.status = :status', { status: filters.status });
+
+      const { entities, raw } = await query.getRawAndEntities();
+      const baseWithGuidance = await this.includeLatestReviewGuidance(
+        entities.map((lesson) => this.toResponse(lesson)),
+        manager.getRepository(LessonHistory),
+      );
+      const guidanceById = new Map(baseWithGuidance.map((item) => [item.id, item.latestReviewGuidance]));
+
+      const allItems: PmoDashboardLessonResponse[] = entities.map((lesson, index) => {
+        const row = raw[index] as {
+          latest_history_at?: Date | string | null;
+          latest_closed_at?: Date | string | null;
+          latest_returned_at?: Date | string | null;
+        } | undefined;
+        const latestHistoryAt = row?.latest_history_at ? new Date(row.latest_history_at) : null;
+        const latestClosedAt = row?.latest_closed_at ? new Date(row.latest_closed_at) : null;
+        const latestReturnedAt = row?.latest_returned_at ? new Date(row.latest_returned_at) : null;
+        const lastActivityAt = latestHistoryAt && latestHistoryAt.getTime() > lesson.updatedAt.getTime()
+          ? latestHistoryAt
+          : lesson.updatedAt;
+
+        return {
+          ...this.toLibraryResponse(lesson, authorNames),
+          latestReviewGuidance: guidanceById.get(lesson.id) ?? null,
+          lastActivityAt,
+          latestClosedAt,
+          latestReturnedAt,
+        };
+      });
+
+      const matchesCard = (item: PmoDashboardLessonResponse, card: PmoDashboardCard): boolean => {
+        if (card === 'awaiting-evaluation') return item.status === 'PMOEvaluation';
+        if (card === 'recently-approved') return item.approvedAt !== null && item.approvedAt.getTime() >= windowStartMs;
+        if (card === 'recently-closed') return item.latestClosedAt !== null && item.latestClosedAt.getTime() >= windowStartMs;
+        return item.latestReturnedAt !== null && item.latestReturnedAt.getTime() >= windowStartMs;
+      };
+
+      const summary = {
+        awaitingEvaluation: 0,
+        recentlyApproved: 0,
+        recentlyClosed: 0,
+        recentlyReturned: 0,
+      };
+      for (const item of allItems) {
+        if (matchesCard(item, 'awaiting-evaluation')) summary.awaitingEvaluation += 1;
+        if (matchesCard(item, 'recently-approved')) summary.recentlyApproved += 1;
+        if (matchesCard(item, 'recently-closed')) summary.recentlyClosed += 1;
+        if (matchesCard(item, 'recently-returned')) summary.recentlyReturned += 1;
+      }
+
+      const filteredItems = filters.card
+        ? allItems.filter((item) => matchesCard(item, filters.card!))
+        : allItems;
+
+      const sort: PmoDashboardSort = filters.sort ?? 'activity';
+      filteredItems.sort((left, right) => {
+        const byRecentActivity = () =>
+          (right.lastActivityAt.getTime() - left.lastActivityAt.getTime()) || (right.id - left.id);
+        if (sort === 'activity') return byRecentActivity();
+        if (sort === 'oldest-activity') {
+          return (left.lastActivityAt.getTime() - right.lastActivityAt.getTime()) || (left.id - right.id);
+        }
+        if (sort === 'title') {
+          return left.title.toLowerCase().localeCompare(right.title.toLowerCase()) || byRecentActivity();
+        }
+        if (sort === 'status') {
+          return left.status.localeCompare(right.status) || byRecentActivity();
+        }
+        if (sort === 'project') {
+          const leftNull = left.projectId === null ? 1 : 0;
+          const rightNull = right.projectId === null ? 1 : 0;
+          return (leftNull - rightNull)
+            || (left.projectName ?? '').toLowerCase().localeCompare((right.projectName ?? '').toLowerCase())
+            || byRecentActivity();
+        }
+        const leftNull = left.lessonType === null ? 1 : 0;
+        const rightNull = right.lessonType === null ? 1 : 0;
+        return (leftNull - rightNull)
+          || (left.lessonType ?? '').toLowerCase().localeCompare((right.lessonType ?? '').toLowerCase())
+          || byRecentActivity();
+      });
+
+      const projects = await manager.getRepository(Lesson).createQueryBuilder('lesson')
+        .select('lesson.project_id', 'id')
+        .addSelect('MAX(lesson.project_name)', 'name')
+        .where('lesson.project_id IS NOT NULL')
+        .andWhere('lesson.project_name IS NOT NULL')
+        .groupBy('lesson.project_id')
+        .orderBy('MAX(lesson.project_name)', 'ASC')
+        .addOrderBy('lesson.project_id', 'ASC')
+        .getRawMany<LessonProject>();
+
+      return {
+        windowDays,
+        windowStartAt,
+        summary,
+        items: filteredItems,
+        projects,
+      };
+    });
   }
 
   async getPmoEvaluationQueue(

@@ -61,6 +61,43 @@ export class PmoDraftsQuery extends LessonSubmissionsQuery {
   authorId?: string;
 }
 
+export const PMO_DASHBOARD_CARDS = [
+  'awaiting-evaluation',
+  'recently-approved',
+  'recently-closed',
+  'recently-returned',
+] as const;
+export type PmoDashboardCard = typeof PMO_DASHBOARD_CARDS[number];
+
+export const PMO_DASHBOARD_SORTS = [
+  'activity',
+  'oldest-activity',
+  'title',
+  'status',
+  'project',
+  'type',
+] as const;
+export type PmoDashboardSort = typeof PMO_DASHBOARD_SORTS[number];
+
+export class PmoDashboardQuery extends LessonSubmissionsQuery {
+  @ApiPropertyOptional({
+    enum: PMO_DASHBOARD_CARDS,
+    description: 'Quick-filter slice matching one of the four operational summary cards.',
+  })
+  @IsOptional()
+  @IsIn(PMO_DASHBOARD_CARDS)
+  card?: PmoDashboardCard;
+
+  @ApiPropertyOptional({
+    enum: PMO_DASHBOARD_SORTS,
+    default: 'activity',
+    description: 'Sort order for the PMO Dashboard list.',
+  })
+  @IsOptional()
+  @IsIn(PMO_DASHBOARD_SORTS)
+  sort?: PmoDashboardSort;
+}
+
 export type LessonSearchFilters = Pick<
   LessonSearchFiltersQuery,
   'search' | 'projectId' | 'withoutProject' | 'lessonType'
@@ -73,3 +110,5 @@ export type PmoEvaluationQueueFilter = LessonSearchFilters;
 export type LessonsLibraryFilter = LessonSearchFilters & Pick<LessonsLibraryQuery, 'sort'>;
 
 export type PmoDraftsFilter = LessonSubmissionsFilter & Pick<PmoDraftsQuery, 'authorId'>;
+
+export type PmoDashboardFilter = LessonSubmissionsFilter & Pick<PmoDashboardQuery, 'card' | 'sort'>;
