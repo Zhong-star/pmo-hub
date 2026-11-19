@@ -7,11 +7,42 @@ if (!localProfilesFile) throw new Error('The Lessons Learned E2E profile fixture
 
 async function tabTo(page: Page, target: Locator) {
   await expect(target).toBeVisible();
-  for (let remaining = 30; remaining > 0; remaining -= 1) {
+  for (let remaining = 80; remaining > 0; remaining -= 1) {
     if (await target.evaluate((element) => element === document.activeElement)) return;
     await page.keyboard.press('Tab');
   }
   await expect(target).toBeFocused();
+}
+
+async function activateWithKeyboard(page: Page, target: Locator, key = 'Enter') {
+  await expect(target).toBeEnabled();
+  await tabTo(page, target);
+  await page.keyboard.press(key);
+}
+
+async function fillWithKeyboard(page: Page, target: Locator, value: string) {
+  await tabTo(page, target);
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.insertText(value);
+  await expect(target).toHaveValue(value);
+}
+
+async function selectWithKeyboard(page: Page, target: Locator, value: string) {
+  await tabTo(page, target);
+  const { from, to } = await target.evaluate((element, expectedValue) => {
+    const select = element as HTMLSelectElement;
+    const enabledOptions = [...select.options].filter((option) => !option.disabled);
+    return {
+      from: enabledOptions.findIndex((option) => option.selected),
+      to: enabledOptions.findIndex((option) => option.value === expectedValue),
+    };
+  }, value);
+  expect(to).toBeGreaterThanOrEqual(0);
+  const key = from <= to ? 'ArrowDown' : 'ArrowUp';
+  for (let remaining = Math.abs(from - to); remaining > 0; remaining -= 1) {
+    await page.keyboard.press(key);
+  }
+  await expect(target).toHaveValue(value);
 }
 
 async function getThemeContrastRatios(page: import('@playwright/test').Page) {
@@ -425,8 +456,8 @@ test('a stale draft ETag preserves unsaved text until the author explicitly relo
   await expect(input).toHaveValue('Saved in another tab');
 });
 
-test('FT-009, FT-011–013, FT-016, FT-020–025, FT-030: submits, returns, publishes, collaborates and closes across roles', async ({ page }) => {
-  test.setTimeout(60_000);
+test('FT-009, FT-011–013, FT-016, FT-020–025, FT-028, FT-030: submits, returns, publishes, collaborates and closes across roles by keyboard', async ({ page }) => {
+  test.setTimeout(90_000);
   page.setDefaultTimeout(8_000);
   expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
   const title = `Stage 3 review ${Date.now()}`;
@@ -435,81 +466,80 @@ test('FT-009, FT-011–013, FT-016, FT-020–025, FT-030: submits, returns, publ
   const reply = 'We will add the checklist to the handover kit.';
   const enterModule = async (profile: string, currentProfile?: string) => {
     if (currentProfile) {
-      await page.getByRole('button', { name: currentProfile }).click();
-      await page.getByRole('button', { name: 'Change profile' }).click();
+      await activateWithKeyboard(page, page.getByRole('button', { name: currentProfile }));
+      await activateWithKeyboard(page, page.getByRole('button', { name: 'Change profile' }));
     } else {
       await page.goto('/');
     }
-    await page.getByRole('combobox', { name: 'Local profile' }).selectOption(profile);
-    await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(page.getByRole('link', { name: 'Open Lessons Learned' })).toBeVisible();
-    await page.goto('/lessons-learned/');
+    await selectWithKeyboard(page, page.getByRole('combobox', { name: 'Local profile' }), profile);
+    await activateWithKeyboard(page, page.getByRole('button', { name: 'Continue' }));
+    await activateWithKeyboard(page, page.getByRole('link', { name: 'Open Lessons Learned' }));
     await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   };
   const openEvaluation = async () => {
-    await page.getByRole('link', { name: 'Evaluation Queue' }).click();
-    await page.getByRole('button', { name: `View ${title}` }).click();
+    await activateWithKeyboard(page, page.getByRole('link', { name: 'Evaluation Queue' }));
+    await activateWithKeyboard(page, page.getByRole('button', { name: `View ${title}` }));
   };
   const details = page.getByRole('dialog', { name: 'Lesson details' });
 
   await enterModule('local-developer');
-  await page.getByRole('link', { name: 'My Submissions' }).click();
-  await page.getByRole('button', { name: 'Create lesson' }).click();
-  await page.getByRole('textbox', { name: 'Title' }).fill(title);
-  await page.getByRole('button', { name: 'Save Draft' }).click();
+  await activateWithKeyboard(page, page.getByRole('link', { name: 'My Submissions' }));
+  await activateWithKeyboard(page, page.getByRole('button', { name: 'Create lesson' }));
+  await fillWithKeyboard(page, page.getByRole('textbox', { name: 'Title' }), title);
+  await activateWithKeyboard(page, page.getByRole('button', { name: 'Save Draft' }));
   const editor = page.getByRole('dialog', { name: 'Edit lesson' });
-  await editor.getByRole('combobox', { name: 'Project category' }).selectOption('Technology');
-  await editor.getByRole('combobox', { name: 'Project phase' }).selectOption('Execution');
-  await editor.getByRole('combobox', { name: 'Lesson type' }).selectOption('Success to Repeat');
-  await editor.getByRole('textbox', { name: 'Situation observed' }).fill('The team used a release checklist.');
-  await editor.getByRole('textbox', { name: 'Impact' }).fill('The handover had fewer omissions.');
-  await editor.getByRole('textbox', { name: 'Recommendation' }).fill('Repeat the release checklist.');
-  await editor.getByRole('textbox', { name: 'Applicability' }).fill('Use for software releases.');
-  await editor.getByRole('button', { name: 'Submit for PMO Review' }).click();
+  await selectWithKeyboard(page, editor.getByRole('combobox', { name: 'Project category' }), 'Technology');
+  await selectWithKeyboard(page, editor.getByRole('combobox', { name: 'Project phase' }), 'Execution');
+  await selectWithKeyboard(page, editor.getByRole('combobox', { name: 'Lesson type' }), 'Success to Repeat');
+  await fillWithKeyboard(page, editor.getByRole('textbox', { name: 'Situation observed' }), 'The team used a release checklist.');
+  await fillWithKeyboard(page, editor.getByRole('textbox', { name: 'Impact' }), 'The handover had fewer omissions.');
+  await fillWithKeyboard(page, editor.getByRole('textbox', { name: 'Recommendation' }), 'Repeat the release checklist.');
+  await fillWithKeyboard(page, editor.getByRole('textbox', { name: 'Applicability' }), 'Use for software releases.');
+  await activateWithKeyboard(page, editor.getByRole('button', { name: 'Submit for PMO Review' }));
   await expect(page.getByRole('status')).toContainText('Lesson submitted for PMO review.');
-  await page.getByRole('button', { name: 'Close editor' }).click();
+  await activateWithKeyboard(page, page.getByRole('button', { name: 'Close editor' }));
 
   await enterModule('local-pmo', 'Local Developer');
   await openEvaluation();
-  await details.getByRole('button', { name: 'Return for changes' }).click();
-  await page.getByRole('textbox', { name: 'Guidance for author' }).fill(guidance);
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Return for changes' }));
+  await fillWithKeyboard(page, page.getByRole('textbox', { name: 'Guidance for author' }), guidance);
   await page.route('**/lessons/*/return', (route) => route.abort(), { times: 1 });
-  await page.getByRole('button', { name: 'Confirm return' }).click();
+  await activateWithKeyboard(page, page.getByRole('button', { name: 'Confirm return' }));
   await expect(page.getByRole('alert')).toContainText('The lesson could not be returned.');
   await expect(page.getByRole('textbox', { name: 'Guidance for author' })).toHaveValue(guidance);
-  await page.getByRole('button', { name: 'Confirm return' }).click();
+  await activateWithKeyboard(page, page.getByRole('button', { name: 'Confirm return' }));
   await expect(page.getByRole('button', { name: `View ${title}` })).toHaveCount(0);
 
   await enterModule('local-developer', 'Local PMO');
   await expect(page.getByRole('region', { name: 'Returned lessons' })).toContainText(title);
   await expect(page.getByRole('button', { name: /^Notifications/ })).toBeVisible();
-  await page.getByRole('link', { name: 'My Submissions' }).click();
+  await activateWithKeyboard(page, page.getByRole('link', { name: 'My Submissions' }));
   await expect(page.getByText(guidance, { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: `Reopen ${title}` }).click();
-  await editor.getByRole('textbox', { name: 'Recommendation' }).fill('Ask the next team to sign off on the checklist.');
+  await activateWithKeyboard(page, page.getByRole('button', { name: `Reopen ${title}` }));
+  await fillWithKeyboard(page, editor.getByRole('textbox', { name: 'Recommendation' }), 'Ask the next team to sign off on the checklist.');
   await page.route('**/lessons/*/submit', (route) => route.abort(), { times: 1 });
-  await editor.getByRole('button', { name: 'Submit for PMO Review' }).click();
+  await activateWithKeyboard(page, editor.getByRole('button', { name: 'Submit for PMO Review' }));
   await expect(editor.getByRole('alert')).toContainText('The lesson could not be submitted.');
   await expect(editor.getByRole('textbox', { name: 'Recommendation' })).toHaveValue('Ask the next team to sign off on the checklist.');
-  await editor.getByRole('button', { name: 'Submit for PMO Review' }).click();
+  await activateWithKeyboard(page, editor.getByRole('button', { name: 'Submit for PMO Review' }));
   await expect(page.getByRole('status')).toContainText('Lesson submitted for PMO review.');
-  await page.getByRole('button', { name: 'Close editor' }).click();
+  await activateWithKeyboard(page, page.getByRole('button', { name: 'Close editor' }));
 
   await enterModule('local-pmo', 'Local Developer');
   await openEvaluation();
-  await details.getByRole('button', { name: 'Edit lesson', exact: true }).click();
-  await editor.getByRole('textbox', { name: 'Impact' }).fill('The checklist made handover steps explicit.');
-  await editor.getByRole('button', { name: 'Save Draft' }).click();
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Edit lesson', exact: true }));
+  await fillWithKeyboard(page, editor.getByRole('textbox', { name: 'Impact' }), 'The checklist made handover steps explicit.');
+  await activateWithKeyboard(page, editor.getByRole('button', { name: 'Save Draft' }));
   await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
-  await editor.getByRole('button', { name: 'Close editor' }).click();
-  await page.getByRole('button', { name: `View ${title}` }).click();
-  await details.getByRole('button', { name: 'Approve and publish' }).click();
-  await page.getByRole('button', { name: 'Confirm approval' }).click();
+  await activateWithKeyboard(page, editor.getByRole('button', { name: 'Close editor' }));
+  await activateWithKeyboard(page, page.getByRole('button', { name: `View ${title}` }));
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Approve and publish' }));
+  await activateWithKeyboard(page, page.getByRole('button', { name: 'Confirm approval' }));
   await expect(page.getByRole('button', { name: `View ${title}` })).toHaveCount(0);
 
   await enterModule('local-contributor', 'Local PMO');
-  await page.getByRole('link', { name: 'Lessons Library' }).click();
-  await page.getByRole('link', { name: `View ${title}` }).click();
+  await activateWithKeyboard(page, page.getByRole('link', { name: 'Lessons Library' }));
+  await activateWithKeyboard(page, page.getByRole('link', { name: `View ${title}` }));
   const status = details.getByText('Status', { exact: true }).locator('..').getByRole('definition');
   await expect(status).toHaveText('Approved');
   await expect(details.getByText('Ask the next team to sign off on the checklist.')).toBeVisible();
@@ -519,89 +549,89 @@ test('FT-009, FT-011–013, FT-016, FT-020–025, FT-030: submits, returns, publ
 
   const vote = details.getByRole('button', { name: `Vote for ${title} (0)` });
   await page.route('**/lessons/*/vote', (route) => route.abort(), { times: 1 });
-  await vote.click();
+  await activateWithKeyboard(page, vote);
   await expect(details.getByRole('alert')).toContainText(/vote/i);
   await expect(vote).toHaveAttribute('aria-pressed', 'false');
-  await vote.click();
+  await activateWithKeyboard(page, vote);
   const removeVote = details.getByRole('button', { name: `Remove vote for ${title} (1)` });
   await expect(removeVote).toHaveAttribute('aria-pressed', 'true');
-  await removeVote.click();
+  await activateWithKeyboard(page, removeVote);
   await expect(vote).toHaveAttribute('aria-pressed', 'false');
-  await vote.click();
+  await activateWithKeyboard(page, vote);
   await expect(removeVote).toBeEnabled();
 
   await expect(details.getByText('No comments yet.')).toBeVisible();
-  await details.getByRole('textbox', { name: 'Add a comment' }).fill(comment);
+  await fillWithKeyboard(page, details.getByRole('textbox', { name: 'Add a comment' }), comment);
   await page.route('**/lessons/*/comments', (route) => route.abort(), { times: 1 });
-  await details.getByRole('button', { name: 'Post comment' }).click();
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Post comment' }));
   await expect(details.getByRole('alert')).toContainText('Your comment could not be posted.');
   await expect(details.getByRole('textbox', { name: 'Add a comment' })).toHaveValue(comment);
   await expect(details.getByText('No comments yet.')).toBeVisible();
-  await details.getByRole('button', { name: 'Post comment' }).click();
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Post comment' }));
   await expect(details.getByText(comment, { exact: true })).toBeVisible();
   await expect(details.getByRole('button', { name: 'Post comment' })).toBeEnabled();
-  await details.getByRole('button', { name: 'Close published lesson details' }).click();
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Close published lesson details' }));
   await expect(details).toBeHidden();
   await expect(page.getByRole('list', { name: 'Most Voted Lessons podium' })).toContainText(title);
-  await page.getByRole('button', { name: 'Top Contributors' }).click();
-  await page.getByRole('list', { name: 'Top Contributors podium' }).getByRole('button', { name: 'Local Developer' }).click();
+  await activateWithKeyboard(page, page.getByRole('button', { name: 'Top Contributors' }));
+  await activateWithKeyboard(page, page.getByRole('list', { name: 'Top Contributors podium' }).getByRole('button', { name: 'Local Developer' }));
   await expect(page.getByRole('heading', { name: 'Local Developer', exact: true })).toBeVisible();
   await expect(page.getByText(title, { exact: true })).toBeVisible();
 
   await enterModule('local-developer', 'Local Contributor');
   const summary = page.getByRole('region', { name: 'Unread notifications summary' });
   await expect(summary).toContainText(title);
-  await page.getByRole('button', { name: /^Notifications/ }).click();
+  await activateWithKeyboard(page, page.getByRole('button', { name: /^Notifications/ }));
   const alerts = page.getByRole('region', { name: 'Notifications', exact: true });
   const commentNotification = alerts.getByRole('listitem').filter({ hasText: 'New comment' }).filter({ hasText: title });
   const markRead = commentNotification.getByRole('button', { name: /Mark notification/ });
   await page.route('**/notifications/*/read', (route) => route.abort(), { times: 1 });
-  await markRead.click();
+  await activateWithKeyboard(page, markRead);
   await expect(alerts.getByRole('alert')).toContainText('Could not mark the notification as read.');
   await expect(commentNotification.getByText('Unread', { exact: true })).toBeVisible();
-  await markRead.click();
+  await activateWithKeyboard(page, markRead);
   await expect(commentNotification.getByText('Read', { exact: true })).toBeVisible();
   const openCommentNotification = commentNotification.getByRole('button', { name: /Open lesson/ });
-  await openCommentNotification.click();
+  await activateWithKeyboard(page, openCommentNotification);
   await expect(details.getByText(comment, { exact: true })).toBeVisible();
-  await details.getByRole('button', { name: 'Reply', exact: true }).click();
-  await details.getByRole('textbox', { name: 'Write a reply' }).fill(reply);
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Reply', exact: true }));
+  await fillWithKeyboard(page, details.getByRole('textbox', { name: 'Write a reply' }), reply);
   await page.route('**/comments/*/replies', (route) => route.abort(), { times: 1 });
-  await details.getByRole('button', { name: 'Post reply' }).click();
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Post reply' }));
   await expect(details.getByRole('alert')).toContainText('Your reply could not be posted.');
   await expect(details.getByRole('textbox', { name: 'Write a reply' })).toHaveValue(reply);
-  await details.getByRole('button', { name: 'Post reply' }).click();
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Post reply' }));
   await expect(details.getByText(reply, { exact: true })).toBeVisible();
   await expect(details.getByRole('button', { name: 'Post comment' })).toBeEnabled();
-  await details.getByRole('button', { name: 'Close lesson details' }).click();
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Close lesson details' }));
   await expect(details).toBeHidden();
 
   await enterModule('local-pmo', 'Local Developer');
-  await page.getByRole('link', { name: 'PMO Dashboard' }).click();
+  await activateWithKeyboard(page, page.getByRole('link', { name: 'PMO Dashboard' }));
   await expect(page.getByRole('heading', { name: 'PMO Dashboard' })).toBeVisible();
-  await page.getByRole('button', { name: /Recently Approved/ }).click();
+  await activateWithKeyboard(page, page.getByRole('button', { name: /Recently Approved/ }));
   await expect(page.getByRole('button', { name: `View ${title}` })).toBeVisible();
-  await page.getByRole('link', { name: 'Lessons Library' }).click();
+  await activateWithKeyboard(page, page.getByRole('link', { name: 'Lessons Library' }));
   const libraryLesson = page.getByRole('link', { name: `View ${title}` });
-  await libraryLesson.click();
-  await details.getByRole('button', { name: 'Hide comment', exact: true }).click();
-  await details.getByRole('textbox', { name: 'Reason for hiding' }).fill('Keep discussion focused on the handover.');
+  await activateWithKeyboard(page, libraryLesson);
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Hide comment', exact: true }));
+  await fillWithKeyboard(page, details.getByRole('textbox', { name: 'Reason for hiding' }), 'Keep discussion focused on the handover.');
   await page.route('**/comments/*/hide', (route) => route.abort(), { times: 1 });
-  await details.getByRole('button', { name: 'Confirm hide' }).click();
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Confirm hide' }));
   await expect(details.getByRole('alert')).toContainText('The comment could not be hidden.');
   await expect(details.getByRole('textbox', { name: 'Reason for hiding' })).toHaveValue('Keep discussion focused on the handover.');
-  await details.getByRole('button', { name: 'Confirm hide' }).click();
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Confirm hide' }));
   await expect(details.getByText('Comment hidden by PMO')).toBeVisible();
   await expect(details.getByText(reply, { exact: true })).toBeVisible();
-  await details.getByRole('checkbox', { name: 'Show hidden comments' }).check();
+  await activateWithKeyboard(page, details.getByRole('checkbox', { name: 'Show hidden comments' }), 'Space');
   await expect(details.getByText('Keep discussion focused on the handover.')).toBeVisible();
-  await details.getByRole('button', { name: 'Close lesson', exact: true }).click();
-  await page.getByRole('button', { name: 'Confirm closure' }).click();
+  await activateWithKeyboard(page, details.getByRole('button', { name: 'Close lesson', exact: true }));
+  await activateWithKeyboard(page, page.getByRole('button', { name: 'Confirm closure' }));
   await expect(page.getByRole('row').filter({ has: libraryLesson })).toContainText('Closed');
 
   await enterModule('local-contributor', 'Local PMO');
-  await page.getByRole('link', { name: 'Lessons Library' }).click();
-  await libraryLesson.click();
+  await activateWithKeyboard(page, page.getByRole('link', { name: 'Lessons Library' }));
+  await activateWithKeyboard(page, libraryLesson);
   await expect(status).toHaveText('Closed');
   await expect(details.getByRole('heading', { name: 'History' })).toHaveCount(0);
 
