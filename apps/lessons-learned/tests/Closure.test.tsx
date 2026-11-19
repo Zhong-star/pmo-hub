@@ -25,8 +25,11 @@ vi.mock('../src/api', () => ({
   getLibrary: vi.fn(),
   getLibraryLessonDetails: vi.fn(),
   getLibraryProjectSnapshots: vi.fn(),
+  getNotifications: vi.fn().mockResolvedValue({ items: [], page: { limit: 20, nextCursor: null }, unreadCount: 0 }),
   getPmoDashboard: vi.fn(),
   hideLessonComment: vi.fn(),
+  markNotificationAsRead: vi.fn(),
+  markNotificationsReadBatch: vi.fn(),
   recordLibraryView: vi.fn(),
   removeLessonVote: vi.fn(),
 }));

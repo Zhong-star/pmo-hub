@@ -416,6 +416,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List newest-first notifications for the authenticated recipient with unread count */
+        get: operations["LessonNotificationsController_listNotifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lessons-learned/v1/notifications/read-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a specific batch of loaded notifications as read for the authenticated recipient */
+        post: operations["LessonNotificationsController_markBatchAsRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lessons-learned/v1/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a single notification as read for the authenticated recipient */
+        post: operations["LessonNotificationsController_markAsRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -965,6 +1016,69 @@ export interface components {
             summary: components["schemas"]["PmoDashboardSummaryResponse"];
             items: components["schemas"]["PmoDashboardLessonResponse"][];
             projects: components["schemas"]["LessonProjectResponse"][];
+        };
+        LessonNotificationItemResponse: {
+            /** @example 1 */
+            id: number;
+            /**
+             * @example LESSON_APPROVED
+             * @enum {string}
+             */
+            eventType: "LESSON_RETURNED" | "LESSON_APPROVED" | "LESSON_REJECTED" | "COMMENT_ADDED" | "REPLY_ADDED";
+            /** @example local-pmo */
+            actorUserId: string;
+            /** @example Local PMO */
+            actorDisplayName: string;
+            /** @example 42 */
+            lessonId: number;
+            /** @example Release checklist alignment */
+            lessonTitle: string;
+            /** @example Local PMO approved your lesson. */
+            summary: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            readAt: string | null;
+            /** @example false */
+            isRead: boolean;
+        };
+        LessonNotificationPageMetadataResponse: {
+            /** @example 20 */
+            limit: number;
+            nextCursor: string | null;
+        };
+        LessonNotificationPageResponse: {
+            items: components["schemas"]["LessonNotificationItemResponse"][];
+            page: components["schemas"]["LessonNotificationPageMetadataResponse"];
+            /** @example 3 */
+            unreadCount: number;
+        };
+        MarkNotificationReadResponse: {
+            notification: components["schemas"]["LessonNotificationItemResponse"];
+            /** @example 2 */
+            unreadCount: number;
+        };
+        MarkNotificationsReadBatchRequest: {
+            /**
+             * @description Loaded notification IDs belonging to the authenticated recipient to mark as read.
+             * @example [
+             *       10,
+             *       9,
+             *       8
+             *     ]
+             */
+            notificationIds: number[];
+        };
+        MarkNotificationsReadBatchResponse: {
+            /**
+             * @example [
+             *       1,
+             *       2
+             *     ]
+             */
+            updatedIds: number[];
+            /** @example 1 */
+            unreadCount: number;
         };
     };
     responses: never;
@@ -3403,6 +3517,256 @@ export interface operations {
             };
             /** @description The selected profile is not a PMO moderator. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonNotificationsController_listNotifications: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor for Load more pagination. */
+                cursor?: string;
+                /** @description Page size between 1 and 100 (default 20). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonNotificationPageResponse"];
+                };
+            };
+            /** @description Invalid notification query parameter. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile does not have access to Lessons Learned. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonNotificationsController_markBatchAsRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkNotificationsReadBatchRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkNotificationsReadBatchResponse"];
+                };
+            };
+            /** @description Invalid notification IDs list. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description One or more notifications belong to another recipient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description One or more notifications were not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    LessonNotificationsController_markAsRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Notification ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkNotificationReadResponse"];
+                };
+            };
+            /** @description Invalid notification ID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The notification belongs to another recipient. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Notification not found. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -15,6 +15,10 @@ import { LESSONS_LEARNED_DATA_SOURCE } from '../database/database.module';
 import { isRepresentationETag, lessonRepresentationETag } from './lesson-http-contract';
 import { emitsRepresentationTokens } from './lesson-token-format';
 import { LessonHistory } from './lesson-history.entity';
+import {
+  formatNotificationSnippet,
+  LessonNotificationsService,
+} from './lesson-notifications.service';
 import { Lesson } from './lesson.entity';
 import {
   encodeProjectCursor, paginateLibraryLessonsByTextKey, paginateLibraryLessonsByVotes, paginateLessons, readProjectCursor,
@@ -85,6 +89,7 @@ export class LessonsService {
     @Inject(LocalAccessService) private readonly localAccess: LocalAccessService,
     @Inject(ProjectCatalogService) private readonly projectCatalog: ProjectCatalogService,
     @Optional() @Inject(LESSONS_LEARNED_DATA_SOURCE) private readonly dataSource?: DataSource,
+    @Optional() @Inject(LessonNotificationsService) private readonly notifications?: LessonNotificationsService,
   ) {}
 
   async createDraft(localUserId: string | undefined, input: CreateLessonRequest): Promise<LessonDraftResponse> {
@@ -766,7 +771,7 @@ export class LessonsService {
     }
     const dataSource = this.requireDataSource();
 
-    return dataSource.transaction(async (manager) => {
+    const { response, approved, historyEntry } = await dataSource.transaction(async (manager) => {
       const lessons = manager.getRepository(Lesson);
       const current = await lessons.findOne({
         where: { id: lessonId },
@@ -787,19 +792,36 @@ export class LessonsService {
       current.updatedBy = profile.id;
       current.version += 1;
       current.approvedAt = new Date();
-      const approved = await lessons.save(current);
+      const approvedLesson = await lessons.save(current);
 
       const history = manager.getRepository(LessonHistory);
-      await history.save(history.create({
-        lessonId: approved.id,
+      const savedHistory = await history.save(history.create({
+        lessonId: approvedLesson.id,
         actorId: profile.id,
         eventType: 'Approved',
         previousStatus: 'PMOEvaluation',
         newStatus: 'Approved',
       }));
 
-      return this.toResponse(approved);
+      return {
+        response: this.toResponse(approvedLesson),
+        approved: approvedLesson,
+        historyEntry: savedHistory,
+      };
     });
+
+    await this.notifications?.recordNotification({
+      recipientUserId: approved.authorId,
+      actorUserId: profile.id,
+      actorDisplayName: profile.displayName,
+      eventType: 'LESSON_APPROVED',
+      lessonId: approved.id,
+      lessonTitleSnapshot: approved.title,
+      summary: `${profile.displayName} approved your lesson.`,
+      sourceEventKey: `history:${historyEntry.id}`,
+    });
+
+    return response;
   }
 
   async rejectEvaluation(
@@ -824,7 +846,7 @@ export class LessonsService {
       });
     }
 
-    return dataSource.transaction(async (manager) => {
+    const { response, rejected, historyEntry } = await dataSource.transaction(async (manager) => {
       const lessons = manager.getRepository(Lesson);
       const current = await lessons.findOne({
         where: { id: lessonId },
@@ -843,9 +865,10 @@ export class LessonsService {
       current.status = 'Archived';
       current.updatedBy = profile.id;
       current.version += 1;
-      const rejected = await lessons.save(current);
-      await manager.getRepository(LessonHistory).save(manager.getRepository(LessonHistory).create({
-        lessonId: rejected.id,
+      const rejectedLesson = await lessons.save(current);
+      const historyRepo = manager.getRepository(LessonHistory);
+      const savedHistory = await historyRepo.save(historyRepo.create({
+        lessonId: rejectedLesson.id,
         actorId: profile.id,
         eventType: 'Rejected',
         previousStatus: 'PMOEvaluation',
@@ -853,8 +876,25 @@ export class LessonsService {
         reason,
       }));
 
-      return this.toResponse(rejected);
+      return {
+        response: this.toResponse(rejectedLesson),
+        rejected: rejectedLesson,
+        historyEntry: savedHistory,
+      };
     });
+
+    await this.notifications?.recordNotification({
+      recipientUserId: rejected.authorId,
+      actorUserId: profile.id,
+      actorDisplayName: profile.displayName,
+      eventType: 'LESSON_REJECTED',
+      lessonId: rejected.id,
+      lessonTitleSnapshot: rejected.title,
+      summary: `${profile.displayName} rejected your lesson: ${formatNotificationSnippet(reason)}`,
+      sourceEventKey: `history:${historyEntry.id}`,
+    });
+
+    return response;
   }
 
   async closeApprovedLesson(
@@ -1096,7 +1136,7 @@ export class LessonsService {
       throw new ForbiddenException('PMO moderator access is required to return a lesson for changes.');
     }
 
-    return this.requireDataSource().transaction(async (manager) => {
+    const { response, returned, historyEntry, guidance } = await this.requireDataSource().transaction(async (manager) => {
       const lessons = manager.getRepository(Lesson);
       const current = await lessons.findOne({
         where: { id: lessonId },
@@ -1128,21 +1168,40 @@ export class LessonsService {
         });
       }
 
+      const trimmedGuidance = input.guidance.trim();
       current.status = 'Open';
       current.updatedBy = profile.id;
       current.version += 1;
-      const returned = await lessons.save(current);
+      const returnedLesson = await lessons.save(current);
       const history = manager.getRepository(LessonHistory);
-      await history.save(history.create({
-        lessonId: returned.id,
+      const savedHistory = await history.save(history.create({
+        lessonId: returnedLesson.id,
         actorId: profile.id,
         eventType: 'Returned',
         previousStatus: 'PMOEvaluation',
         newStatus: 'Open',
-        reason: input.guidance.trim(),
+        reason: trimmedGuidance,
       }));
-      return { ...this.toResponse(returned), latestReviewGuidance: input.guidance.trim() };
+      return {
+        response: { ...this.toResponse(returnedLesson), latestReviewGuidance: trimmedGuidance },
+        returned: returnedLesson,
+        historyEntry: savedHistory,
+        guidance: trimmedGuidance,
+      };
     });
+
+    await this.notifications?.recordNotification({
+      recipientUserId: returned.authorId,
+      actorUserId: profile.id,
+      actorDisplayName: profile.displayName,
+      eventType: 'LESSON_RETURNED',
+      lessonId: returned.id,
+      lessonTitleSnapshot: returned.title,
+      summary: `${profile.displayName} returned your lesson for changes: ${formatNotificationSnippet(guidance)}`,
+      sourceEventKey: `history:${historyEntry.id}`,
+    });
+
+    return response;
   }
 
   private validateProjectSelection(

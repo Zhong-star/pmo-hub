@@ -54,6 +54,7 @@ import { ClosureDialog } from './ClosureDialog';
 import { LessonSubmissionDetailsDialog, CancelLessonDialog, RejectLessonDialog } from './SubmissionDialogs';
 import { ReturnLessonDialog } from './ReturnLessonDialog';
 import { PmoDashboardView } from './PmoDashboardView';
+import { NotificationsMenu } from './NotificationsMenu';
 import { getLibraryLessonHref, useLibraryNavigation } from './useLibraryNavigation';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
@@ -488,10 +489,14 @@ export function LessonsLearnedScreen() {
   const submissionDetailsQuery = useQuery({
     queryKey: ['lessons-learned-submission-details', selectedProfileId, selectedSubmissionId],
     queryFn: () => getLessonDetails(selectedProfileId ?? '', selectedSubmissionId ?? 0),
-    enabled: isHomePage && (isMySubmissionsPage || isPmoReviewListPage || isPmoDashboardPage) && selectedSubmissionId !== null,
+    enabled: isHomePage && selectedSubmissionId !== null,
     networkMode: 'always',
     retry: false,
   });
+  const isSubmissionDetailLoading = submissionDetailsQuery.isPending || submissionDetailsQuery.isFetching;
+  const confirmedSubmissionDetails = submissionDetailsQuery.isSuccess && !isSubmissionDetailLoading
+    ? submissionDetailsQuery.data
+    : undefined;
   const libraryDetailsQuery = useQuery({
     queryKey: ['lessons-learned-library-details', selectedProfileId, libraryDetailId, isLegacyLibrary ? 'legacy' : 'current'],
     queryFn: () => isLegacyLibrary
@@ -557,10 +562,19 @@ export function LessonsLearnedScreen() {
   }, [libraryDetailId]);
   const refetchHomeAccess = homeQuery.refetch;
   useEffect(() => {
-    if (libraryDetailsQuery.isError && isDefinitiveAccessError(libraryDetailsQuery.error)) {
+    if (
+      (libraryDetailsQuery.isError && isDefinitiveAccessError(libraryDetailsQuery.error))
+      || (submissionDetailsQuery.isError && isDefinitiveAccessError(submissionDetailsQuery.error))
+    ) {
       void refetchHomeAccess();
     }
-  }, [libraryDetailsQuery.error, libraryDetailsQuery.isError, refetchHomeAccess]);
+  }, [
+    libraryDetailsQuery.error,
+    libraryDetailsQuery.isError,
+    submissionDetailsQuery.error,
+    submissionDetailsQuery.isError,
+    refetchHomeAccess,
+  ]);
   function markCreatePending(profileId: string, isPending: boolean) {
     const nextPendingProfiles = new Set(pendingCreateProfilesRef.current);
     if (isPending) nextPendingProfiles.add(profileId);
@@ -984,6 +998,16 @@ export function LessonsLearnedScreen() {
     window.location.assign('/');
   }
 
+  function openLessonFromNotification(lessonId: number) {
+    if (!selectedProfileId) return;
+    clearLibraryLesson();
+    queryClient.removeQueries({
+      queryKey: ['lessons-learned-submission-details', selectedProfileId, lessonId],
+      exact: true,
+    });
+    setSelectedSubmissionId(lessonId);
+  }
+
   return (
     <div className={isHomePage ? 'app-shell workspace-shell' : 'app-shell'}>
       <HubHeader
@@ -992,6 +1016,13 @@ export function LessonsLearnedScreen() {
         onChangeProfile={selectedProfileId ? changeProfile : undefined}
         theme={theme}
         onThemeChange={selectTheme}
+        actions={isHomePage && selectedProfileId ? (
+          <NotificationsMenu
+            profileId={selectedProfileId}
+            navigationKey={modulePage}
+            onOpenLesson={openLessonFromNotification}
+          />
+        ) : undefined}
       />
       <div className={isHomePage ? 'workspace-layout' : 'page-shell'}>
         {isHomePage && (
@@ -1663,72 +1694,74 @@ export function LessonsLearnedScreen() {
                       onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
                     />
                   )}
-                  {(selectedSubmissionId !== null || isLibraryDetailOpen) && (
-                    <LessonSubmissionDetailsDialog
-                      lessonId={isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0}
-                      details={isLibraryDetailOpen ? confirmedLibraryDetails : submissionDetailsQuery.data}
-                      isLoading={isLibraryDetailOpen ? isLibraryDetailLoading : submissionDetailsQuery.isLoading}
-                      hasError={isLibraryDetailOpen ? !isLibraryDetailLoading && libraryDetailsQuery.isError : submissionDetailsQuery.isError}
-                      canEdit={isPmoEvaluationQueuePage && submissionDetailsQuery.data?.status === 'PMOEvaluation'}
-                      onEdit={() => {
-                        const details = submissionDetailsQuery.data;
-                        if (!isPmoEvaluationQueuePage || details?.status !== 'PMOEvaluation') return;
-                        setSelectedDraft(details);
-                        setSelectedSubmissionId(null);
-                      }}
-                      onRetry={() => void (isLibraryPage && libraryDetailId !== null
-                        ? libraryDetailsQuery.refetch()
-                        : submissionDetailsQuery.refetch())}
-                      canApprove={Boolean(isPmo)}
-                      onApprove={(lesson) => setSelectedApprovalDraft(lesson)}
-                      canClose={Boolean(isPmo)}
-                      onCloseLesson={(lesson) => setSelectedClosureDraft(lesson)}
-                      onClose={() => {
-                        if (isLibraryPage && libraryDetailId !== null) closeLibraryLesson();
-                        else setSelectedSubmissionId(null);
-                      }}
-                      onReturn={isPmoEvaluationQueuePage ? setSelectedReturnLesson : undefined}
-                      isLibrarySurface={isLibraryPage && libraryDetailId !== null}
-                      onToggleVote={(lesson) => void toggleLessonVote(lesson)}
-                      isVotePending={pendingVoteIds.has(isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0)}
-                      voteError={voteError?.lessonId === (isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0)
-                        ? voteError.message
-                        : null}
-                      profileId={selectedProfileId ?? undefined}
-                      isPmo={Boolean(isPmo)}
-                      onPublicCommentCountChange={handlePublicCommentCountChange}
-                    />
-                  )}
-                  {selectedReturnLesson && (
-                    <ReturnLessonDialog
-                      lesson={selectedReturnLesson}
-                      onReload={reloadLessonDetails}
-                      onConfirm={returnLesson}
-                      onClose={() => setSelectedReturnLesson(null)}
-                      onComplete={() => {
-                        setSelectedReturnLesson(null);
-                        setSelectedSubmissionId(null);
-                      }}
-                      onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
-                    />
-                  )}
-                  {selectedApprovalDraft && (
-                    <ApprovalDialog
-                      lesson={selectedApprovalDraft}
-                      onConfirm={approveDraft}
-                      onReload={reloadApprovalLesson}
-                      onClose={() => setSelectedApprovalDraft(null)}
-                    />
-                  )}
-                  {selectedClosureDraft && (
-                    <ClosureDialog
-                      lesson={selectedClosureDraft}
-                      onConfirm={closeDraft}
-                      onReload={reloadClosureLesson}
-                      onClose={() => setSelectedClosureDraft(null)}
-                    />
-                  )}
                 </section>
+              )}
+              {(selectedSubmissionId !== null || isLibraryDetailOpen) && (
+                <LessonSubmissionDetailsDialog
+                  lessonId={isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0}
+                  details={isLibraryDetailOpen ? confirmedLibraryDetails : confirmedSubmissionDetails}
+                  isLoading={isLibraryDetailOpen ? isLibraryDetailLoading : isSubmissionDetailLoading}
+                  hasError={isLibraryDetailOpen
+                    ? !isLibraryDetailLoading && libraryDetailsQuery.isError
+                    : !isSubmissionDetailLoading && submissionDetailsQuery.isError}
+                  canEdit={isPmoEvaluationQueuePage && confirmedSubmissionDetails?.status === 'PMOEvaluation'}
+                  onEdit={() => {
+                    const details = confirmedSubmissionDetails;
+                    if (!isPmoEvaluationQueuePage || details?.status !== 'PMOEvaluation') return;
+                    setSelectedDraft(details);
+                    setSelectedSubmissionId(null);
+                  }}
+                  onRetry={() => void (isLibraryPage && libraryDetailId !== null
+                    ? libraryDetailsQuery.refetch()
+                    : submissionDetailsQuery.refetch())}
+                  canApprove={Boolean(isPmo)}
+                  onApprove={(lesson) => setSelectedApprovalDraft(lesson)}
+                  canClose={Boolean(isPmo)}
+                  onCloseLesson={(lesson) => setSelectedClosureDraft(lesson)}
+                  onClose={() => {
+                    if (isLibraryPage && libraryDetailId !== null) closeLibraryLesson();
+                    else setSelectedSubmissionId(null);
+                  }}
+                  onReturn={isPmoEvaluationQueuePage ? setSelectedReturnLesson : undefined}
+                  isLibrarySurface={isLibraryPage && libraryDetailId !== null}
+                  onToggleVote={(lesson) => void toggleLessonVote(lesson)}
+                  isVotePending={pendingVoteIds.has(isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0)}
+                  voteError={voteError?.lessonId === (isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0)
+                    ? voteError.message
+                    : null}
+                  profileId={selectedProfileId ?? undefined}
+                  isPmo={Boolean(isPmo)}
+                  onPublicCommentCountChange={handlePublicCommentCountChange}
+                />
+              )}
+              {selectedReturnLesson && (
+                <ReturnLessonDialog
+                  lesson={selectedReturnLesson}
+                  onReload={reloadLessonDetails}
+                  onConfirm={returnLesson}
+                  onClose={() => setSelectedReturnLesson(null)}
+                  onComplete={() => {
+                    setSelectedReturnLesson(null);
+                    setSelectedSubmissionId(null);
+                  }}
+                  onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
+                />
+              )}
+              {selectedApprovalDraft && (
+                <ApprovalDialog
+                  lesson={selectedApprovalDraft}
+                  onConfirm={approveDraft}
+                  onReload={reloadApprovalLesson}
+                  onClose={() => setSelectedApprovalDraft(null)}
+                />
+              )}
+              {selectedClosureDraft && (
+                <ClosureDialog
+                  lesson={selectedClosureDraft}
+                  onConfirm={closeDraft}
+                  onReload={reloadClosureLesson}
+                  onClose={() => setSelectedClosureDraft(null)}
+                />
               )}
           </>
         )}

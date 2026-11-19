@@ -26,6 +26,9 @@ export const LESSONS_LEARNED_VOTE_PATH = '/api/lessons-learned/v1/lessons/{id}/v
 export const LESSONS_LEARNED_COMMENTS_PATH = '/api/lessons-learned/v1/lessons/{id}/comments' satisfies keyof paths;
 export const LESSONS_LEARNED_COMMENT_REPLIES_PATH = '/api/lessons-learned/v1/lessons/{id}/comments/{commentId}/replies' satisfies keyof paths;
 export const LESSONS_LEARNED_COMMENT_HIDE_PATH = '/api/lessons-learned/v1/lessons/{id}/comments/{commentId}/hide' satisfies keyof paths;
+export const LESSONS_LEARNED_NOTIFICATIONS_PATH = '/api/lessons-learned/v1/notifications' satisfies keyof paths;
+export const LESSONS_LEARNED_NOTIFICATION_READ_PATH = '/api/lessons-learned/v1/notifications/{id}/read' satisfies keyof paths;
+export const LESSONS_LEARNED_NOTIFICATIONS_READ_BATCH_PATH = '/api/lessons-learned/v1/notifications/read-batch' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
 type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
@@ -65,6 +68,13 @@ export type LessonCommentPage = components['schemas']['LessonCommentPageResponse
 export type LessonCommentsQuery = NonNullable<paths[typeof LESSONS_LEARNED_COMMENTS_PATH]['get']['parameters']['query']>;
 export type CreateLessonCommentBody = paths[typeof LESSONS_LEARNED_COMMENTS_PATH]['post']['requestBody']['content']['application/json'];
 export type HideLessonCommentBody = paths[typeof LESSONS_LEARNED_COMMENT_HIDE_PATH]['post']['requestBody']['content']['application/json'];
+export type LessonNotificationItem = components['schemas']['LessonNotificationItemResponse'];
+export type LessonNotificationEventType = LessonNotificationItem['eventType'];
+export type LessonNotificationPage = components['schemas']['LessonNotificationPageResponse'];
+export type LessonNotificationsQuery = NonNullable<paths[typeof LESSONS_LEARNED_NOTIFICATIONS_PATH]['get']['parameters']['query']>;
+export type MarkNotificationReadResponse = components['schemas']['MarkNotificationReadResponse'];
+export type MarkNotificationsReadBatchBody = paths[typeof LESSONS_LEARNED_NOTIFICATIONS_READ_BATCH_PATH]['post']['requestBody']['content']['application/json'];
+export type MarkNotificationsReadBatchResponse = components['schemas']['MarkNotificationsReadBatchResponse'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -459,6 +469,56 @@ export async function hideLessonComment(
     LESSONS_LEARNED_COMMENT_HIDE_PATH
       .replace('{id}', String(lessonId))
       .replace('{commentId}', String(commentId)),
+    input,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function getNotifications(
+  localUserId: string,
+  query: LessonNotificationsQuery = {},
+  signal?: AbortSignal,
+): Promise<LessonNotificationPage> {
+  const { data } = await api.get<LessonNotificationPage>(
+    LESSONS_LEARNED_NOTIFICATIONS_PATH,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+      params: query,
+      signal,
+    },
+  );
+
+  return data;
+}
+
+export async function markNotificationAsRead(
+  localUserId: string,
+  notificationId: number,
+): Promise<MarkNotificationReadResponse> {
+  const { data } = await api.post<MarkNotificationReadResponse>(
+    LESSONS_LEARNED_NOTIFICATION_READ_PATH.replace('{id}', String(notificationId)),
+    undefined,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function markNotificationsReadBatch(
+  localUserId: string,
+  input: MarkNotificationsReadBatchBody,
+): Promise<MarkNotificationsReadBatchResponse> {
+  const { data } = await api.post<MarkNotificationsReadBatchResponse>(
+    LESSONS_LEARNED_NOTIFICATIONS_READ_BATCH_PATH,
     input,
     {
       timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
