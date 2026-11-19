@@ -154,9 +154,7 @@ export function App() {
         )}
         <main className={activeUser ? 'workspace-panel' : 'page-content'} tabIndex={activeUser ? 0 : undefined}>
         <section className={`welcome-card${activeUser ? ' catalog-page' : ''}`} aria-labelledby="page-title">
-        <p className="eyebrow">Project Management Office</p>
         <h1 id="page-title">Welcome to PMO Hub</h1>
-        <p className="intro">Your starting point for the tools and experience that support project delivery.</p>
 
         <div className="service-status" role="status" aria-live="polite">
           <span className={`status-dot ${statusQuery.isSuccess ? 'is-available' : ''}`} aria-hidden="true" />
@@ -166,7 +164,6 @@ export function App() {
         {!activeUser && (
           <div className="entry-panel">
             <h2>Select your local profile</h2>
-            <p className="helper-text">Choose a prepared local user to continue.</p>
 
             {isLoading && <p role="status">Loading local profiles…</p>}
 
@@ -218,17 +215,11 @@ export function App() {
         {activeUser && (
           <>
             <div className="profile-bar" aria-live="polite">
-              <div>
-                <p className="eyebrow">Your local profile</p>
-                <h2>Welcome, {activeUser.displayName}</h2>
-              </div>
+              <h2>Welcome, {activeUser.displayName}</h2>
             </div>
 
             <section className="module-catalog" aria-labelledby="catalog-title">
-              <div className="catalog-header">
-                <h2 id="catalog-title">Module catalog</h2>
-                <p className="helper-text">Explore the modules available through PMO Hub.</p>
-              </div>
+              <h2 id="catalog-title" className="catalog-title">Module catalog</h2>
               <ul className="module-grid">
                 {hubCatalogConfig.map((module) => {
                   const article = (
@@ -258,7 +249,7 @@ export function App() {
           </>
         )}
         </section>
-        <footer>PMO Hub · Local development</footer>
+        <footer>Local development</footer>
         </main>
       </div>
     </div>

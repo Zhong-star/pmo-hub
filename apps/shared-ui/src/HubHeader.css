@@ -61,11 +61,6 @@
   font-size: 17px;
 }
 
-.hub-header__context {
-  color: var(--header-muted);
-  font-size: 14px;
-}
-
 .hub-header__profile {
   position: relative;
 }

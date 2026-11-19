@@ -930,8 +930,6 @@ export function LessonsLearnedScreen() {
         className={isHomePage ? undefined : 'module-card'}
         aria-labelledby="page-title"
       >
-        <p className="eyebrow">Lessons Learned</p>
-
         {!selectedProfileId && (
           <>
             <h1 id="page-title">Access check</h1>
@@ -943,7 +941,6 @@ export function LessonsLearnedScreen() {
         {selectedProfileId && homeQuery.isFetching && !hasUsableHomeData && (
           <>
             <h1 id="page-title">Access check</h1>
-            <p className="intro">Lessons Learned verifies your local profile before opening Home.</p>
             <div className="api-status" role="status" aria-live="polite">
               <span className="status-indicator is-checking" aria-hidden="true" />
               <span>Checking access for <strong>{selectedProfileId}</strong></span>
@@ -1021,19 +1018,17 @@ export function LessonsLearnedScreen() {
                 <section className="submissions-page" aria-labelledby="page-title">
                   <div className="submissions-header">
                     <div>
-                    <h1 id="page-title" tabIndex={-1}>{isLibraryPage
+                      <h1 id="page-title" tabIndex={-1}>{isLibraryPage
                         ? 'Lessons Library'
                         : isPmoEvaluationQueuePage ? 'Evaluation Queue'
                           : isPmoDraftsPage ? 'PMO Drafts' : 'My Submissions'}</h1>
-                      <p className="intro">{isLibraryPage
-                        ? isLegacyLibrary
-                          ? 'Browse lessons published by PMO.'
-                          : 'Browse lessons published by PMO. Search, filter, and sort to find published guidance.'
-                        : isPmoEvaluationQueuePage
-                          ? 'Lessons awaiting PMO evaluation, with the oldest submission first.'
+                      {!isLibraryPage && (
+                        <p className="intro">{isPmoEvaluationQueuePage
+                          ? 'Oldest submission first.'
                           : isPmoDraftsPage
-                            ? 'Find lessons across the module. Only Open lessons can be edited or cancelled.'
-                            : 'Your lessons. Open drafts can be edited or cancelled.'}</p>
+                            ? 'Only Open lessons can be edited or cancelled.'
+                            : 'Open drafts can be edited or cancelled.'}</p>
+                      )}
                     </div>
                     {!isPmoReviewListPage && (
                       <button className="draft-action" type="button" disabled={isSavingCurrentDraft} onClick={() => {
