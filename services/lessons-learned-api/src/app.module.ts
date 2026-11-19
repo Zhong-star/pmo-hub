@@ -4,6 +4,9 @@ import { LessonsLearnedDatabaseModule } from './database/database.module';
 import { HealthController } from './health.controller';
 import { HomeController } from './home.controller';
 import { LessonCommentsService } from './lessons/lesson-comments.service';
+import { LessonNotificationStore } from './lessons/lesson-notification-store';
+import { LessonNotificationsController } from './lessons/lesson-notifications.controller';
+import { LessonNotificationsService } from './lessons/lesson-notifications.service';
 import { LessonsController } from './lessons/lessons.controller';
 import { PmoDashboardController } from './lessons/pmo-dashboard.controller';
 import { ProfilesController } from './lessons/profiles.controller';
@@ -12,8 +15,22 @@ import { ProjectCatalogService } from './lessons/project-catalog.service';
 import { LocalAccessService } from './local-access.service';
 
 @Module({
-  controllers: [HealthController, HomeController, LessonsController, PmoDashboardController, ProfilesController],
-  providers: [LocalAccessService, LessonsService, LessonCommentsService, ProjectCatalogService],
+  controllers: [
+    HealthController,
+    HomeController,
+    LessonsController,
+    PmoDashboardController,
+    ProfilesController,
+    LessonNotificationsController,
+  ],
+  providers: [
+    LocalAccessService,
+    LessonNotificationStore,
+    LessonNotificationsService,
+    LessonsService,
+    LessonCommentsService,
+    ProjectCatalogService,
+  ],
 })
 export class AppModule {
   static register(databaseUrl = getLessonsLearnedDatabaseUrl()): DynamicModule {
