@@ -22,11 +22,16 @@ import {
   getMySubmissions,
   getPmoDrafts,
   getPmoDashboard,
+  getProfiles,
+  getContributorProfile,
   getPmoEvaluationQueue,
   returnLesson as returnLessonRequest,
   rejectLesson as rejectLessonRequest,
   submitLesson as submitLessonRequest,
   updateLessonDraft,
+  type ContributorProfileFilters,
+  type ContributorProfileResponse,
+  type ContributorProfileSort,
   type LessonDraft,
   type LessonPage,
   type LessonDetails,
@@ -40,6 +45,7 @@ import {
   type PmoDashboardFilters,
   type PmoDashboardSort,
   type PmoEvaluationQueueFilters,
+  type ProfileSearchFilters,
   type CancelLessonBody,
   type ApproveLessonBody,
   type RejectLessonBody,
@@ -54,6 +60,7 @@ import { ClosureDialog } from './ClosureDialog';
 import { LessonSubmissionDetailsDialog, CancelLessonDialog, RejectLessonDialog } from './SubmissionDialogs';
 import { ReturnLessonDialog } from './ReturnLessonDialog';
 import { PmoDashboardView } from './PmoDashboardView';
+import { ContributorProfileView, ProfileSearchView, type ProfileProjectFilter } from './ProfilesView';
 import { getLibraryLessonHref, useLibraryNavigation } from './useLibraryNavigation';
 
 const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
@@ -98,8 +105,26 @@ function getRoleLabel(role: 'LESSONS_USER' | 'LESSONS_MODERATOR'): string {
   return role === 'LESSONS_MODERATOR' ? 'PMO' : 'Contributor';
 }
 
-type ModulePage = 'home' | 'my-submissions' | 'pmo-drafts' | 'evaluation-queue' | 'pmo-dashboard' | 'library';
+type ModulePage = 'home' | 'my-submissions' | 'pmo-drafts' | 'evaluation-queue' | 'pmo-dashboard' | 'library' | 'profiles';
 type LibrarySort = NonNullable<LessonsLibraryFilters['sort']>;
+type ProfileOrigin = { page: ModulePage; label: string };
+
+function readContributorProfileId(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('page') !== 'profiles') return null;
+  const value = params.get('profile')?.trim();
+  return value || null;
+}
+
+function getOriginLabelForPage(page: ModulePage): string {
+  if (page === 'library') return 'Back to Lessons Library';
+  if (page === 'my-submissions') return 'Back to My Submissions';
+  if (page === 'pmo-drafts') return 'Back to PMO Drafts';
+  if (page === 'evaluation-queue') return 'Back to Evaluation Queue';
+  if (page === 'pmo-dashboard') return 'Back to PMO Dashboard';
+  if (page === 'home') return 'Back to Home';
+  return 'Back to Profiles';
+}
 
 function getLibrarySortCaption(sort: LibrarySort): string {
   if (sort === 'oldest') return 'Published lessons, oldest approval first';
@@ -117,6 +142,7 @@ function readModulePage(): ModulePage {
   if (page === 'evaluation-queue') return 'evaluation-queue';
   if (page === 'pmo-dashboard') return 'pmo-dashboard';
   if (page === 'library') return 'library';
+  if (page === 'profiles') return 'profiles';
   return 'home';
 }
 
@@ -275,6 +301,13 @@ export function LessonsLearnedScreen() {
   const [selectedRejectionDraft, setSelectedRejectionDraft] = useState<LessonDraft | null>(null);
   const [selectedClosureDraft, setSelectedClosureDraft] = useState<LessonDraft | null>(null);
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<number | null>(null);
+  const [selectedContributorProfileId, setSelectedContributorProfileId] = useState<string | null>(readContributorProfileId);
+  const [profileOrigin, setProfileOrigin] = useState<ProfileOrigin>({ page: 'profiles', label: 'Back to Profiles' });
+  const [profileSearch, setProfileSearch] = useState('');
+  const [profileProjectFilter, setProfileProjectFilter] = useState<ProfileProjectFilter>({ kind: 'any' });
+  const [profileLessonType, setProfileLessonType] = useState<NonNullable<LessonDraft['lessonType']> | ''>('');
+  const [profileSort, setProfileSort] = useState<ContributorProfileSort>('recent');
+  const [selectedProfilePublishedLessonId, setSelectedProfilePublishedLessonId] = useState<number | null>(null);
   const [submissionSearch, setSubmissionSearch] = useState('');
   const [submissionProjectFilter, setSubmissionProjectFilter] = useState<SubmissionProjectFilter>({ kind: 'any' });
   const [submissionLessonType, setSubmissionLessonType] = useState<NonNullable<LessonDraft['lessonType']> | ''>('');
@@ -306,11 +339,18 @@ export function LessonsLearnedScreen() {
     setSubmissionAuthorFilter('');
     setDashboardCard('');
     setDashboardSort('activity');
+    if (destination !== 'profiles') {
+      setProfileSearch('');
+    }
+    setProfileProjectFilter({ kind: 'any' });
+    setProfileLessonType('');
+    setProfileSort('recent');
   }, []);
 
   const applyPageFromLocation = useCallback(() => {
     const page = readModulePage();
     setModulePage(page);
+    setSelectedContributorProfileId(readContributorProfileId());
     if (page !== 'library' || modulePage !== 'library') resetSubmissionFilters(page);
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
@@ -320,6 +360,7 @@ export function LessonsLearnedScreen() {
     setSelectedRejectionDraft(null);
     setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
+    setSelectedProfilePublishedLessonId(null);
     setIsModuleMenuOpen(false);
   }, [modulePage, resetSubmissionFilters]);
 
@@ -375,6 +416,9 @@ export function LessonsLearnedScreen() {
   const isPmoReviewListPage = isPmoDraftsPage || isPmoEvaluationQueuePage;
   const isMySubmissionsPage = modulePage === 'my-submissions';
   const isLibraryPage = modulePage === 'library';
+  const isProfilesPage = modulePage === 'profiles';
+  const isContributorProfilePage = isProfilesPage && selectedContributorProfileId !== null;
+  const isProfileSearchPage = isProfilesPage && selectedContributorProfileId === null;
   const isSubmissionTablePage = isPmoReviewListPage || isLibraryPage;
   const showHomeRecheckError = isHomePage && homeQuery.isError && !homeQuery.isFetching;
   const isEditorOpen = isCreateFormOpen || selectedDraft !== null;
@@ -396,6 +440,15 @@ export function LessonsLearnedScreen() {
     ...submissionsFilters,
     ...(dashboardCard ? { card: dashboardCard } : {}),
     ...(dashboardSort === 'activity' ? {} : { sort: dashboardSort }),
+  };
+  const profileSearchFilters: ProfileSearchFilters = {
+    ...(profileSearch.trim() ? { search: profileSearch.trim() } : {}),
+  };
+  const contributorProfileFilters: ContributorProfileFilters = {
+    ...(profileProjectFilter.kind === 'project' ? { projectId: profileProjectFilter.id } : {}),
+    ...(profileProjectFilter.kind === 'without-project' ? { withoutProject: true } : {}),
+    ...(profileLessonType ? { lessonType: profileLessonType } : {}),
+    ...(profileSort === 'recent' ? {} : { sort: profileSort }),
   };
   const submissionsQuery = useQuery({
     queryKey: ['lessons-learned-my-submissions', selectedProfileId, submissionsFilters],
@@ -421,6 +474,26 @@ export function LessonsLearnedScreen() {
       ? getPmoDashboard(selectedProfileId ?? '', pmoDashboardFilters)
       : getPmoDashboard(selectedProfileId ?? ''),
     enabled: isHomePage && isPmoDashboardPage,
+    networkMode: 'always',
+    retry: false,
+    refetchOnWindowFocus: true,
+  });
+  const profilesQuery = useQuery({
+    queryKey: ['lessons-learned-profiles', selectedProfileId, profileSearchFilters],
+    queryFn: () => Object.keys(profileSearchFilters).length
+      ? getProfiles(selectedProfileId ?? '', profileSearchFilters)
+      : getProfiles(selectedProfileId ?? ''),
+    enabled: isHomePage && isProfileSearchPage,
+    networkMode: 'always',
+    retry: false,
+    refetchOnWindowFocus: true,
+  });
+  const contributorProfileQuery = useQuery({
+    queryKey: ['lessons-learned-contributor-profile', selectedProfileId, selectedContributorProfileId, contributorProfileFilters],
+    queryFn: () => Object.keys(contributorProfileFilters).length
+      ? getContributorProfile(selectedProfileId ?? '', selectedContributorProfileId ?? '', contributorProfileFilters)
+      : getContributorProfile(selectedProfileId ?? '', selectedContributorProfileId ?? ''),
+    enabled: isHomePage && isContributorProfilePage,
     networkMode: 'always',
     retry: false,
     refetchOnWindowFocus: true,
@@ -488,10 +561,22 @@ export function LessonsLearnedScreen() {
   const submissionDetailsQuery = useQuery({
     queryKey: ['lessons-learned-submission-details', selectedProfileId, selectedSubmissionId],
     queryFn: () => getLessonDetails(selectedProfileId ?? '', selectedSubmissionId ?? 0),
-    enabled: isHomePage && (isMySubmissionsPage || isPmoReviewListPage || isPmoDashboardPage) && selectedSubmissionId !== null,
+    enabled: isHomePage && (isMySubmissionsPage || isPmoReviewListPage || isPmoDashboardPage || isContributorProfilePage) && selectedSubmissionId !== null,
     networkMode: 'always',
     retry: false,
   });
+  const profilePublishedDetailsQuery = useQuery({
+    queryKey: ['lessons-learned-profile-published-details', selectedProfileId, selectedProfilePublishedLessonId],
+    queryFn: () => getLibraryLessonDetails(selectedProfileId ?? '', selectedProfilePublishedLessonId ?? 0),
+    enabled: isHomePage && isContributorProfilePage && selectedProfilePublishedLessonId !== null,
+    networkMode: 'always',
+    retry: false,
+  });
+  const isProfilePublishedDetailOpen = isContributorProfilePage && selectedProfilePublishedLessonId !== null;
+  const isProfilePublishedDetailLoading = profilePublishedDetailsQuery.isPending || profilePublishedDetailsQuery.isFetching;
+  const confirmedProfilePublishedDetails = profilePublishedDetailsQuery.isSuccess && !isProfilePublishedDetailLoading
+    ? profilePublishedDetailsQuery.data
+    : undefined;
   const libraryDetailsQuery = useQuery({
     queryKey: ['lessons-learned-library-details', selectedProfileId, libraryDetailId, isLegacyLibrary ? 'legacy' : 'current'],
     queryFn: () => isLegacyLibrary
@@ -522,6 +607,28 @@ export function LessonsLearnedScreen() {
           pages: current.pages.map((page) => updateLibraryPageViewCount(page, opening.lessonId, result.viewCount)),
         } : current,
       );
+      queryClient.setQueriesData<ContributorProfileResponse>(
+        { queryKey: ['lessons-learned-contributor-profile', opening.profileId] },
+        (current) => {
+          if (!current) return current;
+          let viewDelta = 0;
+          const items = current.items.map((item) => {
+            if (item.id !== opening.lessonId) return item;
+            const nextViewCount = Math.max(item.viewCount, result.viewCount);
+            viewDelta = nextViewCount - item.viewCount;
+            return { ...item, viewCount: nextViewCount };
+          });
+          return {
+            ...current,
+            profile: {
+              ...current.profile,
+              viewsReceivedCount: current.profile.viewsReceivedCount + viewDelta,
+            },
+            items,
+          };
+        },
+      );
+      void queryClient.invalidateQueries({ queryKey: ['lessons-learned-profiles', opening.profileId] });
     },
     onError: (_error, opening) => {
       const currentOpening = libraryOpeningRef.current;
@@ -552,9 +659,23 @@ export function LessonsLearnedScreen() {
     });
   }, [isHomePage, isLibraryPage, isLegacyLibrary, libraryDetailId, libraryDetailsQuery.data, libraryDetailsQuery.isFetching, libraryDetailsQuery.isSuccess, recordView, selectedProfileId]);
   useEffect(() => {
+    if (!isHomePage || !isContributorProfilePage || !profilePublishedDetailsQuery.isSuccess || !selectedProfileId || selectedProfilePublishedLessonId === null) return;
     const opening = libraryOpeningRef.current;
-    if (opening?.status === 'ready' && libraryDetailId !== opening.lessonId) opening.status = 'failed';
-  }, [libraryDetailId]);
+    if (!opening || opening.status !== 'ready' || opening.lessonId !== selectedProfilePublishedLessonId || opening.profileId !== selectedProfileId) return;
+    if (profilePublishedDetailsQuery.isFetching || profilePublishedDetailsQuery.data?.id !== selectedProfilePublishedLessonId) return;
+
+    opening.status = 'recording';
+    recordView({
+      profileId: opening.profileId,
+      lessonId: opening.lessonId,
+      openingId: opening.openingId,
+    });
+  }, [isHomePage, isContributorProfilePage, profilePublishedDetailsQuery.data, profilePublishedDetailsQuery.isFetching, profilePublishedDetailsQuery.isSuccess, recordView, selectedProfileId, selectedProfilePublishedLessonId]);
+  useEffect(() => {
+    const opening = libraryOpeningRef.current;
+    const activeDetailId = isLibraryPage ? libraryDetailId : isContributorProfilePage ? selectedProfilePublishedLessonId : null;
+    if (opening?.status === 'ready' && activeDetailId !== opening.lessonId) opening.status = 'failed';
+  }, [isContributorProfilePage, isLibraryPage, libraryDetailId, selectedProfilePublishedLessonId]);
   const refetchHomeAccess = homeQuery.refetch;
   useEffect(() => {
     if (libraryDetailsQuery.isError && isDefinitiveAccessError(libraryDetailsQuery.error)) {
@@ -593,6 +714,30 @@ export function LessonsLearnedScreen() {
       { queryKey: ['lessons-learned-submission-details', profileId, lessonId] },
       (current) => current ? { ...current, votesCount, hasVoted } : current,
     );
+    queryClient.setQueriesData<LessonDetails>(
+      { queryKey: ['lessons-learned-profile-published-details', profileId, lessonId] },
+      (current) => current ? { ...current, votesCount, hasVoted } : current,
+    );
+    queryClient.setQueriesData<ContributorProfileResponse>(
+      { queryKey: ['lessons-learned-contributor-profile', profileId] },
+      (current) => {
+        if (!current) return current;
+        let voteDelta = 0;
+        const items = current.items.map((item) => {
+          if (item.id !== lessonId) return item;
+          voteDelta = votesCount - item.votesCount;
+          return { ...item, votesCount, hasVoted };
+        });
+        return {
+          ...current,
+          profile: {
+            ...current.profile,
+            votesReceivedCount: Math.max(0, current.profile.votesReceivedCount + voteDelta),
+          },
+          items,
+        };
+      },
+    );
   }
 
   async function toggleLessonVote(lesson: { id: number; votesCount: number; hasVoted: boolean }) {
@@ -612,6 +757,7 @@ export function LessonsLearnedScreen() {
         ? await castLessonVote(profileId, lesson.id)
         : await removeLessonVote(profileId, lesson.id);
       applyVoteToCaches(profileId, lesson.id, updated.votesCount, updated.hasVoted);
+      void queryClient.invalidateQueries({ queryKey: ['lessons-learned-profiles', profileId] });
     } catch {
       applyVoteToCaches(profileId, lesson.id, previous.votesCount, previous.hasVoted);
       if (selectedProfileIdRef.current === profileId) {
@@ -709,6 +855,8 @@ export function LessonsLearnedScreen() {
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-evaluation-queue', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-project-options', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-library', profileId] }),
+      queryClient.invalidateQueries({ queryKey: ['lessons-learned-profiles', profileId] }),
+      queryClient.invalidateQueries({ queryKey: ['lessons-learned-contributor-profile', profileId] }),
     ]);
   }
 
@@ -956,6 +1104,7 @@ export function LessonsLearnedScreen() {
     currentHistoryPositionRef.current = nextPosition;
     clearLibraryLesson();
     setModulePage(page);
+    setSelectedContributorProfileId(null);
     resetSubmissionFilters(page);
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
@@ -965,7 +1114,49 @@ export function LessonsLearnedScreen() {
     setSelectedRejectionDraft(null);
     setSelectedClosureDraft(null);
     setSelectedSubmissionId(null);
+    setSelectedProfilePublishedLessonId(null);
     setIsModuleMenuOpen(false);
+  }
+
+  function openContributorProfile(userId: string, origin?: ProfileOrigin) {
+    const resolvedOrigin = origin ?? { page: modulePage, label: getOriginLabelForPage(modulePage) };
+    const path = `/lessons-learned/?page=profiles&profile=${encodeURIComponent(userId)}`;
+    const nextPosition = currentHistoryPositionRef.current + 1;
+    window.history.pushState(withHistoryPosition(window.history.state, nextPosition), '', path);
+    currentHistoryPositionRef.current = nextPosition;
+    clearLibraryLesson();
+    setProfileOrigin(resolvedOrigin);
+    setModulePage('profiles');
+    setSelectedContributorProfileId(userId);
+    setProfileProjectFilter({ kind: 'any' });
+    setProfileLessonType('');
+    setProfileSort('recent');
+    setSelectedSubmissionId(null);
+    setSelectedProfilePublishedLessonId(null);
+    setIsModuleMenuOpen(false);
+  }
+
+  function returnFromContributorProfile() {
+    navigateModulePage(profileOrigin.page);
+  }
+
+  function openLessonFromContributorProfile(lesson: LibraryLesson) {
+    if (!selectedProfileId) return;
+    const isPublished = (lesson.status === 'Approved' || lesson.status === 'Closed') && Boolean(lesson.approvedAt);
+    if (isPublished) {
+      libraryOpeningRef.current = {
+        profileId: selectedProfileId,
+        lessonId: lesson.id,
+        openingId: createLibraryOpeningId(),
+        status: 'ready',
+      };
+      setSelectedSubmissionId(null);
+      setSelectedProfilePublishedLessonId(lesson.id);
+    } else {
+      libraryOpeningRef.current = null;
+      setSelectedProfilePublishedLessonId(null);
+      setSelectedSubmissionId(lesson.id);
+    }
   }
 
   function navigateTo(page: ModulePage, event: MouseEvent<HTMLAnchorElement>) {
@@ -1028,6 +1219,13 @@ export function LessonsLearnedScreen() {
               onClick={(event) => navigateTo('library', event)}
             >
               Lessons Library
+            </a>
+            <a
+              href="/lessons-learned/?page=profiles"
+              aria-current={isProfilesPage ? 'page' : undefined}
+              onClick={(event) => navigateTo('profiles', event)}
+            >
+              Profiles
             </a>
             {isPmo && (
               <a
@@ -1198,6 +1396,41 @@ export function LessonsLearnedScreen() {
                       }}
                       onOpenReviewQueue={(event) => navigateTo('evaluation-queue', event)}
                       onViewLesson={(lessonId) => setSelectedSubmissionId(lessonId)}
+                    />
+                  ) : isProfileSearchPage ? (
+                    <ProfileSearchView
+                      profiles={profilesQuery.data}
+                      isLoading={profilesQuery.isPending}
+                      isError={profilesQuery.isError}
+                      onRetry={() => void profilesQuery.refetch()}
+                      search={profileSearch}
+                      onSearchChange={setProfileSearch}
+                      onOpenProfile={(userId) => openContributorProfile(userId, { page: 'profiles', label: 'Back to Profiles' })}
+                    />
+                  ) : isContributorProfilePage ? (
+                    <ContributorProfileView
+                      data={contributorProfileQuery.data}
+                      isLoading={contributorProfileQuery.isPending}
+                      isNotFound={contributorProfileQuery.isError && getApiErrorStatus(contributorProfileQuery.error) === 404}
+                      isError={contributorProfileQuery.isError}
+                      onRetry={() => void contributorProfileQuery.refetch()}
+                      backLabel={profileOrigin.label}
+                      onBack={returnFromContributorProfile}
+                      projectFilter={profileProjectFilter}
+                      onProjectFilterChange={setProfileProjectFilter}
+                      lessonType={profileLessonType}
+                      onLessonTypeChange={setProfileLessonType}
+                      sort={profileSort}
+                      onSortChange={setProfileSort}
+                      onClearFilters={() => {
+                        setProfileProjectFilter({ kind: 'any' });
+                        setProfileLessonType('');
+                        setProfileSort('recent');
+                      }}
+                      onOpenLesson={openLessonFromContributorProfile}
+                      onToggleVote={(lesson) => void toggleLessonVote(lesson)}
+                      pendingVoteIds={pendingVoteIds}
+                      voteErrorMessage={voteError && !isProfilePublishedDetailOpen && selectedSubmissionId === null ? voteError.message : null}
                     />
                   ) : (
                     <>
@@ -1467,7 +1700,18 @@ export function LessonsLearnedScreen() {
                                 )}
                               </th>
                               <td>#{draft.id}</td>
-                              <td>{isLibraryPage ? draft.authorName ?? draft.authorId : draft.authorId}</td>
+                              <td>
+                                {isLibraryPage ? (
+                                  <button
+                                    type="button"
+                                    className="author-profile-link"
+                                    aria-label={`View profile of ${draft.authorName ?? draft.authorId}`}
+                                    onClick={() => openContributorProfile(draft.authorId, { page: 'library', label: 'Back to Lessons Library' })}
+                                  >
+                                    {draft.authorName ?? draft.authorId}
+                                  </button>
+                                ) : draft.authorId}
+                              </td>
                               <td>{draft.projectName ?? 'No project'}</td>
                               <td>{draft.lessonType ?? 'Not specified'}</td>
                               <td>{draft.status}</td>
@@ -1663,12 +1907,28 @@ export function LessonsLearnedScreen() {
                       onRegisterNavigationCloseRequest={registerNavigationCloseRequest}
                     />
                   )}
-                  {(selectedSubmissionId !== null || isLibraryDetailOpen) && (
+                  {(selectedSubmissionId !== null || isLibraryDetailOpen || isProfilePublishedDetailOpen) && (
                     <LessonSubmissionDetailsDialog
-                      lessonId={isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0}
-                      details={isLibraryDetailOpen ? confirmedLibraryDetails : submissionDetailsQuery.data}
-                      isLoading={isLibraryDetailOpen ? isLibraryDetailLoading : submissionDetailsQuery.isLoading}
-                      hasError={isLibraryDetailOpen ? !isLibraryDetailLoading && libraryDetailsQuery.isError : submissionDetailsQuery.isError}
+                      lessonId={isLibraryPage && libraryDetailId !== null
+                        ? libraryDetailId
+                        : isProfilePublishedDetailOpen && selectedProfilePublishedLessonId !== null
+                          ? selectedProfilePublishedLessonId
+                          : selectedSubmissionId ?? 0}
+                      details={isLibraryDetailOpen
+                        ? confirmedLibraryDetails
+                        : isProfilePublishedDetailOpen
+                          ? confirmedProfilePublishedDetails
+                          : submissionDetailsQuery.data}
+                      isLoading={isLibraryDetailOpen
+                        ? isLibraryDetailLoading
+                        : isProfilePublishedDetailOpen
+                          ? isProfilePublishedDetailLoading
+                          : submissionDetailsQuery.isLoading}
+                      hasError={isLibraryDetailOpen
+                        ? !isLibraryDetailLoading && libraryDetailsQuery.isError
+                        : isProfilePublishedDetailOpen
+                          ? !isProfilePublishedDetailLoading && profilePublishedDetailsQuery.isError
+                          : submissionDetailsQuery.isError}
                       canEdit={isPmoEvaluationQueuePage && submissionDetailsQuery.data?.status === 'PMOEvaluation'}
                       onEdit={() => {
                         const details = submissionDetailsQuery.data;
@@ -1678,22 +1938,37 @@ export function LessonsLearnedScreen() {
                       }}
                       onRetry={() => void (isLibraryPage && libraryDetailId !== null
                         ? libraryDetailsQuery.refetch()
-                        : submissionDetailsQuery.refetch())}
+                        : isProfilePublishedDetailOpen
+                          ? profilePublishedDetailsQuery.refetch()
+                          : submissionDetailsQuery.refetch())}
                       canApprove={Boolean(isPmo)}
                       onApprove={(lesson) => setSelectedApprovalDraft(lesson)}
                       canClose={Boolean(isPmo)}
                       onCloseLesson={(lesson) => setSelectedClosureDraft(lesson)}
                       onClose={() => {
                         if (isLibraryPage && libraryDetailId !== null) closeLibraryLesson();
+                        else if (isProfilePublishedDetailOpen) setSelectedProfilePublishedLessonId(null);
                         else setSelectedSubmissionId(null);
                       }}
                       onReturn={isPmoEvaluationQueuePage ? setSelectedReturnLesson : undefined}
                       isLibrarySurface={isLibraryPage && libraryDetailId !== null}
                       onToggleVote={(lesson) => void toggleLessonVote(lesson)}
-                      isVotePending={pendingVoteIds.has(isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0)}
-                      voteError={voteError?.lessonId === (isLibraryPage && libraryDetailId !== null ? libraryDetailId : selectedSubmissionId ?? 0)
+                      isVotePending={pendingVoteIds.has(isLibraryPage && libraryDetailId !== null
+                        ? libraryDetailId
+                        : isProfilePublishedDetailOpen && selectedProfilePublishedLessonId !== null
+                          ? selectedProfilePublishedLessonId
+                          : selectedSubmissionId ?? 0)}
+                      voteError={voteError?.lessonId === (isLibraryPage && libraryDetailId !== null
+                        ? libraryDetailId
+                        : isProfilePublishedDetailOpen && selectedProfilePublishedLessonId !== null
+                          ? selectedProfilePublishedLessonId
+                          : selectedSubmissionId ?? 0)
                         ? voteError.message
                         : null}
+                      onOpenAuthorProfile={(authorId) => openContributorProfile(authorId, {
+                        page: modulePage,
+                        label: getOriginLabelForPage(modulePage),
+                      })}
                       profileId={selectedProfileId ?? undefined}
                       isPmo={Boolean(isPmo)}
                       onPublicCommentCountChange={handlePublicCommentCountChange}

@@ -18,6 +18,7 @@ export function createOpenApiDocument(app: INestApplication) {
   const problemCollections = [
     '/api/lessons-learned/v1/lessons',
     '/api/lessons-learned/v1/pmo',
+    '/api/lessons-learned/v1/profiles',
   ];
   for (const [path, routes] of Object.entries(document.paths)) {
     if (!problemCollections.some((collection) => path === collection || path.startsWith(`${collection}/`))) continue;

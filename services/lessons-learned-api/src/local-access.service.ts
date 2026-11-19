@@ -69,6 +69,10 @@ export class LocalAccessService {
   getDisplayNames(): Map<string, string> {
     return new Map(this.readProfiles().map(({ id, displayName }) => [id, displayName]));
   }
+
+  listProfiles(): LocalProfile[] {
+    return this.readProfiles();
+  }
   private isLocalSimulationEnabled(): boolean {
     const configured = process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED;
     if (configured === 'true') return true;

@@ -416,6 +416,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lessons-learned/v1/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search authorized module profiles with public contribution aggregates */
+        get: operations["ProfilesController_searchProfiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lessons-learned/v1/profiles/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get contributor profile with public aggregates and role-scoped visible lessons */
+        get: operations["ProfilesController_getContributorProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -964,6 +998,40 @@ export interface components {
             windowStartAt: string;
             summary: components["schemas"]["PmoDashboardSummaryResponse"];
             items: components["schemas"]["PmoDashboardLessonResponse"][];
+            projects: components["schemas"]["LessonProjectResponse"][];
+        };
+        ProfileSummaryResponse: {
+            /** @example local-contributor */
+            id: string;
+            /** @example Local Contributor */
+            displayName: string;
+            /** @example LC */
+            initials: string;
+            /**
+             * @example LESSONS_USER
+             * @enum {string}
+             */
+            role: "LESSONS_USER" | "LESSONS_MODERATOR";
+            /** @example 2 */
+            publishedLessonsCount: number;
+            /** @example 5 */
+            votesReceivedCount: number;
+            /** @example 12 */
+            viewsReceivedCount: number;
+        };
+        ContributorProfileResponse: {
+            profile: components["schemas"]["ProfileSummaryResponse"];
+            /**
+             * @description Contributor ranking position when applicable.
+             * @example null
+             */
+            rankingPosition: number | null;
+            /**
+             * @description Whether the viewer can see unpublished lessons authored by this user.
+             * @example false
+             */
+            includesPrivateLessons: boolean;
+            items: components["schemas"]["LessonLibraryResponse"][];
             projects: components["schemas"]["LessonProjectResponse"][];
         };
     };
@@ -3403,6 +3471,174 @@ export interface operations {
             };
             /** @description The selected profile is not a PMO moderator. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    ProfilesController_searchProfiles: {
+        parameters: {
+            query?: {
+                /** @description Case- and accent-insensitive name filter for authorized module profiles. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileSummaryResponse"][];
+                };
+            };
+            /** @description Invalid profile search query parameter. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile does not have access to Lessons Learned. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Lessons Learned persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+        };
+    };
+    ProfilesController_getContributorProfile: {
+        parameters: {
+            query?: {
+                /** @description Project snapshot ID. */
+                projectId?: string;
+                /** @description Filter to lessons without a project. */
+                withoutProject?: boolean;
+                lessonType?: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication";
+                /** @description Sort order for visible lessons in the Contributor Profile. */
+                sort?: "recent" | "oldest" | "most-voted" | "title" | "project" | "type";
+            };
+            header?: never;
+            path: {
+                /** @description Authorized module user ID. */
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContributorProfileResponse"];
+                };
+            };
+            /** @description Invalid contributor profile query parameter. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description A local Hub profile must be selected. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description The selected profile does not have access to Lessons Learned. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        statusCode?: number;
+                        code?: string;
+                        message?: string | string[];
+                    };
+                    "application/problem+json": components["schemas"]["LessonProblem"];
+                };
+            };
+            /** @description Contributor profile not found. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
