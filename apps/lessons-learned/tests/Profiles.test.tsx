@@ -368,8 +368,11 @@ describe('Profile Search and Contributor Profile screens', () => {
 
   it('closes an open profile published lesson detail when storage switches the active profile', async () => {
     const user = userEvent.setup();
-    vi.mocked(getHome).mockImplementation((profileId) => Promise.resolve(
-      profileId === 'local-pmo' ? pmo : contributor,
+    let resolveContributorHome!: (home: typeof contributor) => void;
+    vi.mocked(getHome).mockImplementation((profileId) => (
+      profileId === 'local-pmo'
+        ? Promise.resolve(pmo)
+        : new Promise((resolve) => { resolveContributorHome = resolve; })
     ));
 
     renderScreen('local-pmo', '/lessons-learned/?page=profiles&profile=user-ana');
@@ -388,6 +391,14 @@ describe('Profile Search and Contributor Profile screens', () => {
         newValue: 'local-contributor',
       }));
     });
+
+    expect(screen.getByRole('heading', { name: 'Access check' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('local-contributor');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(getLibraryLessonDetails).not.toHaveBeenCalled();
+    expect(recordLibraryView).not.toHaveBeenCalled();
+
+    await act(async () => { resolveContributorHome(contributor); });
 
     expect(await screen.findByRole('button', { name: 'Local Contributor' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Ana Costa' })).toBeInTheDocument();

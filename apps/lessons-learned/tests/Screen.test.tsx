@@ -1667,8 +1667,11 @@ describe('Lessons Learned access check', () => {
 
   it('clears an open Return lesson dialog and blocks Evaluation Queue when storage or pageshow switches from PMO to Contributor', async () => {
     const lesson = lessonDraft({ id: 83, title: 'PMO return switch lesson', status: 'PMOEvaluation' });
-    vi.mocked(getHome).mockImplementation((profileId) => Promise.resolve(
-      profileId === 'local-pmo' ? pmo : contributor,
+    let resolveContributorHome!: (home: typeof contributor) => void;
+    vi.mocked(getHome).mockImplementation((profileId) => (
+      profileId === 'local-pmo'
+        ? Promise.resolve(pmo)
+        : new Promise((resolve) => { resolveContributorHome = resolve; })
     ));
     vi.mocked(getPmoEvaluationQueue).mockResolvedValue([lesson]);
     vi.mocked(getLessonDetails).mockResolvedValue(lessonDetails(lesson));
@@ -1689,6 +1692,16 @@ describe('Lessons Learned access check', () => {
       window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
       window.dispatchEvent(new PageTransitionEvent('pageshow'));
     });
+
+    expect(screen.getByRole('heading', { name: 'Access check' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('local-contributor');
+    expect(screen.queryByRole('dialog', { name: 'Return lesson' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Lesson details' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Module menu' })).not.toBeInTheDocument();
+    expect(getPmoEvaluationQueue).not.toHaveBeenCalled();
+
+    await act(async () => { resolveContributorHome(contributor); });
 
     expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('The PMO Review Queue is restricted to PMO moderators.');
@@ -1924,6 +1937,50 @@ describe('Lessons Learned access check', () => {
     expect(screen.queryByText('Welcome, Local Contributor')).not.toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Create lesson' })).not.toBeInTheDocument();
     expect(getHome).toHaveBeenCalledTimes(2);
+  });
+
+  it('restores the PMO queue after focus revalidation recovers from access denial', async () => {
+    const lesson = lessonDraft({ id: 84, title: 'Focus recheck lesson', status: 'PMOEvaluation' });
+    vi.mocked(getHome)
+      .mockResolvedValueOnce(pmo)
+      .mockRejectedValueOnce(apiError(403, 'ACCESS_DENIED'))
+      .mockResolvedValueOnce(pmo);
+    vi.mocked(getPmoEvaluationQueue).mockResolvedValue([lesson]);
+    vi.mocked(getLessonDetails).mockResolvedValue(lessonDetails(lesson));
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo', 0, 'evaluation-queue');
+    await screen.findByRole('heading', { name: 'Evaluation Queue' });
+    await user.click(await screen.findByRole('button', { name: 'View Focus recheck lesson' }));
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    await user.click(within(details).getByRole('button', { name: 'Return for changes' }));
+    expect(await screen.findByRole('dialog', { name: 'Return lesson' })).toBeInTheDocument();
+
+    const refocusWindow = () => {
+      act(() => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+        window.dispatchEvent(new Event('visibilitychange'));
+        Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+        window.dispatchEvent(new Event('visibilitychange'));
+      });
+    };
+
+    refocusWindow();
+
+    await waitFor(() => expect(getHome).toHaveBeenCalledTimes(2));
+    expect(getHome).toHaveBeenNthCalledWith(2, 'local-pmo');
+    expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Return lesson' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Lesson details' })).not.toBeInTheDocument();
+
+    refocusWindow();
+
+    await waitFor(() => expect(getHome).toHaveBeenCalledTimes(3));
+    expect(getHome).toHaveBeenNthCalledWith(3, 'local-pmo');
+    expect(await screen.findByRole('heading', { name: 'Evaluation Queue' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'View Focus recheck lesson' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Return lesson' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Lesson details' })).not.toBeInTheDocument();
   });
 
   it('keeps a draft editor mounted while a focus recheck is pending or temporarily unavailable', async () => {
