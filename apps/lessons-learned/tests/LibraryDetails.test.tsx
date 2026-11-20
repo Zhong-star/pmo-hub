@@ -1,5 +1,5 @@
-import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { onlineManager, QueryClient, QueryClientProvider, type InfiniteData } from '@tanstack/react-query';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsLearnedScreen } from '../src/LessonsLearnedScreen';
@@ -127,11 +127,13 @@ function renderLibrary(path: string, profileId = 'local-contributor', gcTime = 0
   window.localStorage.clear();
   window.localStorage.setItem('pmo-hub.local-user-id', profileId);
   window.history.replaceState(null, '', path);
-  return render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime } } })}>
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime } } });
+  render(
+    <QueryClientProvider client={queryClient}>
       <LessonsLearnedScreen />
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 beforeEach(() => {
@@ -356,5 +358,85 @@ describe('published Library lesson details', () => {
     expect(details).toBeVisible();
     await user.keyboard('{Escape}');
     await waitFor(() => expect(within(row).getByRole('cell', { name: '8' })).toBeInTheDocument());
+  });
+
+  it('discards a pending opening when the detail closes before authorizing it', async () => {
+    let resolveDetail!: (details: LessonDetails) => void;
+    vi.mocked(getLibrary).mockResolvedValue([libraryLesson()]);
+    vi.mocked(getLibraryLessonDetails).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveDetail = resolve;
+    }));
+    renderLibrary('/lessons-learned/?page=library');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('link', { name: 'View Improve release handover' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Loading lesson details');
+    await user.click(within(dialog).getByRole('button', { name: 'Close published lesson details' }));
+    await waitFor(() => expect(window.location.search).toBe('?page=library'));
+
+    await act(async () => { resolveDetail(publishedDetails()); });
+    act(() => window.history.forward());
+    const reopened = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    expect(await within(reopened).findByText('The handover omitted the runbook.')).toBeVisible();
+    expect(recordLibraryView).not.toHaveBeenCalled();
+  });
+
+  it('closes the Library detail on profile switch and applies a late view to the originating profile', async () => {
+    let resolveView!: (result: { viewCount: number }) => void;
+    vi.mocked(getHome).mockImplementation(async (profileId) => profileId === 'local-pmo' ? pmo : contributor);
+    vi.mocked(getLibrary).mockResolvedValue([libraryLesson({ viewCount: 7 })]);
+    vi.mocked(recordLibraryView).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveView = resolve;
+    }));
+    const queryClient = renderLibrary('/lessons-learned/?page=library', 'local-contributor', 60_000);
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('link', { name: 'View Improve release handover' }));
+    const details = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    expect(await within(details).findByText('The handover omitted the runbook.')).toBeVisible();
+    await waitFor(() => expect(recordLibraryView).toHaveBeenCalledTimes(1));
+    act(() => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'pmo-hub.local-user-id' }));
+    });
+    expect(await screen.findByRole('button', { name: 'Local PMO' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Published lesson details' })).not.toBeInTheDocument();
+    expect(window.location.search).toBe('?page=library');
+    expect(getLibraryLessonDetails).toHaveBeenCalledTimes(1);
+    const lessonLink = await screen.findByRole('link', { name: 'View Improve release handover' });
+
+    await act(async () => { resolveView({ viewCount: 8 }); });
+
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['lessons-learned-rankings', 'local-contributor'],
+    }));
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['lessons-learned-profiles', 'local-contributor'] });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ['lessons-learned-rankings', 'local-pmo'] });
+    const contributorLibrary = queryClient.getQueriesData<InfiniteData<LibraryLesson[]>>({
+      queryKey: ['lessons-learned-library', 'local-contributor'],
+    })[0]?.[1];
+    expect(contributorLibrary?.pages[0]?.[0]?.viewCount).toBe(8);
+    expect(within(lessonLink.closest('tr')!).getByRole('cell', { name: '7' })).toBeInTheDocument();
+    expect(recordLibraryView).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismisses a directly opened Library detail when switching profiles', async () => {
+    vi.mocked(getHome).mockImplementation(async (profileId) => profileId === 'local-pmo' ? pmo : contributor);
+    renderLibrary('/lessons-learned/?page=library&lesson=42');
+    const dialog = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    expect(await within(dialog).findByText('The handover omitted the runbook.')).toBeVisible();
+
+    act(() => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'pmo-hub.local-user-id' }));
+    });
+
+    expect(await screen.findByRole('button', { name: 'Local PMO' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Published lesson details' })).not.toBeInTheDocument();
+    expect(window.location.search).toBe('?page=library');
+    expect(getLibraryLessonDetails).toHaveBeenCalledTimes(1);
+    expect(recordLibraryView).not.toHaveBeenCalled();
   });
 });

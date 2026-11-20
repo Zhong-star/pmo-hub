@@ -43,7 +43,7 @@ import {
   ContributorProfileQuery,
   ProfileSearchQuery,
 } from './lesson-submissions-query.dto';
-import { LessonsService } from './lessons.service';
+import { ContributionQueriesService } from './contribution-queries.service';
 
 @ApiTags('Profiles')
 @ApiExtraModels(
@@ -58,7 +58,7 @@ import { LessonsService } from './lessons.service';
 @UseFilters(LocalAccessProblemFilter, LessonProblemFilter)
 @UseInterceptors(LessonHttpContract)
 export class ProfilesController {
-  constructor(@Inject(LessonsService) private readonly lessons: LessonsService) {}
+  constructor(@Inject(ContributionQueriesService) private readonly contributions: ContributionQueriesService) {}
 
   @Get()
   @Header('Cache-Control', 'no-store')
@@ -89,7 +89,7 @@ export class ProfilesController {
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ): Promise<ProfileSearchPage | ProfileSummaryResponse[]> {
-    return this.lessons.searchProfiles(typeof header === 'string' ? header : undefined, filters, readPageRequest(paged, cursor, limit));
+    return this.contributions.searchProfiles(typeof header === 'string' ? header : undefined, filters, readPageRequest(paged, cursor, limit));
   }
 
   @Get(':userId')
@@ -123,7 +123,7 @@ export class ProfilesController {
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ): Promise<ContributorProfileResponse> {
-    return this.lessons.getContributorProfile(
+    return this.contributions.getContributorProfile(
       typeof header === 'string' ? header : undefined,
       userId,
       filters,
