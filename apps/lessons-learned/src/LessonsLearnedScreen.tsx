@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { WorkspaceSidebar } from '../../shared-ui/src/WorkspaceSidebar';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { useThemePreference } from '../../shared-ui/src/theme';
@@ -9,12 +9,10 @@ import {
   closeLesson as closeLessonRequest,
   cancelLesson as cancelLessonRequest,
   createLessonDraft,
-  getHome,
   getEvaluationProjectSnapshots,
   getLibrary,
   getLibraryLessonDetails,
   getLibraryProjectSnapshots,
-  recordLibraryView,
   removeLessonVote,
   getLessonDetails,
   getLessonProjects,
@@ -56,6 +54,8 @@ import {
   type UpdateLessonDraftBody,
   type HomeTargetPage,
 } from './api';
+import { getApiErrorStatus } from './apiError';
+import { updateProfileLesson } from './contributorProfileCache';
 import { DraftEditor } from './DraftEditor';
 import { HomeView } from './HomeView';
 import { ApprovalDialog } from './ApprovalDialogs';
@@ -67,49 +67,15 @@ import { NotificationsMenu } from './NotificationsMenu';
 import { ContributorProfileView, ProfileSearchView, type ProfileProjectFilter } from './ProfilesView';
 import { RankingsSection } from './RankingsSection';
 import { getLibraryLessonHref, useLibraryNavigation } from './useLibraryNavigation';
+import { useLessonViewTracking } from './useLessonViewTracking';
+import { useLocalProfileSelection, type InteractionEndReason } from './useLocalProfileSelection';
 
-const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
 const HISTORY_POSITION_KEY = '__pmoHubLessonsLearnedHistoryPosition';
-
-function readSelectedProfileId(): string | null {
-  try {
-    const id = window.localStorage.getItem(LOCAL_USER_STORAGE_KEY)?.trim();
-    return id || null;
-  } catch {
-    return null;
-  }
-}
-
-function getApiErrorCode(error: unknown): string | null {
-  if (typeof error !== 'object' || error === null || !('response' in error)) return null;
-  const response = error.response;
-  if (typeof response !== 'object' || response === null || !('data' in response)) return null;
-  const data = response.data;
-  if (typeof data !== 'object' || data === null || !('code' in data)) return null;
-  return typeof data.code === 'string' ? data.code : null;
-}
-
-function getApiErrorStatus(error: unknown): number | null {
-  if (typeof error !== 'object' || error === null || !('response' in error)) return null;
-  const response = error.response;
-  if (typeof response !== 'object' || response === null || !('status' in response)) return null;
-  return typeof response.status === 'number' ? response.status : null;
-}
 
 function getReadErrorLabel(error: unknown): string | undefined {
   const status = getApiErrorStatus(error);
   if (status === 401 || status === 403) return 'Access denied.';
   if (status === 404) return 'The requested resource was not found.';
-}
-
-function isDefinitiveAccessError(error: unknown): boolean {
-  const errorCode = getApiErrorCode(error);
-  return getApiErrorStatus(error) === 401
-    || getApiErrorStatus(error) === 403
-    || errorCode === 'AUTHENTICATION_REQUIRED'
-    || errorCode === 'ACCESS_DENIED'
-    || errorCode === 'ACCESS_CONFIGURATION_ERROR'
-    || errorCode === 'LOCAL_AUTH_DISABLED';
 }
 
 type ModulePage = 'home' | 'my-submissions' | 'pmo-drafts' | 'evaluation-queue' | 'pmo-dashboard' | 'library' | 'profiles';
@@ -233,30 +199,7 @@ function mergeCollectionPages<Page extends { items: { id: number | string }[] }>
   return { ...pages[0], items: [...byId.values()] };
 }
 
-function updateProfileLesson(
-  current: InfiniteData<ContributorProfileResponse> | undefined,
-  lessonId: number,
-  update: (lesson: LibraryLesson) => LibraryLesson,
-): InfiniteData<ContributorProfileResponse> | undefined {
-  if (!current) return current;
-  const previous = current.pages.flatMap((page) => page.items).find((item) => item.id === lessonId);
-  if (!previous) return current;
-  const updated = update(previous);
-  return {
-    ...current,
-    pages: current.pages.map((page) => ({
-      ...page,
-      profile: {
-        ...page.profile,
-        votesReceivedCount: Math.max(0, page.profile.votesReceivedCount + updated.votesCount - previous.votesCount),
-        viewsReceivedCount: page.profile.viewsReceivedCount + updated.viewCount - previous.viewCount,
-      },
-      items: page.items.map((item) => item.id === lessonId ? updated : item),
-    })),
-  };
-}
-
-function isPublishedLibraryLesson(lesson: LessonDetails): boolean {
+function isPublishedLibraryLesson(lesson: Pick<LessonDetails, 'status' | 'approvedAt'>): boolean {
   return (lesson.status === 'Approved' || lesson.status === 'Closed') && Boolean(lesson.approvedAt);
 }
 
@@ -264,26 +207,6 @@ async function getLegacyPublishedLibraryLesson(profileId: string, lessonId: numb
   const lesson = await getLessonDetails(profileId, lessonId);
   if (!isPublishedLibraryLesson(lesson)) throw new Error('Published lesson is unavailable.');
   return lesson;
-}
-
-function createLibraryOpeningId(): string {
-  if (typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
-  const bytes = window.crypto.getRandomValues(new Uint8Array(16));
-  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-function updateLibraryPageViewCount(
-  page: LibraryPage | LibraryLesson[],
-  lessonId: number,
-  viewCount: number,
-): LibraryPage | LibraryLesson[] {
-  const update = (lesson: LibraryLesson) => lesson.id === lessonId
-    ? { ...lesson, viewCount: Math.max(lesson.viewCount, viewCount) }
-    : lesson;
-  return Array.isArray(page) ? page.map(update) : { ...page, items: page.items.map(update) };
 }
 
 function updateLibraryPageVote(
@@ -310,21 +233,13 @@ function updateLibraryPageCommentCount(
 }
 
 export function LessonsLearnedScreen() {
-  const [selectedProfileId, setSelectedProfileId] = useState(readSelectedProfileId);
-  const [selectionGeneration, setSelectionGeneration] = useState(0);
-  const [authorizedSelectionGeneration, setAuthorizedSelectionGeneration] = useState<number | null>(null);
   const panelRef = useRef<HTMLElement>(null);
-  const libraryOpeningRef = useRef<{
-    profileId: string;
-    lessonId: number;
-    openingId: string;
-    status: 'ready' | 'recording' | 'recorded' | 'failed';
-  } | null>(null);
   const [modulePage, setModulePage] = useState<ModulePage>(readModulePage);
   const {
     lessonId: libraryDetailId,
     openLesson: openLibraryLesson,
     closeLesson: closeLibraryLesson,
+    dismissLesson: dismissLibraryLesson,
     clearLesson: clearLibraryLesson,
   } = useLibraryNavigation();
   const { theme, selectTheme } = useThemePreference();
@@ -359,8 +274,6 @@ export function LessonsLearnedScreen() {
   const pendingHistoryDeltaRef = useRef<number | null>(null);
   const isRevertingHistoryRef = useRef(false);
   const isResumingHistoryRef = useRef(false);
-  const selectedProfileIdRef = useRef(selectedProfileId);
-  const selectionGenerationRef = useRef(selectionGeneration);
   const pendingCreateProfilesRef = useRef(new Set<string>());
   const [pendingCreateProfiles, setPendingCreateProfiles] = useState<Set<string>>(new Set());
   const pendingVoteIdsRef = useRef(new Set<number>());
@@ -407,49 +320,26 @@ export function LessonsLearnedScreen() {
   const registerNavigationCloseRequest = useCallback((requestClose: (() => boolean) | null) => {
     navigationCloseRequestRef.current = requestClose;
   }, []);
-  const homeQuery = useQuery({
-    queryKey: ['lessons-learned-home', selectedProfileId, selectionGeneration],
-    queryFn: async () => {
-      const profileId = selectedProfileId ?? '';
-      const requestGeneration = selectionGeneration;
-      const isCurrentSelection = () => (
-        selectedProfileIdRef.current === profileId
-        && selectionGenerationRef.current === requestGeneration
-      );
-      try {
-        const home = await getHome(profileId);
-        if (isCurrentSelection()) setAuthorizedSelectionGeneration(requestGeneration);
-        return home;
-      } catch (error) {
-        if (isDefinitiveAccessError(error) && isCurrentSelection()) {
-          setAuthorizedSelectionGeneration(null);
-        }
-        throw error;
-      }
-    },
-    enabled: selectedProfileId !== null,
-    networkMode: 'always',
-    retry: false,
-    refetchOnWindowFocus: true,
-  });
-  const errorCode = homeQuery.isError ? getApiErrorCode(homeQuery.error) : null;
-  const errorStatus = homeQuery.isError ? getApiErrorStatus(homeQuery.error) : null;
-  const isAuthenticationRequired = homeQuery.isError && (
-    errorCode === 'AUTHENTICATION_REQUIRED' || errorStatus === 401
-  );
-  const isAccessDenied = homeQuery.isError && !isAuthenticationRequired && (
-    errorCode === 'ACCESS_DENIED' || errorStatus === 403
-  );
-  const isAccessConfigurationError = homeQuery.isError && (
-    errorCode === 'ACCESS_CONFIGURATION_ERROR' || errorCode === 'LOCAL_AUTH_DISABLED'
-  );
-  const isDefinitiveAccessFailure = isAuthenticationRequired || isAccessDenied || isAccessConfigurationError;
-  const hasUsableHomeData = homeQuery.data !== undefined
-    && authorizedSelectionGeneration === selectionGeneration
-    && !isDefinitiveAccessFailure;
-  const isHomePage = selectedProfileId !== null && hasUsableHomeData;
-  const hasHomeOverview = homeQuery.data?.primaryAction != null;
-  const isPmo = homeQuery.data?.profile.role === 'LESSONS_MODERATOR';
+  const endProfileInteraction = useCallback((reason: InteractionEndReason) => {
+    clearOpenOverlays();
+    if (reason === 'profile-changed') {
+      dismissLibraryLesson();
+      setVoteError(null);
+      resetSubmissionFilters(modulePage);
+    }
+  }, [clearOpenOverlays, dismissLibraryLesson, modulePage, resetSubmissionFilters]);
+  const {
+    selectedProfileId,
+    getSelectedProfileId,
+    clearSelectedProfile,
+    home,
+    accessStatus,
+    recheckAccess,
+    recheckAccessOnError,
+  } = useLocalProfileSelection(endProfileInteraction);
+  const isHomePage = home !== undefined;
+  const hasHomeOverview = home?.primaryAction != null;
+  const isPmo = home?.profile.role === 'LESSONS_MODERATOR';
   const isPmoDraftsPage = modulePage === 'pmo-drafts' && isPmo;
   const isPmoEvaluationQueuePage = modulePage === 'evaluation-queue' && isPmo;
   const isPmoDashboardPage = modulePage === 'pmo-dashboard' && isPmo;
@@ -461,7 +351,6 @@ export function LessonsLearnedScreen() {
   const isContributorProfilePage = isProfilesPage && selectedContributorProfileId !== null;
   const isProfileSearchPage = isProfilesPage && selectedContributorProfileId === null;
   const isSubmissionTablePage = isPmoReviewListPage || isLibraryPage;
-  const showHomeRecheckError = isHomePage && homeQuery.isError && !homeQuery.isFetching;
   const isEditorOpen = isCreateFormOpen || selectedDraft !== null;
   const commonSubmissionFilters: PmoEvaluationQueueFilters = {
     ...(submissionSearch.trim() ? { search: submissionSearch.trim() } : {}),
@@ -677,35 +566,18 @@ export function LessonsLearnedScreen() {
       || (modulePage === 'home' && (isPmo || confirmedSubmissionDetails.authorId === selectedProfileId))
     )
   );
-  const { mutate: recordView } = useMutation({
-    mutationFn: ({ profileId, lessonId, openingId }: { profileId: string; lessonId: number; openingId: string }) =>
-      recordLibraryView(profileId, lessonId, { openingId }),
-    retry: 2,
-    networkMode: 'always',
-    onSuccess: (result, opening) => {
-      const currentOpening = libraryOpeningRef.current;
-      if (currentOpening?.openingId === opening.openingId) currentOpening.status = 'recorded';
-      queryClient.setQueriesData<InfiniteData<LibraryPage | LibraryLesson[]>>(
-        { queryKey: ['lessons-learned-library', opening.profileId] },
-        (current) => current ? {
-          ...current,
-          pages: current.pages.map((page) => updateLibraryPageViewCount(page, opening.lessonId, result.viewCount)),
-        } : current,
-      );
-      queryClient.setQueriesData<InfiniteData<ContributorProfileResponse>>(
-        { queryKey: ['lessons-learned-contributor-profile', opening.profileId] },
-        (current) => updateProfileLesson(current, opening.lessonId, (item) => ({
-          ...item, viewCount: Math.max(item.viewCount, result.viewCount),
-        })),
-      );
-      void queryClient.invalidateQueries({ queryKey: ['lessons-learned-profiles', opening.profileId] });
-      void queryClient.invalidateQueries({ queryKey: ['lessons-learned-rankings', opening.profileId] });
-    },
-    onError: (_error, opening) => {
-      const currentOpening = libraryOpeningRef.current;
-      if (currentOpening?.openingId === opening.openingId) currentOpening.status = 'failed';
-    },
-  });
+  const { beginOpening, cancelPendingOpening } = useLessonViewTracking(
+    isHomePage ? selectedProfileId : null,
+    isLibraryDetailOpen && !isLegacyLibrary ? {
+      surface: 'library',
+      lessonId: libraryDetailId,
+      confirmedLesson: confirmedLibraryDetails,
+    } : isProfilePublishedDetailOpen ? {
+      surface: 'contributor-profile',
+      lessonId: selectedProfilePublishedLessonId,
+      confirmedLesson: confirmedProfilePublishedDetails,
+    } : null,
+  );
   const handlePublicCommentCountChange = useCallback((lessonId: number, commentCount: number) => {
     if (!selectedProfileId) return;
     queryClient.setQueriesData<InfiniteData<LibraryPage | LibraryLesson[]>>(
@@ -716,58 +588,24 @@ export function LessonsLearnedScreen() {
       } : current,
     );
   }, [queryClient, selectedProfileId]);
-  useEffect(() => {
-    if (!isHomePage || !isLibraryPage || isLegacyLibrary || !libraryDetailsQuery.isSuccess || !selectedProfileId || libraryDetailId === null) return;
-    const opening = libraryOpeningRef.current;
-    if (!opening || opening.status !== 'ready' || opening.lessonId !== libraryDetailId || opening.profileId !== selectedProfileId) return;
-    if (libraryDetailsQuery.isFetching || libraryDetailsQuery.data?.id !== libraryDetailId) return;
-
-    opening.status = 'recording';
-    recordView({
-      profileId: opening.profileId,
-      lessonId: opening.lessonId,
-      openingId: opening.openingId,
-    });
-  }, [isHomePage, isLibraryPage, isLegacyLibrary, libraryDetailId, libraryDetailsQuery.data, libraryDetailsQuery.isFetching, libraryDetailsQuery.isSuccess, recordView, selectedProfileId]);
-  useEffect(() => {
-    if (!isHomePage || !isContributorProfilePage || !profilePublishedDetailsQuery.isSuccess || !selectedProfileId || selectedProfilePublishedLessonId === null) return;
-    const opening = libraryOpeningRef.current;
-    if (!opening || opening.status !== 'ready' || opening.lessonId !== selectedProfilePublishedLessonId || opening.profileId !== selectedProfileId) return;
-    if (profilePublishedDetailsQuery.isFetching || profilePublishedDetailsQuery.data?.id !== selectedProfilePublishedLessonId) return;
-
-    opening.status = 'recording';
-    recordView({
-      profileId: opening.profileId,
-      lessonId: opening.lessonId,
-      openingId: opening.openingId,
-    });
-  }, [isHomePage, isContributorProfilePage, profilePublishedDetailsQuery.data, profilePublishedDetailsQuery.isFetching, profilePublishedDetailsQuery.isSuccess, recordView, selectedProfileId, selectedProfilePublishedLessonId]);
-  useEffect(() => {
-    const opening = libraryOpeningRef.current;
-    const activeDetailId = isLibraryPage ? libraryDetailId : isContributorProfilePage ? selectedProfilePublishedLessonId : null;
-    if (opening?.status === 'ready' && activeDetailId !== opening.lessonId) opening.status = 'failed';
-  }, [isContributorProfilePage, isLibraryPage, libraryDetailId, selectedProfilePublishedLessonId]);
-  const refetchHomeAccess = homeQuery.refetch;
   const previousPageRef = useRef(modulePage);
   useEffect(() => {
     if (modulePage === 'home' && previousPageRef.current !== 'home' && isHomePage) {
-      void refetchHomeAccess();
+      recheckAccess();
     }
     previousPageRef.current = modulePage;
-  }, [modulePage, isHomePage, refetchHomeAccess]);
+  }, [modulePage, isHomePage, recheckAccess]);
   useEffect(() => {
-    if (
-      (libraryDetailsQuery.isError && isDefinitiveAccessError(libraryDetailsQuery.error))
-      || (submissionDetailsQuery.isError && isDefinitiveAccessError(submissionDetailsQuery.error))
-    ) {
-      void refetchHomeAccess();
-    }
+    recheckAccessOnError(
+      libraryDetailsQuery.isError ? libraryDetailsQuery.error : null,
+      submissionDetailsQuery.isError ? submissionDetailsQuery.error : null,
+    );
   }, [
     libraryDetailsQuery.error,
     libraryDetailsQuery.isError,
     submissionDetailsQuery.error,
     submissionDetailsQuery.isError,
-    refetchHomeAccess,
+    recheckAccessOnError,
   ]);
   function markCreatePending(profileId: string, isPending: boolean) {
     const nextPendingProfiles = new Set(pendingCreateProfilesRef.current);
@@ -812,7 +650,7 @@ export function LessonsLearnedScreen() {
   }
 
   async function toggleLessonVote(lesson: { id: number; votesCount: number; hasVoted: boolean }) {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId || pendingVoteIdsRef.current.has(lesson.id)) return;
 
     const previous = { votesCount: lesson.votesCount, hasVoted: lesson.hasVoted };
@@ -844,7 +682,7 @@ export function LessonsLearnedScreen() {
       ]);
     } catch {
       applyVoteToCaches(profileId, lesson.id, previous.votesCount, previous.hasVoted);
-      if (selectedProfileIdRef.current === profileId) {
+      if (getSelectedProfileId() === profileId) {
         setVoteError({
           lessonId: lesson.id,
           message: 'Your vote could not be updated. Please try again.',
@@ -854,18 +692,6 @@ export function LessonsLearnedScreen() {
       markVotePending(lesson.id, false);
     }
   }
-
-  const updateSelectedProfile = useCallback((profileId: string | null) => {
-    if (profileId === selectedProfileIdRef.current) return;
-    selectedProfileIdRef.current = profileId;
-    selectionGenerationRef.current += 1;
-    setSelectionGeneration(selectionGenerationRef.current);
-    setSelectedProfileId(profileId);
-    setAuthorizedSelectionGeneration(null);
-    clearOpenOverlays();
-    setVoteError(null);
-    resetSubmissionFilters(modulePage);
-  }, [clearOpenOverlays, modulePage, resetSubmissionFilters]);
 
   const isSavingCurrentDraft = selectedProfileId !== null && pendingCreateProfiles.has(selectedProfileId);
   const projectsQuery = useQuery({
@@ -907,12 +733,7 @@ export function LessonsLearnedScreen() {
 
   function openLibraryLessonFromList(lessonId: number) {
     if (!selectedProfileId) return;
-    libraryOpeningRef.current = isLegacyLibrary ? null : {
-      profileId: selectedProfileId,
-      lessonId,
-      openingId: createLibraryOpeningId(),
-      status: 'ready',
-    };
+    if (!isLegacyLibrary) beginOpening('library', lessonId);
     openLibraryLesson(lessonId);
   }
 
@@ -945,16 +766,8 @@ export function LessonsLearnedScreen() {
     ]);
   }
 
-  useEffect(() => {
-    if (!isDefinitiveAccessFailure) return;
-    // An access revocation must discard the private editor state before a later recheck can restore the page.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAuthorizedSelectionGeneration(null);
-    clearOpenOverlays();
-  }, [clearOpenOverlays, isDefinitiveAccessFailure]);
-
   async function saveDraftFields(input: UpdateLessonDraftBody, draftId: number | null): Promise<LessonDraft> {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId) throw new Error('Select a profile before saving a lesson.');
     if (draftId === null) {
       if (pendingCreateProfilesRef.current.has(profileId)) throw new Error('A draft save is already in progress.');
@@ -987,10 +800,10 @@ export function LessonsLearnedScreen() {
   }
 
   async function reloadDraftFields(draftId: number): Promise<LessonDraft> {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId) throw new Error('Select a profile before reloading a lesson.');
     const isEvaluationEdit = selectedDraft?.id === draftId && selectedDraft.status === 'PMOEvaluation';
-    const drafts = homeQuery.data?.profile.role === 'LESSONS_MODERATOR'
+    const drafts = isPmo
       ? isEvaluationEdit ? await getPmoEvaluationQueue(profileId) : await getPmoDrafts(profileId, { status: 'Open' })
       : await getMyOpenDrafts(profileId);
     const latest = drafts.find((draft) => draft.id === draftId);
@@ -1002,7 +815,7 @@ export function LessonsLearnedScreen() {
   }
 
   async function submitDraft(input: SubmitLessonBody, draftId: number): Promise<LessonDraft> {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId) throw new Error('Select a profile before submitting a lesson.');
     const submitted = await submitLessonRequest(profileId, draftId, input);
     await refreshSubmissionQueries(profileId, draftId);
@@ -1010,7 +823,7 @@ export function LessonsLearnedScreen() {
   }
 
   async function cancelDraft(draftId: number, input: CancelLessonBody): Promise<LessonDraft> {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId) throw new Error('Select a profile before cancelling a lesson.');
     const cancelled = await cancelLessonRequest(profileId, draftId, input);
     await refreshSubmissionQueries(profileId, draftId);
@@ -1018,7 +831,7 @@ export function LessonsLearnedScreen() {
   }
 
   async function returnLesson(draftId: number, input: ReturnLessonBody): Promise<LessonDraft> {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId) throw new Error('Select a profile before returning a lesson.');
     const returned = await returnLessonRequest(profileId, draftId, input);
     await refreshSubmissionQueries(profileId, draftId);
@@ -1026,13 +839,13 @@ export function LessonsLearnedScreen() {
   }
 
   async function reloadLessonDetails(lessonId: number): Promise<LessonDetails> {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId) throw new Error('Select a profile before reloading a lesson.');
     return getLessonDetails(profileId, lessonId);
   }
 
   async function approveDraft(draftId: number, input: ApproveLessonBody): Promise<LessonDraft> {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId) throw new Error('Select a profile before approving a lesson.');
     const approved = await approveLessonRequest(profileId, draftId, input);
     await refreshSubmissionQueries(profileId, draftId);
@@ -1042,7 +855,7 @@ export function LessonsLearnedScreen() {
   }
 
   async function closeDraft(draftId: number, input: CloseLessonBody): Promise<LessonDraft> {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId) throw new Error('Select a profile before closing a lesson.');
     const closed = await closeLessonRequest(profileId, draftId, input);
     await refreshSubmissionQueries(profileId, draftId);
@@ -1054,7 +867,7 @@ export function LessonsLearnedScreen() {
   }
 
   async function reloadApprovalLesson(lessonId: number): Promise<LessonDetails> {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId) throw new Error('Select a profile before reloading a lesson.');
     const latest = await getLessonDetails(profileId, lessonId);
     queryClient.setQueryData(['lessons-learned-submission-details', profileId, lessonId], latest);
@@ -1064,7 +877,7 @@ export function LessonsLearnedScreen() {
 
 
   async function reloadRejectionEvaluation(lessonId: number): Promise<LessonDraft> {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId) throw new Error('Select a profile before reloading an evaluation.');
     const latest = await getLessonDetails(profileId, lessonId);
     if (latest.status !== 'PMOEvaluation') {
@@ -1076,7 +889,7 @@ export function LessonsLearnedScreen() {
   }
 
   async function rejectEvaluation(lessonId: number, input: RejectLessonBody): Promise<LessonDraft> {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId) throw new Error('Select a profile before rejecting a lesson.');
     const rejected = await rejectLessonRequest(profileId, lessonId, input);
     await refreshSubmissionQueries(profileId, lessonId);
@@ -1084,7 +897,7 @@ export function LessonsLearnedScreen() {
   }
 
   async function reloadClosureLesson(lessonId: number): Promise<LessonDetails> {
-    const profileId = selectedProfileIdRef.current;
+    const profileId = getSelectedProfileId();
     if (!profileId) throw new Error('Select a profile before reloading a lesson.');
     const latest = isLibraryPage
       ? isLegacyLibrary
@@ -1102,25 +915,6 @@ export function LessonsLearnedScreen() {
     setSelectedClosureDraft(null);
     return latest;
   }
-
-  useEffect(() => {
-    function handleStorageChange(event: StorageEvent) {
-      if (event.key === null || event.key === LOCAL_USER_STORAGE_KEY) {
-        updateSelectedProfile(readSelectedProfileId());
-      }
-    }
-
-    function restoreSelectedProfile() {
-      updateSelectedProfile(readSelectedProfileId());
-    }
-
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('pageshow', restoreSelectedProfile);
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('pageshow', restoreSelectedProfile);
-    };
-  }, [updateSelectedProfile]);
 
   useEffect(() => {
     const initialPosition = getHistoryPosition(window.history.state);
@@ -1213,18 +1007,12 @@ export function LessonsLearnedScreen() {
 
   function openLessonFromContributorProfile(lesson: LibraryLesson) {
     if (!selectedProfileId) return;
-    const isPublished = (lesson.status === 'Approved' || lesson.status === 'Closed') && Boolean(lesson.approvedAt);
-    if (isPublished) {
-      libraryOpeningRef.current = {
-        profileId: selectedProfileId,
-        lessonId: lesson.id,
-        openingId: createLibraryOpeningId(),
-        status: 'ready',
-      };
+    if (isPublishedLibraryLesson(lesson)) {
+      beginOpening('contributor-profile', lesson.id);
       setSelectedSubmissionId(null);
       setSelectedProfilePublishedLessonId(lesson.id);
     } else {
-      libraryOpeningRef.current = null;
+      cancelPendingOpening();
       setSelectedProfilePublishedLessonId(null);
       setSelectedSubmissionId(lesson.id);
     }
@@ -1237,12 +1025,7 @@ export function LessonsLearnedScreen() {
   }
 
   function changeProfile() {
-    try {
-      window.localStorage.removeItem(LOCAL_USER_STORAGE_KEY);
-    } catch {
-      // The Hub still presents profile selection when browser storage is unavailable.
-    }
-    updateSelectedProfile(null);
+    clearSelectedProfile();
     window.location.assign('/');
   }
 
@@ -1276,8 +1059,7 @@ export function LessonsLearnedScreen() {
   return (
     <div className={isHomePage ? 'app-shell workspace-shell' : 'app-shell'}>
       <HubHeader
-        profileName={(authorizedSelectionGeneration === selectionGeneration ? homeQuery.data?.profile.displayName : undefined)
-          ?? selectedProfileId ?? undefined}
+        profileName={home?.profile.displayName ?? selectedProfileId ?? undefined}
         onChangeProfile={selectedProfileId ? changeProfile : undefined}
         theme={theme}
         onThemeChange={selectTheme}
@@ -1298,7 +1080,7 @@ export function LessonsLearnedScreen() {
             open={isModuleMenuOpen}
             onToggle={() => setIsModuleMenuOpen((open) => !open)}
           >
-            {homeQuery.data.navigation.map((destination) => (
+            {home.navigation.map((destination) => (
               <a
                 key={destination.id}
                 href="/lessons-learned/"
@@ -1385,7 +1167,7 @@ export function LessonsLearnedScreen() {
           </>
         )}
 
-        {selectedProfileId && homeQuery.isFetching && !hasUsableHomeData && (
+        {selectedProfileId && accessStatus === 'checking' && (
           <>
             <h1 id="page-title">Access check</h1>
             <div className="api-status" role="status" aria-live="polite">
@@ -1395,19 +1177,19 @@ export function LessonsLearnedScreen() {
           </>
         )}
 
-        {selectedProfileId && !homeQuery.isFetching && isAuthenticationRequired && (
+        {selectedProfileId && accessStatus === 'authentication-required' && (
           <div className="api-status unavailable" role="alert" aria-live="assertive">
             <span className="status-indicator is-unavailable" aria-hidden="true" />
             <div>
               <h1 id="page-title">Authentication required</h1>
               <p>Your session is no longer authorized to access Lessons Learned. Retry the check or select a local profile.</p>
-              <button className="retry-button" type="button" onClick={() => void homeQuery.refetch()}>Retry</button>
+              <button className="retry-button" type="button" onClick={recheckAccess}>Retry</button>
               <a className="primary-link" href="/">Select a local profile</a>
             </div>
           </div>
         )}
 
-        {selectedProfileId && !homeQuery.isFetching && isAccessDenied && (
+        {selectedProfileId && accessStatus === 'access-denied' && (
           <div className="api-status unavailable" role="alert" aria-live="assertive">
             <span className="status-indicator is-unavailable" aria-hidden="true" />
             <div>
@@ -1418,7 +1200,7 @@ export function LessonsLearnedScreen() {
           </div>
         )}
 
-        {selectedProfileId && !homeQuery.isFetching && isAccessConfigurationError && (
+        {selectedProfileId && accessStatus === 'configuration-error' && (
           <div className="api-status unavailable" role="alert" aria-live="assertive">
             <span className="status-indicator is-unavailable" aria-hidden="true" />
             <div>
@@ -1429,25 +1211,25 @@ export function LessonsLearnedScreen() {
           </div>
         )}
 
-        {selectedProfileId && !homeQuery.isFetching && homeQuery.isError && !hasUsableHomeData && !isDefinitiveAccessFailure && (
+        {selectedProfileId && accessStatus === 'temporarily-unavailable' && (
             <div className="api-status unavailable" role="alert" aria-live="assertive">
               <span className="status-indicator is-unavailable" aria-hidden="true" />
               <div>
                 <h1 id="page-title">Access check temporarily unavailable</h1>
                 <p>The API could not complete the access check. Retry to continue.</p>
-                <button className="retry-button" type="button" onClick={() => void homeQuery.refetch()}>
+                <button className="retry-button" type="button" onClick={recheckAccess}>
                   Retry
                 </button>
               </div>
             </div>
           )}
 
-        {showHomeRecheckError && !isEditorOpen && (
+        {accessStatus === 'recheck-unavailable' && !isEditorOpen && (
           <div className="api-status unavailable" role="alert" aria-label="Home access check temporarily unavailable">
             <span className="status-indicator is-unavailable" aria-hidden="true" />
             <div>
               <p>The Home access recheck is temporarily unavailable. Your loaded page remains available; retry to verify access.</p>
-              <button className="retry-button" type="button" onClick={() => void homeQuery.refetch()}>Retry access check</button>
+              <button className="retry-button" type="button" onClick={recheckAccess}>Retry access check</button>
             </div>
           </div>
         )}
@@ -1481,7 +1263,7 @@ export function LessonsLearnedScreen() {
                 </div>
               ) : modulePage === 'home' || (!isPmo && modulePage === 'pmo-drafts') ? (
                 <HomeView
-                  home={homeQuery.data}
+                  home={home}
                   showOverview={hasHomeOverview}
                   theme={theme}
                   onThemeChange={selectTheme}
@@ -2021,8 +1803,8 @@ export function LessonsLearnedScreen() {
                       projectsLoading={projectsQuery.isFetching}
                       projectsError={projectsQuery.isError && !projectsQuery.isFetching}
                       onRetryProjects={() => void projectsQuery.refetch()}
-                      homeRecheckError={showHomeRecheckError}
-                      onRetryHomeCheck={() => void homeQuery.refetch()}
+                      homeRecheckError={accessStatus === 'recheck-unavailable'}
+                      onRetryHomeCheck={recheckAccess}
                       onSave={saveDraftFields}
                       onSubmit={submitDraft}
                       onReload={reloadDraftFields}
@@ -2108,6 +1890,7 @@ export function LessonsLearnedScreen() {
                   canClose={Boolean(isPmo)}
                   onCloseLesson={(lesson) => setSelectedClosureDraft(lesson)}
                   onClose={() => {
+                    cancelPendingOpening();
                     if (isLibraryPage && libraryDetailId !== null) closeLibraryLesson();
                     else if (isProfilePublishedDetailOpen) setSelectedProfilePublishedLessonId(null);
                     else setSelectedSubmissionId(null);

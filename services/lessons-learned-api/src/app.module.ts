@@ -4,6 +4,8 @@ import { LessonsLearnedDatabaseModule } from './database/database.module';
 import { HealthController } from './health.controller';
 import { HomeController } from './home.controller';
 import { HomeService } from './home.service';
+import { ContributionQueriesService } from './lessons/contribution-queries.service';
+import { LessonLifecycleService } from './lessons/lesson-lifecycle.service';
 import { LessonCommentsService } from './lessons/lesson-comments.service';
 import { LessonNotificationStore } from './lessons/lesson-notification-store';
 import { LessonNotificationsController } from './lessons/lesson-notifications.controller';
@@ -32,6 +34,8 @@ import { LocalAccessService } from './local-access.service';
     LessonNotificationStore,
     LessonNotificationsService,
     LessonsService,
+    LessonLifecycleService,
+    ContributionQueriesService,
     LessonCommentsService,
     ProjectCatalogService,
   ],

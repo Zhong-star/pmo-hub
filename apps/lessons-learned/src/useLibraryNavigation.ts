@@ -48,21 +48,27 @@ export function useLibraryNavigation() {
     setLessonId(nextLessonId);
   }, []);
 
+  const dismissLesson = useCallback(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('page') === 'library' && url.searchParams.has(LIBRARY_DETAIL_PARAMETER)) {
+      const state = { ...window.history.state };
+      delete state[LIBRARY_LIST_ORIGIN_KEY];
+      url.searchParams.delete(LIBRARY_DETAIL_PARAMETER);
+      window.history.replaceState(state, '', toRelativeUrl(url));
+    }
+    setLessonId(null);
+  }, []);
+
   const closeLesson = useCallback(() => {
     const state = window.history.state;
     if (typeof state === 'object' && state !== null && state[LIBRARY_LIST_ORIGIN_KEY] === true) {
       window.history.back();
       return;
     }
-
-    const url = new URL(window.location.href);
-    url.searchParams.set('page', 'library');
-    url.searchParams.delete(LIBRARY_DETAIL_PARAMETER);
-    window.history.replaceState(state, '', toRelativeUrl(url));
-    setLessonId(null);
-  }, []);
+    dismissLesson();
+  }, [dismissLesson]);
 
   const clearLesson = useCallback(() => setLessonId(null), []);
 
-  return { lessonId, openLesson, closeLesson, clearLesson };
+  return { lessonId, openLesson, closeLesson, dismissLesson, clearLesson };
 }

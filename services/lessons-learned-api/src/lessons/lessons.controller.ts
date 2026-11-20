@@ -59,6 +59,7 @@ import {
   LessonCommentThreadResponse,
 } from './lesson-comment-response.dto';
 import { LessonCommentsService } from './lesson-comments.service';
+import { LessonLifecycleService } from './lesson-lifecycle.service';
 import { LessonsService } from './lessons.service';
 import { LessonProjectResponse } from './project-response.dto';
 import { SubmitLessonRequest } from './submit-lesson-request.dto';
@@ -97,6 +98,7 @@ import { LESSON_STATUSES, LESSON_TYPES } from './lesson-domain.constants';
 export class LessonsController {
   constructor(
     @Inject(LessonsService) private readonly lessons: LessonsService,
+    @Inject(LessonLifecycleService) private readonly lifecycle: LessonLifecycleService,
     @Inject(LessonCommentsService) private readonly comments: LessonCommentsService,
   ) {}
 
@@ -432,7 +434,7 @@ export class LessonsController {
     }))
     input: SubmitLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.submitOwnOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
+    return this.lifecycle.submitOwnOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 
   @Post(':id/return')
@@ -475,7 +477,7 @@ export class LessonsController {
     }))
     input: ReturnLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.returnForChanges(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
+    return this.lifecycle.returnForChanges(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 
   @Post(':id/cancel')
@@ -518,7 +520,7 @@ export class LessonsController {
     }))
     input: CancelLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.cancelOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
+    return this.lifecycle.cancelOpenDraft(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 
   @Post(':id/approve')
@@ -543,7 +545,7 @@ export class LessonsController {
     @Body(new ValidationPipe({ transform: true, whitelist: true, expectedType: ApproveLessonRequest }))
     input: ApproveLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.approveEvaluatedLesson(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
+    return this.lifecycle.approveEvaluatedLesson(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 
   @Post(':id/reject')
@@ -586,7 +588,7 @@ export class LessonsController {
     }))
     input: RejectLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.rejectEvaluation(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
+    return this.lifecycle.rejectEvaluation(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 
   @Post(':id/close')
@@ -611,7 +613,7 @@ export class LessonsController {
     @Body(new ValidationPipe({ transform: true, whitelist: true, expectedType: CloseLessonRequest }))
     input: CloseLessonRequest,
   ): Promise<LessonDraftResponse> {
-    return this.lessons.closeApprovedLesson(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
+    return this.lifecycle.closeApprovedLesson(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
   }
 
   @Put(':id/vote')

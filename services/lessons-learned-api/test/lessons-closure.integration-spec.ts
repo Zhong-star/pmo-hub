@@ -282,6 +282,14 @@ describe('Lessons Learned closure', () => {
     expect(decisions.map(({ status }) => status).sort()).toEqual([200, 409]);
     const conflict = decisions.find(({ status }) => status === 409);
     expect(conflict?.body.code).toBe('LESSON_NOT_APPROVED');
+
+    const staleConditional = await server.post(closePath)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .set('If-Match', approved.headers.etag)
+      .send({})
+      .expect(412);
+    expect(staleConditional.body.code).toBe('PRECONDITION_FAILED');
+
     expect(await dataSource.query('SELECT status, version, approved_at FROM lessons WHERE id = $1', [created.body.id]))
       .toEqual([{
         status: 'Closed',

@@ -325,6 +325,43 @@ describe('Profile Search and Contributor Profile screens', () => {
     expect(await screen.findByRole('heading', { name: 'Ana Costa' })).toBeInTheDocument();
   });
 
+  it('refreshes a filtered Contributor Profile total after a view of a lesson outside the filter', async () => {
+    const user = userEvent.setup();
+    let resolveView!: (result: { viewCount: number }) => void;
+    let viewsReceivedCount = 7;
+    vi.mocked(recordLibraryView).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveView = resolve;
+    }));
+    vi.mocked(getContributorProfile).mockImplementation(async (_viewerId, _authorId, filters) =>
+      contributorProfileResponse({
+        profile: { ...profilesList[0]!, viewsReceivedCount },
+        items: filters?.lessonType === 'Communication' ? [] : [publishedLesson()],
+      }),
+    );
+    renderScreen('local-contributor', '/lessons-learned/?page=library');
+
+    await user.click(await screen.findByRole('link', { name: 'View Published Release Guide' }));
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(recordLibraryView).toHaveBeenCalledTimes(1));
+    await user.click(within(dialog).getByRole('button', { name: 'View profile of Ana Costa' }));
+    await screen.findByRole('heading', { name: 'Ana Costa' });
+    await user.selectOptions(screen.getByLabelText('Lesson type'), 'Communication');
+    await waitFor(() => expect(getContributorProfile).toHaveBeenLastCalledWith(
+      'local-contributor', 'user-ana', { lessonType: 'Communication' },
+    ));
+    const views = () => within(screen.getByText('Views received').closest('div')!);
+    expect(await views().findByText('7', { exact: true })).toBeVisible();
+    expect(screen.queryByText('Published Release Guide')).not.toBeInTheDocument();
+
+    await act(async () => {
+      viewsReceivedCount = 8;
+      resolveView({ viewCount: 6 });
+    });
+
+    expect(await views().findByText('8', { exact: true })).toBeVisible();
+    expect(screen.queryByText('Published Release Guide')).not.toBeInTheDocument();
+  });
+
   it('closes an Approved lesson opened from Contributor Profile and reloads Contributor Profile detail cache on version conflict', async () => {
     const user = userEvent.setup();
     const approved = publishedLesson({ id: 10, title: 'Published Release Guide', status: 'Approved', version: 2 });

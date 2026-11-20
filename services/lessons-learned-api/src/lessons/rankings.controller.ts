@@ -27,7 +27,7 @@ import {
   RankedLessonResponse,
   RankingsResponse,
 } from './lesson-response.dto';
-import { LessonsService } from './lessons.service';
+import { ContributionQueriesService } from './contribution-queries.service';
 
 @ApiTags('Rankings')
 @ApiExtraModels(
@@ -41,7 +41,7 @@ import { LessonsService } from './lessons.service';
 @UseFilters(LocalAccessProblemFilter, LessonProblemFilter)
 @UseInterceptors(LessonHttpContract)
 export class RankingsController {
-  constructor(@Inject(LessonsService) private readonly lessons: LessonsService) {}
+  constructor(@Inject(ContributionQueriesService) private readonly contributions: ContributionQueriesService) {}
 
   @Get()
   @Header('Cache-Control', 'no-store')
@@ -54,6 +54,6 @@ export class RankingsController {
   getRankings(
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
   ): Promise<RankingsResponse> {
-    return this.lessons.getRankings(typeof header === 'string' ? header : undefined);
+    return this.contributions.getRankings(typeof header === 'string' ? header : undefined);
   }
 }
