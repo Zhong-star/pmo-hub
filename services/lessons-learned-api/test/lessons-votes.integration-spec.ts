@@ -20,6 +20,7 @@ describe('Lessons Learned votes', () => {
   let profilesPath: string;
   const previousProfilesFile = process.env.LESSONS_LEARNED_LOCAL_USERS_FILE;
   const previousLocalAuthEnabled = process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED;
+  const previousTokenFormat = process.env.LESSONS_LEARNED_TOKEN_FORMAT;
 
   beforeAll(async () => {
     temporaryDirectory = mkdtempSync(join(tmpdir(), 'pmo-hub-lessons-votes-'));
@@ -31,6 +32,7 @@ describe('Lessons Learned votes', () => {
     ]), 'utf8');
     process.env.LESSONS_LEARNED_LOCAL_USERS_FILE = profilesPath;
     process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED = 'true';
+    process.env.LESSONS_LEARNED_TOKEN_FORMAT = 'representation';
 
     container = await new PostgreSqlContainer('postgres:17-alpine')
       .withDatabase('lessons_learned_votes_test')
@@ -58,6 +60,8 @@ describe('Lessons Learned votes', () => {
       else process.env.LESSONS_LEARNED_LOCAL_USERS_FILE = previousProfilesFile;
       if (previousLocalAuthEnabled === undefined) delete process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED;
       else process.env.LESSONS_LEARNED_LOCAL_AUTH_ENABLED = previousLocalAuthEnabled;
+      if (previousTokenFormat === undefined) delete process.env.LESSONS_LEARNED_TOKEN_FORMAT;
+      else process.env.LESSONS_LEARNED_TOKEN_FORMAT = previousTokenFormat;
     }
   }, 120_000);
 
@@ -111,6 +115,24 @@ describe('Lessons Learned votes', () => {
 
     return { id: approved.body.id, version: approved.body.version, approvedAt: approved.body.approvedAt };
   }
+
+  it('closes a voted lesson using the current ETag from its Library Detail', async () => {
+    const server = request(app!.getHttpServer());
+    const lesson = await createPublishedLesson('Voted lesson ready to close');
+    const collection = '/api/lessons-learned/v1/lessons';
+    const pmo = { 'X-PMO-Local-User-ID': 'local-pmo', Accept: 'application/json, application/problem+json' };
+    const detailPath = `${collection}/library/${lesson.id}`;
+    const closePath = `${collection}/${lesson.id}/close`;
+    const beforeVote = await server.get(detailPath).set(pmo).expect(200);
+
+    await server.put(`${collection}/${lesson.id}/vote`).set(pmo).expect(200);
+    const current = await server.get(detailPath).set(pmo).expect(200);
+    expect(current.body).toMatchObject({ votesCount: 1, hasVoted: true, version: lesson.version });
+    expect(current.headers.etag).toMatch(/-[a-f0-9]{64}"$/);
+    await server.post(closePath).set(pmo).set('If-Match', beforeVote.headers.etag).send({}).expect(412);
+    await server.post(closePath).set(pmo).set('If-Match', current.headers.etag).send({}).expect(200)
+      .expect(({ body }) => expect(body.status).toBe('Closed'));
+  });
 
   it('lets Contributor and PMO vote and remove their own vote on Approved and Closed lessons with consistent Library and Detail counts', async () => {
     const server = request(app!.getHttpServer());

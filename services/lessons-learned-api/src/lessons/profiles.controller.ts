@@ -21,6 +21,7 @@ import {
   ApiResponse,
   ApiSecurity,
   ApiTags,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import {
   LocalAccessProblem,
@@ -30,8 +31,10 @@ import {
 } from '../local-access-problem';
 import { LESSON_TYPES } from './lesson-domain.constants';
 import { LessonHttpContract, LessonProblem, LessonProblemFilter } from './lesson-http-contract';
+import { readPageRequest } from './lesson-pagination';
 import {
   ContributorProfileResponse,
+  ProfileSearchPage,
   LessonLibraryResponse,
   ProfileSummaryResponse,
 } from './lesson-response.dto';
@@ -47,6 +50,7 @@ import { LessonsService } from './lessons.service';
   LocalAccessProblem,
   LessonProblem,
   ProfileSummaryResponse,
+  ProfileSearchPage,
   ContributorProfileResponse,
   LessonLibraryResponse,
 )
@@ -66,7 +70,13 @@ export class ProfilesController {
     type: String,
     description: 'Case- and accent-insensitive name filter for authorized module profiles.',
   })
-  @ApiOkResponse({ type: ProfileSummaryResponse, isArray: true })
+  @ApiQuery({ name: 'cursor', required: false, type: String })
+  @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } })
+  @ApiQuery({ name: 'paged', required: false, enum: ['true'], description: 'Opt in to the cursor response envelope.' })
+  @ApiOkResponse({ schema: { oneOf: [
+    { type: 'array', items: { $ref: getSchemaPath(ProfileSummaryResponse) } },
+    { $ref: getSchemaPath(ProfileSearchPage) },
+  ] } })
   @ApiBadRequestResponse({ description: 'Invalid profile search query parameter.' })
   @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
   @ApiResponse({ status: 403, description: 'The selected profile does not have access to Lessons Learned.' })
@@ -75,8 +85,11 @@ export class ProfilesController {
     @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
     @Query(new ValidationPipe({ transform: true, whitelist: true, expectedType: ProfileSearchQuery }))
     filters: ProfileSearchQuery,
-  ): Promise<ProfileSummaryResponse[]> {
-    return this.lessons.searchProfiles(typeof header === 'string' ? header : undefined, filters);
+    @Query('paged') paged?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ): Promise<ProfileSearchPage | ProfileSummaryResponse[]> {
+    return this.lessons.searchProfiles(typeof header === 'string' ? header : undefined, filters, readPageRequest(paged, cursor, limit));
   }
 
   @Get(':userId')
@@ -95,6 +108,8 @@ export class ProfilesController {
     description: 'Sort order for visible lessons in the Contributor Profile.',
   })
   @ApiOkResponse({ type: ContributorProfileResponse })
+  @ApiQuery({ name: 'cursor', required: false, type: String })
+  @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } })
   @ApiBadRequestResponse({ description: 'Invalid contributor profile query parameter.' })
   @ApiNotFoundResponse({ description: 'Contributor profile not found.' })
   @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
@@ -105,11 +120,14 @@ export class ProfilesController {
     @Param('userId') userId: string,
     @Query(new ValidationPipe({ transform: true, whitelist: true, expectedType: ContributorProfileQuery }))
     filters: ContributorProfileQuery,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
   ): Promise<ContributorProfileResponse> {
     return this.lessons.getContributorProfile(
       typeof header === 'string' ? header : undefined,
       userId,
       filters,
+      readPageRequest('true', cursor, limit)!,
     );
   }
 }

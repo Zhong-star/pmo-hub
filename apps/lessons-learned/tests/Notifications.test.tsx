@@ -262,6 +262,25 @@ describe('Notifications menu and D7/D8 behaviors', () => {
     expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument();
   });
 
+  it('shows an item as read when its batch succeeds after it was read in another tab', async () => {
+    const user = userEvent.setup();
+    vi.mocked(getNotifications).mockResolvedValue({
+      items: [makeNotification({ id: 201 })],
+      page: { limit: 50, nextCursor: null },
+      unreadCount: 1,
+    });
+    vi.mocked(markNotificationsReadBatch).mockResolvedValue({ updatedIds: [], unreadCount: 0 });
+    renderScreen();
+
+    await user.click(await screen.findByRole('button', { name: /Notifications \(1 unread\)/i }));
+    const menu = screen.getByRole('region', { name: 'Notifications' });
+    await user.click(within(menu).getByRole('button', { name: 'Mark loaded as read' }));
+
+    expect(await within(menu).findByText('Read', { exact: true })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Notifications' })).toBeVisible();
+    expect(within(menu).getByRole('button', { name: 'Mark loaded as read' })).toBeDisabled();
+  });
+
   it('marks more than 100 loaded items in bounded requests and retries only the remaining unread items', async () => {
     const user = userEvent.setup();
     const ids = Array.from({ length: 101 }, (_, index) => index + 1);

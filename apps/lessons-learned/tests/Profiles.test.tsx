@@ -125,6 +125,7 @@ function contributorProfileResponse(
     rankingPosition: null,
     includesPrivateLessons: false,
     items: [publishedLesson()],
+    page: { limit: 50, nextCursor: null },
     projects: [{ id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' }],
     ...overrides,
   };
@@ -155,7 +156,7 @@ beforeEach(() => {
   onlineManager.setOnline(true);
   vi.clearAllMocks();
   vi.mocked(getHome).mockResolvedValue(contributor);
-  vi.mocked(getProfiles).mockResolvedValue(profilesList);
+  vi.mocked(getProfiles).mockResolvedValue({ items: profilesList, page: { limit: 50, nextCursor: null } });
   vi.mocked(getRankings).mockResolvedValue({ mostVotedLessons: [], topContributors: [] });
   vi.mocked(getContributorProfile).mockResolvedValue(contributorProfileResponse());
   vi.mocked(getLibrary).mockResolvedValue({

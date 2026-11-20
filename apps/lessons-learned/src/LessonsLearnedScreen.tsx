@@ -227,6 +227,35 @@ function isLibraryLesson(lesson: LessonDraft | LibraryLesson): lesson is Library
   return 'viewCount' in lesson && typeof lesson.viewCount === 'number';
 }
 
+function mergeCollectionPages<Page extends { items: { id: number | string }[] }>(pages: Page[] | undefined): Page | undefined {
+  if (!pages?.length) return undefined;
+  const byId = new Map(pages.flatMap((page) => page.items.map((item) => [item.id, item] as const)));
+  return { ...pages[0], items: [...byId.values()] };
+}
+
+function updateProfileLesson(
+  current: InfiniteData<ContributorProfileResponse> | undefined,
+  lessonId: number,
+  update: (lesson: LibraryLesson) => LibraryLesson,
+): InfiniteData<ContributorProfileResponse> | undefined {
+  if (!current) return current;
+  const previous = current.pages.flatMap((page) => page.items).find((item) => item.id === lessonId);
+  if (!previous) return current;
+  const updated = update(previous);
+  return {
+    ...current,
+    pages: current.pages.map((page) => ({
+      ...page,
+      profile: {
+        ...page.profile,
+        votesReceivedCount: Math.max(0, page.profile.votesReceivedCount + updated.votesCount - previous.votesCount),
+        viewsReceivedCount: page.profile.viewsReceivedCount + updated.viewCount - previous.viewCount,
+      },
+      items: page.items.map((item) => item.id === lessonId ? updated : item),
+    })),
+  };
+}
+
 function isPublishedLibraryLesson(lesson: LessonDetails): boolean {
   return (lesson.status === 'Approved' || lesson.status === 'Closed') && Boolean(lesson.approvedAt);
 }
@@ -415,6 +444,7 @@ export function LessonsLearnedScreen() {
     && authorizedSelectionGeneration === selectionGeneration
     && !isDefinitiveAccessFailure;
   const isHomePage = selectedProfileId !== null && hasUsableHomeData;
+  const hasHomeOverview = homeQuery.data?.primaryAction != null;
   const isPmo = homeQuery.data?.profile.role === 'LESSONS_MODERATOR';
   const isPmoDraftsPage = modulePage === 'pmo-drafts' && isPmo;
   const isPmoEvaluationQueuePage = modulePage === 'evaluation-queue' && isPmo;
@@ -475,36 +505,55 @@ export function LessonsLearnedScreen() {
     retry: false,
     refetchOnWindowFocus: true,
   });
-  const pmoDashboardQuery = useQuery({
+  const pmoDashboardQuery = useInfiniteQuery({
     queryKey: ['lessons-learned-pmo-dashboard', selectedProfileId, pmoDashboardFilters],
-    queryFn: () => Object.keys(pmoDashboardFilters).length
+    queryFn: ({ pageParam }) => pageParam !== undefined
+      ? getPmoDashboard(selectedProfileId ?? '', { ...pmoDashboardFilters, cursor: pageParam })
+      : Object.keys(pmoDashboardFilters).length
       ? getPmoDashboard(selectedProfileId ?? '', pmoDashboardFilters)
       : getPmoDashboard(selectedProfileId ?? ''),
-    enabled: isHomePage && isPmoDashboardPage,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.page?.nextCursor ?? undefined,
+    enabled: isHomePage && hasHomeOverview && isPmoDashboardPage,
     networkMode: 'always',
     retry: false,
     refetchOnWindowFocus: true,
   });
-  const profilesQuery = useQuery({
+  const profilesQuery = useInfiniteQuery({
     queryKey: ['lessons-learned-profiles', selectedProfileId, profileSearchFilters],
-    queryFn: () => Object.keys(profileSearchFilters).length
+    queryFn: ({ pageParam }) => pageParam !== undefined
+      ? getProfiles(selectedProfileId ?? '', { ...profileSearchFilters, cursor: pageParam })
+      : Object.keys(profileSearchFilters).length
       ? getProfiles(selectedProfileId ?? '', profileSearchFilters)
       : getProfiles(selectedProfileId ?? ''),
-    enabled: isHomePage && isProfileSearchPage,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.page.nextCursor ?? undefined,
+    enabled: isHomePage && hasHomeOverview && isProfileSearchPage,
     networkMode: 'always',
     retry: false,
     refetchOnWindowFocus: true,
   });
-  const contributorProfileQuery = useQuery({
+  const contributorProfileQuery = useInfiniteQuery({
     queryKey: ['lessons-learned-contributor-profile', selectedProfileId, selectedContributorProfileId, contributorProfileFilters],
-    queryFn: () => Object.keys(contributorProfileFilters).length
+    queryFn: ({ pageParam }) => pageParam !== undefined
+      ? getContributorProfile(selectedProfileId ?? '', selectedContributorProfileId ?? '', { ...contributorProfileFilters, cursor: pageParam })
+      : Object.keys(contributorProfileFilters).length
       ? getContributorProfile(selectedProfileId ?? '', selectedContributorProfileId ?? '', contributorProfileFilters)
       : getContributorProfile(selectedProfileId ?? '', selectedContributorProfileId ?? ''),
-    enabled: isHomePage && isContributorProfilePage,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.page?.nextCursor ?? undefined,
+    enabled: isHomePage && hasHomeOverview && isContributorProfilePage,
     networkMode: 'always',
     retry: false,
     refetchOnWindowFocus: true,
   });
+  const dashboard = mergeCollectionPages(pmoDashboardQuery.data?.pages);
+  const profileSearchResults = mergeCollectionPages(profilesQuery.data?.pages);
+  const contributorProfile = mergeCollectionPages(contributorProfileQuery.data?.pages);
+  const collectionQuery = isPmoDashboardPage ? pmoDashboardQuery
+    : isProfileSearchPage ? profilesQuery : isContributorProfilePage ? contributorProfileQuery : undefined;
+  const collectionCursorExpired = collectionQuery?.isFetchNextPageError
+    && getApiErrorStatus(collectionQuery.error) === 400;
   const evaluationQueueQuery = useInfiniteQuery({
     queryKey: ['lessons-learned-evaluation-queue', selectedProfileId, commonSubmissionFilters],
     queryFn: ({ pageParam }) => getPmoEvaluationQueue(selectedProfileId ?? '', commonSubmissionFilters, { paged: 'true', cursor: pageParam }),
@@ -518,7 +567,7 @@ export function LessonsLearnedScreen() {
   });
   const libraryFilters: LessonsLibraryFilters = {
     ...commonSubmissionFilters,
-    ...(librarySort === 'newest' ? {} : { sort: librarySort }),
+    ...(librarySort === 'newest' || (!hasHomeOverview && librarySort === 'most-voted') ? {} : { sort: librarySort }),
   };
   const libraryProjectsQuery = useQuery({
     queryKey: ['lessons-learned-project-options', selectedProfileId, 'library'],
@@ -548,7 +597,7 @@ export function LessonsLearnedScreen() {
   const rankingsQuery = useQuery({
     queryKey: ['lessons-learned-rankings', selectedProfileId],
     queryFn: () => getRankings(selectedProfileId ?? ''),
-    enabled: isHomePage && isLibraryPage && !isLegacyLibrary,
+    enabled: isHomePage && isLibraryPage && !isLegacyLibrary && hasHomeOverview,
     networkMode: 'always',
     retry: false,
     refetchOnWindowFocus: true,
@@ -639,26 +688,11 @@ export function LessonsLearnedScreen() {
           pages: current.pages.map((page) => updateLibraryPageViewCount(page, opening.lessonId, result.viewCount)),
         } : current,
       );
-      queryClient.setQueriesData<ContributorProfileResponse>(
+      queryClient.setQueriesData<InfiniteData<ContributorProfileResponse>>(
         { queryKey: ['lessons-learned-contributor-profile', opening.profileId] },
-        (current) => {
-          if (!current) return current;
-          let viewDelta = 0;
-          const items = current.items.map((item) => {
-            if (item.id !== opening.lessonId) return item;
-            const nextViewCount = Math.max(item.viewCount, result.viewCount);
-            viewDelta = nextViewCount - item.viewCount;
-            return { ...item, viewCount: nextViewCount };
-          });
-          return {
-            ...current,
-            profile: {
-              ...current.profile,
-              viewsReceivedCount: current.profile.viewsReceivedCount + viewDelta,
-            },
-            items,
-          };
-        },
+        (current) => updateProfileLesson(current, opening.lessonId, (item) => ({
+          ...item, viewCount: Math.max(item.viewCount, result.viewCount),
+        })),
       );
       void queryClient.invalidateQueries({ queryKey: ['lessons-learned-profiles', opening.profileId] });
       void queryClient.invalidateQueries({ queryKey: ['lessons-learned-rankings', opening.profileId] });
@@ -767,25 +801,9 @@ export function LessonsLearnedScreen() {
       { queryKey: ['lessons-learned-profile-published-details', profileId, lessonId] },
       (current) => current ? { ...current, votesCount, hasVoted } : current,
     );
-    queryClient.setQueriesData<ContributorProfileResponse>(
+    queryClient.setQueriesData<InfiniteData<ContributorProfileResponse>>(
       { queryKey: ['lessons-learned-contributor-profile', profileId] },
-      (current) => {
-        if (!current) return current;
-        let voteDelta = 0;
-        const items = current.items.map((item) => {
-          if (item.id !== lessonId) return item;
-          voteDelta = votesCount - item.votesCount;
-          return { ...item, votesCount, hasVoted };
-        });
-        return {
-          ...current,
-          profile: {
-            ...current.profile,
-            votesReceivedCount: Math.max(0, current.profile.votesReceivedCount + voteDelta),
-          },
-          items,
-        };
-      },
+      (current) => updateProfileLesson(current, lessonId, (item) => ({ ...item, votesCount, hasVoted })),
     );
   }
 
@@ -808,6 +826,18 @@ export function LessonsLearnedScreen() {
       applyVoteToCaches(profileId, lesson.id, updated.votesCount, updated.hasVoted);
       void queryClient.invalidateQueries({ queryKey: ['lessons-learned-profiles', profileId] });
       void queryClient.invalidateQueries({ queryKey: ['lessons-learned-rankings', profileId] });
+      const usesVoteOrder = (filters: unknown) =>
+        typeof filters === 'object' && filters !== null && 'sort' in filters && filters.sort === 'most-voted';
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['lessons-learned-library', profileId],
+          predicate: ({ queryKey }) => usesVoteOrder(queryKey[2]),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['lessons-learned-contributor-profile', profileId],
+          predicate: ({ queryKey }) => usesVoteOrder(queryKey[3]),
+        }),
+      ]);
     } catch {
       applyVoteToCaches(profileId, lesson.id, previous.votesCount, previous.hasVoted);
       if (selectedProfileIdRef.current === profileId) {
@@ -1262,7 +1292,7 @@ export function LessonsLearnedScreen() {
         onChangeProfile={selectedProfileId ? changeProfile : undefined}
         theme={theme}
         onThemeChange={selectTheme}
-        actions={isHomePage && selectedProfileId ? (
+        actions={isHomePage && selectedProfileId && hasHomeOverview ? (
           <NotificationsMenu
             profileId={selectedProfileId}
             navigationKey={modulePage}
@@ -1306,13 +1336,15 @@ export function LessonsLearnedScreen() {
             >
               Lessons Library
             </a>
-            <a
-              href="/lessons-learned/?page=profiles"
-              aria-current={isProfilesPage ? 'page' : undefined}
-              onClick={(event) => navigateTo('profiles', event)}
-            >
-              Profiles
-            </a>
+            {hasHomeOverview && (
+              <a
+                href="/lessons-learned/?page=profiles"
+                aria-current={isProfilesPage ? 'page' : undefined}
+                onClick={(event) => navigateTo('profiles', event)}
+              >
+                Profiles
+              </a>
+            )}
             {isPmo && (
               <a
                 href="/lessons-learned/?page=pmo-drafts"
@@ -1331,7 +1363,7 @@ export function LessonsLearnedScreen() {
                 Evaluation Queue
               </a>
             )}
-            {isPmo && (
+            {isPmo && hasHomeOverview && (
               <a
                 href="/lessons-learned/?page=pmo-dashboard"
                 aria-current={isPmoDashboardPage ? 'page' : undefined}
@@ -1439,9 +1471,20 @@ export function LessonsLearnedScreen() {
                     </a>
                   </div>
                 </div>
+              ) : !hasHomeOverview && (isProfilesPage || isPmoDashboardPage) ? (
+                <div className="api-status unavailable" role="status">
+                  <div>
+                    <h1 id="page-title">Page unavailable</h1>
+                    <p>This page requires a newer version of the Lessons Learned API.</p>
+                    <a className="primary-link" href="/lessons-learned/" onClick={(event) => navigateTo('home', event)}>
+                      Back to Home
+                    </a>
+                  </div>
+                </div>
               ) : modulePage === 'home' || (!isPmo && modulePage === 'pmo-drafts') ? (
                 <HomeView
                   home={homeQuery.data}
+                  showOverview={hasHomeOverview}
                   theme={theme}
                   onThemeChange={selectTheme}
                   onOpenLesson={openLessonFromHome}
@@ -1451,9 +1494,9 @@ export function LessonsLearnedScreen() {
                 <section className="submissions-page" aria-labelledby="page-title">
                   {isPmoDashboardPage ? (
                     <PmoDashboardView
-                      data={getReadErrorLabel(pmoDashboardQuery.error) ? undefined : pmoDashboardQuery.data}
+                      data={getReadErrorLabel(pmoDashboardQuery.error) ? undefined : dashboard}
                       isLoading={pmoDashboardQuery.isPending}
-                      isError={pmoDashboardQuery.isError}
+                      isError={pmoDashboardQuery.isError && (!pmoDashboardQuery.isFetchNextPageError || !!getReadErrorLabel(pmoDashboardQuery.error))}
                       errorMessage={getReadErrorLabel(pmoDashboardQuery.error)}
                       onRetry={() => void pmoDashboardQuery.refetch()}
                       search={submissionSearch}
@@ -1462,7 +1505,7 @@ export function LessonsLearnedScreen() {
                       onProjectFilterChange={setSubmissionProjectFilter}
                       projectOptions={getProjectFilterOptions(
                         projectsQuery.data ?? [],
-                        (pmoDashboardQuery.data?.projects ?? []).map((project) => ({
+                        (dashboard?.projects ?? []).map((project) => ({
                           projectId: project.id,
                           projectName: project.name,
                         })),
@@ -1487,9 +1530,9 @@ export function LessonsLearnedScreen() {
                     />
                   ) : isProfileSearchPage ? (
                     <ProfileSearchView
-                      profiles={getReadErrorLabel(profilesQuery.error) ? undefined : profilesQuery.data}
+                      profiles={getReadErrorLabel(profilesQuery.error) ? undefined : profileSearchResults?.items}
                       isLoading={profilesQuery.isPending}
-                      isError={profilesQuery.isError}
+                      isError={profilesQuery.isError && (!profilesQuery.isFetchNextPageError || !!getReadErrorLabel(profilesQuery.error))}
                       errorMessage={getReadErrorLabel(profilesQuery.error)}
                       onRetry={() => void profilesQuery.refetch()}
                       search={profileSearch}
@@ -1498,10 +1541,10 @@ export function LessonsLearnedScreen() {
                     />
                   ) : isContributorProfilePage ? (
                     <ContributorProfileView
-                      data={getReadErrorLabel(contributorProfileQuery.error) ? undefined : contributorProfileQuery.data}
+                      data={getReadErrorLabel(contributorProfileQuery.error) ? undefined : contributorProfile}
                       isLoading={contributorProfileQuery.isPending}
                       isNotFound={contributorProfileQuery.isError && getApiErrorStatus(contributorProfileQuery.error) === 404}
-                      isError={contributorProfileQuery.isError}
+                      isError={contributorProfileQuery.isError && (!contributorProfileQuery.isFetchNextPageError || !!getReadErrorLabel(contributorProfileQuery.error))}
                       errorMessage={getReadErrorLabel(contributorProfileQuery.error)}
                       onRetry={() => void contributorProfileQuery.refetch()}
                       backLabel={profileOrigin.label}
@@ -1550,14 +1593,16 @@ export function LessonsLearnedScreen() {
 
                   {isLibraryPage && !isLegacyLibrary && (
                     <>
-                      <RankingsSection
-                        data={rankingsQuery.data}
-                        isLoading={rankingsQuery.isPending}
-                        isError={rankingsQuery.isError}
-                        onRetry={() => void rankingsQuery.refetch()}
-                        onOpenLesson={openLibraryLessonFromList}
-                        onOpenContributor={(userId) => openContributorProfile(userId, { page: 'library', label: 'Back to Lessons Library' })}
-                      />
+                      {hasHomeOverview && (
+                        <RankingsSection
+                          data={rankingsQuery.data}
+                          isLoading={rankingsQuery.isPending}
+                          isError={rankingsQuery.isError}
+                          onRetry={() => void rankingsQuery.refetch()}
+                          onOpenLesson={openLibraryLessonFromList}
+                          onOpenContributor={(userId) => openContributorProfile(userId, { page: 'library', label: 'Back to Lessons Library' })}
+                        />
+                      )}
                       <div className="submission-filters" role="group" aria-label="Search, filter, and sort Lessons Library">
                         <div className="draft-editor-field">
                           <label htmlFor="library-search">Search title or ID</label>
@@ -1604,7 +1649,7 @@ export function LessonsLearnedScreen() {
                           >
                             <option value="newest">Most recently approved</option>
                             <option value="oldest">Oldest approval</option>
-                            <option value="most-voted">Most voted</option>
+                            {hasHomeOverview && <option value="most-voted">Most voted</option>}
                             <option value="title">Title</option>
                             <option value="project">Project</option>
                             <option value="type">Lesson type</option>
@@ -1760,8 +1805,8 @@ export function LessonsLearnedScreen() {
                             <th scope="col">Status</th>
                             {isLibraryPage && <th scope="col">Approved</th>}
                             {isLibraryPage && !isLegacyLibrary && <th scope="col">Views</th>}
-                            {isLibraryPage && !isLegacyLibrary && <th scope="col">Votes</th>}
-                            {isLibraryPage && !isLegacyLibrary && <th scope="col">Comments</th>}
+                            {isLibraryPage && !isLegacyLibrary && hasHomeOverview && <th scope="col">Votes</th>}
+                            {isLibraryPage && !isLegacyLibrary && hasHomeOverview && <th scope="col">Comments</th>}
                             {isPmoDraftsPage && <th scope="col">Updated</th>}
                             {isPmoReviewListPage && <th scope="col">Actions</th>}
                           </tr>
@@ -1801,7 +1846,7 @@ export function LessonsLearnedScreen() {
                               </th>
                               <td>#{draft.id}</td>
                               <td>
-                                {isLibraryPage ? (
+                                {isLibraryPage && hasHomeOverview ? (
                                   <button
                                     type="button"
                                     className="author-profile-link"
@@ -1810,7 +1855,7 @@ export function LessonsLearnedScreen() {
                                   >
                                     {draft.authorName ?? draft.authorId}
                                   </button>
-                                ) : draft.authorId}
+                                ) : isLibraryPage ? draft.authorName ?? draft.authorId : draft.authorId}
                               </td>
                               <td>{draft.projectName ?? 'No project'}</td>
                               <td>{draft.lessonType ?? 'Not specified'}</td>
@@ -1819,7 +1864,7 @@ export function LessonsLearnedScreen() {
                                 ? <time dateTime={draft.approvedAt}>{formatUpdatedAt(draft.approvedAt)}</time>
                                 : 'Not available'}</td>}
                               {isLibraryPage && !isLegacyLibrary && <td>{isLibraryLesson(draft) ? draft.viewCount : 0}</td>}
-                              {isLibraryPage && !isLegacyLibrary && (
+                              {isLibraryPage && !isLegacyLibrary && hasHomeOverview && (
                                 <td>
                                   {isLibraryLesson(draft) ? (
                                     <button
@@ -1839,7 +1884,7 @@ export function LessonsLearnedScreen() {
                                   ) : 0}
                                 </td>
                               )}
-                              {isLibraryPage && !isLegacyLibrary && <td>{isLibraryLesson(draft) ? draft.commentCount : 0}</td>}
+                              {isLibraryPage && !isLegacyLibrary && hasHomeOverview && <td>{isLibraryLesson(draft) ? draft.commentCount : 0}</td>}
                               {isPmoDraftsPage && <td><time dateTime={draft.updatedAt}>{formatUpdatedAt(draft.updatedAt)}</time></td>}
                               {isPmoReviewListPage && <td>
                                 <div className="submission-actions">
@@ -1887,7 +1932,7 @@ export function LessonsLearnedScreen() {
                   {pagedQuery?.hasNextPage && (
                     <div>
                       {pagedQuery.isFetchNextPageError && <p role="alert">The next page could not be loaded.</p>}
-                      <button className="draft-cancel" type="button" disabled={pagedQuery.isFetching}
+                      <button className="draft-cancel" type="button" disabled={pagedQuery.isFetching || (pagedQuery.isError && !pagedQuery.isFetchNextPageError)}
                         onClick={() => void pagedQuery.fetchNextPage()}>
                         {pagedQuery.isFetchingNextPage ? 'Loading more…' : 'Load more'}
                       </button>
@@ -1954,6 +1999,17 @@ export function LessonsLearnedScreen() {
                     </ul>
                   )}
                     </>
+                  )}
+                  {collectionQuery?.hasNextPage && !getReadErrorLabel(collectionQuery.error) && (
+                    <div>
+                      {collectionQuery.isFetchNextPageError && (
+                        <p role="alert">{collectionCursorExpired ? 'The results changed. Refresh to continue.' : 'The next page could not be loaded.'}</p>
+                      )}
+                      <button className="draft-cancel" type="button" disabled={collectionQuery.isFetching || (collectionQuery.isError && !collectionQuery.isFetchNextPageError)}
+                        onClick={() => collectionCursorExpired ? void collectionQuery.refetch() : void collectionQuery.fetchNextPage()}>
+                        {collectionQuery.isFetchingNextPage ? 'Loading more…' : collectionCursorExpired ? 'Refresh results' : 'Load more'}
+                      </button>
+                    </div>
                   )}
                   {isEditorOpen && (
                     <DraftEditor
@@ -2060,7 +2116,7 @@ export function LessonsLearnedScreen() {
                   }}
                   onReturn={isPmo && (isPmoEvaluationQueuePage || modulePage === 'home') ? setSelectedReturnLesson : undefined}
                   isLibrarySurface={isLibraryPage && libraryDetailId !== null}
-                  onToggleVote={(lesson) => void toggleLessonVote(lesson)}
+                  onToggleVote={hasHomeOverview ? (lesson) => void toggleLessonVote(lesson) : undefined}
                   isVotePending={pendingVoteIds.has(isLibraryPage && libraryDetailId !== null
                     ? libraryDetailId
                     : isProfilePublishedDetailOpen && selectedProfilePublishedLessonId !== null
@@ -2073,11 +2129,11 @@ export function LessonsLearnedScreen() {
                       : selectedSubmissionId ?? 0)
                     ? voteError.message
                     : null}
-                  onOpenAuthorProfile={(authorId) => openContributorProfile(authorId, {
+                  onOpenAuthorProfile={hasHomeOverview ? (authorId) => openContributorProfile(authorId, {
                     page: modulePage,
                     label: getOriginLabelForPage(modulePage),
-                  })}
-                  profileId={selectedProfileId ?? undefined}
+                  }) : undefined}
+                  profileId={hasHomeOverview ? selectedProfileId ?? undefined : undefined}
                   isPmo={Boolean(isPmo)}
                   onPublicCommentCountChange={handlePublicCommentCountChange}
                 />

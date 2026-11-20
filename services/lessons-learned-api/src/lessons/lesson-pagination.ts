@@ -3,16 +3,8 @@ import { ApiProperty } from '@nestjs/swagger';
 import { createHash } from 'node:crypto';
 import type { SelectQueryBuilder } from 'typeorm';
 import type { Lesson } from './lesson.entity';
-import { LessonDraftResponse, LessonLibraryResponse } from './lesson-response.dto';
+import { LessonDraftResponse, LessonLibraryResponse, LessonPageInfo } from './lesson-response.dto';
 import { LessonProjectResponse } from './project-response.dto';
-
-class LessonPageInfo {
-  @ApiProperty({ type: String, nullable: true })
-  nextCursor!: string | null;
-
-  @ApiProperty({ type: Number, minimum: 1, maximum: 100 })
-  limit!: number;
-}
 
 export class LessonPage<T = LessonDraftResponse> {
   @ApiProperty({ type: [LessonDraftResponse] })
@@ -45,6 +37,89 @@ export function readPageRequest(paged?: string, cursor?: string, limit?: string)
 }
 
 export type LessonPageRequest = NonNullable<ReturnType<typeof readPageRequest>>;
+
+export function collectionCursorScope(...context: unknown[]): string {
+  return createHash('sha256').update(JSON.stringify(context)).digest('hex');
+}
+
+export function encodeCollectionCursor(scope: string, keys: string[]): string {
+  return Buffer.from(JSON.stringify({ scope, keys })).toString('base64url');
+}
+
+export function readCollectionCursor(cursor: string, scope: string, keyCount: number): string[] {
+  try {
+    if (typeof cursor !== 'string' || !/^[A-Za-z0-9_-]{1,4096}$/.test(cursor)) throw new Error();
+    const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    if (decoded.scope !== scope || !Array.isArray(decoded.keys) || decoded.keys.length !== keyCount
+      || !decoded.keys.every((key: unknown) => typeof key === 'string' && key.length <= 500 && !key.includes('\0'))) {
+      throw new Error();
+    }
+    return decoded.keys;
+  } catch {
+    throw new BadRequestException('Invalid cursor for this collection.');
+  }
+}
+
+export interface LessonSortKey {
+  expression: string;
+  type: 'bigint' | 'text';
+  direction: 'ASC' | 'DESC';
+}
+
+export function lessonLabelSort(sort: 'title' | 'project' | 'type' | 'status'): LessonSortKey[] {
+  if (sort === 'title' || sort === 'status') {
+    return [{ expression: sort === 'title' ? 'LOWER(lesson.title)' : 'lesson.status', type: 'text', direction: 'ASC' }];
+  }
+  const byProject = sort === 'project';
+  const field = byProject ? 'lesson.project_name' : 'lesson.lesson_type';
+  return [
+    { expression: `CASE WHEN ${byProject ? 'lesson.project_id' : field} IS NULL THEN 1 ELSE 0 END`, type: 'bigint', direction: 'ASC' },
+    { expression: `LOWER(COALESCE(${field}, ''))`, type: 'text', direction: 'ASC' },
+  ];
+}
+
+export async function paginateLessonCollection<Raw extends object>(
+  query: SelectQueryBuilder<Lesson>,
+  request: LessonPageRequest,
+  scope: string,
+  sort: LessonSortKey[],
+) {
+  const aliases = sort.map((_, index) => `collection_key_${index}`);
+  if (request.cursor !== undefined) {
+    const keys = readCollectionCursor(request.cursor, scope, sort.length);
+    const parameters: Record<string, string> = {};
+    const comparisons = sort.map(({ expression, type, direction }, index) => {
+      const key = keys[index];
+      if (type === 'bigint' && (!/^-?\d{1,19}$/.test(key) || BigInt(key) > 9223372036854775807n
+        || BigInt(key) < -9223372036854775808n)) {
+        throw new BadRequestException('Invalid numeric key in collection cursor.');
+      }
+      parameters[aliases[index]] = key;
+      return { expression, parameter: `CAST(:${aliases[index]} AS ${type})`, op: direction === 'ASC' ? '>' : '<' };
+    });
+    const branches = comparisons.map(({ expression, parameter, op }, index) => {
+      const equalKeys = comparisons.slice(0, index).map((key) => `${key.expression} = ${key.parameter}`);
+      return `(${[...equalKeys, `${expression} ${op} ${parameter}`].join(' AND ')})`;
+    });
+    query.andWhere(`(${branches.join(' OR ')})`, parameters);
+  }
+
+  sort.forEach(({ expression, direction }, index) => {
+    query.addSelect(`CAST(${expression} AS text)`, aliases[index]).addOrderBy(expression, direction);
+  });
+  const { entities, raw } = await query.limit(request.limit + 1).getRawAndEntities<Raw & Record<string, string>>();
+  const last = raw[request.limit - 1];
+  return {
+    entities: entities.slice(0, request.limit),
+    raw: raw.slice(0, request.limit),
+    page: {
+      limit: request.limit,
+      nextCursor: entities.length > request.limit
+        ? encodeCollectionCursor(scope, aliases.map((alias) => last[alias]))
+        : null,
+    },
+  };
+}
 
 const projectCursorPrefix = 'evaluation-projects:';
 

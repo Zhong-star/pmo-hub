@@ -175,6 +175,14 @@ export class PmoDashboardSummaryResponse {
   recentlyReturned!: number;
 }
 
+export class LessonPageInfo {
+  @ApiProperty({ type: String, nullable: true })
+  nextCursor!: string | null;
+
+  @ApiProperty({ type: Number, minimum: 1, maximum: 100 })
+  limit!: number;
+}
+
 export class PmoDashboardResponse {
   @ApiProperty({ type: Number, example: 30, description: 'Fixed calendar day window in UTC.' })
   windowDays!: number;
@@ -187,6 +195,9 @@ export class PmoDashboardResponse {
 
   @ApiProperty({ type: PmoDashboardLessonResponse, isArray: true })
   items!: PmoDashboardLessonResponse[];
+
+  @ApiProperty({ type: LessonPageInfo })
+  page!: LessonPageInfo;
 
   @ApiProperty({ type: LessonProjectResponse, isArray: true })
   projects!: LessonProjectResponse[];
@@ -215,6 +226,14 @@ export class ProfileSummaryResponse {
   viewsReceivedCount!: number;
 }
 
+export class ProfileSearchPage {
+  @ApiProperty({ type: [ProfileSummaryResponse] })
+  items!: ProfileSummaryResponse[];
+
+  @ApiProperty({ type: LessonPageInfo })
+  page!: LessonPageInfo;
+}
+
 export class ContributorProfileResponse {
   @ApiProperty({ type: ProfileSummaryResponse })
   profile!: ProfileSummaryResponse;
@@ -227,6 +246,9 @@ export class ContributorProfileResponse {
 
   @ApiProperty({ type: LessonLibraryResponse, isArray: true })
   items!: LessonLibraryResponse[];
+
+  @ApiProperty({ type: LessonPageInfo })
+  page!: LessonPageInfo;
 
   @ApiProperty({ type: LessonProjectResponse, isArray: true })
   projects!: LessonProjectResponse[];

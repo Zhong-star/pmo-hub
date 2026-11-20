@@ -191,6 +191,7 @@ function makeProfileResponse(overrides: Partial<ContributorProfileResponse> = {}
     rankingPosition: 1,
     includesPrivateLessons: false,
     items: [makeLibraryLesson()],
+    page: { limit: 50, nextCursor: null },
     projects: [{ id: 'LOCAL-PROJECT-001', name: 'Atlas Modernization' }],
     ...overrides,
   };

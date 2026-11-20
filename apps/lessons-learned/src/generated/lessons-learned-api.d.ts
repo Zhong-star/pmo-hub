@@ -1175,6 +1175,7 @@ export interface components {
             windowStartAt: string;
             summary: components["schemas"]["PmoDashboardSummaryResponse"];
             items: components["schemas"]["PmoDashboardLessonResponse"][];
+            page: components["schemas"]["LessonPageInfo"];
             projects: components["schemas"]["LessonProjectResponse"][];
         };
         ProfileSummaryResponse: {
@@ -1196,6 +1197,10 @@ export interface components {
             /** @example 12 */
             viewsReceivedCount: number;
         };
+        ProfileSearchPage: {
+            items: components["schemas"]["ProfileSummaryResponse"][];
+            page: components["schemas"]["LessonPageInfo"];
+        };
         ContributorProfileResponse: {
             profile: components["schemas"]["ProfileSummaryResponse"];
             /**
@@ -1209,6 +1214,7 @@ export interface components {
              */
             includesPrivateLessons: boolean;
             items: components["schemas"]["LessonLibraryResponse"][];
+            page: components["schemas"]["LessonPageInfo"];
             projects: components["schemas"]["LessonProjectResponse"][];
         };
         RankedLessonResponse: {
@@ -3699,6 +3705,8 @@ export interface operations {
                 card?: "awaiting-evaluation" | "recently-approved" | "recently-closed" | "recently-returned";
                 /** @description Sort order for the PMO Dashboard list. */
                 sort?: "activity" | "oldest-activity" | "title" | "status" | "project" | "type";
+                cursor?: string;
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -3772,6 +3780,10 @@ export interface operations {
             query?: {
                 /** @description Case- and accent-insensitive name filter for authorized module profiles. */
                 search?: string;
+                /** @description Opt in to the cursor response envelope. */
+                paged?: "true";
+                cursor?: string;
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -3784,7 +3796,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProfileSummaryResponse"][];
+                    "application/json": components["schemas"]["ProfileSummaryResponse"][] | components["schemas"]["ProfileSearchPage"];
                 };
             };
             /** @description Invalid profile search query parameter. */
@@ -3850,6 +3862,8 @@ export interface operations {
                 lessonType?: "Future Prevention" | "Success to Repeat" | "Risk Avoided" | "Communication";
                 /** @description Sort order for visible lessons in the Contributor Profile. */
                 sort?: "recent" | "oldest" | "most-voted" | "title" | "project" | "type";
+                cursor?: string;
+                limit?: number;
             };
             header?: never;
             path: {

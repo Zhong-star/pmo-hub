@@ -232,6 +232,68 @@ describe('Lessons Learned voting', () => {
     expect(within(dialog).queryByRole('button', { name: /vote/i })).not.toBeInTheDocument();
   });
 
+  it('refreshes the order and next page after a vote changes the Most voted order', async () => {
+    const user = userEvent.setup();
+    const first = libraryLesson({ id: 70, title: 'Alpha first', votesCount: 2 });
+    const second = libraryLesson({ id: 71, title: 'Alpha second', votesCount: 2 });
+    const third = libraryLesson({ id: 72, title: 'Alpha third', votesCount: 1 });
+    const voted = { ...second, votesCount: 3, hasVoted: true };
+    vi.mocked(getLibrary).mockResolvedValue({
+      items: [first, second], page: { limit: 2, nextCursor: 'before-vote' },
+    });
+    vi.mocked(castLessonVote).mockImplementationOnce(async () => {
+      vi.mocked(getLibrary)
+        .mockResolvedValueOnce({ items: [voted, first], page: { limit: 2, nextCursor: 'after-vote' } })
+        .mockResolvedValueOnce({ items: [third], page: { limit: 2, nextCursor: null } });
+      return { lessonId: second.id, votesCount: 3, hasVoted: true };
+    });
+
+    renderScreen('/lessons-learned/?page=library');
+    await screen.findByText(first.title);
+    await user.type(screen.getByLabelText('Search title or ID'), 'Alpha');
+    await user.selectOptions(screen.getByLabelText('Sort by'), 'most-voted');
+    await user.click(await screen.findByRole('button', { name: 'Vote for Alpha second (2)' }));
+
+    await waitFor(() => {
+      const rows = within(screen.getByRole('table')).getAllByRole('row');
+      expect(rows[1]).toHaveTextContent(second.title);
+    });
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
+    expect(await screen.findByText(third.title)).toBeVisible();
+    expect(getLibrary).toHaveBeenLastCalledWith('local-contributor', expect.objectContaining({
+      search: 'Alpha', sort: 'most-voted', cursor: 'after-vote',
+    }));
+  });
+
+  it('keeps a confirmed vote and blocks stale pagination until a failed order refresh is retried', async () => {
+    const user = userEvent.setup();
+    const lesson = libraryLesson({ id: 70, title: 'Alpha first', votesCount: 2 });
+    const voted = { ...lesson, votesCount: 3, hasVoted: true };
+    vi.mocked(getLibrary).mockResolvedValue({ items: [lesson], page: { limit: 1, nextCursor: 'stale-cursor' } });
+    vi.mocked(castLessonVote).mockImplementationOnce(async () => {
+      vi.mocked(getLibrary).mockRejectedValueOnce(new Error('Refresh unavailable'));
+      return { lessonId: lesson.id, votesCount: 3, hasVoted: true };
+    });
+    renderScreen('/lessons-learned/?page=library');
+    await screen.findByText(lesson.title);
+    await user.type(screen.getByLabelText('Search title or ID'), 'Alpha');
+    await user.selectOptions(screen.getByLabelText('Sort by'), 'most-voted');
+    await user.click(await screen.findByRole('button', { name: 'Vote for Alpha first (2)' }));
+    await screen.findByText('Could not refresh. Showing the last loaded results.');
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove vote for Alpha first (3)' })).toHaveAttribute('aria-pressed', 'true');
+    vi.mocked(getLibrary)
+      .mockResolvedValueOnce({ items: [voted], page: { limit: 1, nextCursor: 'fresh-cursor' } })
+      .mockResolvedValueOnce({ items: [libraryLesson({ id: 71, title: 'Alpha next' })], page: { limit: 1, nextCursor: null } });
+    await user.click(screen.getByRole('button', { name: /^Retry$/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
+    expect(await screen.findByText('Alpha next')).toBeVisible();
+    expect(getLibrary).toHaveBeenLastCalledWith('local-contributor', expect.objectContaining({
+      search: 'Alpha', sort: 'most-voted', cursor: 'fresh-cursor',
+    }));
+  });
+
   it('sorts Lessons Library by Most voted while preserving active filters and Load more pagination', async () => {
     const user = userEvent.setup();
     const firstPageItem = libraryLesson({ id: 70, title: 'Alpha most voted', votesCount: 5, hasVoted: true });

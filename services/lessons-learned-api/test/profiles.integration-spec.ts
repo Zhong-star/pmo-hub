@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
@@ -147,6 +147,64 @@ describe('Profile Search and Contributor Profile API', () => {
       .expect(200);
     return response.body;
   }
+
+  it('preserves the complete legacy profile array unless pagination is requested', async () => {
+    const response = await request(app!.getHttpServer())
+      .get('/api/lessons-learned/v1/profiles')
+      .set('X-PMO-Local-User-ID', 'user-jose').expect(200);
+    expect(response.body.map((profile: { id: string }) => profile.id)).toEqual([
+      'user-ana', 'user-zero', 'local-pmo', 'user-jose',
+    ]);
+  });
+
+  it('continues from paged Profile Search into paged public lessons without exposing private lessons', async () => {
+    const server = request(app!.getHttpServer());
+    const path = '/api/lessons-learned/v1/profiles';
+    const viewer = { 'X-PMO-Local-User-ID': 'user-jose' };
+    await createCompleteDraft({ title: 'Private Alpha' }, 'user-ana');
+    const beta = await approveLesson(await submitLesson(await createCompleteDraft({ title: 'Public Beta' }, 'user-ana'), 'user-ana'));
+    const alpha = await approveLesson(await submitLesson(await createCompleteDraft({ title: 'Public Alpha' }, 'user-ana'), 'user-ana'));
+
+    const first = await server.get(path).set(viewer).query({ limit: 1 }).expect(200);
+    expect(first.body.items.map(({ id }: { id: string }) => id)).toEqual(['user-ana']);
+    expect(first.body.page).toEqual({ limit: 1, nextCursor: expect.any(String) });
+    const second = await server.get(path).set(viewer).query({ limit: 1, cursor: first.body.page.nextCursor }).expect(200);
+    expect(second.body.items.map(({ id }: { id: string }) => id)).toEqual(['user-zero']);
+    await server.get(path).set(viewer).query({ search: 'Bruno', cursor: first.body.page.nextCursor }).expect(400);
+
+    const detailsPath = `${path}/${first.body.items[0].id}`;
+    const filters = { sort: 'title', limit: 1 };
+    const details = await server.get(detailsPath).set(viewer).query(filters).expect(200);
+    expect(details.body.profile.publishedLessonsCount).toBe(2);
+    expect(details.body.items.map(({ id }: { id: number }) => id)).toEqual([alpha.id]);
+    expect(details.body.page).toEqual({ limit: 1, nextCursor: expect.any(String) });
+    const next = await server.get(detailsPath).set(viewer).query({ ...filters, cursor: details.body.page.nextCursor }).expect(200);
+    expect(next.body.items.map(({ id }: { id: number }) => id)).toEqual([beta.id]);
+    expect(next.body.page.nextCursor).toBeNull();
+  });
+
+  it('can continue a profile page whose last display name exceeds cursor key limits', async () => {
+    const original = readFileSync(profilesPath, 'utf8');
+    try {
+      writeFileSync(profilesPath, JSON.stringify([
+        ...JSON.parse(original),
+        { id: 'long-name', displayName: `Cursor ${'a'.repeat(5000)}`, role: 'LESSONS_USER' },
+        { id: 'following-name', displayName: 'Cursor Z', role: 'LESSONS_USER' },
+      ]));
+      const server = request(app!.getHttpServer());
+      const path = '/api/lessons-learned/v1/profiles';
+      const filters = { paged: 'true', search: 'Cursor', limit: 1 };
+      const first = await server.get(path).set('X-PMO-Local-User-ID', 'user-jose').query(filters).expect(200);
+      expect(first.body.items.map((profile: { id: string }) => profile.id)).toEqual(['long-name']);
+      expect(first.body.page.nextCursor).toEqual(expect.any(String));
+      const next = await server.get(path).set('X-PMO-Local-User-ID', 'user-jose')
+        .query({ ...filters, cursor: first.body.page.nextCursor }).expect(200);
+      expect(next.body.items.map((profile: { id: string }) => profile.id)).toEqual(['following-name']);
+      expect(next.body.page.nextCursor).toBeNull();
+    } finally {
+      writeFileSync(profilesPath, original);
+    }
+  });
 
   it('requires authentication and authorization for profile endpoints', async () => {
     const server = request(app!.getHttpServer());

@@ -144,10 +144,9 @@ export function NotificationsMenu({
   const batchReadMutation = useMutation({
     mutationFn: async (notificationIds: number[]) => {
       for (let start = 0; start < notificationIds.length; start += notificationBatchLimit) {
-        const result = await markNotificationsReadBatch(profileId, {
-          notificationIds: notificationIds.slice(start, start + notificationBatchLimit),
-        });
-        updateCacheReadState(new Set(result.updatedIds), result.unreadCount, new Date().toISOString());
+        const batch = notificationIds.slice(start, start + notificationBatchLimit);
+        const result = await markNotificationsReadBatch(profileId, { notificationIds: batch });
+        updateCacheReadState(new Set(batch), result.unreadCount, new Date().toISOString());
       }
     },
     networkMode: 'always',

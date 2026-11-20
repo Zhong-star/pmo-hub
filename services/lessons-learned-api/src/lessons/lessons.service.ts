@@ -9,8 +9,8 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { DataSource, In, type EntityManager, type Repository, type SelectQueryBuilder } from 'typeorm';
-import { LocalAccessService } from '../local-access.service';
+import { DataSource, In, type EntityManager, type SelectQueryBuilder } from 'typeorm';
+import { LocalAccessService, type LocalProfile } from '../local-access.service';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../database/database.module';
 import { isRepresentationETag, lessonRepresentationETag } from './lesson-http-contract';
 import { emitsRepresentationTokens } from './lesson-token-format';
@@ -21,7 +21,9 @@ import {
 } from './lesson-notifications.service';
 import { Lesson } from './lesson.entity';
 import {
-  encodeProjectCursor, paginateLibraryLessonsByTextKey, paginateLibraryLessonsByVotes, paginateLessons, readProjectCursor,
+  collectionCursorScope, encodeCollectionCursor, encodeProjectCursor, lessonLabelSort, paginateLessonCollection,
+  paginateLibraryLessonsByTextKey, paginateLibraryLessonsByVotes, paginateLessons, readCollectionCursor, readProjectCursor,
+  type LessonSortKey,
   type LessonLibraryPage, type LessonPage, type LessonPageRequest, type LessonProjectPage,
 } from './lesson-pagination';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
@@ -37,7 +39,7 @@ import type {
   ContributorProfileResponse,
   LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse,
   LessonLibraryResponse, LessonVoteResponse, PmoDashboardLessonResponse, PmoDashboardResponse,
-  ProfileSummaryResponse, RankedContributorResponse, RankedLessonResponse, RankingsResponse,
+  ProfileSearchPage, ProfileSummaryResponse, RankedContributorResponse, RankedLessonResponse, RankingsResponse,
   RecordLessonLibraryViewResponse,
 } from './lesson-response.dto';
 import type { RecordLibraryViewRequest } from './record-library-view-request.dto';
@@ -50,7 +52,6 @@ import type {
   LessonSubmissionsFilter,
   PmoDashboardCard,
   PmoDashboardFilter,
-  PmoDashboardSort,
   PmoDraftsFilter,
   PmoEvaluationQueueFilter,
   ProfileSearchFilter,
@@ -179,7 +180,8 @@ export class LessonsService {
 
   async getPmoDashboard(
     localUserId: string | undefined,
-    filters: PmoDashboardFilter = {},
+    filters: PmoDashboardFilter,
+    page: LessonPageRequest,
   ): Promise<PmoDashboardResponse> {
     const profile = this.localAccess.getProfile(localUserId);
     if (profile.role !== 'LESSONS_MODERATOR') {
@@ -190,108 +192,71 @@ export class LessonsService {
     const windowStartAt = new Date();
     windowStartAt.setUTCHours(0, 0, 0, 0);
     windowStartAt.setUTCDate(windowStartAt.getUTCDate() - windowDays + 1);
-    const windowStartMs = windowStartAt.getTime();
     const authorNames = this.localAccess.getDisplayNames();
     const dataSource = this.requireDataSource();
 
     return dataSource.transaction('REPEATABLE READ', async (manager) => {
-      const query = manager.getRepository(Lesson).createQueryBuilder('lesson')
-        .addSelect(
-          `(SELECT MAX(h.occurred_at) FROM lesson_history h WHERE h.lesson_id = lesson.id)`,
-          'latest_history_at',
-        )
-        .addSelect(
-          `(SELECT MAX(h.occurred_at) FROM lesson_history h WHERE h.lesson_id = lesson.id AND h.event_type = 'Closed')`,
-          'latest_closed_at',
-        )
-        .addSelect(
-          `(SELECT MAX(h.occurred_at) FROM lesson_history h WHERE h.lesson_id = lesson.id AND h.event_type = 'Returned')`,
-          'latest_returned_at',
-        );
+      const latestHistory = '(SELECT MAX(h.occurred_at) FROM lesson_history h WHERE h.lesson_id = lesson.id)';
+      const latestClosed = "(SELECT MAX(h.occurred_at) FROM lesson_history h WHERE h.lesson_id = lesson.id AND h.event_type = 'Closed')";
+      const latestReturned = "(SELECT MAX(h.occurred_at) FROM lesson_history h WHERE h.lesson_id = lesson.id AND h.event_type = 'Returned')";
+      const lastActivity = `GREATEST(lesson.updated_at, ${latestHistory})`;
+      const cardConditions = {
+        'awaiting-evaluation': "lesson.status = 'PMOEvaluation'",
+        'recently-approved': 'lesson.approved_at >= :windowStartAt',
+        'recently-closed': `${latestClosed} >= :windowStartAt`,
+        'recently-returned': `${latestReturned} >= :windowStartAt`,
+      } satisfies Record<PmoDashboardCard, string>;
 
+      const query = manager.getRepository(Lesson).createQueryBuilder('lesson');
       this.applySearchFilters(query, filters, true);
       if (filters.status) query.andWhere('lesson.status = :status', { status: filters.status });
+      query.setParameter('windowStartAt', windowStartAt);
+      const counts = await query.clone()
+        .select(`COUNT(*) FILTER (WHERE ${cardConditions['awaiting-evaluation']})`, 'awaitingEvaluation')
+        .addSelect(`COUNT(*) FILTER (WHERE ${cardConditions['recently-approved']})`, 'recentlyApproved')
+        .addSelect(`COUNT(*) FILTER (WHERE ${cardConditions['recently-closed']})`, 'recentlyClosed')
+        .addSelect(`COUNT(*) FILTER (WHERE ${cardConditions['recently-returned']})`, 'recentlyReturned')
+        .getRawOne<Record<string, string>>();
+      const summary = {
+        awaitingEvaluation: Number(counts?.awaitingEvaluation ?? 0),
+        recentlyApproved: Number(counts?.recentlyApproved ?? 0),
+        recentlyClosed: Number(counts?.recentlyClosed ?? 0),
+        recentlyReturned: Number(counts?.recentlyReturned ?? 0),
+      };
 
-      const { entities, raw } = await query.getRawAndEntities();
-      const baseWithGuidance = await this.includeLatestReviewGuidance(
+      if (filters.card) query.andWhere(cardConditions[filters.card]);
+      const sort = filters.sort ?? 'activity';
+      const direction = sort === 'oldest-activity' ? 'ASC' : 'DESC';
+      const order: LessonSortKey[] = sort === 'activity' || sort === 'oldest-activity' ? [] : lessonLabelSort(sort);
+      order.push(
+        { expression: `(EXTRACT(EPOCH FROM ${lastActivity}) * 1000000)::bigint`, type: 'bigint', direction },
+        { expression: 'lesson.id', type: 'bigint', direction },
+      );
+
+      const { entities, raw, page: pageInfo } = await paginateLessonCollection<{
+        last_activity_at: Date;
+        latest_closed_at: Date | null;
+        latest_returned_at: Date | null;
+      }>(
+        query.addSelect(lastActivity, 'last_activity_at')
+          .addSelect(latestClosed, 'latest_closed_at')
+          .addSelect(latestReturned, 'latest_returned_at'),
+        page,
+        collectionCursorScope('dashboard', profile.id, filters.search, filters.projectId, filters.withoutProject,
+          filters.lessonType, filters.status, filters.card, sort, filters.card ? windowStartAt : null),
+        order,
+      );
+      const drafts = await this.includeLatestReviewGuidance(
         entities.map((lesson) => this.toResponse(lesson)),
         manager.getRepository(LessonHistory),
       );
-      const guidanceById = new Map(baseWithGuidance.map((item) => [item.id, item.latestReviewGuidance]));
-
-      const allItems: PmoDashboardLessonResponse[] = entities.map((lesson, index) => {
-        const row = raw[index] as {
-          latest_history_at?: Date | string | null;
-          latest_closed_at?: Date | string | null;
-          latest_returned_at?: Date | string | null;
-        } | undefined;
-        const latestHistoryAt = row?.latest_history_at ? new Date(row.latest_history_at) : null;
-        const latestClosedAt = row?.latest_closed_at ? new Date(row.latest_closed_at) : null;
-        const latestReturnedAt = row?.latest_returned_at ? new Date(row.latest_returned_at) : null;
-        const lastActivityAt = latestHistoryAt && latestHistoryAt.getTime() > lesson.updatedAt.getTime()
-          ? latestHistoryAt
-          : lesson.updatedAt;
-
-        return {
-          ...this.toLibraryResponse(lesson, authorNames),
-          latestReviewGuidance: guidanceById.get(lesson.id) ?? null,
-          lastActivityAt,
-          latestClosedAt,
-          latestReturnedAt,
-        };
-      });
-
-      const matchesCard = (item: PmoDashboardLessonResponse, card: PmoDashboardCard): boolean => {
-        if (card === 'awaiting-evaluation') return item.status === 'PMOEvaluation';
-        if (card === 'recently-approved') return item.approvedAt !== null && item.approvedAt.getTime() >= windowStartMs;
-        if (card === 'recently-closed') return item.latestClosedAt !== null && item.latestClosedAt.getTime() >= windowStartMs;
-        return item.latestReturnedAt !== null && item.latestReturnedAt.getTime() >= windowStartMs;
-      };
-
-      const summary = {
-        awaitingEvaluation: 0,
-        recentlyApproved: 0,
-        recentlyClosed: 0,
-        recentlyReturned: 0,
-      };
-      for (const item of allItems) {
-        if (matchesCard(item, 'awaiting-evaluation')) summary.awaitingEvaluation += 1;
-        if (matchesCard(item, 'recently-approved')) summary.recentlyApproved += 1;
-        if (matchesCard(item, 'recently-closed')) summary.recentlyClosed += 1;
-        if (matchesCard(item, 'recently-returned')) summary.recentlyReturned += 1;
-      }
-
-      const filteredItems = filters.card
-        ? allItems.filter((item) => matchesCard(item, filters.card!))
-        : allItems;
-
-      const sort: PmoDashboardSort = filters.sort ?? 'activity';
-      filteredItems.sort((left, right) => {
-        const byRecentActivity = () =>
-          (right.lastActivityAt.getTime() - left.lastActivityAt.getTime()) || (right.id - left.id);
-        if (sort === 'activity') return byRecentActivity();
-        if (sort === 'oldest-activity') {
-          return (left.lastActivityAt.getTime() - right.lastActivityAt.getTime()) || (left.id - right.id);
-        }
-        if (sort === 'title') {
-          return left.title.toLowerCase().localeCompare(right.title.toLowerCase()) || byRecentActivity();
-        }
-        if (sort === 'status') {
-          return left.status.localeCompare(right.status) || byRecentActivity();
-        }
-        if (sort === 'project') {
-          const leftNull = left.projectId === null ? 1 : 0;
-          const rightNull = right.projectId === null ? 1 : 0;
-          return (leftNull - rightNull)
-            || (left.projectName ?? '').toLowerCase().localeCompare((right.projectName ?? '').toLowerCase())
-            || byRecentActivity();
-        }
-        const leftNull = left.lessonType === null ? 1 : 0;
-        const rightNull = right.lessonType === null ? 1 : 0;
-        return (leftNull - rightNull)
-          || (left.lessonType ?? '').toLowerCase().localeCompare((right.lessonType ?? '').toLowerCase())
-          || byRecentActivity();
-      });
+      const items: PmoDashboardLessonResponse[] = entities.map((lesson, index) => ({
+        ...this.toLibraryResponse(lesson, authorNames),
+        latestReviewGuidance: drafts[index].latestReviewGuidance,
+        lastActivityAt: raw[index].last_activity_at,
+        latestClosedAt: raw[index].latest_closed_at,
+        latestReturnedAt: raw[index].latest_returned_at,
+      }));
 
       const projects = await manager.getRepository(Lesson).createQueryBuilder('lesson')
         .select('lesson.project_id', 'id')
@@ -307,7 +272,8 @@ export class LessonsService {
         windowDays,
         windowStartAt,
         summary,
-        items: filteredItems,
+        items,
+        page: pageInfo,
         projects,
       };
     });
@@ -315,28 +281,37 @@ export class LessonsService {
 
   async searchProfiles(
     localUserId: string | undefined,
-    filters: ProfileSearchFilter = {},
-  ): Promise<ProfileSummaryResponse[]> {
-    this.localAccess.getProfile(localUserId);
+    filters: ProfileSearchFilter,
+    page?: LessonPageRequest,
+  ): Promise<ProfileSearchPage | ProfileSummaryResponse[]> {
+    const caller = this.localAccess.getProfile(localUserId);
     const dataSource = this.requireDataSource();
 
-    const search = filters.search?.trim();
-    const normalizedSearch = search ? normalizeLibrarySearch(search) : '';
-    const matchingProfiles = this.localAccess.listProfiles()
+    const normalizedSearch = normalizeLibrarySearch(filters.search?.trim() ?? '');
+    const scope = collectionCursorScope('profiles', caller.id, normalizedSearch);
+    const compare = (left: Pick<LocalProfile, 'displayName' | 'id'>, right: Pick<LocalProfile, 'displayName' | 'id'>) => (
+      left.displayName.localeCompare(right.displayName, 'en', { sensitivity: 'base' })
+      || left.id.localeCompare(right.id)
+      || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
+    );
+    const profiles = this.localAccess.listProfiles();
+    const profileKey = (profile: LocalProfile) => collectionCursorScope(profile.displayName, profile.id);
+    const cursorKey = page?.cursor === undefined ? undefined : readCollectionCursor(page.cursor, scope, 1)[0];
+    const anchor = cursorKey === undefined ? undefined : profiles.find((profile) => profileKey(profile) === cursorKey);
+    if (cursorKey !== undefined && !anchor) throw new BadRequestException('Invalid cursor for this collection.');
+    const matchingProfiles = profiles
       .filter((profile) => !normalizedSearch || normalizeLibrarySearch(profile.displayName).includes(normalizedSearch))
-      .sort((left, right) => (
-        left.displayName.localeCompare(right.displayName, 'en', { sensitivity: 'base' })
-        || left.id.localeCompare(right.id)
-      ));
-
-    if (matchingProfiles.length === 0) return [];
+      .filter((profile) => anchor === undefined || compare(profile, anchor) > 0)
+      .sort(compare)
+      .slice(0, page ? page.limit + 1 : undefined);
+    const visibleProfiles = page ? matchingProfiles.slice(0, page.limit) : matchingProfiles;
 
     const aggregates = await this.getPublicProfileAggregates(
-      matchingProfiles.map((profile) => profile.id),
+      visibleProfiles.map((profile) => profile.id),
       dataSource.manager,
     );
 
-    return matchingProfiles.map((profile) => {
+    const items = visibleProfiles.map((profile) => {
       const stats = aggregates.get(profile.id);
       return {
         id: profile.id,
@@ -348,12 +323,24 @@ export class LessonsService {
         viewsReceivedCount: stats?.viewsReceivedCount ?? 0,
       };
     });
+    const last = visibleProfiles[visibleProfiles.length - 1];
+    if (!page) return items;
+    return {
+      items,
+      page: {
+        limit: page.limit,
+        nextCursor: matchingProfiles.length > page.limit
+          ? encodeCollectionCursor(scope, [profileKey(last)])
+          : null,
+      },
+    };
   }
 
   async getContributorProfile(
     localUserId: string | undefined,
     targetUserId: string,
-    filters: ContributorProfileFilter = {},
+    filters: ContributorProfileFilter,
+    page: LessonPageRequest,
   ): Promise<ContributorProfileResponse> {
     const caller = this.localAccess.getProfile(localUserId);
     const target = this.localAccess.listProfiles().find((profile) => profile.id === targetUserId);
@@ -409,7 +396,28 @@ export class LessonsService {
         lessonType: filters.lessonType,
       });
 
-      const lessons = await query.getMany();
+      const sort: ContributorProfileSort = filters.sort ?? 'recent';
+      const activity = includesPrivateLessons ? 'GREATEST(lesson.approved_at, lesson.updated_at)' : 'lesson.approved_at';
+      const direction = sort === 'oldest' ? 'ASC' : 'DESC';
+      const order: LessonSortKey[] = sort === 'title' || sort === 'project' || sort === 'type' ? lessonLabelSort(sort) : [];
+      if (sort === 'most-voted') {
+        order.push({
+          expression: '(SELECT COUNT(*) FROM lesson_votes vote WHERE vote.lesson_id = lesson.id)',
+          type: 'bigint',
+          direction: 'DESC',
+        });
+      }
+      order.push(
+        { expression: `(EXTRACT(EPOCH FROM ${activity}) * 1000000)::bigint`, type: 'bigint', direction },
+        { expression: 'lesson.id', type: 'bigint', direction: sort === 'most-voted' ? 'ASC' : direction },
+      );
+      const { entities: lessons, page: pageInfo } = await paginateLessonCollection(
+        query,
+        page,
+        collectionCursorScope('contributor-profile', caller.id, target.id, includesPrivateLessons,
+          filters.projectId, filters.withoutProject, filters.lessonType, sort),
+        order,
+      );
       const baseWithGuidance = includesPrivateLessons
         ? await this.includeLatestReviewGuidance(
           lessons.map((lesson) => this.toResponse(lesson)),
@@ -427,42 +435,6 @@ export class LessonsService {
         manager,
       );
 
-      const getRelevantTimestamp = (item: LessonLibraryResponse): number => {
-        if (!includesPrivateLessons) {
-          return item.approvedAt ? item.approvedAt.getTime() : item.updatedAt.getTime();
-        }
-        return Math.max(item.approvedAt ? item.approvedAt.getTime() : 0, item.updatedAt.getTime());
-      };
-
-      const sort: ContributorProfileSort = filters.sort ?? 'recent';
-      libraryItems.sort((left, right) => {
-        const byRecent = () => (getRelevantTimestamp(right) - getRelevantTimestamp(left)) || (right.id - left.id);
-        if (sort === 'recent') return byRecent();
-        if (sort === 'oldest') {
-          return (getRelevantTimestamp(left) - getRelevantTimestamp(right)) || (left.id - right.id);
-        }
-        if (sort === 'most-voted') {
-          return (right.votesCount - left.votesCount)
-            || (getRelevantTimestamp(right) - getRelevantTimestamp(left))
-            || (left.id - right.id);
-        }
-        if (sort === 'title') {
-          return left.title.toLowerCase().localeCompare(right.title.toLowerCase()) || byRecent();
-        }
-        if (sort === 'project') {
-          const leftNull = left.projectId === null ? 1 : 0;
-          const rightNull = right.projectId === null ? 1 : 0;
-          return (leftNull - rightNull)
-            || (left.projectName ?? '').toLowerCase().localeCompare((right.projectName ?? '').toLowerCase())
-            || byRecent();
-        }
-        const leftNull = left.lessonType === null ? 1 : 0;
-        const rightNull = right.lessonType === null ? 1 : 0;
-        return (leftNull - rightNull)
-          || (left.lessonType ?? '').toLowerCase().localeCompare((right.lessonType ?? '').toLowerCase())
-          || byRecent();
-      });
-
       const rankedContributors = await this.getRankedContributors(manager);
       const rankingPosition = rankedContributors.find((item) => item.id === target.id)?.position ?? null;
 
@@ -471,6 +443,7 @@ export class LessonsService {
         rankingPosition,
         includesPrivateLessons,
         items: libraryItems,
+        page: pageInfo,
         projects,
       };
     });
@@ -805,7 +778,6 @@ export class LessonsService {
 
   async getLibraryLessonDetails(localUserId: string | undefined, lessonId: number): Promise<LessonDetailsResponse> {
     const profile = this.localAccess.getProfile(localUserId);
-    const isPmo = profile.role === 'LESSONS_MODERATOR';
     const dataSource = this.requireDataSource();
 
     return dataSource.transaction('REPEATABLE READ', async (manager) => {
@@ -814,19 +786,8 @@ export class LessonsService {
         && (lesson?.status === 'Approved' || lesson?.status === 'Closed');
       if (!lesson || !isPublished) throw new NotFoundException('Published lesson not found.');
 
-      const canReadHistory = isPmo || lesson.authorId === profile.id;
-      const history = canReadHistory
-        ? await manager.getRepository(LessonHistory).find({
-          where: { lessonId },
-          order: { occurredAt: 'ASC', id: 'ASC' },
-        })
-        : [];
-      const voteSummary = await this.getVoteSummary(lessonId, profile.id, manager);
-      const commentCount = await this.getPublicCommentCount(lessonId, manager);
-      return {
-        ...this.toDetailsResponse(lesson, history, voteSummary, commentCount),
-        authorName: this.localAccess.getDisplayNameForProfile(lesson.authorId) ?? lesson.authorId,
-      };
+      const details = await this.readDetailsRepresentation(lesson, profile, manager);
+      return this.withLibraryAuthor(details);
     });
   }
 
@@ -1005,16 +966,31 @@ export class LessonsService {
         throw new NotFoundException('Lesson not found.');
       }
 
-      const history = isPmo || isAuthor
-        ? await manager.getRepository(LessonHistory).find({
-          where: { lessonId },
-          order: { occurredAt: 'ASC', id: 'ASC' },
-        })
-        : [];
-      const voteSummary = await this.getVoteSummary(lessonId, profile.id, manager);
-      const commentCount = await this.getPublicCommentCount(lessonId, manager);
-      return this.toDetailsResponse(lesson, history, voteSummary, commentCount);
+      return this.readDetailsRepresentation(lesson, profile, manager);
     });
+  }
+
+  private async readDetailsRepresentation(
+    lesson: Lesson,
+    profile: LocalProfile,
+    manager: EntityManager,
+  ): Promise<LessonDetailsResponse> {
+    const history = profile.role === 'LESSONS_MODERATOR' || lesson.authorId === profile.id
+      ? await manager.getRepository(LessonHistory).find({
+        where: { lessonId: lesson.id },
+        order: { occurredAt: 'ASC', id: 'ASC' },
+      })
+      : [];
+    const voteSummary = await this.getVoteSummary(lesson.id, profile.id, manager);
+    const commentCount = await this.getPublicCommentCount(lesson.id, manager);
+    return this.toDetailsResponse(lesson, history, voteSummary, commentCount);
+  }
+
+  private withLibraryAuthor(details: LessonDetailsResponse): LessonDetailsResponse {
+    return {
+      ...details,
+      authorName: this.localAccess.getDisplayNameForProfile(details.authorId) ?? details.authorId,
+    };
   }
 
   private toDetailsResponse(
@@ -1064,7 +1040,7 @@ export class LessonsService {
       if (!current || (profile.role !== 'LESSONS_MODERATOR' && current.authorId !== profile.id)) {
         throw new NotFoundException('Lesson not found.');
       }
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       if (current.status !== 'Open') {
         throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be cancelled.' });
       }
@@ -1115,7 +1091,7 @@ export class LessonsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       if (current.status !== 'PMOEvaluation') {
         throw new ConflictException({
           code: 'LESSON_NOT_AWAITING_EVALUATION',
@@ -1190,7 +1166,7 @@ export class LessonsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       if (current.status !== 'PMOEvaluation') {
         throw new ConflictException({
           code: 'LESSON_NOT_AWAITING_EVALUATION',
@@ -1252,7 +1228,7 @@ export class LessonsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       if (current.status !== 'Approved') {
         throw new ConflictException({
           code: 'LESSON_NOT_APPROVED',
@@ -1339,7 +1315,7 @@ export class LessonsService {
 
     return this.requireDataSource().transaction(async (manager) => {
       const transactionalLessons = manager.getRepository(Lesson);
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       const update = transactionalLessons.createQueryBuilder()
         .update(Lesson)
         .set({
@@ -1400,7 +1376,7 @@ export class LessonsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       if (current.status !== 'Open') {
         throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be submitted.' });
       }
@@ -1480,7 +1456,7 @@ export class LessonsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       if (current.status !== 'PMOEvaluation') {
         throw new ConflictException({
           code: 'LESSON_NOT_AWAITING_EVALUATION',
@@ -1597,7 +1573,8 @@ export class LessonsService {
     ifMatch: string | undefined,
     expectedVersion: number,
     current: Lesson,
-    historyRepository: Repository<LessonHistory>,
+    profile: LocalProfile,
+    manager: EntityManager,
   ): Promise<void> {
     if (!ifMatch) return;
     if (current.version !== expectedVersion) throw this.staleVersionConflict();
@@ -1608,13 +1585,10 @@ export class LessonsService {
     const draft = this.toResponse(current);
     if (matches(draft)) return;
 
-    const history = await historyRepository.find({
-      where: { lessonId: current.id },
-      order: { occurredAt: 'ASC', id: 'ASC' },
-    });
-    const commentCount = await this.getPublicCommentCount(current.id, historyRepository.manager);
-    const details = this.toDetailsResponse(current, history, { votesCount: 0, hasVoted: false }, commentCount);
+    const details = await this.readDetailsRepresentation(current, profile, manager);
     if (matches(details) || matches({ ...draft, latestReviewGuidance: details.latestReviewGuidance })) return;
+    if (current.approvedAt && (current.status === 'Approved' || current.status === 'Closed')
+      && matches(this.withLibraryAuthor(details))) return;
     throw this.staleVersionConflict();
   }
 

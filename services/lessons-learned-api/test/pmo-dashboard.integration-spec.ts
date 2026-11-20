@@ -128,6 +128,28 @@ describe('PMO Dashboard operational API', () => {
     return response.body;
   }
 
+  it('paginates the selected Dashboard card without shrinking the filtered summary', async () => {
+    const server = request(app!.getHttpServer());
+    const path = '/api/lessons-learned/v1/pmo/dashboard';
+    const pmo = { 'X-PMO-Local-User-ID': 'local-pmo' };
+    const alpha = await submitLesson(await createCompleteDraft({ title: 'Paged Alpha' }));
+    const beta = await submitLesson(await createCompleteDraft({ title: 'Paged Beta' }));
+    await submitLesson(await createCompleteDraft({ title: 'Other lesson' }));
+    const filters = { limit: 1, search: 'Paged', sort: 'title', card: 'awaiting-evaluation' };
+
+    const first = await server.get(path).set(pmo).query(filters).expect(200);
+    expect(first.body.items.map(({ id }: { id: number }) => id)).toEqual([alpha.id]);
+    expect(first.body.summary.awaitingEvaluation).toBe(2);
+    expect(first.body.page).toEqual({ limit: 1, nextCursor: expect.any(String) });
+    const cursor = first.body.page.nextCursor;
+    const second = await server.get(path).set(pmo).query({ ...filters, cursor }).expect(200);
+    expect(second.body.items.map(({ id }: { id: number }) => id)).toEqual([beta.id]);
+    expect(second.body.summary).toEqual(first.body.summary);
+    expect(second.body.page).toEqual({ limit: 1, nextCursor: null });
+    await server.get(path).set(pmo).query({ ...filters, cursor, sort: 'activity' }).expect(400);
+    await server.get(path).set(pmo).query({ limit: 101 }).expect(400);
+  });
+
   it('restricts PMO Dashboard access to PMO moderators and returns 401/403 otherwise', async () => {
     const server = request(app!.getHttpServer());
 

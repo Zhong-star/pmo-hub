@@ -3,6 +3,7 @@ import type { HomeLessonSummary, HomeResponse, HomeTargetPage } from './api';
 
 interface HomeViewProps {
   home: HomeResponse;
+  showOverview: boolean;
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
   /** Opens Lesson Detail through the operational path that never records a view (D7). */
@@ -43,15 +44,7 @@ function LessonButton({ lesson, onOpenLesson }: { lesson: HomeLessonSummary; onO
   );
 }
 
-export function HomeView({ home, theme, onThemeChange, onOpenLesson, onNavigate }: HomeViewProps) {
-  const isPmo = home.profile.role === 'LESSONS_MODERATOR';
-  const { primaryAction, highlights, notifications, recentWork, shortcuts } = home;
-
-  function runPrimaryAction() {
-    if (primaryAction.lessonId !== null) onOpenLesson(primaryAction.lessonId);
-    else onNavigate(primaryAction.targetPage);
-  }
-
+export function HomeView({ home, showOverview, theme, onThemeChange, onOpenLesson, onNavigate }: HomeViewProps) {
   return (
     <div className="home-view">
       <div className="home-header">
@@ -66,6 +59,24 @@ export function HomeView({ home, theme, onThemeChange, onOpenLesson, onNavigate 
         </div>
       </div>
 
+      {showOverview && <HomeOverview home={home} onOpenLesson={onOpenLesson} onNavigate={onNavigate} />}
+
+      <a className="primary-link" href="/">Back to PMO Hub</a>
+    </div>
+  );
+}
+
+function HomeOverview({ home, onOpenLesson, onNavigate }: Pick<HomeViewProps, 'home' | 'onOpenLesson' | 'onNavigate'>) {
+  const isPmo = home.profile.role === 'LESSONS_MODERATOR';
+  const { primaryAction, highlights, notifications, recentWork, shortcuts } = home;
+
+  function runPrimaryAction() {
+    if (primaryAction.lessonId !== null) onOpenLesson(primaryAction.lessonId);
+    else onNavigate(primaryAction.targetPage);
+  }
+
+  return (
+    <>
       <section className="home-primary-action" aria-labelledby="home-primary-action-title">
         <h2 id="home-primary-action-title">Recommended next action</h2>
         <p>{primaryAction.description}</p>
@@ -177,7 +188,6 @@ export function HomeView({ home, theme, onThemeChange, onOpenLesson, onNavigate 
         </ul>
       </section>
 
-      <a className="primary-link" href="/">Back to PMO Hub</a>
-    </div>
+    </>
   );
 }

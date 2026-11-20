@@ -52,7 +52,8 @@ export type PmoDashboardResponse = paths[typeof LESSONS_LEARNED_PMO_DASHBOARD_PA
 export type PmoDashboardSummary = PmoDashboardResponse['summary'];
 export type PmoDashboardLesson = PmoDashboardResponse['items'][number];
 export type ProfileSearchFilters = NonNullable<paths[typeof LESSONS_LEARNED_PROFILES_PATH]['get']['parameters']['query']>;
-export type ProfileSummary = paths[typeof LESSONS_LEARNED_PROFILES_PATH]['get']['responses'][200]['content']['application/json'][number];
+export type ProfileSearchPage = Extract<paths[typeof LESSONS_LEARNED_PROFILES_PATH]['get']['responses'][200]['content']['application/json'], { items: unknown[] }>;
+export type ProfileSummary = ProfileSearchPage['items'][number];
 export type ContributorProfileFilters = NonNullable<paths[typeof LESSONS_LEARNED_PROFILE_DETAIL_PATH]['get']['parameters']['query']>;
 export type ContributorProfileSort = NonNullable<ContributorProfileFilters['sort']>;
 export type ContributorProfileResponse = paths[typeof LESSONS_LEARNED_PROFILE_DETAIL_PATH]['get']['responses'][200]['content']['application/json'];
@@ -173,14 +174,14 @@ export async function getPmoDashboard(localUserId: string, filters: PmoDashboard
   return data;
 }
 
-export async function getProfiles(localUserId: string, filters: ProfileSearchFilters = {}): Promise<ProfileSummary[]> {
-  const { data } = await api.get<ProfileSummary[]>(LESSONS_LEARNED_PROFILES_PATH, {
+export async function getProfiles(localUserId: string, filters: ProfileSearchFilters = {}): Promise<ProfileSearchPage> {
+  const { data } = await api.get<ProfileSearchPage | ProfileSummary[]>(LESSONS_LEARNED_PROFILES_PATH, {
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
-    params: filters,
+    params: { ...filters, paged: true },
   });
 
-  return data;
+  return Array.isArray(data) ? { items: data, page: { limit: 50, nextCursor: null } } : data;
 }
 
 export async function getContributorProfile(

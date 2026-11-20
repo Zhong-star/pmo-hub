@@ -226,33 +226,37 @@ test('browser Back and Forward confirm dirty editor navigation and do not restor
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
-test('Contributor cancels an Open lesson with a reason and can reopen its Archived details after reload', async ({ page }) => {
+test('FT-015, FT-028: Contributor cancels an Open lesson by keyboard and can reopen its Archived details after reload', async ({ page }) => {
   expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
   const title = `Issue 23 cancelled lesson ${Date.now()}`;
   await page.setViewportSize({ width: 1280, height: 480 });
 
   await page.goto('/');
-  await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await selectWithKeyboard(page, page.getByRole('combobox', { name: 'Local profile' }), 'local-developer');
+  await activateWithKeyboard(page, page.getByRole('button', { name: 'Continue' }));
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
-  await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
-  await page.getByRole('link', { name: 'My Submissions' }).click();
+  await activateWithKeyboard(page, page.getByRole('link', { name: 'Open Lessons Learned' }));
+  await activateWithKeyboard(page, page.getByRole('link', { name: 'My Submissions' }));
 
-  await page.getByRole('button', { name: 'Create lesson' }).click();
-  await page.getByRole('textbox', { name: 'Title' }).fill(title);
-  await page.getByRole('button', { name: 'Save Draft' }).click();
+  await activateWithKeyboard(page, page.getByRole('button', { name: 'Create lesson' }));
+  await fillWithKeyboard(page, page.getByRole('textbox', { name: 'Title' }), title);
+  await activateWithKeyboard(page, page.getByRole('button', { name: 'Save Draft' }));
   await expect(page.getByText('Draft saved.', { exact: true })).toBeVisible();
   const draftRow = page.getByRole('listitem').filter({ hasText: title });
   const draftIdText = await draftRow.locator('.draft-meta').textContent();
   const lessonId = Number(draftIdText?.match(/#(\d+)/)?.[1]);
   expect(lessonId).toBeGreaterThan(0);
-  await page.getByRole('button', { name: /^Close editor$/ }).click();
-
-  await page.getByRole('button', { name: `Cancel ${title}` }).click();
+  await activateWithKeyboard(page, page.getByRole('button', { name: /^Close editor$/ }));
+  const cancel = page.getByRole('button', { name: `Cancel ${title}` });
+  await activateWithKeyboard(page, cancel);
   const cancelDialog = page.getByRole('dialog', { name: 'Cancel lesson' });
   await expect(cancelDialog).toBeVisible();
-  await cancelDialog.getByRole('textbox', { name: 'Reason for cancellation' }).fill('The project scope changed.');
-  await cancelDialog.getByRole('button', { name: 'Confirm cancellation' }).click();
+  await page.keyboard.press('Escape');
+  await expect(cancelDialog).toBeHidden();
+  await expect(cancel).toBeFocused();
+  await activateWithKeyboard(page, cancel);
+  await fillWithKeyboard(page, cancelDialog.getByRole('textbox', { name: 'Reason for cancellation' }), 'The project scope changed.');
+  await activateWithKeyboard(page, cancelDialog.getByRole('button', { name: 'Confirm cancellation' }));
 
   await expect(page.getByText(`Lesson #${lessonId} · Archived`)).toBeVisible();
   const search = page.getByRole('searchbox', { name: 'Search title or ID' });
@@ -641,21 +645,27 @@ test('FT-009, FT-011–013, FT-016, FT-020–025, FT-028, FT-030: submits, retur
   await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
 });
 
-test('FT-014: PMO rejects with a reason, and other Contributors cannot read the archived lesson', async ({ page, request }) => {
+test('FT-014, FT-028: PMO rejects by keyboard, and other Contributors cannot read the archived lesson', async ({ page, request }) => {
   const title = `Rejected review ${Date.now()}`;
   const reason = 'The example is specific to an individual incident.';
   const lesson = await submitLessonForReview(request, title);
   await page.addInitScript(() => localStorage.setItem('pmo-hub.local-user-id', 'local-pmo'));
   await page.goto('/lessons-learned/?page=evaluation-queue');
 
-  await page.getByRole('button', { name: `Reject ${title}` }).click();
+  const reject = page.getByRole('button', { name: `Reject ${title}` });
+  await activateWithKeyboard(page, reject);
   const dialog = page.getByRole('dialog', { name: 'Reject lesson' });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(reject).toBeFocused();
+  await activateWithKeyboard(page, reject);
   const reasonField = dialog.getByRole('textbox', { name: 'Reason for rejection' });
   const confirm = dialog.getByRole('button', { name: 'Confirm rejection' });
-  await confirm.click();
+  await activateWithKeyboard(page, confirm);
   await expect(reasonField).toHaveAttribute('aria-invalid', 'true');
-  await reasonField.fill(reason);
-  await confirm.click();
+  await fillWithKeyboard(page, reasonField, reason);
+  await activateWithKeyboard(page, confirm);
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('button', { name: `Reject ${title}` })).toHaveCount(0);
 

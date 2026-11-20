@@ -111,6 +111,7 @@ function dashboardResponse(overrides: Partial<PmoDashboardResponse> = {}): PmoDa
       recentlyReturned: 1,
     },
     items: [dashboardLesson()],
+    page: { limit: 50, nextCursor: null },
     projects: [{ id: 'LOCAL-PROJECT-001', name: 'Fictional Atlas Modernization' }],
     ...overrides,
   };

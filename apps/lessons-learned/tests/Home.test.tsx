@@ -248,12 +248,31 @@ describe('Role-aware Home screen integration (#52)', () => {
       windowStartAt: '2026-10-19T00:00:00.000Z',
       summary: { awaitingEvaluation: 0, recentlyApproved: 0, recentlyClosed: 0, recentlyReturned: 0 },
       items: [],
+      page: { limit: 50, nextCursor: null },
       projects: [],
     });
   });
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('opens Lessons Library from Home when the API still serves the previous Home contract', async () => {
+    window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
+    vi.mocked(getHome).mockResolvedValue({
+      profile: contributorHome.profile,
+      navigation: contributorHome.navigation,
+    } as HomeResponse);
+    const user = userEvent.setup();
+
+    renderScreen();
+
+    expect(await screen.findByRole('heading', { name: 'Home' })).toBeVisible();
+    expect(screen.getByText('Welcome, Local Contributor')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /^Notifications/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Profiles' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Lessons Library' }));
+    expect(await screen.findByRole('heading', { name: 'Lessons Library' })).toBeVisible();
   });
 
   it('renders Contributor Home with primary CTA, returned highlights, unread notifications, recent work, theme toggle, and role shortcuts without incrementing views on open (D7)', async () => {
