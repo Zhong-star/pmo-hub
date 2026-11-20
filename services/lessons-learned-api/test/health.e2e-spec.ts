@@ -27,6 +27,11 @@ function sortOperationParameters(document: OpenAPIObject): OpenAPIObject {
 
 type OpenApiOperationContract = {
   security?: Record<string, string[]>[];
+  parameters?: Array<{
+    in?: string;
+    name?: string;
+    schema?: { type?: string; minimum?: number; maximum?: number; default?: number };
+  }>;
   requestBody?: { content?: Record<string, { schema?: { $ref?: string } }> };
   responses?: Record<string, {
     headers?: Record<string, unknown>;
@@ -169,6 +174,31 @@ describe('Lessons Learned health API', () => {
       .get('/api/lessons-learned/v1/health')
       .expect(200)
       .expect({ status: 'ok' });
+  });
+
+  it('enforces API pagination defaults across all OpenAPI collection endpoints', () => {
+    const contract = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'openapi/lessons-learned-v1.json'), 'utf8'),
+    ) as OpenApiContract;
+
+    let checkedCount = 0;
+    for (const [path, pathItem] of Object.entries(contract.paths)) {
+      for (const [method, operation] of Object.entries(pathItem)) {
+        const limitParameter = operation?.parameters?.find(
+          (parameter) => parameter.in === 'query' && parameter.name === 'limit',
+        );
+        if (!limitParameter) continue;
+        checkedCount += 1;
+        expect(limitParameter.schema, `${method.toUpperCase()} ${path} limit schema`).toEqual({
+          type: 'integer',
+          minimum: 1,
+          maximum: 100,
+          default: 50,
+        });
+      }
+    }
+
+    expect(checkedCount).toBeGreaterThan(0);
   });
 
   it('authorizes a Contributor and returns the role-aware Home payload', async () => {
