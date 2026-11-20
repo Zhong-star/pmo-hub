@@ -1,5 +1,5 @@
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsLearnedScreen } from '../src/LessonsLearnedScreen';
@@ -62,6 +62,12 @@ vi.mock('../src/api', () => ({
 
 const contributor = {
   profile: { id: 'local-contributor', displayName: 'Local Contributor', role: 'LESSONS_USER' as const },
+  navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
+  ...emptyHomeSections,
+};
+
+const pmo = {
+  profile: { id: 'local-pmo', displayName: 'Local PMO', role: 'LESSONS_MODERATOR' as const },
   navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
   ...emptyHomeSections,
 };
@@ -321,11 +327,6 @@ describe('Profile Search and Contributor Profile screens', () => {
 
   it('closes an Approved lesson opened from Contributor Profile and reloads Contributor Profile detail cache on version conflict', async () => {
     const user = userEvent.setup();
-    const pmo = {
-      profile: { id: 'local-pmo', displayName: 'Local PMO', role: 'LESSONS_MODERATOR' as const },
-      navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
-      ...emptyHomeSections,
-    };
     const approved = publishedLesson({ id: 10, title: 'Published Release Guide', status: 'Approved', version: 2 });
     const latest = publishedLesson({ id: 10, title: 'Published Release Guide Reloaded', status: 'Approved', version: 3 });
     const closed = publishedLesson({ id: 10, title: 'Published Release Guide Reloaded', status: 'Closed', version: 4 });
@@ -363,5 +364,35 @@ describe('Profile Search and Contributor Profile screens', () => {
     await waitFor(() => expect(closeLesson).toHaveBeenLastCalledWith('local-pmo', 10, { version: 3 }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(await screen.findByText('Closed')).toBeInTheDocument();
+  });
+
+  it('closes an open profile published lesson detail when storage switches the active profile', async () => {
+    const user = userEvent.setup();
+    vi.mocked(getHome).mockImplementation((profileId) => Promise.resolve(
+      profileId === 'local-pmo' ? pmo : contributor,
+    ));
+
+    renderScreen('local-pmo', '/lessons-learned/?page=profiles&profile=user-ana');
+
+    await user.click(await screen.findByRole('button', { name: 'View Published Release Guide' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Published Release Guide')).toBeInTheDocument();
+
+    vi.mocked(getLibraryLessonDetails).mockClear();
+    vi.mocked(recordLibraryView).mockClear();
+
+    act(() => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'pmo-hub.local-user-id',
+        newValue: 'local-contributor',
+      }));
+    });
+
+    expect(await screen.findByRole('button', { name: 'Local Contributor' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ana Costa' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(getLibraryLessonDetails).not.toHaveBeenCalled();
+    expect(recordLibraryView).not.toHaveBeenCalled();
   });
 });

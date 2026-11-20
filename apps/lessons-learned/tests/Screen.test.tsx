@@ -1665,6 +1665,40 @@ describe('Lessons Learned access check', () => {
     expect(screen.queryByRole('dialog', { name: 'Edit lesson' })).not.toBeInTheDocument();
   });
 
+  it('clears an open Return lesson dialog and blocks Evaluation Queue when storage or pageshow switches from PMO to Contributor', async () => {
+    const lesson = lessonDraft({ id: 83, title: 'PMO return switch lesson', status: 'PMOEvaluation' });
+    vi.mocked(getHome).mockImplementation((profileId) => Promise.resolve(
+      profileId === 'local-pmo' ? pmo : contributor,
+    ));
+    vi.mocked(getPmoEvaluationQueue).mockResolvedValue([lesson]);
+    vi.mocked(getLessonDetails).mockResolvedValue(lessonDetails(lesson));
+    const user = userEvent.setup();
+
+    renderScreen('local-pmo', 0, 'evaluation-queue');
+
+    await user.click(await screen.findByRole('button', { name: 'Module menu' }));
+    expect(screen.getByRole('button', { name: 'Module menu' })).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(await screen.findByRole('button', { name: 'View PMO return switch lesson' }));
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    await user.click(within(details).getByRole('button', { name: 'Return for changes' }));
+    expect(await screen.findByRole('dialog', { name: 'Return lesson' })).toBeInTheDocument();
+
+    vi.mocked(getPmoEvaluationQueue).mockClear();
+    act(() => {
+      window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
+      window.dispatchEvent(new PageTransitionEvent('pageshow'));
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('The PMO Review Queue is restricted to PMO moderators.');
+    expect(screen.getByRole('button', { name: 'Local Contributor' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Module menu' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('dialog', { name: 'Return lesson' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Lesson details' })).not.toBeInTheDocument();
+    expect(getPmoEvaluationQueue).not.toHaveBeenCalled();
+  });
+
   it('keeps a newly selected profile’s form unchanged when the previous profile save completes', async () => {
     vi.mocked(getHome).mockImplementation((profileId) => Promise.resolve(
       profileId === 'local-pmo' ? pmo : contributor,

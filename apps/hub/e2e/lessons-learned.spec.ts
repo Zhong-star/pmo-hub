@@ -846,6 +846,197 @@ test('change profile from Lessons Learned returns to selection and browser histo
   await expect(page.getByText('Welcome, Local PMO')).not.toBeVisible();
 });
 
+test.describe('change profile from PMO moderation destinations', () => {
+  async function enterPmoDestination(
+    page: Page,
+    destination: 'Evaluation Queue' | 'PMO Dashboard' | 'PMO Drafts',
+    urlPattern: RegExp,
+  ) {
+    await page.goto('/');
+    await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-pmo');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
+    await expect(page.getByText('Welcome, Local PMO')).toBeVisible();
+
+    await page.getByRole('link', { name: destination }).click();
+    await expect(page).toHaveURL(urlPattern);
+    await expect(page.getByRole('heading', { name: destination })).toBeVisible();
+  }
+
+  async function changeProfileFromPmoHeader(page: Page) {
+    await page.getByRole('button', { name: 'Local PMO' }).click();
+    await page.getByRole('button', { name: 'Change profile' }).click();
+    await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Module catalog' })).not.toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem('pmo-hub.local-user-id'))).toBeNull();
+  }
+
+  async function selectProfileAndVerifyCatalog(
+    page: Page,
+    profileId: string,
+    expectedDisplayName: string,
+  ) {
+    await page.getByRole('combobox', { name: 'Local profile' }).selectOption(profileId);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: `Welcome, ${expectedDisplayName}` })).toBeVisible();
+  }
+
+  async function expectNoRequestsDuring(
+    page: Page,
+    pathSubstring: string,
+    action: () => Promise<void>,
+  ) {
+    const calls: string[] = [];
+    const listener = (request: { url: () => string }) => {
+      if (request.url().includes(pathSubstring)) calls.push(request.url());
+    };
+    page.on('request', listener);
+    try {
+      await action();
+    } finally {
+      page.off('request', listener);
+    }
+    expect(calls).toEqual([]);
+  }
+
+  async function verifyContributorPmoSurfaceDeniedAfterSwitch(
+    page: Page,
+    {
+      destination,
+      urlPattern,
+      apiPath,
+      deniedMessage,
+      hiddenTitle,
+      extraHiddenLocator,
+    }: {
+      destination: 'Evaluation Queue' | 'PMO Dashboard';
+      urlPattern: RegExp;
+      apiPath: string;
+      deniedMessage: string;
+      hiddenTitle: string;
+      extraHiddenLocator?: Locator;
+    },
+  ) {
+    await changeProfileFromPmoHeader(page);
+
+    await expectNoRequestsDuring(page, apiPath, async () => {
+      await page.goBack();
+      await expect(page).toHaveURL(urlPattern);
+      await expect(page.getByRole('heading', { name: 'Access check' })).toBeVisible();
+      await expect(page.getByText(/No local profile is selected/)).toBeVisible();
+      await expect(page.getByText(hiddenTitle)).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Local PMO' })).toHaveCount(0);
+      if (extraHiddenLocator) await expect(extraHiddenLocator).toHaveCount(0);
+    });
+
+    await page.goForward();
+    await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
+    await selectProfileAndVerifyCatalog(page, 'local-contributor', 'Local Contributor');
+
+    await expectNoRequestsDuring(page, apiPath, async () => {
+      await page.goBack();
+      await expect(page).toHaveURL(urlPattern);
+      await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
+      await expect(page.getByRole('alert')).toContainText(deniedMessage);
+      await expect(page.getByRole('link', { name: 'Back to Home' })).toBeVisible();
+      await expect(page.getByRole('banner').getByRole('button', { name: 'Local Contributor' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Local PMO' })).toHaveCount(0);
+      await expect(page.getByText(hiddenTitle)).toHaveCount(0);
+      await expect(page.getByRole('link', { name: destination })).toHaveCount(0);
+      if (extraHiddenLocator) await expect(extraHiddenLocator).toHaveCount(0);
+    });
+  }
+
+  test('Evaluation Queue returns to Access check before selection and shows Access denied to Contributor on history back', async ({ page, request }) => {
+    expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
+    const submittedTitle = `Issue 18 evaluation queue ${Date.now()}`;
+    await submitLessonForReview(request, submittedTitle, { authorId: 'local-developer' });
+
+    const urlPattern = /\/lessons-learned\/\?page=evaluation-queue$/;
+    await enterPmoDestination(page, 'Evaluation Queue', urlPattern);
+    await expect(page.getByRole('button', { name: `View ${submittedTitle}` })).toBeVisible();
+
+    await verifyContributorPmoSurfaceDeniedAfterSwitch(page, {
+      destination: 'Evaluation Queue',
+      urlPattern,
+      apiPath: '/api/lessons-learned/v1/lessons/evaluation-queue',
+      deniedMessage: 'The PMO Review Queue is restricted to PMO moderators.',
+      hiddenTitle: submittedTitle,
+    });
+  });
+
+  test('PMO Dashboard returns to Access check before selection and denies access to Contributor without leaking data on history back', async ({ page, request }) => {
+    expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
+    const dashboardTitle = `Issue 18 dashboard ${Date.now()}`;
+    await submitLessonForReview(request, dashboardTitle, { authorId: 'local-developer' });
+
+    const urlPattern = /\/lessons-learned\/\?page=pmo-dashboard$/;
+    const summaryGroup = page.getByRole('group', { name: /Operational summary/i });
+    await enterPmoDestination(page, 'PMO Dashboard', urlPattern);
+    await expect(summaryGroup).toBeVisible();
+    await expect(page.getByRole('button', { name: `View ${dashboardTitle}` })).toBeVisible();
+
+    await verifyContributorPmoSurfaceDeniedAfterSwitch(page, {
+      destination: 'PMO Dashboard',
+      urlPattern,
+      apiPath: '/api/lessons-learned/v1/pmo/dashboard',
+      deniedMessage: 'The PMO Dashboard is restricted to PMO moderators.',
+      hiddenTitle: dashboardTitle,
+      extraHiddenLocator: summaryGroup,
+    });
+  });
+
+  test('PMO Drafts opens Module catalog for Contributor and falls back to Home on history back', async ({ page }) => {
+    expect(process.env.LESSONS_LEARNED_DATABASE_URL, 'Run through test:e2e:lessons-learned to start isolated PostgreSQL.').toBeTruthy();
+    const draftTitle = `Issue 18 pmo draft ${Date.now()}`;
+    const created = await page.request.post('/api/lessons-learned/v1/lessons', {
+      headers: { 'X-PMO-Local-User-ID': 'local-developer' },
+      data: { title: draftTitle },
+    });
+    expect(created.status()).toBe(201);
+
+    const urlPattern = /\/lessons-learned\/\?page=pmo-drafts$/;
+    await enterPmoDestination(page, 'PMO Drafts', urlPattern);
+    await expect(page.getByRole('button', { name: `View ${draftTitle}` })).toBeVisible();
+
+    await changeProfileFromPmoHeader(page);
+    await selectProfileAndVerifyCatalog(page, 'local-contributor', 'Local Contributor');
+
+    await expectNoRequestsDuring(page, '/api/lessons-learned/v1/lessons/pmo-drafts', async () => {
+      await page.goBack();
+      await expect(page).toHaveURL(urlPattern);
+      await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+      await expect(page.getByText('Welcome, Local Contributor')).toBeVisible();
+      await expect(page.getByRole('banner').getByRole('button', { name: 'Local Contributor' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Local PMO' })).toHaveCount(0);
+      await expect(page.getByText(draftTitle)).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'PMO Drafts' })).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'PMO Drafts' })).toHaveCount(0);
+    });
+  });
+
+  test('switching from Evaluation Queue to a profile without module access opens Module catalog and denies module access on history back', async ({ page }) => {
+    const urlPattern = /\/lessons-learned\/\?page=evaluation-queue$/;
+    await enterPmoDestination(page, 'Evaluation Queue', urlPattern);
+
+    await changeProfileFromPmoHeader(page);
+    await selectProfileAndVerifyCatalog(page, 'local-no-access', 'Local User Without Access');
+
+    await expectNoRequestsDuring(page, '/api/lessons-learned/v1/lessons/evaluation-queue', async () => {
+      await page.goBack();
+      await expect(page).toHaveURL(urlPattern);
+      await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
+      await expect(page.getByRole('alert')).toContainText('Your local profile does not have access to Lessons Learned.');
+      await expect(page.getByRole('banner').getByRole('button', { name: 'local-no-access' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Local PMO' })).toHaveCount(0);
+      await expect(page.getByRole('navigation', { name: 'Lessons Learned' })).toHaveCount(0);
+    });
+  });
+});
+
 test('profile menu theme is keyboard operable, readable, and shared across both apps in the current tab', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('pmo-hub.local-user-id', 'local-contributor'));
   await page.goto('/');

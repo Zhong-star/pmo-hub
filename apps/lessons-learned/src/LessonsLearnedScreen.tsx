@@ -383,11 +383,7 @@ export function LessonsLearnedScreen() {
     setProfileSort('recent');
   }, []);
 
-  const applyPageFromLocation = useCallback(() => {
-    const page = readModulePage();
-    setModulePage(page);
-    setSelectedContributorProfileId(readContributorProfileId());
-    if (page !== 'library' || modulePage !== 'library') resetSubmissionFilters(page);
+  const clearOpenOverlays = useCallback(() => {
     setSelectedDraft(null);
     setIsCreateFormOpen(false);
     setSelectedCancellationDraft(null);
@@ -398,7 +394,15 @@ export function LessonsLearnedScreen() {
     setSelectedSubmissionId(null);
     setSelectedProfilePublishedLessonId(null);
     setIsModuleMenuOpen(false);
-  }, [modulePage, resetSubmissionFilters]);
+  }, []);
+
+  const applyPageFromLocation = useCallback(() => {
+    const page = readModulePage();
+    setModulePage(page);
+    setSelectedContributorProfileId(readContributorProfileId());
+    if (page !== 'library' || modulePage !== 'library') resetSubmissionFilters(page);
+    clearOpenOverlays();
+  }, [clearOpenOverlays, modulePage, resetSubmissionFilters]);
 
   const registerNavigationCloseRequest = useCallback((requestClose: (() => boolean) | null) => {
     navigationCloseRequestRef.current = requestClose;
@@ -858,16 +862,10 @@ export function LessonsLearnedScreen() {
     setSelectionGeneration(selectionGenerationRef.current);
     setSelectedProfileId(profileId);
     setAuthorizedSelectionGeneration(null);
-    setSelectedDraft(null);
-    setIsCreateFormOpen(false);
-    setSelectedCancellationDraft(null);
-    setSelectedApprovalDraft(null);
-    setSelectedRejectionDraft(null);
-    setSelectedClosureDraft(null);
-    setSelectedSubmissionId(null);
+    clearOpenOverlays();
     setVoteError(null);
     resetSubmissionFilters(modulePage);
-  }, [modulePage, resetSubmissionFilters]);
+  }, [clearOpenOverlays, modulePage, resetSubmissionFilters]);
 
   const isSavingCurrentDraft = selectedProfileId !== null && pendingCreateProfiles.has(selectedProfileId);
   const projectsQuery = useQuery({
@@ -952,15 +950,8 @@ export function LessonsLearnedScreen() {
     // An access revocation must discard the private editor state before a later recheck can restore the page.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setAuthorizedSelectionGeneration(null);
-    setSelectedDraft(null);
-    setIsCreateFormOpen(false);
-    setSelectedCancellationDraft(null);
-    setSelectedReturnLesson(null);
-    setSelectedApprovalDraft(null);
-    setSelectedRejectionDraft(null);
-    setSelectedClosureDraft(null);
-    setSelectedSubmissionId(null);
-  }, [isDefinitiveAccessFailure]);
+    clearOpenOverlays();
+  }, [clearOpenOverlays, isDefinitiveAccessFailure]);
 
   async function saveDraftFields(input: UpdateLessonDraftBody, draftId: number | null): Promise<LessonDraft> {
     const profileId = selectedProfileIdRef.current;
@@ -1195,16 +1186,7 @@ export function LessonsLearnedScreen() {
     setModulePage(page);
     setSelectedContributorProfileId(null);
     resetSubmissionFilters(page);
-    setSelectedDraft(null);
-    setIsCreateFormOpen(false);
-    setSelectedCancellationDraft(null);
-    setSelectedReturnLesson(null);
-    setSelectedApprovalDraft(null);
-    setSelectedRejectionDraft(null);
-    setSelectedClosureDraft(null);
-    setSelectedSubmissionId(null);
-    setSelectedProfilePublishedLessonId(null);
-    setIsModuleMenuOpen(false);
+    clearOpenOverlays();
   }
 
   function openContributorProfile(userId: string, origin?: ProfileOrigin) {
