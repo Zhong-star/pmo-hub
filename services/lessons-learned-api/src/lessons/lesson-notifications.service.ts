@@ -33,7 +33,7 @@ interface NotificationCursor {
 }
 
 function parseLimit(limit?: string): number {
-  if (limit === undefined) return 20;
+  if (limit === undefined) return 50;
   if (typeof limit !== 'string' || !/^(?:[1-9][0-9]?|100)$/.test(limit)) {
     throw new BadRequestException('Page limit must be an integer between 1 and 100.');
   }

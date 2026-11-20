@@ -660,7 +660,7 @@ export class LessonsController {
   @ApiSecurity(localProfileScheme)
   @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson.' })
   @ApiQuery({ name: 'cursor', required: false, type: String })
-  @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } })
+  @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } })
   @ApiQuery({ name: 'includeHidden', required: false, enum: ['true', 'false'], description: 'PMO-only flag to include hidden comments and moderation audit details.' })
   @ApiOkResponse({ type: LessonCommentPageResponse })
   @ApiBadRequestResponse({ description: 'Invalid lesson ID, page limit, cursor, or includeHidden flag.' })

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsLearnedScreen } from '../src/LessonsLearnedScreen';
 import {
   castLessonVote,
+  closeLesson,
   getContributorProfile,
   getHome,
   getLessonDetails,
@@ -316,5 +317,51 @@ describe('Profile Search and Contributor Profile screens', () => {
     await user.click(detailAuthorLink);
 
     expect(await screen.findByRole('heading', { name: 'Ana Costa' })).toBeInTheDocument();
+  });
+
+  it('closes an Approved lesson opened from Contributor Profile and reloads Contributor Profile detail cache on version conflict', async () => {
+    const user = userEvent.setup();
+    const pmo = {
+      profile: { id: 'local-pmo', displayName: 'Local PMO', role: 'LESSONS_MODERATOR' as const },
+      navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
+      ...emptyHomeSections,
+    };
+    const approved = publishedLesson({ id: 10, title: 'Published Release Guide', status: 'Approved', version: 2 });
+    const latest = publishedLesson({ id: 10, title: 'Published Release Guide Reloaded', status: 'Approved', version: 3 });
+    const closed = publishedLesson({ id: 10, title: 'Published Release Guide Reloaded', status: 'Closed', version: 4 });
+
+    vi.mocked(getHome).mockResolvedValue(pmo);
+    vi.mocked(getContributorProfile)
+      .mockResolvedValueOnce(contributorProfileResponse({ items: [approved] }))
+      .mockResolvedValue(contributorProfileResponse({ items: [closed] }));
+    vi.mocked(getLibraryLessonDetails)
+      .mockResolvedValueOnce(lessonDetailsFromLibrary(approved))
+      .mockResolvedValueOnce(lessonDetailsFromLibrary(latest));
+    vi.mocked(closeLesson)
+      .mockRejectedValueOnce({ response: { status: 409, data: { code: 'STALE_LESSON_VERSION' } } })
+      .mockResolvedValueOnce(closed);
+
+    renderScreen('local-pmo', '/lessons-learned/?page=profiles&profile=user-ana');
+
+    await user.click(await screen.findByRole('button', { name: 'View Published Release Guide' }));
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    await user.click(within(details).getByRole('button', { name: 'Close lesson' }));
+
+    const confirm = await screen.findByRole('dialog', { name: 'Close lesson' });
+    await user.click(within(confirm).getByRole('button', { name: 'Confirm closure' }));
+    expect(await within(confirm).findByRole('alert')).toHaveTextContent(/Reload the current version/);
+
+    await user.click(within(confirm).getByRole('button', { name: 'Reload current version' }));
+    await waitFor(() => expect(within(details).getByText('Published Release Guide Reloaded')).toBeInTheDocument());
+    expect(vi.mocked(getLibraryLessonDetails)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(getLessonDetails)).not.toHaveBeenCalled();
+
+    await user.click(within(details).getByRole('button', { name: 'Close lesson' }));
+    const confirmReloaded = await screen.findByRole('dialog', { name: 'Close lesson' });
+    await user.click(within(confirmReloaded).getByRole('button', { name: 'Confirm closure' }));
+
+    await waitFor(() => expect(closeLesson).toHaveBeenLastCalledWith('local-pmo', 10, { version: 3 }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(await screen.findByText('Closed')).toBeInTheDocument();
   });
 });

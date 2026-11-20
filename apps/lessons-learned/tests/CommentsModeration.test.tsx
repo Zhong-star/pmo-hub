@@ -445,4 +445,59 @@ describe('Lessons Learned comments, single-level replies, and PMO moderation', (
     expect(within(dialog).getByText(/Local PMO/)).toBeInTheDocument();
     expect(dialog.querySelector('time[datetime="2026-11-16T12:30:00.000Z"]')).toBeInTheDocument();
   });
+
+  it('keeps loaded comments visible and retries when Load more comments fails', async () => {
+    const user = userEvent.setup();
+    vi.mocked(getLessonComments).mockImplementation(async (_userId, _lessonId, query) => {
+      if (query?.cursor === 'cursor-2') {
+        if (vi.mocked(getLessonComments).mock.calls.filter(([, , q]) => q?.cursor === 'cursor-2').length === 1) {
+          throw new Error('Temporary pagination error');
+        }
+        return {
+          publicCommentCount: 2,
+          page: { limit: 20, nextCursor: null },
+          items: [{
+            id: 19,
+            lessonId: 42,
+            parentCommentId: null,
+            authorId: 'local-contributor',
+            authorDisplayName: 'Local Contributor',
+            body: 'Page 2 comment after retry',
+            createdAt: '2026-11-16T09:00:00.000Z',
+            isHidden: false,
+            moderation: null,
+            replies: [],
+          }],
+        };
+      }
+      return {
+        publicCommentCount: 2,
+        page: { limit: 20, nextCursor: 'cursor-2' },
+        items: [{
+          id: 20,
+          lessonId: 42,
+          parentCommentId: null,
+          authorId: 'local-contributor',
+          authorDisplayName: 'Local Contributor',
+          body: 'Page 1 loaded comment',
+          createdAt: '2026-11-16T10:00:00.000Z',
+          isHidden: false,
+          moderation: null,
+          replies: [],
+        }],
+      };
+    });
+
+    renderScreen('/lessons-learned/?page=library&lesson=42');
+    const dialog = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    expect(await within(dialog).findByText('Page 1 loaded comment')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Load more comments' }));
+    expect(await within(dialog).findByText('More comments could not be loaded.')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Comments could not be loaded.')).not.toBeInTheDocument();
+    expect(within(dialog).getByText('Page 1 loaded comment')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Load more comments' }));
+    expect(await within(dialog).findByText('Page 2 comment after retry')).toBeInTheDocument();
+  });
 });

@@ -330,6 +330,13 @@ describe('Lessons Learned internal notifications (D8)', () => {
       .send({ version: l3.version, guidance: 'Refine impact section.' })
       .expect(200);
 
+    // Default page limit follows API conventions (50) when omitted
+    const defaultPage = await server
+      .get('/api/lessons-learned/v1/notifications')
+      .set('X-PMO-Local-User-ID', 'local-author')
+      .expect(200);
+    expect(defaultPage.body.page.limit).toBe(50);
+
     // Page 1 (limit=2): newest-first
     const page1 = await server
       .get('/api/lessons-learned/v1/notifications?limit=2')

@@ -39,11 +39,18 @@ export function createOpenApiDocument(app: INestApplication) {
             ...response.content,
             'application/problem+json': { schema: { $ref: getSchemaPath(LessonProblem) } },
           };
-        } else if (path.startsWith('/api/lessons-learned/v1/lessons') && (path.includes('/{id}') || code === '201')) {
-          response.headers = {
-            ...response.headers,
-            ETag: { description: 'ETag for the returned lesson version.', schema: { type: 'string' } },
-          };
+        } else {
+          const schema = response.content?.['application/json']?.schema;
+          const schemaRef = schema && '$ref' in schema ? schema.$ref : undefined;
+          if (
+            schemaRef === '#/components/schemas/LessonDraftResponse'
+            || schemaRef === '#/components/schemas/LessonDetailsResponse'
+          ) {
+            response.headers = {
+              ...response.headers,
+              ETag: { description: 'ETag for the returned lesson version.', schema: { type: 'string' } },
+            };
+          }
         }
       }
     }

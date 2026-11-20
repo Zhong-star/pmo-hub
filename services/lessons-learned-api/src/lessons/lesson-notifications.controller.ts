@@ -69,7 +69,7 @@ export class LessonNotificationsController {
   @ApiOperation({ summary: 'List newest-first notifications for the authenticated recipient with unread count' })
   @ApiSecurity(localProfileScheme)
   @ApiQuery({ name: 'cursor', required: false, type: String, description: 'Opaque cursor for Load more pagination.' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size between 1 and 100 (default 20).' })
+  @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 }, description: 'Page size between 1 and 100 (default 50).' })
   @ApiOkResponse({ type: LessonNotificationPageResponse })
   @ApiBadRequestResponse({ description: 'Invalid notification query parameter.' })
   @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })

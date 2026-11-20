@@ -1798,14 +1798,6 @@
                   "$ref": "#/components/schemas/RecordLessonLibraryViewResponse"
                 }
               }
-            },
-            "headers": {
-              "ETag": {
-                "description": "ETag for the returned lesson version.",
-                "schema": {
-                  "type": "string"
-                }
-              }
             }
           },
           "400": {
@@ -3908,14 +3900,6 @@
                   "$ref": "#/components/schemas/LessonVoteResponse"
                 }
               }
-            },
-            "headers": {
-              "ETag": {
-                "description": "ETag for the returned lesson version.",
-                "schema": {
-                  "type": "string"
-                }
-              }
             }
           },
           "400": {
@@ -4139,14 +4123,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LessonVoteResponse"
-                }
-              }
-            },
-            "headers": {
-              "ETag": {
-                "description": "ETag for the returned lesson version.",
-                "schema": {
-                  "type": "string"
                 }
               }
             }
@@ -4382,7 +4358,7 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 100,
-              "default": 20
+              "default": 50
             }
           },
           {
@@ -4406,14 +4382,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LessonCommentPageResponse"
-                }
-              }
-            },
-            "headers": {
-              "ETag": {
-                "description": "ETag for the returned lesson version.",
-                "schema": {
-                  "type": "string"
                 }
               }
             }
@@ -4613,14 +4581,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LessonCommentThreadResponse"
-                }
-              }
-            },
-            "headers": {
-              "ETag": {
-                "description": "ETag for the returned lesson version.",
-                "schema": {
-                  "type": "string"
                 }
               }
             }
@@ -4831,14 +4791,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LessonCommentItemResponse"
-                }
-              }
-            },
-            "headers": {
-              "ETag": {
-                "description": "ETag for the returned lesson version.",
-                "schema": {
-                  "type": "string"
                 }
               }
             }
@@ -5085,14 +5037,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LessonCommentItemResponse"
-                }
-              }
-            },
-            "headers": {
-              "ETag": {
-                "description": "ETag for the returned lesson version.",
-                "schema": {
-                  "type": "string"
                 }
               }
             }
@@ -6133,10 +6077,13 @@
             "name": "limit",
             "required": false,
             "in": "query",
-            "description": "Page size between 1 and 100 (default 20).",
             "schema": {
-              "type": "number"
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "description": "Page size between 1 and 100 (default 50)."
           }
         ],
         "responses": {
@@ -6720,6 +6667,67 @@
           "correlationId": {
             "type": "string",
             "format": "uuid"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "instance",
+          "code",
+          "correlationId"
+        ]
+      },
+      "LessonFieldProblem": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "code",
+          "message"
+        ]
+      },
+      "LessonProblem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "number"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LessonFieldProblem"
+            }
           }
         },
         "required": [
@@ -7704,67 +7712,6 @@
         "required": [
           "items",
           "page"
-        ]
-      },
-      "LessonFieldProblem": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path",
-          "code",
-          "message"
-        ]
-      },
-      "LessonProblem": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "status": {
-            "type": "number"
-          },
-          "detail": {
-            "type": "string"
-          },
-          "instance": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
-          },
-          "correlationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "errors": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LessonFieldProblem"
-            }
-          }
-        },
-        "required": [
-          "type",
-          "title",
-          "status",
-          "detail",
-          "instance",
-          "code",
-          "correlationId"
         ]
       },
       "LessonProjectResponse": {

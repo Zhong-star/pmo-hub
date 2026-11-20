@@ -539,6 +539,22 @@ export interface components {
             /** Format: uuid */
             correlationId: string;
         };
+        LessonFieldProblem: {
+            path: string;
+            code: string;
+            message: string;
+        };
+        LessonProblem: {
+            type: string;
+            title: string;
+            status: number;
+            detail: string;
+            instance: string;
+            code: string;
+            /** Format: uuid */
+            correlationId: string;
+            errors?: components["schemas"]["LessonFieldProblem"][];
+        };
         LessonsLearnedProfile: {
             /** @example local-contributor */
             id: string;
@@ -830,22 +846,6 @@ export interface components {
         LessonPage: {
             items: components["schemas"]["LessonDraftResponse"][];
             page: components["schemas"]["LessonPageInfo"];
-        };
-        LessonFieldProblem: {
-            path: string;
-            code: string;
-            message: string;
-        };
-        LessonProblem: {
-            type: string;
-            title: string;
-            status: number;
-            detail: string;
-            instance: string;
-            code: string;
-            /** Format: uuid */
-            correlationId: string;
-            errors?: components["schemas"]["LessonFieldProblem"][];
         };
         LessonProjectResponse: {
             /** @example LOCAL-PROJECT-001 */
@@ -2102,8 +2102,6 @@ export interface operations {
         responses: {
             200: {
                 headers: {
-                    /** @description ETag for the returned lesson version. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3093,8 +3091,6 @@ export interface operations {
         responses: {
             200: {
                 headers: {
-                    /** @description ETag for the returned lesson version. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3196,8 +3192,6 @@ export interface operations {
         responses: {
             200: {
                 headers: {
-                    /** @description ETag for the returned lesson version. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3304,8 +3298,6 @@ export interface operations {
         responses: {
             200: {
                 headers: {
-                    /** @description ETag for the returned lesson version. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3397,8 +3389,6 @@ export interface operations {
         responses: {
             201: {
                 headers: {
-                    /** @description ETag for the returned lesson version. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3492,8 +3482,6 @@ export interface operations {
         responses: {
             201: {
                 headers: {
-                    /** @description ETag for the returned lesson version. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3601,8 +3589,6 @@ export interface operations {
         responses: {
             200: {
                 headers: {
-                    /** @description ETag for the returned lesson version. */
-                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -4010,7 +3996,7 @@ export interface operations {
             query?: {
                 /** @description Opaque cursor for Load more pagination. */
                 cursor?: string;
-                /** @description Page size between 1 and 100 (default 20). */
+                /** @description Page size between 1 and 100 (default 50). */
                 limit?: number;
             };
             header?: never;

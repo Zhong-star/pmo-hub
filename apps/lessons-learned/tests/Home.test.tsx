@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsLearnedScreen } from '../src/LessonsLearnedScreen';
 import {
+  approveLesson,
   getHome,
   getLessonDetails,
   getLessonProjects,
@@ -364,5 +365,55 @@ describe('Role-aware Home screen integration (#52)', () => {
     await user.keyboard('{Escape}');
     await user.click(within(shortcutsRegion).getByRole('button', { name: /PMO Dashboard/i }));
     expect(getPmoDashboard).toHaveBeenCalled();
+  });
+
+  it('opens the Create lesson editor from the sidebar Create lesson link', async () => {
+    window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
+    vi.mocked(getHome).mockResolvedValue(contributorHome);
+    vi.mocked(getMySubmissions).mockResolvedValue([]);
+
+    renderScreen();
+
+    const navigation = await screen.findByRole('navigation', { name: 'Lessons Learned' });
+    const user = userEvent.setup();
+    await user.click(within(navigation).getByRole('link', { name: 'Create lesson' }));
+
+    expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Create lesson' })).toBeInTheDocument();
+    expect(window.location.search).toBe('?page=my-submissions');
+  });
+
+  it('refreshes Home after mutating a lesson opened from Home', async () => {
+    window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
+    const updatedHome: HomeResponse = {
+      ...pmoHome,
+      highlights: { ...pmoHome.highlights, pendingEvaluationCount: 0, pendingEvaluationLessons: [] },
+      primaryAction: {
+        kind: 'explore-library',
+        label: 'Explore Lessons Library',
+        description: 'Browse published lessons from across the organization.',
+        targetPage: 'library',
+        lessonId: null,
+      },
+    };
+    const pendingDetails = makeDetails(21, 'API rate limit lessons', 'PMOEvaluation');
+    vi.mocked(getHome).mockResolvedValueOnce(pmoHome).mockResolvedValue(updatedHome);
+    vi.mocked(getLessonDetails).mockResolvedValue(pendingDetails);
+    vi.mocked(approveLesson).mockResolvedValue({ ...pendingDetails, status: 'Approved', version: 3, approvedAt: '2026-11-18T12:00:00.000Z' });
+
+    renderScreen();
+
+    const primaryRegion = await screen.findByRole('region', { name: 'Recommended next action' });
+    const user = userEvent.setup();
+    await user.click(within(primaryRegion).getByRole('button', { name: 'Evaluate next lesson' }));
+
+    const details = await screen.findByRole('dialog', { name: 'Lesson details' });
+    await user.click(within(details).getByRole('button', { name: 'Approve and publish' }));
+    const confirm = await screen.findByRole('dialog', { name: 'Approve lesson' });
+    await user.click(within(confirm).getByRole('button', { name: 'Confirm approval' }));
+
+    await waitFor(() => expect(approveLesson).toHaveBeenCalledWith('local-pmo', 21, { version: 2 }));
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Recommended next action' }))
+      .getByRole('button', { name: 'Explore Lessons Library' })).toBeInTheDocument());
   });
 });

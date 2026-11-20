@@ -7,7 +7,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../src/database/database.module';
@@ -276,5 +276,26 @@ describe('Lessons Learned role-aware Home API (#52)', () => {
     ]));
     expect(response.body.recentWork.length).toBeGreaterThanOrEqual(2);
     expect(response.body.notifications.unreadCount).toBe(0);
+  });
+
+  it('translates unexpected persistence errors in /home into RFC 9457 application/problem+json without leaking internals', async () => {
+    vi.spyOn(dataSource!, 'transaction').mockRejectedValueOnce(new Error('db outage: postgres://secret'));
+
+    const response = await request(app!.getHttpServer())
+      .get('/api/lessons-learned/v1/home')
+      .set('X-PMO-Local-User-ID', 'local-author')
+      .set('Accept', 'application/json, application/problem+json')
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect('Cache-Control', 'no-store')
+      .expect(500);
+
+    expect(response.headers['x-correlation-id']).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(response.body).toMatchObject({
+      status: 500,
+      code: 'INTERNAL_ERROR',
+      detail: 'Internal Server Error',
+      instance: '/api/lessons-learned/v1/home',
+    });
+    expect(JSON.stringify(response.body)).not.toContain('postgres://secret');
   });
 });

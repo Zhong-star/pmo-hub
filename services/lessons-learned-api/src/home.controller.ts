@@ -1,6 +1,7 @@
-import { Controller, Get, Header, Headers, Inject, UseFilters } from '@nestjs/common';
+import { Controller, Get, Header, Headers, Inject, UseFilters, UseInterceptors } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiResponse, ApiSecurity, ApiTags, getSchemaPath, ApiExtraModels } from '@nestjs/swagger';
 import { LessonsLearnedHomeResponse } from './home-response.dto';
+import { LessonHttpContract, LessonProblem, LessonProblemFilter } from './lessons/lesson-http-contract';
 import {
   LocalAccessProblem,
   LocalAccessProblemFilter,
@@ -22,9 +23,10 @@ function accessProblem(status: number, description: string) {
 }
 
 @ApiTags('Lessons Learned home')
-@ApiExtraModels(LocalAccessProblem)
+@ApiExtraModels(LocalAccessProblem, LessonProblem)
 @Controller()
-@UseFilters(LocalAccessProblemFilter)
+@UseFilters(LocalAccessProblemFilter, LessonProblemFilter)
+@UseInterceptors(LessonHttpContract)
 export class HomeController {
   constructor(@Inject(HomeService) private readonly homeService: HomeService) {}
 

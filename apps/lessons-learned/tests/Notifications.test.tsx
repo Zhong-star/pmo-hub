@@ -352,4 +352,38 @@ describe('Notifications menu and D7/D8 behaviors', () => {
     expect(within(dialog).queryByText('The handover omitted the runbook.')).not.toBeInTheDocument();
     expect(recordLibraryView).not.toHaveBeenCalled();
   });
+
+  it('keeps loaded notifications visible and retries when Load more fails', async () => {
+    const user = userEvent.setup();
+    vi.mocked(getNotifications).mockImplementation(async (_profileId, query) => {
+      if (query?.cursor === 'cursor-2') {
+        if (vi.mocked(getNotifications).mock.calls.filter(([, q]) => q?.cursor === 'cursor-2').length === 1) {
+          throw new Error('Temporary notifications pagination failure');
+        }
+        return {
+          items: [makeNotification({ id: 502, lessonId: 52, lessonTitle: 'Page 2 notification' })],
+          page: { limit: 50, nextCursor: null },
+          unreadCount: 2,
+        };
+      }
+      return {
+        items: [makeNotification({ id: 501, lessonId: 51, lessonTitle: 'Page 1 notification' })],
+        page: { limit: 50, nextCursor: 'cursor-2' },
+        unreadCount: 2,
+      };
+    });
+
+    renderScreen();
+    await user.click(await screen.findByRole('button', { name: /Notifications \(2 unread\)/i }));
+    const menu = await screen.findByRole('region', { name: 'Notifications' });
+    expect(await within(menu).findByText(/Page 1 notification/)).toBeInTheDocument();
+
+    await user.click(within(menu).getByRole('button', { name: 'Load more' }));
+    expect(await within(menu).findByText('More notifications could not be loaded.')).toBeInTheDocument();
+    expect(within(menu).queryByText('Notifications could not be loaded.')).not.toBeInTheDocument();
+    expect(within(menu).getByText(/Page 1 notification/)).toBeInTheDocument();
+
+    await user.click(within(menu).getByRole('button', { name: 'Load more' }));
+    expect(await within(menu).findByText(/Page 2 notification/)).toBeInTheDocument();
+  });
 });

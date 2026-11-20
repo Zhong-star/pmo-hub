@@ -64,7 +64,7 @@ export function NotificationsMenu({
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) => {
       const response = await getNotifications(profileId, pageParam ? { cursor: pageParam } : {}, signal);
-      return response ?? { items: [], page: { limit: 20, nextCursor: null }, unreadCount: 0 };
+      return response ?? { items: [], page: { limit: 50, nextCursor: null }, unreadCount: 0 };
     },
     getNextPageParam: (lastPage) => lastPage?.page?.nextCursor ?? undefined,
     networkMode: 'always',
@@ -255,7 +255,7 @@ export function NotificationsMenu({
             </p>
           )}
 
-          {notificationsQuery.isError && !notificationsQuery.isFetching && (
+          {notificationsQuery.isError && !notificationsQuery.isFetching && !notificationsQuery.isFetchNextPageError && (
             <div className="notifications-menu__error" role="alert">
               <p>Notifications could not be loaded.</p>
               <button
@@ -328,10 +328,15 @@ export function NotificationsMenu({
 
           {notificationsQuery.hasNextPage && (
             <div className="notifications-menu__footer">
+              {notificationsQuery.isFetchNextPageError && (
+                <p className="notifications-menu__error" role="alert">
+                  More notifications could not be loaded.
+                </p>
+              )}
               <button
                 type="button"
                 className="notifications-menu__load-more"
-                disabled={notificationsQuery.isFetchingNextPage}
+                disabled={notificationsQuery.isFetching || (notificationsQuery.isError && !notificationsQuery.isFetchNextPageError)}
                 onClick={() => void notificationsQuery.fetchNextPage()}
               >
                 {notificationsQuery.isFetchingNextPage ? 'Loading more…' : 'Load more'}

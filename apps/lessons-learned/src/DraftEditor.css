@@ -92,7 +92,10 @@
 .draft-editor-field select:focus-visible,
 .draft-editor-field textarea:focus-visible,
 .draft-editor-close:focus-visible,
-.draft-editor-actions button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.draft-editor-actions button:focus-visible,
+.comment-inline-actions button:focus-visible,
+.comment-actions button:focus-visible,
+.comments-load-more button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .draft-editor-counter { margin: 0; color: var(--muted); font-size: 13px; }
 .draft-editor-error { margin: 0; color: var(--warning-text); font-size: 14px; }
 .draft-editor-success { margin: 0; color: var(--status-text); font-size: 14px; }
@@ -100,7 +103,10 @@
 .draft-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 
 .draft-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 4px; }
-.draft-editor-actions button {
+.draft-editor-actions button,
+.comment-inline-actions button,
+.comment-actions button,
+.comments-load-more button {
   min-height: 44px;
   padding: 9px 14px;
   border: 1px solid var(--surface-border);
@@ -113,7 +119,10 @@
 .draft-editor-primary { margin-left: auto; border-color: var(--primary-background) !important; background: var(--primary-background); color: var(--primary-text); }
 .draft-editor-primary:hover { background: var(--primary-hover); }
 .draft-editor-secondary { background: var(--theme-control-background); color: var(--theme-control-text); }
-.draft-editor-actions button:disabled { cursor: wait; opacity: .7; }
+.draft-editor-actions button:disabled,
+.comment-inline-actions button:disabled,
+.comment-actions button:disabled,
+.comments-load-more button:disabled { cursor: wait; opacity: .7; }
 
 .submission-detail-list { display: grid; gap: 13px; margin: 0; }
 .submission-detail-list div { display: grid; gap: 4px; }

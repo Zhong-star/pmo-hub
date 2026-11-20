@@ -421,6 +421,7 @@ describe('Lessons Learned comments, single-level replies, and PMO moderation', (
       .get(`/api/lessons-learned/v1/lessons/${published.id}/comments`)
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .expect(200);
+    expect(regularAfterAllHidden.body.page.limit).toBe(50);
     expect(regularAfterAllHidden.body.publicCommentCount).toBe(1);
     expect(regularAfterAllHidden.body.items.map((item: { id: number }) => item.id)).toEqual([rootVisible.body.id]);
   });

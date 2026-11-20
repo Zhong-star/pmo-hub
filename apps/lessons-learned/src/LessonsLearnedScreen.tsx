@@ -925,11 +925,16 @@ export function LessonsLearnedScreen() {
         exact: true,
       });
       queryClient.removeQueries({
+        queryKey: ['lessons-learned-profile-published-details', profileId, lessonId],
+        exact: true,
+      });
+      queryClient.removeQueries({
         queryKey: ['lessons-learned-library-details', profileId, lessonId],
         exact: false,
       });
     }
     await Promise.all([
+      ...(modulePage === 'home' ? [queryClient.invalidateQueries({ queryKey: ['lessons-learned-home', profileId] })] : []),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-my-submissions', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-pmo-drafts', profileId] }),
       queryClient.invalidateQueries({ queryKey: ['lessons-learned-pmo-dashboard', profileId] }),
@@ -1051,6 +1056,7 @@ export function LessonsLearnedScreen() {
     const closed = await closeLessonRequest(profileId, draftId, input);
     await refreshSubmissionQueries(profileId, draftId);
     setSelectedClosureDraft(null);
+    setSelectedProfilePublishedLessonId(null);
     setSelectedSubmissionId(null);
     if (isLibraryPage && libraryDetailId !== null) closeLibraryLesson();
     return closed;
@@ -1093,14 +1099,15 @@ export function LessonsLearnedScreen() {
       ? isLegacyLibrary
         ? await getLegacyPublishedLibraryLesson(profileId, lessonId)
         : await getLibraryLessonDetails(profileId, lessonId)
-      : await getLessonDetails(profileId, lessonId);
-    const detailsKey = isLibraryPage ? 'lessons-learned-library-details' : 'lessons-learned-submission-details';
-    queryClient.setQueryData([
-      detailsKey,
-      profileId,
-      lessonId,
-      ...(isLibraryPage ? [isLegacyLibrary ? 'legacy' : 'current'] : []),
-    ], latest);
+      : isProfilePublishedDetailOpen
+        ? await getLibraryLessonDetails(profileId, lessonId)
+        : await getLessonDetails(profileId, lessonId);
+    const detailsKey = isLibraryPage
+      ? ['lessons-learned-library-details', profileId, lessonId, isLegacyLibrary ? 'legacy' : 'current']
+      : isProfilePublishedDetailOpen
+        ? ['lessons-learned-profile-published-details', profileId, lessonId]
+        : ['lessons-learned-submission-details', profileId, lessonId];
+    queryClient.setQueryData(detailsKey, latest);
     setSelectedClosureDraft(null);
     return latest;
   }
@@ -1345,6 +1352,15 @@ export function LessonsLearnedScreen() {
                 Profiles
               </a>
             )}
+            <a
+              href="/lessons-learned/?page=my-submissions#create-lesson"
+              onClick={(event) => {
+                event.preventDefault();
+                if (!isSavingCurrentDraft) navigateFromHome('create-lesson');
+              }}
+            >
+              Create lesson
+            </a>
             {isPmo && (
               <a
                 href="/lessons-learned/?page=pmo-drafts"

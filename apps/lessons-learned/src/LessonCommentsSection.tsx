@@ -322,7 +322,7 @@ export function LessonCommentsSection({
       </form>
 
       {commentsQuery.isLoading && <p role="status">Loading comments…</p>}
-      {commentsQuery.isError && (
+      {commentsQuery.isError && !commentsQuery.isFetchNextPageError && (
         <div className="draft-error" role="alert">
           <p>Comments could not be loaded.</p>
           <button className="draft-cancel" type="button" onClick={() => void commentsQuery.refetch()}>Retry</button>
@@ -466,7 +466,7 @@ export function LessonCommentsSection({
           <button
             className="draft-editor-secondary"
             type="button"
-            disabled={commentsQuery.isFetchingNextPage}
+            disabled={commentsQuery.isFetching || (commentsQuery.isError && !commentsQuery.isFetchNextPageError)}
             onClick={() => void commentsQuery.fetchNextPage()}
           >
             {commentsQuery.isFetchingNextPage ? 'Loading more…' : 'Load more comments'}
