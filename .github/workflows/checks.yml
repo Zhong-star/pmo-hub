@@ -21,7 +21,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
       - run: npm run build
+      - name: Verify generated OpenAPI contracts and clients are up to date
+        run: git diff --exit-code -- apps/hub/src/generated apps/lessons-learned/src/generated services/hub-api/openapi services/lessons-learned-api/openapi
       - run: npm test
       - name: Lessons Learned PostgreSQL integration tests
         run: npm run test:integration --workspace @pmo-hub/lessons-learned-api
