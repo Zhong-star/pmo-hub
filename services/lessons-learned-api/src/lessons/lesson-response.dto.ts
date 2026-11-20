@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LESSON_STATUSES, LESSON_TYPES, type LessonStatus, type LessonType } from './lesson-domain.constants';
+import { LessonProjectResponse } from './project-response.dto';
 
 export type { LessonStatus } from './lesson-domain.constants';
 
@@ -105,6 +106,15 @@ export class LessonHistoryEventResponse {
 export class LessonDetailsResponse extends LessonDraftResponse {
   @ApiProperty({ type: LessonHistoryEventResponse, isArray: true })
   history!: LessonHistoryEventResponse[];
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  votesCount!: number;
+
+  @ApiProperty({ type: Boolean, example: false })
+  hasVoted!: boolean;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  commentCount!: number;
 }
 
 export class LessonLibraryResponse extends LessonDraftResponse {
@@ -113,9 +123,205 @@ export class LessonLibraryResponse extends LessonDraftResponse {
 
   @ApiProperty({ type: Number, minimum: 0, example: 0 })
   viewCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  votesCount!: number;
+
+  @ApiProperty({ type: Boolean, example: false })
+  hasVoted!: boolean;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  commentCount!: number;
 }
 
 export class RecordLessonLibraryViewResponse {
   @ApiProperty({ type: Number, minimum: 0, example: 1 })
   viewCount!: number;
+}
+
+export class LessonVoteResponse {
+  @ApiProperty({ type: Number, example: 1 })
+  lessonId!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 1 })
+  votesCount!: number;
+
+  @ApiProperty({ type: Boolean, example: true })
+  hasVoted!: boolean;
+}
+
+export class PmoDashboardLessonResponse extends LessonLibraryResponse {
+  @ApiProperty({ type: String, format: 'date-time', description: 'Most recent relevant activity timestamp (UTC).' })
+  lastActivityAt!: Date;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true, description: 'Most recent closure history event timestamp (UTC).' })
+  latestClosedAt!: Date | null;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true, description: 'Most recent return history event timestamp (UTC).' })
+  latestReturnedAt!: Date | null;
+}
+
+export class PmoDashboardSummaryResponse {
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  awaitingEvaluation!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  recentlyApproved!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  recentlyClosed!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  recentlyReturned!: number;
+}
+
+export class LessonPageInfo {
+  @ApiProperty({ type: String, nullable: true })
+  nextCursor!: string | null;
+
+  @ApiProperty({ type: Number, minimum: 1, maximum: 100 })
+  limit!: number;
+}
+
+export class PmoDashboardResponse {
+  @ApiProperty({ type: Number, example: 30, description: 'Fixed calendar day window in UTC.' })
+  windowDays!: number;
+
+  @ApiProperty({ type: String, format: 'date-time', description: 'UTC start timestamp of the 30-day window.' })
+  windowStartAt!: Date;
+
+  @ApiProperty({ type: PmoDashboardSummaryResponse })
+  summary!: PmoDashboardSummaryResponse;
+
+  @ApiProperty({ type: PmoDashboardLessonResponse, isArray: true })
+  items!: PmoDashboardLessonResponse[];
+
+  @ApiProperty({ type: LessonPageInfo })
+  page!: LessonPageInfo;
+
+  @ApiProperty({ type: LessonProjectResponse, isArray: true })
+  projects!: LessonProjectResponse[];
+}
+
+export class ProfileSummaryResponse {
+  @ApiProperty({ type: String, example: 'local-contributor' })
+  id!: string;
+
+  @ApiProperty({ type: String, example: 'Local Contributor' })
+  displayName!: string;
+
+  @ApiProperty({ type: String, example: 'LC' })
+  initials!: string;
+
+  @ApiProperty({ type: String, enum: ['LESSONS_USER', 'LESSONS_MODERATOR'], example: 'LESSONS_USER' })
+  role!: 'LESSONS_USER' | 'LESSONS_MODERATOR';
+
+  @ApiProperty({ type: Number, minimum: 0, example: 2 })
+  publishedLessonsCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 5 })
+  votesReceivedCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 12 })
+  viewsReceivedCount!: number;
+}
+
+export class ProfileSearchPage {
+  @ApiProperty({ type: [ProfileSummaryResponse] })
+  items!: ProfileSummaryResponse[];
+
+  @ApiProperty({ type: LessonPageInfo })
+  page!: LessonPageInfo;
+}
+
+export class ContributorProfileResponse {
+  @ApiProperty({ type: ProfileSummaryResponse })
+  profile!: ProfileSummaryResponse;
+
+  @ApiProperty({ type: Number, nullable: true, minimum: 1, example: null, description: 'Contributor ranking position when applicable.' })
+  rankingPosition!: number | null;
+
+  @ApiProperty({ type: Boolean, example: false, description: 'Whether the viewer can see unpublished lessons authored by this user.' })
+  includesPrivateLessons!: boolean;
+
+  @ApiProperty({ type: LessonLibraryResponse, isArray: true })
+  items!: LessonLibraryResponse[];
+
+  @ApiProperty({ type: LessonPageInfo })
+  page!: LessonPageInfo;
+
+  @ApiProperty({ type: LessonProjectResponse, isArray: true })
+  projects!: LessonProjectResponse[];
+}
+
+export class RankedLessonResponse {
+  @ApiProperty({ type: Number, minimum: 1, maximum: 3, example: 1 })
+  position!: number;
+
+  @ApiProperty({ type: Number, example: 1 })
+  id!: number;
+
+  @ApiProperty({ type: String, maxLength: 150, example: 'Improve release handover' })
+  title!: string;
+
+  @ApiProperty({ type: String, example: 'local-contributor' })
+  authorId!: string;
+
+  @ApiProperty({ type: String, example: 'Local Contributor' })
+  authorName!: string;
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 200 })
+  projectName!: string | null;
+
+  @ApiProperty({ type: String, enum: LESSON_TYPES, nullable: true })
+  lessonType!: LessonType | null;
+
+  @ApiProperty({ type: String, enum: ['Approved', 'Closed'], example: 'Approved' })
+  status!: 'Approved' | 'Closed';
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  approvedAt!: Date;
+
+  @ApiProperty({ type: Number, minimum: 1, example: 3 })
+  votesCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 10 })
+  viewCount!: number;
+}
+
+export class RankedContributorResponse {
+  @ApiProperty({ type: Number, minimum: 1, maximum: 3, example: 1 })
+  position!: number;
+
+  @ApiProperty({ type: String, example: 'local-contributor' })
+  id!: string;
+
+  @ApiProperty({ type: String, example: 'Local Contributor' })
+  displayName!: string;
+
+  @ApiProperty({ type: String, example: 'LC' })
+  initials!: string;
+
+  @ApiProperty({ type: String, enum: ['LESSONS_USER', 'LESSONS_MODERATOR'], example: 'LESSONS_USER' })
+  role!: 'LESSONS_USER' | 'LESSONS_MODERATOR';
+
+  @ApiProperty({ type: Number, minimum: 1, example: 2 })
+  publishedLessonsCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 5 })
+  votesReceivedCount!: number;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 12 })
+  viewsReceivedCount!: number;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  latestApprovedAt!: Date;
+}
+
+export class RankingsResponse {
+  @ApiProperty({ type: RankedLessonResponse, isArray: true, maxItems: 3 })
+  mostVotedLessons!: RankedLessonResponse[];
+
+  @ApiProperty({ type: RankedContributorResponse, isArray: true, maxItems: 3 })
+  topContributors!: RankedContributorResponse[];
 }

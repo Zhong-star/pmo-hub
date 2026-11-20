@@ -9,7 +9,7 @@ type PublishLessonOptions = {
   lessonType?: 'Future Prevention' | 'Success to Repeat' | 'Risk Avoided' | 'Communication';
 };
 
-export async function publishLesson(
+export async function submitLessonForReview(
   request: APIRequestContext,
   title: string,
   { authorId = 'local-contributor', projectId = null, projectName = null, lessonType = 'Future Prevention' }: PublishLessonOptions = {},
@@ -40,9 +40,12 @@ export async function publishLesson(
     },
   });
   expect(submittedResponse.status()).toBe(200);
-  const submitted = await submittedResponse.json();
+  return submittedResponse.json() as Promise<{ id: number; version: number }>;
+}
 
-  const approvedResponse = await request.post(`${lessonsPath}/${created.id}/approve`, {
+export async function publishLesson(request: APIRequestContext, title: string, options?: PublishLessonOptions) {
+  const submitted = await submitLessonForReview(request, title, options);
+  const approvedResponse = await request.post(`${lessonsPath}/${submitted.id}/approve`, {
     headers: { 'X-PMO-Local-User-ID': 'local-pmo' },
     data: { version: submitted.version },
   });

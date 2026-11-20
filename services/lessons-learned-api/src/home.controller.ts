@@ -1,6 +1,7 @@
-import { Controller, Get, Header, Headers, Inject, UseFilters } from '@nestjs/common';
+import { Controller, Get, Header, Headers, Inject, UseFilters, UseInterceptors } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiResponse, ApiSecurity, ApiTags, getSchemaPath, ApiExtraModels } from '@nestjs/swagger';
 import { LessonsLearnedHomeResponse } from './home-response.dto';
+import { LessonHttpContract, LessonProblem, LessonProblemFilter } from './lessons/lesson-http-contract';
 import {
   LocalAccessProblem,
   LocalAccessProblemFilter,
@@ -8,7 +9,7 @@ import {
   localProfileHeader,
   localProfileScheme,
 } from './local-access-problem';
-import { LocalAccessService } from './local-access.service';
+import { HomeService } from './home.service';
 
 function accessProblem(status: number, description: string) {
   return ApiResponse({
@@ -22,11 +23,12 @@ function accessProblem(status: number, description: string) {
 }
 
 @ApiTags('Lessons Learned home')
-@ApiExtraModels(LocalAccessProblem)
+@ApiExtraModels(LocalAccessProblem, LessonProblem)
 @Controller()
-@UseFilters(LocalAccessProblemFilter)
+@UseFilters(LocalAccessProblemFilter, LessonProblemFilter)
+@UseInterceptors(LessonHttpContract)
 export class HomeController {
-  constructor(@Inject(LocalAccessService) private readonly localAccess: LocalAccessService) {}
+  constructor(@Inject(HomeService) private readonly homeService: HomeService) {}
 
   @Get('home')
   @Header('Cache-Control', 'no-store')
@@ -37,7 +39,7 @@ export class HomeController {
   @accessProblem(403, 'The selected profile has no active Lessons Learned access.')
   @accessProblem(500, 'The Lessons Learned local access configuration is invalid.')
   @accessProblem(503, 'Local simulated identity is disabled for this runtime.')
-  getHome(@Headers(localProfileHeader.toLowerCase()) header?: string | string[]): LessonsLearnedHomeResponse {
-    return this.localAccess.getHome(typeof header === 'string' ? header : undefined);
+  getHome(@Headers(localProfileHeader.toLowerCase()) header?: string | string[]): Promise<LessonsLearnedHomeResponse> {
+    return this.homeService.getHome(typeof header === 'string' ? header : undefined);
   }
 }

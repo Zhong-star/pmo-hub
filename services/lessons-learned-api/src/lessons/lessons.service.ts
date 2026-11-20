@@ -9,15 +9,21 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { DataSource, In, type Repository, type SelectQueryBuilder } from 'typeorm';
-import { LocalAccessService } from '../local-access.service';
+import { DataSource, In, type EntityManager, type SelectQueryBuilder } from 'typeorm';
+import { LocalAccessService, type LocalProfile } from '../local-access.service';
 import { LESSONS_LEARNED_DATA_SOURCE } from '../database/database.module';
 import { isRepresentationETag, lessonRepresentationETag } from './lesson-http-contract';
 import { emitsRepresentationTokens } from './lesson-token-format';
 import { LessonHistory } from './lesson-history.entity';
+import {
+  formatNotificationSnippet,
+  LessonNotificationsService,
+} from './lesson-notifications.service';
 import { Lesson } from './lesson.entity';
 import {
-  encodeProjectCursor, paginateLibraryLessonsByTextKey, paginateLessons, readProjectCursor,
+  collectionCursorScope, encodeCollectionCursor, encodeProjectCursor, lessonLabelSort, paginateLessonCollection,
+  paginateLibraryLessonsByTextKey, paginateLibraryLessonsByVotes, paginateLessons, readCollectionCursor, readProjectCursor,
+  type LessonSortKey,
   type LessonLibraryPage, type LessonPage, type LessonPageRequest, type LessonProjectPage,
 } from './lesson-pagination';
 import type { CreateLessonRequest } from './create-lesson-request.dto';
@@ -30,17 +36,25 @@ import type { SubmitLessonRequest } from './submit-lesson-request.dto';
 import type { ReturnLessonRequest } from './return-lesson-request.dto';
 import type { UpdateLessonDraftRequest } from './update-lesson-draft-request.dto';
 import type {
+  ContributorProfileResponse,
   LessonDetailsResponse, LessonDraftResponse, LessonHistoryEventResponse,
-  LessonLibraryResponse, RecordLessonLibraryViewResponse,
+  LessonLibraryResponse, LessonVoteResponse, PmoDashboardLessonResponse, PmoDashboardResponse,
+  ProfileSearchPage, ProfileSummaryResponse, RankedContributorResponse, RankedLessonResponse, RankingsResponse,
+  RecordLessonLibraryViewResponse,
 } from './lesson-response.dto';
 import type { RecordLibraryViewRequest } from './record-library-view-request.dto';
 import type {
+  ContributorProfileFilter,
+  ContributorProfileSort,
   LessonSearchFilters,
   LessonsLibraryFilter,
   LessonsLibrarySort,
   LessonSubmissionsFilter,
+  PmoDashboardCard,
+  PmoDashboardFilter,
   PmoDraftsFilter,
   PmoEvaluationQueueFilter,
+  ProfileSearchFilter,
 } from './lesson-submissions-query.dto';
 
 type EvaluationFields = Pick<
@@ -74,6 +88,17 @@ function normalizeLibrarySearch(value: string): string {
     .join('');
 }
 
+function deriveProfileInitials(displayName: string): string {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]![0]}${parts[parts.length - 1]![0]}`.toUpperCase();
+  }
+  if (parts.length === 1) {
+    return parts[0]!.slice(0, 2).toUpperCase();
+  }
+  return '?';
+}
+
 @Injectable()
 export class LessonsService {
   private readonly representationTokens = emitsRepresentationTokens();
@@ -82,6 +107,7 @@ export class LessonsService {
     @Inject(LocalAccessService) private readonly localAccess: LocalAccessService,
     @Inject(ProjectCatalogService) private readonly projectCatalog: ProjectCatalogService,
     @Optional() @Inject(LESSONS_LEARNED_DATA_SOURCE) private readonly dataSource?: DataSource,
+    @Optional() @Inject(LessonNotificationsService) private readonly notifications?: LessonNotificationsService,
   ) {}
 
   async createDraft(localUserId: string | undefined, input: CreateLessonRequest): Promise<LessonDraftResponse> {
@@ -150,6 +176,432 @@ export class LessonsService {
       throw new ForbiddenException('PMO moderator access is required to list module lessons.');
     }
     return this.listSubmissions(filters);
+  }
+
+  async getPmoDashboard(
+    localUserId: string | undefined,
+    filters: PmoDashboardFilter,
+    page: LessonPageRequest,
+  ): Promise<PmoDashboardResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    if (profile.role !== 'LESSONS_MODERATOR') {
+      throw new ForbiddenException('PMO moderator access is required to view the PMO Dashboard.');
+    }
+
+    const windowDays = 30;
+    const windowStartAt = new Date();
+    windowStartAt.setUTCHours(0, 0, 0, 0);
+    windowStartAt.setUTCDate(windowStartAt.getUTCDate() - windowDays + 1);
+    const authorNames = this.localAccess.getDisplayNames();
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction('REPEATABLE READ', async (manager) => {
+      const latestHistory = '(SELECT MAX(h.occurred_at) FROM lesson_history h WHERE h.lesson_id = lesson.id)';
+      const latestClosed = "(SELECT MAX(h.occurred_at) FROM lesson_history h WHERE h.lesson_id = lesson.id AND h.event_type = 'Closed')";
+      const latestReturned = "(SELECT MAX(h.occurred_at) FROM lesson_history h WHERE h.lesson_id = lesson.id AND h.event_type = 'Returned')";
+      const lastActivity = `GREATEST(lesson.updated_at, ${latestHistory})`;
+      const cardConditions = {
+        'awaiting-evaluation': "lesson.status = 'PMOEvaluation'",
+        'recently-approved': 'lesson.approved_at >= :windowStartAt',
+        'recently-closed': `${latestClosed} >= :windowStartAt`,
+        'recently-returned': `${latestReturned} >= :windowStartAt`,
+      } satisfies Record<PmoDashboardCard, string>;
+
+      const query = manager.getRepository(Lesson).createQueryBuilder('lesson');
+      this.applySearchFilters(query, filters, true);
+      if (filters.status) query.andWhere('lesson.status = :status', { status: filters.status });
+      query.setParameter('windowStartAt', windowStartAt);
+      const counts = await query.clone()
+        .select(`COUNT(*) FILTER (WHERE ${cardConditions['awaiting-evaluation']})`, 'awaitingEvaluation')
+        .addSelect(`COUNT(*) FILTER (WHERE ${cardConditions['recently-approved']})`, 'recentlyApproved')
+        .addSelect(`COUNT(*) FILTER (WHERE ${cardConditions['recently-closed']})`, 'recentlyClosed')
+        .addSelect(`COUNT(*) FILTER (WHERE ${cardConditions['recently-returned']})`, 'recentlyReturned')
+        .getRawOne<Record<string, string>>();
+      const summary = {
+        awaitingEvaluation: Number(counts?.awaitingEvaluation ?? 0),
+        recentlyApproved: Number(counts?.recentlyApproved ?? 0),
+        recentlyClosed: Number(counts?.recentlyClosed ?? 0),
+        recentlyReturned: Number(counts?.recentlyReturned ?? 0),
+      };
+
+      if (filters.card) query.andWhere(cardConditions[filters.card]);
+      const sort = filters.sort ?? 'activity';
+      const direction = sort === 'oldest-activity' ? 'ASC' : 'DESC';
+      const order: LessonSortKey[] = sort === 'activity' || sort === 'oldest-activity' ? [] : lessonLabelSort(sort);
+      order.push(
+        { expression: `(EXTRACT(EPOCH FROM ${lastActivity}) * 1000000)::bigint`, type: 'bigint', direction },
+        { expression: 'lesson.id', type: 'bigint', direction },
+      );
+
+      const { entities, raw, page: pageInfo } = await paginateLessonCollection<{
+        last_activity_at: Date;
+        latest_closed_at: Date | null;
+        latest_returned_at: Date | null;
+      }>(
+        query.addSelect(lastActivity, 'last_activity_at')
+          .addSelect(latestClosed, 'latest_closed_at')
+          .addSelect(latestReturned, 'latest_returned_at'),
+        page,
+        collectionCursorScope('dashboard', profile.id, filters.search, filters.projectId, filters.withoutProject,
+          filters.lessonType, filters.status, filters.card, sort, filters.card ? windowStartAt : null),
+        order,
+      );
+      const drafts = await this.includeLatestReviewGuidance(
+        entities.map((lesson) => this.toResponse(lesson)),
+        manager.getRepository(LessonHistory),
+      );
+      const items: PmoDashboardLessonResponse[] = entities.map((lesson, index) => ({
+        ...this.toLibraryResponse(lesson, authorNames),
+        latestReviewGuidance: drafts[index].latestReviewGuidance,
+        lastActivityAt: raw[index].last_activity_at,
+        latestClosedAt: raw[index].latest_closed_at,
+        latestReturnedAt: raw[index].latest_returned_at,
+      }));
+
+      const projects = await manager.getRepository(Lesson).createQueryBuilder('lesson')
+        .select('lesson.project_id', 'id')
+        .addSelect('MAX(lesson.project_name)', 'name')
+        .where('lesson.project_id IS NOT NULL')
+        .andWhere('lesson.project_name IS NOT NULL')
+        .groupBy('lesson.project_id')
+        .orderBy('MAX(lesson.project_name)', 'ASC')
+        .addOrderBy('lesson.project_id', 'ASC')
+        .getRawMany<LessonProject>();
+
+      return {
+        windowDays,
+        windowStartAt,
+        summary,
+        items,
+        page: pageInfo,
+        projects,
+      };
+    });
+  }
+
+  async searchProfiles(
+    localUserId: string | undefined,
+    filters: ProfileSearchFilter,
+    page?: LessonPageRequest,
+  ): Promise<ProfileSearchPage | ProfileSummaryResponse[]> {
+    const caller = this.localAccess.getProfile(localUserId);
+    const dataSource = this.requireDataSource();
+
+    const normalizedSearch = normalizeLibrarySearch(filters.search?.trim() ?? '');
+    const scope = collectionCursorScope('profiles', caller.id, normalizedSearch);
+    const compare = (left: Pick<LocalProfile, 'displayName' | 'id'>, right: Pick<LocalProfile, 'displayName' | 'id'>) => (
+      left.displayName.localeCompare(right.displayName, 'en', { sensitivity: 'base' })
+      || left.id.localeCompare(right.id)
+      || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
+    );
+    const profiles = this.localAccess.listProfiles();
+    const profileKey = (profile: LocalProfile) => collectionCursorScope(profile.displayName, profile.id);
+    const cursorKey = page?.cursor === undefined ? undefined : readCollectionCursor(page.cursor, scope, 1)[0];
+    const anchor = cursorKey === undefined ? undefined : profiles.find((profile) => profileKey(profile) === cursorKey);
+    if (cursorKey !== undefined && !anchor) throw new BadRequestException('Invalid cursor for this collection.');
+    const matchingProfiles = profiles
+      .filter((profile) => !normalizedSearch || normalizeLibrarySearch(profile.displayName).includes(normalizedSearch))
+      .filter((profile) => anchor === undefined || compare(profile, anchor) > 0)
+      .sort(compare)
+      .slice(0, page ? page.limit + 1 : undefined);
+    const visibleProfiles = page ? matchingProfiles.slice(0, page.limit) : matchingProfiles;
+
+    const aggregates = await this.getPublicProfileAggregates(
+      visibleProfiles.map((profile) => profile.id),
+      dataSource.manager,
+    );
+
+    const items = visibleProfiles.map((profile) => {
+      const stats = aggregates.get(profile.id);
+      return {
+        id: profile.id,
+        displayName: profile.displayName,
+        initials: deriveProfileInitials(profile.displayName),
+        role: profile.role,
+        publishedLessonsCount: stats?.publishedLessonsCount ?? 0,
+        votesReceivedCount: stats?.votesReceivedCount ?? 0,
+        viewsReceivedCount: stats?.viewsReceivedCount ?? 0,
+      };
+    });
+    const last = visibleProfiles[visibleProfiles.length - 1];
+    if (!page) return items;
+    return {
+      items,
+      page: {
+        limit: page.limit,
+        nextCursor: matchingProfiles.length > page.limit
+          ? encodeCollectionCursor(scope, [profileKey(last)])
+          : null,
+      },
+    };
+  }
+
+  async getContributorProfile(
+    localUserId: string | undefined,
+    targetUserId: string,
+    filters: ContributorProfileFilter,
+    page: LessonPageRequest,
+  ): Promise<ContributorProfileResponse> {
+    const caller = this.localAccess.getProfile(localUserId);
+    const target = this.localAccess.listProfiles().find((profile) => profile.id === targetUserId);
+    if (!target) {
+      throw new NotFoundException('Contributor profile not found.');
+    }
+
+    const includesPrivateLessons = caller.role === 'LESSONS_MODERATOR' || caller.id === target.id;
+    const authorNames = this.localAccess.getDisplayNames();
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction('REPEATABLE READ', async (manager) => {
+      const aggregates = await this.getPublicProfileAggregates([target.id], manager);
+      const stats = aggregates.get(target.id);
+
+      const profileSummary: ProfileSummaryResponse = {
+        id: target.id,
+        displayName: target.displayName,
+        initials: deriveProfileInitials(target.displayName),
+        role: target.role,
+        publishedLessonsCount: stats?.publishedLessonsCount ?? 0,
+        votesReceivedCount: stats?.votesReceivedCount ?? 0,
+        viewsReceivedCount: stats?.viewsReceivedCount ?? 0,
+      };
+
+      const projectQuery = manager.getRepository(Lesson).createQueryBuilder('lesson')
+        .select('lesson.project_id', 'id')
+        .addSelect('MAX(lesson.project_name)', 'name')
+        .where('lesson.author_id = :authorId', { authorId: target.id })
+        .andWhere('lesson.project_id IS NOT NULL')
+        .andWhere('lesson.project_name IS NOT NULL');
+      if (!includesPrivateLessons) {
+        projectQuery
+          .andWhere('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
+          .andWhere('lesson.approved_at IS NOT NULL');
+      }
+      const projects = await projectQuery
+        .groupBy('lesson.project_id')
+        .orderBy('MAX(lesson.project_name)', 'ASC')
+        .addOrderBy('lesson.project_id', 'ASC')
+        .getRawMany<LessonProject>();
+
+      const query = manager.getRepository(Lesson).createQueryBuilder('lesson')
+        .where('lesson.author_id = :authorId', { authorId: target.id });
+      if (!includesPrivateLessons) {
+        query
+          .andWhere('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
+          .andWhere('lesson.approved_at IS NOT NULL');
+      }
+      this.applySearchFilters(query, {
+        projectId: filters.projectId,
+        withoutProject: filters.withoutProject,
+        lessonType: filters.lessonType,
+      });
+
+      const sort: ContributorProfileSort = filters.sort ?? 'recent';
+      const activity = includesPrivateLessons ? 'GREATEST(lesson.approved_at, lesson.updated_at)' : 'lesson.approved_at';
+      const direction = sort === 'oldest' ? 'ASC' : 'DESC';
+      const order: LessonSortKey[] = sort === 'title' || sort === 'project' || sort === 'type' ? lessonLabelSort(sort) : [];
+      if (sort === 'most-voted') {
+        order.push({
+          expression: '(SELECT COUNT(*) FROM lesson_votes vote WHERE vote.lesson_id = lesson.id)',
+          type: 'bigint',
+          direction: 'DESC',
+        });
+      }
+      order.push(
+        { expression: `(EXTRACT(EPOCH FROM ${activity}) * 1000000)::bigint`, type: 'bigint', direction },
+        { expression: 'lesson.id', type: 'bigint', direction: sort === 'most-voted' ? 'ASC' : direction },
+      );
+      const { entities: lessons, page: pageInfo } = await paginateLessonCollection(
+        query,
+        page,
+        collectionCursorScope('contributor-profile', caller.id, target.id, includesPrivateLessons,
+          filters.projectId, filters.withoutProject, filters.lessonType, sort),
+        order,
+      );
+      const baseWithGuidance = includesPrivateLessons
+        ? await this.includeLatestReviewGuidance(
+          lessons.map((lesson) => this.toResponse(lesson)),
+          manager.getRepository(LessonHistory),
+        )
+        : [];
+      const guidanceById = new Map(baseWithGuidance.map((item) => [item.id, item.latestReviewGuidance]));
+
+      const libraryItems = await this.attachVoteSummaries(
+        lessons.map((lesson) => ({
+          ...this.toLibraryResponse(lesson, authorNames),
+          latestReviewGuidance: guidanceById.get(lesson.id) ?? null,
+        })),
+        caller.id,
+        manager,
+      );
+
+      const rankedContributors = await this.getRankedContributors(manager);
+      const rankingPosition = rankedContributors.find((item) => item.id === target.id)?.position ?? null;
+
+      return {
+        profile: profileSummary,
+        rankingPosition,
+        includesPrivateLessons,
+        items: libraryItems,
+        page: pageInfo,
+        projects,
+      };
+    });
+  }
+
+  async getRankings(localUserId: string | undefined): Promise<RankingsResponse> {
+    this.localAccess.getProfile(localUserId);
+    const authorNames = this.localAccess.getDisplayNames();
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction('REPEATABLE READ', async (manager) => {
+      const lessonRows = await manager.query(`
+        SELECT
+          l.id,
+          l.title,
+          l.author_id,
+          l.project_name,
+          l.lesson_type,
+          l.status,
+          l.approved_at,
+          l.view_count,
+          v.votes_count
+        FROM lessons l
+        INNER JOIN (
+          SELECT lesson_id, COUNT(*)::int AS votes_count
+          FROM lesson_votes
+          GROUP BY lesson_id
+          HAVING COUNT(*) >= 1
+        ) v ON v.lesson_id = l.id
+        WHERE l.status IN ('Approved', 'Closed')
+          AND l.approved_at IS NOT NULL
+        ORDER BY v.votes_count DESC, l.approved_at DESC, l.id ASC
+        LIMIT 3
+      `) as {
+        id: number;
+        title: string;
+        author_id: string;
+        project_name: string | null;
+        lesson_type: Lesson['lessonType'];
+        status: 'Approved' | 'Closed';
+        approved_at: Date | string;
+        view_count: number;
+        votes_count: number;
+      }[];
+
+      const mostVotedLessons: RankedLessonResponse[] = lessonRows.map((row, index) => ({
+        position: index + 1,
+        id: Number(row.id),
+        title: row.title,
+        authorId: row.author_id,
+        authorName: authorNames.get(row.author_id) ?? row.author_id,
+        projectName: row.project_name,
+        lessonType: row.lesson_type,
+        status: row.status,
+        approvedAt: row.approved_at instanceof Date ? row.approved_at : new Date(row.approved_at),
+        votesCount: Number(row.votes_count),
+        viewCount: Number(row.view_count),
+      }));
+
+      const rankedContributors = await this.getRankedContributors(manager);
+      const topContributors = rankedContributors.slice(0, 3);
+
+      return {
+        mostVotedLessons,
+        topContributors,
+      };
+    });
+  }
+
+  private async getRankedContributors(manager: EntityManager): Promise<RankedContributorResponse[]> {
+    const authorizedProfiles = this.localAccess.listProfiles();
+    if (authorizedProfiles.length === 0) return [];
+
+    const aggregates = await this.getPublicProfileAggregates(
+      authorizedProfiles.map((profile) => profile.id),
+      manager,
+    );
+
+    const eligible = authorizedProfiles.flatMap((profile) => {
+      const stats = aggregates.get(profile.id);
+      if (!stats || stats.publishedLessonsCount < 1 || !stats.latestApprovedAt) return [];
+      return [{
+        id: profile.id,
+        displayName: profile.displayName,
+        initials: deriveProfileInitials(profile.displayName),
+        role: profile.role,
+        publishedLessonsCount: stats.publishedLessonsCount,
+        votesReceivedCount: stats.votesReceivedCount,
+        viewsReceivedCount: stats.viewsReceivedCount,
+        latestApprovedAt: stats.latestApprovedAt,
+      }];
+    });
+
+    eligible.sort((left, right) => (
+      (right.publishedLessonsCount - left.publishedLessonsCount)
+      || (right.latestApprovedAt.getTime() - left.latestApprovedAt.getTime())
+      || left.displayName.localeCompare(right.displayName, 'en', { sensitivity: 'base' })
+      || left.id.localeCompare(right.id)
+    ));
+
+    return eligible.map((contributor, index) => ({
+      position: index + 1,
+      ...contributor,
+    }));
+  }
+
+  private async getPublicProfileAggregates(
+    authorIds: string[],
+    manager: EntityManager,
+  ): Promise<Map<string, {
+    publishedLessonsCount: number;
+    votesReceivedCount: number;
+    viewsReceivedCount: number;
+    latestApprovedAt: Date | null;
+  }>> {
+    const result = new Map<string, {
+      publishedLessonsCount: number;
+      votesReceivedCount: number;
+      viewsReceivedCount: number;
+      latestApprovedAt: Date | null;
+    }>();
+    if (authorIds.length === 0) return result;
+    const rows = await manager.query(`
+      SELECT
+        l.author_id,
+        COUNT(*)::int AS published_lessons_count,
+        COALESCE(SUM(l.view_count), 0)::int AS views_received_count,
+        COALESCE(SUM(v.votes_count), 0)::int AS votes_received_count,
+        MAX(l.approved_at) AS latest_approved_at
+      FROM lessons l
+      LEFT JOIN (
+        SELECT lesson_id, COUNT(*)::int AS votes_count
+        FROM lesson_votes
+        GROUP BY lesson_id
+      ) v ON v.lesson_id = l.id
+      WHERE l.author_id = ANY($1::text[])
+        AND l.status IN ('Approved', 'Closed')
+        AND l.approved_at IS NOT NULL
+      GROUP BY l.author_id
+    `, [authorIds]) as {
+      author_id: string;
+      published_lessons_count: number;
+      views_received_count: number;
+      votes_received_count: number;
+      latest_approved_at: Date | string | null;
+    }[];
+
+    for (const row of rows) {
+      result.set(row.author_id, {
+        publishedLessonsCount: Number(row.published_lessons_count),
+        votesReceivedCount: Number(row.votes_received_count),
+        viewsReceivedCount: Number(row.views_received_count),
+        latestApprovedAt: row.latest_approved_at
+          ? (row.latest_approved_at instanceof Date ? row.latest_approved_at : new Date(row.latest_approved_at))
+          : null,
+      });
+    }
+    return result;
   }
 
   async getPmoEvaluationQueue(
@@ -234,10 +686,11 @@ export class LessonsService {
     page?: LessonPageRequest,
     filters: LessonsLibraryFilter = {},
   ): Promise<LessonLibraryResponse[] | LessonLibraryPage> {
-    this.localAccess.getProfile(localUserId);
+    const profile = this.localAccess.getProfile(localUserId);
     const authorNames = this.localAccess.getDisplayNames();
     const sort = filters.sort ?? 'newest';
-    const query = this.requireDataSource().getRepository(Lesson).createQueryBuilder('lesson')
+    const dataSource = this.requireDataSource();
+    const query = dataSource.getRepository(Lesson).createQueryBuilder('lesson')
       .where('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
       .andWhere('lesson.approved_at IS NOT NULL');
     this.applySearchFilters(query, filters, true);
@@ -253,17 +706,28 @@ export class LessonsService {
       const scope = sort === 'newest'
         ? legacyScope
         : `library-sort-v1:${JSON.stringify([sort, ...filterValues])}`;
-      const toResponse = (lesson: Lesson) => this.toLibraryResponse(lesson, authorNames);
-      if (sort === 'newest') {
-        return paginateLessons(query, page, scope, 'lesson.approved_at', 'DESC', toResponse, this.representationTokens);
-      }
-      if (sort === 'oldest') {
-        return paginateLessons(query, page, scope, 'lesson.approved_at', 'ASC', toResponse, this.representationTokens);
-      }
-      return paginateLibraryLessonsByTextKey(query, page, scope, sort, toResponse, this.representationTokens);
+      const toResponse = (lesson: Lesson) => this.toLibraryResponse(lesson, authorNames, 0);
+      const result = sort === 'newest'
+        ? await paginateLessons(query, page, scope, 'lesson.approved_at', 'DESC', toResponse, this.representationTokens)
+        : sort === 'oldest'
+          ? await paginateLessons(query, page, scope, 'lesson.approved_at', 'ASC', toResponse, this.representationTokens)
+          : sort === 'most-voted'
+            ? await paginateLibraryLessonsByVotes(query, page, scope, toResponse, this.representationTokens)
+            : await paginateLibraryLessonsByTextKey(query, page, scope, sort, toResponse, this.representationTokens);
+      const counts = await this.getPublicCommentCounts(result.items.map(({ id }) => id));
+      const withVotes = await this.attachVoteSummaries(result.items, profile.id, dataSource.manager);
+      return {
+        ...result,
+        items: withVotes.map((item) => ({ ...item, commentCount: counts.get(item.id) ?? 0 })),
+      };
     }
     const lessons = await this.orderLibrary(query, sort).getMany();
-    return lessons.map((lesson) => this.toLibraryResponse(lesson, authorNames));
+    const counts = await this.getPublicCommentCounts(lessons.map(({ id }) => id));
+    return this.attachVoteSummaries(
+      lessons.map((lesson) => this.toLibraryResponse(lesson, authorNames, counts.get(lesson.id) ?? 0)),
+      profile.id,
+      dataSource.manager,
+    );
   }
 
   private orderLibrary(query: SelectQueryBuilder<Lesson>, sort: LessonsLibrarySort): SelectQueryBuilder<Lesson> {
@@ -272,6 +736,13 @@ export class LessonsService {
     }
     if (sort === 'oldest') {
       return query.orderBy('lesson.approvedAt', 'ASC').addOrderBy('lesson.id', 'ASC');
+    }
+    if (sort === 'most-voted') {
+      return query
+        .addSelect('(SELECT COUNT(*)::integer FROM lesson_votes lv WHERE lv.lesson_id = lesson.id)', 'library_sort_votes')
+        .orderBy('library_sort_votes', 'DESC')
+        .addOrderBy('lesson.approvedAt', 'DESC')
+        .addOrderBy('lesson.id', 'ASC');
     }
     if (sort === 'title') {
       return query.orderBy('LOWER(lesson.title)', 'ASC')
@@ -307,7 +778,6 @@ export class LessonsService {
 
   async getLibraryLessonDetails(localUserId: string | undefined, lessonId: number): Promise<LessonDetailsResponse> {
     const profile = this.localAccess.getProfile(localUserId);
-    const isPmo = profile.role === 'LESSONS_MODERATOR';
     const dataSource = this.requireDataSource();
 
     return dataSource.transaction('REPEATABLE READ', async (manager) => {
@@ -316,16 +786,64 @@ export class LessonsService {
         && (lesson?.status === 'Approved' || lesson?.status === 'Closed');
       if (!lesson || !isPublished) throw new NotFoundException('Published lesson not found.');
 
-      const canReadHistory = isPmo || lesson.authorId === profile.id;
-      const history = canReadHistory
-        ? await manager.getRepository(LessonHistory).find({
-          where: { lessonId },
-          order: { occurredAt: 'ASC', id: 'ASC' },
-        })
-        : [];
+      const details = await this.readDetailsRepresentation(lesson, profile, manager);
+      return this.withLibraryAuthor(details);
+    });
+  }
+
+  async castVote(localUserId: string | undefined, lessonId: number): Promise<LessonVoteResponse> {
+    return this.updateVote(localUserId, lessonId, 'cast');
+  }
+
+  async removeVote(localUserId: string | undefined, lessonId: number): Promise<LessonVoteResponse> {
+    return this.updateVote(localUserId, lessonId, 'remove');
+  }
+
+  private async updateVote(
+    localUserId: string | undefined,
+    lessonId: number,
+    action: 'cast' | 'remove',
+  ): Promise<LessonVoteResponse> {
+    const profile = this.localAccess.getProfile(localUserId);
+    const dataSource = this.requireDataSource();
+
+    return dataSource.transaction(async (manager) => {
+      const lesson = await manager.getRepository(Lesson).findOne({
+        where: { id: lessonId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const isPmo = profile.role === 'LESSONS_MODERATOR';
+      const isAuthor = lesson?.authorId === profile.id;
+      const isPublished = lesson?.approvedAt !== null
+        && (lesson?.status === 'Approved' || lesson?.status === 'Closed');
+      if (!lesson || (!isPublished && !isPmo && !isAuthor)) {
+        throw new NotFoundException('Lesson not found.');
+      }
+      if (!isPublished) {
+        throw new ConflictException({
+          code: 'LESSON_NOT_PUBLISHED',
+          message: 'Only published lessons can be voted on.',
+        });
+      }
+
+      if (action === 'cast') {
+        await manager.query(`
+          INSERT INTO lesson_votes (lesson_id, user_id)
+          VALUES ($1, $2)
+          ON CONFLICT (lesson_id, user_id) DO NOTHING
+        `, [lessonId, profile.id]);
+      } else {
+        await manager.query(`
+          DELETE FROM lesson_votes
+          WHERE lesson_id = $1 AND user_id = $2
+        `, [lessonId, profile.id]);
+      }
+
+      const summary = await this.getVoteSummary(lessonId, profile.id, manager);
       return {
-        ...this.toDetailsResponse(lesson, history),
-        authorName: this.localAccess.getDisplayNameForProfile(lesson.authorId) ?? lesson.authorId,
+        lessonId,
+        votesCount: summary.votesCount,
+        hasVoted: summary.hasVoted,
       };
     });
   }
@@ -448,17 +966,39 @@ export class LessonsService {
         throw new NotFoundException('Lesson not found.');
       }
 
-      const history = isPmo || isAuthor
-        ? await manager.getRepository(LessonHistory).find({
-          where: { lessonId },
-          order: { occurredAt: 'ASC', id: 'ASC' },
-        })
-        : [];
-      return this.toDetailsResponse(lesson, history);
+      return this.readDetailsRepresentation(lesson, profile, manager);
     });
   }
 
-  private toDetailsResponse(lesson: Lesson, history: LessonHistory[]): LessonDetailsResponse {
+  private async readDetailsRepresentation(
+    lesson: Lesson,
+    profile: LocalProfile,
+    manager: EntityManager,
+  ): Promise<LessonDetailsResponse> {
+    const history = profile.role === 'LESSONS_MODERATOR' || lesson.authorId === profile.id
+      ? await manager.getRepository(LessonHistory).find({
+        where: { lessonId: lesson.id },
+        order: { occurredAt: 'ASC', id: 'ASC' },
+      })
+      : [];
+    const voteSummary = await this.getVoteSummary(lesson.id, profile.id, manager);
+    const commentCount = await this.getPublicCommentCount(lesson.id, manager);
+    return this.toDetailsResponse(lesson, history, voteSummary, commentCount);
+  }
+
+  private withLibraryAuthor(details: LessonDetailsResponse): LessonDetailsResponse {
+    return {
+      ...details,
+      authorName: this.localAccess.getDisplayNameForProfile(details.authorId) ?? details.authorId,
+    };
+  }
+
+  private toDetailsResponse(
+    lesson: Lesson,
+    history: LessonHistory[],
+    voteSummary: { votesCount: number; hasVoted: boolean } = { votesCount: 0, hasVoted: false },
+    commentCount = 0,
+  ): LessonDetailsResponse {
     const historyResponse: LessonHistoryEventResponse[] = history.map((event) => ({
       id: event.id,
       actorId: event.actorId,
@@ -472,7 +1012,14 @@ export class LessonsService {
     const latestReviewGuidance = lesson.status === 'Open'
       ? [...history].reverse().find((event) => event.eventType === 'Returned' && event.newStatus === 'Open')?.reason ?? null
       : null;
-    return { ...this.toResponse(lesson), latestReviewGuidance, history: historyResponse };
+    return {
+      ...this.toResponse(lesson),
+      latestReviewGuidance,
+      history: historyResponse,
+      votesCount: voteSummary.votesCount,
+      hasVoted: voteSummary.hasVoted,
+      commentCount,
+    };
   }
 
   async cancelOpenDraft(
@@ -493,7 +1040,7 @@ export class LessonsService {
       if (!current || (profile.role !== 'LESSONS_MODERATOR' && current.authorId !== profile.id)) {
         throw new NotFoundException('Lesson not found.');
       }
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       if (current.status !== 'Open') {
         throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be cancelled.' });
       }
@@ -537,14 +1084,14 @@ export class LessonsService {
     }
     const dataSource = this.requireDataSource();
 
-    return dataSource.transaction(async (manager) => {
+    const { response, approved, historyEntry } = await dataSource.transaction(async (manager) => {
       const lessons = manager.getRepository(Lesson);
       const current = await lessons.findOne({
         where: { id: lessonId },
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       if (current.status !== 'PMOEvaluation') {
         throw new ConflictException({
           code: 'LESSON_NOT_AWAITING_EVALUATION',
@@ -558,19 +1105,36 @@ export class LessonsService {
       current.updatedBy = profile.id;
       current.version += 1;
       current.approvedAt = new Date();
-      const approved = await lessons.save(current);
+      const approvedLesson = await lessons.save(current);
 
       const history = manager.getRepository(LessonHistory);
-      await history.save(history.create({
-        lessonId: approved.id,
+      const savedHistory = await history.save(history.create({
+        lessonId: approvedLesson.id,
         actorId: profile.id,
         eventType: 'Approved',
         previousStatus: 'PMOEvaluation',
         newStatus: 'Approved',
       }));
 
-      return this.toResponse(approved);
+      return {
+        response: this.toResponse(approvedLesson),
+        approved: approvedLesson,
+        historyEntry: savedHistory,
+      };
     });
+
+    await this.notifications?.recordNotification({
+      recipientUserId: approved.authorId,
+      actorUserId: profile.id,
+      actorDisplayName: profile.displayName,
+      eventType: 'LESSON_APPROVED',
+      lessonId: approved.id,
+      lessonTitleSnapshot: approved.title,
+      summary: `${profile.displayName} approved your lesson.`,
+      sourceEventKey: `history:${historyEntry.id}`,
+    });
+
+    return response;
   }
 
   async rejectEvaluation(
@@ -595,14 +1159,14 @@ export class LessonsService {
       });
     }
 
-    return dataSource.transaction(async (manager) => {
+    const { response, rejected, historyEntry } = await dataSource.transaction(async (manager) => {
       const lessons = manager.getRepository(Lesson);
       const current = await lessons.findOne({
         where: { id: lessonId },
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       if (current.status !== 'PMOEvaluation') {
         throw new ConflictException({
           code: 'LESSON_NOT_AWAITING_EVALUATION',
@@ -614,9 +1178,10 @@ export class LessonsService {
       current.status = 'Archived';
       current.updatedBy = profile.id;
       current.version += 1;
-      const rejected = await lessons.save(current);
-      await manager.getRepository(LessonHistory).save(manager.getRepository(LessonHistory).create({
-        lessonId: rejected.id,
+      const rejectedLesson = await lessons.save(current);
+      const historyRepo = manager.getRepository(LessonHistory);
+      const savedHistory = await historyRepo.save(historyRepo.create({
+        lessonId: rejectedLesson.id,
         actorId: profile.id,
         eventType: 'Rejected',
         previousStatus: 'PMOEvaluation',
@@ -624,8 +1189,25 @@ export class LessonsService {
         reason,
       }));
 
-      return this.toResponse(rejected);
+      return {
+        response: this.toResponse(rejectedLesson),
+        rejected: rejectedLesson,
+        historyEntry: savedHistory,
+      };
     });
+
+    await this.notifications?.recordNotification({
+      recipientUserId: rejected.authorId,
+      actorUserId: profile.id,
+      actorDisplayName: profile.displayName,
+      eventType: 'LESSON_REJECTED',
+      lessonId: rejected.id,
+      lessonTitleSnapshot: rejected.title,
+      summary: `${profile.displayName} rejected your lesson: ${formatNotificationSnippet(reason)}`,
+      sourceEventKey: `history:${historyEntry.id}`,
+    });
+
+    return response;
   }
 
   async closeApprovedLesson(
@@ -646,7 +1228,7 @@ export class LessonsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       if (current.status !== 'Approved') {
         throw new ConflictException({
           code: 'LESSON_NOT_APPROVED',
@@ -733,7 +1315,7 @@ export class LessonsService {
 
     return this.requireDataSource().transaction(async (manager) => {
       const transactionalLessons = manager.getRepository(Lesson);
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       const update = transactionalLessons.createQueryBuilder()
         .update(Lesson)
         .set({
@@ -794,7 +1376,7 @@ export class LessonsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       if (current.status !== 'Open') {
         throw new ConflictException({ code: 'LESSON_NOT_OPEN', message: 'Only Open lessons can be submitted.' });
       }
@@ -867,14 +1449,14 @@ export class LessonsService {
       throw new ForbiddenException('PMO moderator access is required to return a lesson for changes.');
     }
 
-    return this.requireDataSource().transaction(async (manager) => {
+    const { response, returned, historyEntry, guidance } = await this.requireDataSource().transaction(async (manager) => {
       const lessons = manager.getRepository(Lesson);
       const current = await lessons.findOne({
         where: { id: lessonId },
         lock: { mode: 'pessimistic_write' },
       });
       if (!current) throw new NotFoundException('Lesson not found.');
-      await this.checkIfMatch(ifMatch, input.version, current, manager.getRepository(LessonHistory));
+      await this.checkIfMatch(ifMatch, input.version, current, profile, manager);
       if (current.status !== 'PMOEvaluation') {
         throw new ConflictException({
           code: 'LESSON_NOT_AWAITING_EVALUATION',
@@ -899,21 +1481,40 @@ export class LessonsService {
         });
       }
 
+      const trimmedGuidance = input.guidance.trim();
       current.status = 'Open';
       current.updatedBy = profile.id;
       current.version += 1;
-      const returned = await lessons.save(current);
+      const returnedLesson = await lessons.save(current);
       const history = manager.getRepository(LessonHistory);
-      await history.save(history.create({
-        lessonId: returned.id,
+      const savedHistory = await history.save(history.create({
+        lessonId: returnedLesson.id,
         actorId: profile.id,
         eventType: 'Returned',
         previousStatus: 'PMOEvaluation',
         newStatus: 'Open',
-        reason: input.guidance.trim(),
+        reason: trimmedGuidance,
       }));
-      return { ...this.toResponse(returned), latestReviewGuidance: input.guidance.trim() };
+      return {
+        response: { ...this.toResponse(returnedLesson), latestReviewGuidance: trimmedGuidance },
+        returned: returnedLesson,
+        historyEntry: savedHistory,
+        guidance: trimmedGuidance,
+      };
     });
+
+    await this.notifications?.recordNotification({
+      recipientUserId: returned.authorId,
+      actorUserId: profile.id,
+      actorDisplayName: profile.displayName,
+      eventType: 'LESSON_RETURNED',
+      lessonId: returned.id,
+      lessonTitleSnapshot: returned.title,
+      summary: `${profile.displayName} returned your lesson for changes: ${formatNotificationSnippet(guidance)}`,
+      sourceEventKey: `history:${historyEntry.id}`,
+    });
+
+    return response;
   }
 
   private validateProjectSelection(
@@ -972,7 +1573,8 @@ export class LessonsService {
     ifMatch: string | undefined,
     expectedVersion: number,
     current: Lesson,
-    historyRepository: Repository<LessonHistory>,
+    profile: LocalProfile,
+    manager: EntityManager,
   ): Promise<void> {
     if (!ifMatch) return;
     if (current.version !== expectedVersion) throw this.staleVersionConflict();
@@ -983,12 +1585,10 @@ export class LessonsService {
     const draft = this.toResponse(current);
     if (matches(draft)) return;
 
-    const history = await historyRepository.find({
-      where: { lessonId: current.id },
-      order: { occurredAt: 'ASC', id: 'ASC' },
-    });
-    const details = this.toDetailsResponse(current, history);
+    const details = await this.readDetailsRepresentation(current, profile, manager);
     if (matches(details) || matches({ ...draft, latestReviewGuidance: details.latestReviewGuidance })) return;
+    if (current.approvedAt && (current.status === 'Approved' || current.status === 'Closed')
+      && matches(this.withLibraryAuthor(details))) return;
     throw this.staleVersionConflict();
   }
 
@@ -1061,11 +1661,92 @@ export class LessonsService {
     };
   }
 
-  private toLibraryResponse(lesson: Lesson, authorNames: ReadonlyMap<string, string>): LessonLibraryResponse {
+  private async getVoteSummary(
+    lessonId: number,
+    userId: string,
+    manager: EntityManager,
+  ): Promise<{ votesCount: number; hasVoted: boolean }> {
+    const summaries = await this.getVoteSummaries([lessonId], userId, manager);
+    return summaries.get(lessonId) ?? { votesCount: 0, hasVoted: false };
+  }
+
+  private async getVoteSummaries(
+    lessonIds: number[],
+    userId: string,
+    manager: EntityManager,
+  ): Promise<Map<number, { votesCount: number; hasVoted: boolean }>> {
+    const result = new Map<number, { votesCount: number; hasVoted: boolean }>();
+    if (lessonIds.length === 0) return result;
+    const rows = await manager.query(`
+      SELECT
+        lesson_id,
+        COUNT(*)::int AS votes_count,
+        BOOL_OR(user_id = $2) AS has_voted
+      FROM lesson_votes
+      WHERE lesson_id = ANY($1::int[])
+      GROUP BY lesson_id
+    `, [lessonIds, userId]) as { lesson_id: number; votes_count: number; has_voted: boolean }[];
+    for (const row of rows) {
+      result.set(Number(row.lesson_id), {
+        votesCount: Number(row.votes_count),
+        hasVoted: Boolean(row.has_voted),
+      });
+    }
+    return result;
+  }
+
+  private async attachVoteSummaries(
+    items: LessonLibraryResponse[],
+    userId: string,
+    manager: EntityManager,
+  ): Promise<LessonLibraryResponse[]> {
+    if (items.length === 0) return items;
+    const summaries = await this.getVoteSummaries(items.map((item) => item.id), userId, manager);
+    return items.map((item) => {
+      const summary = summaries.get(item.id);
+      return {
+        ...item,
+        votesCount: summary?.votesCount ?? 0,
+        hasVoted: summary?.hasVoted ?? false,
+      };
+    });
+  }
+
+  private async getPublicCommentCounts(lessonIds: number[]): Promise<Map<number, number>> {
+    if (lessonIds.length === 0) return new Map();
+    const rows = await this.requireDataSource().query(
+      `SELECT lesson_id, COUNT(*)::int AS count
+       FROM lesson_comments
+       WHERE lesson_id = ANY($1::int[]) AND hidden_at IS NULL
+       GROUP BY lesson_id`,
+      [lessonIds],
+    ) as { lesson_id: number; count: number | string }[];
+    return new Map(rows.map((row) => [Number(row.lesson_id), Number(row.count)]));
+  }
+
+  private async getPublicCommentCount(
+    lessonId: number,
+    queryable: Pick<DataSource, 'query'> = this.requireDataSource(),
+  ): Promise<number> {
+    const rows = await queryable.query(
+      'SELECT COUNT(*)::int AS count FROM lesson_comments WHERE lesson_id = $1 AND hidden_at IS NULL',
+      [lessonId],
+    ) as { count: number | string }[];
+    return Number(rows[0]?.count ?? 0);
+  }
+
+  private toLibraryResponse(
+    lesson: Lesson,
+    authorNames: ReadonlyMap<string, string>,
+    commentCount = 0,
+  ): LessonLibraryResponse {
     return {
       ...this.toResponse(lesson),
       authorName: authorNames.get(lesson.authorId) ?? lesson.authorId,
       viewCount: lesson.viewCount,
+      votesCount: 0,
+      hasVoted: false,
+      commentCount,
     };
   }
 

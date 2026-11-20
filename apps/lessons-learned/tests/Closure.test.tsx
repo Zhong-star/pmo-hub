@@ -9,24 +9,41 @@ import {
   getLibrary,
   getLibraryLessonDetails,
   getLibraryProjectSnapshots,
+  getRankings,
   recordLibraryView,
   type LessonDetails,
   type LessonDraft,
   type LibraryLesson,
 } from '../src/api';
 
+import { emptyHomeSections } from './homeFixtures';
+
 vi.mock('../src/api', () => ({
+  castLessonVote: vi.fn(),
   closeLesson: vi.fn(),
+  createLessonComment: vi.fn(),
+  createLessonCommentReply: vi.fn(),
   getHome: vi.fn(),
+  getLessonComments: vi.fn().mockResolvedValue({ items: [], page: { limit: 20, nextCursor: null }, publicCommentCount: 0 }),
   getLibrary: vi.fn(),
   getLibraryLessonDetails: vi.fn(),
   getLibraryProjectSnapshots: vi.fn(),
+  getNotifications: vi.fn().mockResolvedValue({ items: [], page: { limit: 20, nextCursor: null }, unreadCount: 0 }),
+  getPmoDashboard: vi.fn(),
+  getProfiles: vi.fn(),
+  getContributorProfile: vi.fn(),
+  getRankings: vi.fn().mockResolvedValue({ mostVotedLessons: [], topContributors: [] }),
+  hideLessonComment: vi.fn(),
+  markNotificationAsRead: vi.fn(),
+  markNotificationsReadBatch: vi.fn(),
   recordLibraryView: vi.fn(),
+  removeLessonVote: vi.fn(),
 }));
 
 const pmo = {
   profile: { id: 'local-pmo', displayName: 'Local PMO', role: 'LESSONS_MODERATOR' as const },
   navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
+  ...emptyHomeSections,
 };
 
 function lessonDraft(overrides: Partial<LessonDraft> = {}): LessonDraft {
@@ -60,6 +77,9 @@ function libraryLesson(overrides: Partial<LibraryLesson> = {}): LibraryLesson {
     ...lessonDraft(overrides),
     authorName: overrides.authorName ?? 'Local Contributor',
     viewCount: overrides.viewCount ?? 0,
+    votesCount: overrides.votesCount ?? 0,
+    hasVoted: overrides.hasVoted ?? false,
+    commentCount: overrides.commentCount ?? 0,
     ...overrides,
   };
 }
@@ -79,6 +99,7 @@ function renderLibrary() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getLibraryProjectSnapshots).mockResolvedValue([]);
+  vi.mocked(getRankings).mockResolvedValue({ mostVotedLessons: [], topContributors: [] });
   vi.mocked(recordLibraryView).mockResolvedValue({ viewCount: 1 });
 });
 
@@ -133,7 +154,7 @@ describe('PMO closure from the Lessons Library', () => {
     vi.mocked(getLibrary).mockResolvedValue([approved]);
     vi.mocked(getLibraryLessonDetails)
       .mockResolvedValueOnce({ ...approved, history: [] })
-      .mockResolvedValueOnce({ ...latest, history: [] });
+      .mockResolvedValueOnce({ ...latest, history: [], votesCount: 0, hasVoted: false, commentCount: 0 });
     vi.mocked(closeLesson).mockRejectedValue({
       response: { status: 409, data: { code: 'STALE_LESSON_VERSION' } },
     });

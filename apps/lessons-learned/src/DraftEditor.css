@@ -31,8 +31,9 @@
 
 .draft-editor-close {
   display: grid;
-  width: 42px;
-  height: 42px;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 1px solid var(--surface-border);
   border-radius: 9px;
@@ -56,7 +57,7 @@
 }
 .draft-editor-catalog-status p { margin: 0; }
 .draft-editor-catalog-status button {
-  min-height: 38px;
+  min-height: 44px;
   padding: 7px 11px;
   border: 1px solid var(--surface-border);
   border-radius: 8px;
@@ -91,7 +92,10 @@
 .draft-editor-field select:focus-visible,
 .draft-editor-field textarea:focus-visible,
 .draft-editor-close:focus-visible,
-.draft-editor-actions button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.draft-editor-actions button:focus-visible,
+.comment-inline-actions button:focus-visible,
+.comment-actions button:focus-visible,
+.comments-load-more button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .draft-editor-counter { margin: 0; color: var(--muted); font-size: 13px; }
 .draft-editor-error { margin: 0; color: var(--warning-text); font-size: 14px; }
 .draft-editor-success { margin: 0; color: var(--status-text); font-size: 14px; }
@@ -99,8 +103,11 @@
 .draft-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 
 .draft-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 4px; }
-.draft-editor-actions button {
-  min-height: 42px;
+.draft-editor-actions button,
+.comment-inline-actions button,
+.comment-actions button,
+.comments-load-more button {
+  min-height: 44px;
   padding: 9px 14px;
   border: 1px solid var(--surface-border);
   border-radius: 9px;
@@ -112,7 +119,10 @@
 .draft-editor-primary { margin-left: auto; border-color: var(--primary-background) !important; background: var(--primary-background); color: var(--primary-text); }
 .draft-editor-primary:hover { background: var(--primary-hover); }
 .draft-editor-secondary { background: var(--theme-control-background); color: var(--theme-control-text); }
-.draft-editor-actions button:disabled { cursor: wait; opacity: .7; }
+.draft-editor-actions button:disabled,
+.comment-inline-actions button:disabled,
+.comment-actions button:disabled,
+.comments-load-more button:disabled { cursor: wait; opacity: .7; }
 
 .submission-detail-list { display: grid; gap: 13px; margin: 0; }
 .submission-detail-list div { display: grid; gap: 4px; }
@@ -138,4 +148,114 @@
   .draft-editor-primary { margin-left: 0; }
   .draft-list li { align-items: flex-start; flex-direction: column; }
   .submission-actions { justify-content: flex-start; }
+}
+
+
+.lesson-comments {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--surface-border);
+  display: grid;
+  gap: 1rem;
+}
+
+.lesson-comments-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.lesson-comments-header h3 {
+  margin: 0;
+}
+
+.comments-audit-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.comment-composer,
+.comment-inline-form {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.comment-inline-actions,
+.comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.comment-thread-list,
+.comment-reply-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.comment-thread {
+  border: 1px solid var(--surface-border);
+  border-radius: 0.5rem;
+  padding: 0.85rem;
+  background: var(--surface);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.comment-reply-list {
+  margin-left: 1.25rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--surface-border);
+}
+
+.comment-reply {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.comment-meta {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.comment-body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-hidden-placeholder {
+  margin: 0;
+  font-style: italic;
+  color: var(--muted);
+}
+
+.comment-moderation-audit {
+  border: 1px solid var(--warning-border, var(--surface-border));
+  background: var(--warning-background, transparent);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.875rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.comment-moderation-audit p {
+  margin: 0;
+}
+
+.comments-load-more {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
 }

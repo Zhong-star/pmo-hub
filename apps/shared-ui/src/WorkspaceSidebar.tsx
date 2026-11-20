@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import './WorkspaceSidebar.css';
 
 export function WorkspaceSidebar({
@@ -16,9 +16,22 @@ export function WorkspaceSidebar({
   onToggle: () => void;
   children: ReactNode;
 }) {
+  const toggleRef = useRef<HTMLButtonElement>(null);
+
   return (
-    <aside className="workspace-sidebar" aria-label={label} data-menu-open={open}>
+    <aside
+      className="workspace-sidebar"
+      aria-label={label}
+      data-menu-open={open}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || !open || !toggleRef.current?.getClientRects().length) return;
+        event.preventDefault();
+        onToggle();
+        toggleRef.current.focus();
+      }}
+    >
       <button
+        ref={toggleRef}
         className="workspace-menu-toggle"
         type="button"
         aria-controls={navigationId}

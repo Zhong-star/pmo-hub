@@ -15,10 +15,16 @@ export function createOpenApiDocument(app: INestApplication) {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  const collection = '/api/lessons-learned/v1/lessons';
+  const problemCollections = [
+    '/api/lessons-learned/v1/lessons',
+    '/api/lessons-learned/v1/pmo',
+    '/api/lessons-learned/v1/profiles',
+    '/api/lessons-learned/v1/rankings',
+    '/api/lessons-learned/v1/notifications',
+  ];
   for (const [path, routes] of Object.entries(document.paths)) {
-    if (path !== collection && !path.startsWith(`${collection}/`)) continue;
-    for (const operation of [routes.get, routes.patch, routes.post]) {
+    if (!problemCollections.some((collection) => path === collection || path.startsWith(`${collection}/`))) continue;
+    for (const operation of [routes.get, routes.patch, routes.post, routes.put, routes.delete]) {
       if (!operation) continue;
       for (const [code, response] of Object.entries(operation.responses)) {
         if (!response || '$ref' in response) continue;
@@ -33,11 +39,18 @@ export function createOpenApiDocument(app: INestApplication) {
             ...response.content,
             'application/problem+json': { schema: { $ref: getSchemaPath(LessonProblem) } },
           };
-        } else if (path.includes('/{id}') || code === '201') {
-          response.headers = {
-            ...response.headers,
-            ETag: { description: 'ETag for the returned lesson version.', schema: { type: 'string' } },
-          };
+        } else {
+          const schema = response.content?.['application/json']?.schema;
+          const schemaRef = schema && '$ref' in schema ? schema.$ref : undefined;
+          if (
+            schemaRef === '#/components/schemas/LessonDraftResponse'
+            || schemaRef === '#/components/schemas/LessonDetailsResponse'
+          ) {
+            response.headers = {
+              ...response.headers,
+              ETag: { description: 'ETag for the returned lesson version.', schema: { type: 'string' } },
+            };
+          }
         }
       }
     }

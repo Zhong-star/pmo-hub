@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Header,
@@ -11,6 +12,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseFilters,
   UseInterceptors,
@@ -42,13 +44,21 @@ import { ApproveLessonRequest } from './approve-lesson-request.dto';
 import { CloseLessonRequest } from './close-lesson-request.dto';
 import { CancelLessonRequest } from './cancel-lesson-request.dto';
 import {
-  LessonDetailsResponse, LessonDraftResponse, LessonLibraryResponse, RecordLessonLibraryViewResponse,
+  LessonDetailsResponse, LessonDraftResponse, LessonLibraryResponse, LessonVoteResponse, RecordLessonLibraryViewResponse,
 } from './lesson-response.dto';
 import { LessonConflictResponse } from './lesson-conflict-response.dto';
 import { LessonSubmissionValidationResponse } from './lesson-submission-validation-response.dto';
 import { LessonEditValidationResponse } from './lesson-edit-validation-response.dto';
 import { LessonCancellationValidationResponse } from './lesson-cancellation-validation-response.dto';
 import { LessonReturnValidationResponse } from './lesson-return-validation-response.dto';
+import { CreateLessonCommentRequest } from './create-lesson-comment-request.dto';
+import { HideLessonCommentRequest } from './hide-lesson-comment-request.dto';
+import {
+  LessonCommentItemResponse,
+  LessonCommentPageResponse,
+  LessonCommentThreadResponse,
+} from './lesson-comment-response.dto';
+import { LessonCommentsService } from './lesson-comments.service';
 import { LessonsService } from './lessons.service';
 import { LessonProjectResponse } from './project-response.dto';
 import { SubmitLessonRequest } from './submit-lesson-request.dto';
@@ -70,12 +80,25 @@ import { ParsePositivePostgresIntegerPipe } from './parse-positive-postgres-inte
 import { LESSON_STATUSES, LESSON_TYPES } from './lesson-domain.constants';
 
 @ApiTags('Lessons')
-@ApiExtraModels(LocalAccessProblem, LessonLibraryPage, LessonLibraryResponse, LessonPage, LessonProblem, LessonProjectPage)
+@ApiExtraModels(
+  LocalAccessProblem,
+  LessonCommentItemResponse,
+  LessonCommentPageResponse,
+  LessonCommentThreadResponse,
+  LessonLibraryPage,
+  LessonLibraryResponse,
+  LessonPage,
+  LessonProblem,
+  LessonProjectPage,
+)
 @Controller('lessons')
 @UseFilters(LocalAccessProblemFilter, LessonProblemFilter)
 @UseInterceptors(LessonHttpContract)
 export class LessonsController {
-  constructor(@Inject(LessonsService) private readonly lessons: LessonsService) {}
+  constructor(
+    @Inject(LessonsService) private readonly lessons: LessonsService,
+    @Inject(LessonCommentsService) private readonly comments: LessonCommentsService,
+  ) {}
 
   @Post()
   @Header('Cache-Control', 'no-store')
@@ -589,5 +612,179 @@ export class LessonsController {
     input: CloseLessonRequest,
   ): Promise<LessonDraftResponse> {
     return this.lessons.closeApprovedLesson(typeof header === 'string' ? header : undefined, lessonId, input, ifMatch);
+  }
+
+  @Put(':id/vote')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Cast a single vote on a published lesson for the selected profile' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'Positive PostgreSQL integer lesson ID.' })
+  @ApiOkResponse({ type: LessonVoteResponse })
+  @ApiBadRequestResponse({ description: 'The lesson ID is outside the supported range.' })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not visible to the selected profile.' })
+  @ApiConflictResponse({ description: 'Only published lessons (Approved or Closed) can be voted on.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  castVote(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParsePositivePostgresIntegerPipe) lessonId: number,
+  ): Promise<LessonVoteResponse> {
+    return this.lessons.castVote(typeof header === 'string' ? header : undefined, lessonId);
+  }
+
+  @Delete(':id/vote')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Remove the selected profile’s vote from a published lesson' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'Positive PostgreSQL integer lesson ID.' })
+  @ApiOkResponse({ type: LessonVoteResponse })
+  @ApiBadRequestResponse({ description: 'The lesson ID is outside the supported range.' })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not visible to the selected profile.' })
+  @ApiConflictResponse({ description: 'Only published lessons (Approved or Closed) can be voted on.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  removeVote(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParsePositivePostgresIntegerPipe) lessonId: number,
+  ): Promise<LessonVoteResponse> {
+    return this.lessons.removeVote(typeof header === 'string' ? header : undefined, lessonId);
+  }
+
+  @Get(':id/comments')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'List paginated root comments (newest first) with chronological single-level replies' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson.' })
+  @ApiQuery({ name: 'cursor', required: false, type: String })
+  @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } })
+  @ApiQuery({ name: 'includeHidden', required: false, enum: ['true', 'false'], description: 'PMO-only flag to include hidden comments and moderation audit details.' })
+  @ApiOkResponse({ type: LessonCommentPageResponse })
+  @ApiBadRequestResponse({ description: 'Invalid lesson ID, page limit, cursor, or includeHidden flag.' })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile is not authorized or requested hidden comments without PMO access.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not visible to the selected profile.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  listComments(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParsePositivePostgresIntegerPipe) lessonId: number,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+    @Query('includeHidden') includeHidden?: string,
+  ): Promise<LessonCommentPageResponse> {
+    return this.comments.listComments(typeof header === 'string' ? header : undefined, lessonId, {
+      cursor,
+      limit,
+      includeHidden,
+    });
+  }
+
+  @Post(':id/comments')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Post a top-level comment on an accessible lesson' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson.' })
+  @ApiBody({ type: CreateLessonCommentRequest })
+  @ApiCreatedResponse({ type: LessonCommentThreadResponse })
+  @ApiBadRequestResponse({ description: 'Comment text must contain 1 to 2,000 non-whitespace characters.' })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
+  @ApiResponse({ status: 404, description: 'The lesson does not exist or is not visible to the selected profile.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  createComment(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParsePositivePostgresIntegerPipe) lessonId: number,
+    @Body(new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      expectedType: CreateLessonCommentRequest,
+      exceptionFactory: (errors) => new BadRequestException({
+        code: 'INVALID_COMMENT',
+        message: 'Enter a comment between 1 and 2,000 characters.',
+        fieldErrors: Object.fromEntries(errors.map((error) => [
+          error.property,
+          Object.values(error.constraints ?? {})[0] ?? 'Invalid value.',
+        ])),
+      }),
+    }))
+    input: CreateLessonCommentRequest,
+  ): Promise<LessonCommentThreadResponse> {
+    return this.comments.createComment(typeof header === 'string' ? header : undefined, lessonId, input);
+  }
+
+  @Post(':id/comments/:commentId/replies')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Post a single-level reply to a top-level comment on an accessible lesson' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson.' })
+  @ApiParam({ name: 'commentId', type: Number, description: 'The numeric ID of the parent root comment.' })
+  @ApiBody({ type: CreateLessonCommentRequest })
+  @ApiCreatedResponse({ type: LessonCommentItemResponse })
+  @ApiBadRequestResponse({ description: 'Reply text is invalid or attempts to reply to another reply.' })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile has no active Lessons Learned access.' })
+  @ApiResponse({ status: 404, description: 'The lesson or parent comment does not exist or is not visible.' })
+  @ApiConflictResponse({ description: 'The parent comment is hidden and cannot receive new replies.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  createReply(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParsePositivePostgresIntegerPipe) lessonId: number,
+    @Param('commentId', ParsePositivePostgresIntegerPipe) commentId: number,
+    @Body(new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      expectedType: CreateLessonCommentRequest,
+      exceptionFactory: (errors) => new BadRequestException({
+        code: 'INVALID_COMMENT',
+        message: 'Enter a reply between 1 and 2,000 characters.',
+        fieldErrors: Object.fromEntries(errors.map((error) => [
+          error.property,
+          Object.values(error.constraints ?? {})[0] ?? 'Invalid value.',
+        ])),
+      }),
+    }))
+    input: CreateLessonCommentRequest,
+  ): Promise<LessonCommentItemResponse> {
+    return this.comments.createReply(typeof header === 'string' ? header : undefined, lessonId, commentId, input);
+  }
+
+  @Post(':id/comments/:commentId/hide')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Hide a comment or reply as a PMO moderator with a mandatory reason' })
+  @ApiSecurity(localProfileScheme)
+  @ApiParam({ name: 'id', type: Number, description: 'The numeric ID of the lesson.' })
+  @ApiParam({ name: 'commentId', type: Number, description: 'The numeric ID of the comment or reply to hide.' })
+  @ApiBody({ type: HideLessonCommentRequest })
+  @ApiOkResponse({ type: LessonCommentItemResponse })
+  @ApiBadRequestResponse({ description: 'A moderation reason between 1 and 1,000 characters is required.' })
+  @ApiResponse({ status: 401, description: 'A local Hub profile must be selected.' })
+  @ApiResponse({ status: 403, description: 'The selected profile is not a PMO moderator.' })
+  @ApiResponse({ status: 404, description: 'The lesson or comment does not exist.' })
+  @ApiConflictResponse({ description: 'The comment is already hidden.' })
+  @ApiResponse({ status: 503, description: 'Lessons Learned persistence is unavailable.' })
+  hideComment(
+    @Headers(localProfileHeader.toLowerCase()) header: string | string[] | undefined,
+    @Param('id', ParsePositivePostgresIntegerPipe) lessonId: number,
+    @Param('commentId', ParsePositivePostgresIntegerPipe) commentId: number,
+    @Body(new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      expectedType: HideLessonCommentRequest,
+      exceptionFactory: (errors) => new BadRequestException({
+        code: 'INVALID_COMMENT_MODERATION',
+        message: 'Enter a moderation reason between 1 and 1,000 characters.',
+        fieldErrors: Object.fromEntries(errors.map((error) => [
+          error.property,
+          Object.values(error.constraints ?? {})[0] ?? 'Invalid value.',
+        ])),
+      }),
+    }))
+    input: HideLessonCommentRequest,
+  ): Promise<LessonCommentItemResponse> {
+    return this.comments.hideComment(typeof header === 'string' ? header : undefined, lessonId, commentId, input);
   }
 }

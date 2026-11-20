@@ -11,6 +11,7 @@ import {
   getLibrary,
   getLibraryLessonDetails,
   getLibraryProjectSnapshots,
+  getRankings,
   recordLibraryView,
   getLessonDetails,
   getLessonProjects,
@@ -28,23 +29,38 @@ import {
   type UpdateLessonDraftBody,
 } from '../src/api';
 
+import { emptyHomeSections } from './homeFixtures';
+
 vi.mock('../src/api', () => ({
   approveLesson: vi.fn(),
+  castLessonVote: vi.fn(),
   closeLesson: vi.fn(),
   cancelLesson: vi.fn(),
   createLessonDraft: vi.fn(),
+  createLessonComment: vi.fn(),
+  createLessonCommentReply: vi.fn(),
   getHome: vi.fn(),
   getLibrary: vi.fn(),
   getLibraryLessonDetails: vi.fn(),
   getLibraryProjectSnapshots: vi.fn(),
   recordLibraryView: vi.fn(),
+  removeLessonVote: vi.fn(),
+  getLessonComments: vi.fn().mockResolvedValue({ items: [], page: { limit: 20, nextCursor: null }, publicCommentCount: 0 }),
   getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
   getMySubmissions: vi.fn(),
+  getNotifications: vi.fn().mockResolvedValue({ items: [], page: { limit: 20, nextCursor: null }, unreadCount: 0 }),
   getPmoDrafts: vi.fn(),
+  getPmoDashboard: vi.fn(),
+  getProfiles: vi.fn(),
+  getContributorProfile: vi.fn(),
+  getRankings: vi.fn().mockResolvedValue({ mostVotedLessons: [], topContributors: [] }),
   getPmoEvaluationQueue: vi.fn(),
   getEvaluationProjectSnapshots: vi.fn(),
+  hideLessonComment: vi.fn(),
+  markNotificationAsRead: vi.fn(),
+  markNotificationsReadBatch: vi.fn(),
   returnLesson: vi.fn(),
   rejectLesson: vi.fn(),
   updateLessonDraft: vi.fn(),
@@ -53,11 +69,13 @@ vi.mock('../src/api', () => ({
 const contributor = {
   profile: { id: 'local-contributor', displayName: 'Local Contributor', role: 'LESSONS_USER' as const },
   navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
+  ...emptyHomeSections,
 };
 
 const pmo = {
   profile: { id: 'local-pmo', displayName: 'Local PMO', role: 'LESSONS_MODERATOR' as const },
   navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
+  ...emptyHomeSections,
 };
 
 function lessonDraft(overrides: Partial<LessonDraft> = {}): LessonDraft {
@@ -91,6 +109,9 @@ function libraryLesson(overrides: Partial<LibraryLesson> = {}): LibraryLesson {
     ...lessonDraft(overrides),
     authorName: overrides.authorName ?? 'Local Contributor',
     viewCount: overrides.viewCount ?? 0,
+    votesCount: overrides.votesCount ?? 0,
+    hasVoted: overrides.hasVoted ?? false,
+    commentCount: overrides.commentCount ?? 0,
     ...overrides,
   };
 }
@@ -108,6 +129,9 @@ function lessonDetails(overrides: Partial<LessonDetails> = {}): LessonDetails {
       reason: null,
       occurredAt: draft.createdAt,
     }],
+    votesCount: overrides.votesCount ?? 0,
+    hasVoted: overrides.hasVoted ?? false,
+    commentCount: overrides.commentCount ?? 0,
     ...overrides,
   };
 }
@@ -145,6 +169,7 @@ beforeEach(() => {
   vi.mocked(getPmoEvaluationQueue).mockResolvedValue([]);
   vi.mocked(getEvaluationProjectSnapshots).mockResolvedValue([]);
   vi.mocked(getLibraryProjectSnapshots).mockResolvedValue([]);
+  vi.mocked(getRankings).mockResolvedValue({ mostVotedLessons: [], topContributors: [] });
   vi.mocked(returnLesson).mockImplementation(async (_profileId, lessonId) => lessonDraft({
     id: lessonId,
     status: 'Open',
@@ -469,7 +494,8 @@ describe('Lessons Learned access check', () => {
 
     renderScreen('local-contributor', 0, 'evaluation-queue');
 
-    expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('The PMO Review Queue is restricted to PMO moderators.');
     expect(screen.queryByRole('link', { name: 'Evaluation Queue' })).not.toBeInTheDocument();
     expect(getPmoEvaluationQueue).not.toHaveBeenCalled();
   });
@@ -497,7 +523,7 @@ describe('Lessons Learned access check', () => {
     const table = await screen.findByRole('table', { name: 'Published lessons, newest approval first' });
     const row = within(table).getByRole('row', { name: /Published release verification/ });
     expect(within(row).getByText('Approved')).toBeInTheDocument();
-    expect(within(row).getByRole('cell', { name: '0' })).toBeInTheDocument();
+    expect(within(row).getAllByRole('cell', { name: '0' })).toHaveLength(2);
     await user.click(within(row).getByRole('link', { name: 'View Published release verification' }));
 
     const details = await screen.findByRole('dialog', { name: 'Published lesson details' });
@@ -1762,11 +1788,12 @@ describe('Lessons Learned access check', () => {
     await screen.findByRole('navigation', { name: 'Lessons Learned' });
     const profileTrigger = screen.getByRole('button', { name: 'Local Contributor' });
     await user.click(profileTrigger);
-    const lightTheme = screen.getByRole('button', { name: 'Light' });
-    const darkTheme = screen.getByRole('button', { name: 'Dark' });
+    const headerTheme = screen.getByRole('group', { name: 'Color theme' });
+    const lightTheme = within(headerTheme).getByRole('button', { name: 'Light' });
+    const darkTheme = within(headerTheme).getByRole('button', { name: 'Dark' });
     expect(lightTheme).toHaveAttribute('aria-pressed', 'true');
     expect(darkTheme).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.queryByRole('group', { name: 'Color theme' })).toBeInTheDocument();
+    expect(headerTheme).toBeInTheDocument();
     expect(document.querySelector('.module-sidebar .theme-controls')).toBeNull();
 
     await user.tab();
@@ -1783,7 +1810,7 @@ describe('Lessons Learned access check', () => {
     renderScreen('local-contributor');
     await screen.findByRole('navigation', { name: 'Lessons Learned' });
     await user.click(screen.getByRole('button', { name: 'Local Contributor' }));
-    expect(screen.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(screen.getByRole('group', { name: 'Color theme' })).getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('shows the PMO role returned by the API', async () => {

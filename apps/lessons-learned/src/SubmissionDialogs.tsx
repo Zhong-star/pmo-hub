@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { CancelLessonBody, LessonDetails, LessonDraft, RejectLessonBody } from './api';
+import { LessonCommentsSection } from './LessonCommentsSection';
 import { useDialogFocus } from './useDialogFocus';
 import './DraftEditor.css';
 
@@ -377,6 +378,7 @@ type LessonSubmissionDetailsDialogProps = {
   details?: LessonDetails;
   isLoading: boolean;
   hasError: boolean;
+  errorStatus?: number | null;
   canEdit?: boolean;
   onEdit?: () => void;
   onRetry: () => void;
@@ -387,6 +389,13 @@ type LessonSubmissionDetailsDialogProps = {
   canClose?: boolean;
   onCloseLesson?: (lesson: LessonDetails) => void;
   isLibrarySurface?: boolean;
+  onToggleVote?: (lesson: LessonDetails) => void;
+  isVotePending?: boolean;
+  voteError?: string | null;
+  onOpenAuthorProfile?: (authorId: string) => void;
+  profileId?: string;
+  isPmo?: boolean;
+  onPublicCommentCountChange?: (lessonId: number, publicCommentCount: number) => void;
 };
 
 export function LessonSubmissionDetailsDialog({
@@ -394,6 +403,7 @@ export function LessonSubmissionDetailsDialog({
   details: lessonData,
   isLoading,
   hasError,
+  errorStatus,
   canEdit = false,
   onEdit,
   onRetry,
@@ -404,12 +414,27 @@ export function LessonSubmissionDetailsDialog({
   canClose = false,
   onCloseLesson,
   isLibrarySurface = false,
+  onToggleVote,
+  isVotePending = false,
+  voteError = null,
+  onOpenAuthorProfile,
+  profileId,
+  isPmo = false,
+  onPublicCommentCountChange,
 }: LessonSubmissionDetailsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const closeGuardRef = useRef<(() => boolean) | null>(null);
   const lesson = hasError ? undefined : lessonData;
+  const isPublished = Boolean(
+    lesson && (lesson.status === 'Approved' || lesson.status === 'Closed') && lesson.approvedAt,
+  );
 
   useDialogFocus(dialogRef, closeRef);
+
+  function requestClose() {
+    if (closeGuardRef.current?.() !== false) onClose();
+  }
 
   const fields: Array<[string, string]> = lesson ? [
     ['Title', lesson.title],
@@ -441,12 +466,12 @@ export function LessonSubmissionDetailsDialog({
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.preventDefault();
-          onClose();
+          requestClose();
         }
       }}
       onCancel={(event) => {
         event.preventDefault();
-        onClose();
+        requestClose();
       }}
     >
       <div className="draft-editor-form">
@@ -455,24 +480,56 @@ export function LessonSubmissionDetailsDialog({
             <p className="draft-editor-eyebrow">{isLibrarySurface ? 'Published lesson' : 'Lesson'} #{lesson?.id ?? lessonId}{lesson ? ` · ${lesson.status}` : ''}</p>
             <h2 id="lesson-details-title">{isLibrarySurface ? 'Published lesson details' : 'Lesson details'}</h2>
           </div>
-          <button ref={closeRef} className="draft-editor-close" type="button" aria-label={isLibrarySurface ? 'Close published lesson details' : 'Close lesson details'} onClick={onClose}>
+          <button ref={closeRef} className="draft-editor-close" type="button" aria-label={isLibrarySurface ? 'Close published lesson details' : 'Close lesson details'} onClick={requestClose}>
             ×
           </button>
         </div>
         {isLoading && <p role="status">Loading lesson details…</p>}
         {hasError && (
           <div className="draft-error" role="alert">
+            {errorStatus === 404 && <strong>Lesson not found</strong>}
+            {(errorStatus === 401 || errorStatus === 403) && <strong>Access denied</strong>}
             <p>Lesson details and history could not be loaded.</p>
             <button className="draft-cancel" type="button" onClick={onRetry}>Retry</button>
           </div>
         )}
         {lesson && (
           <>
+            {isPublished && onToggleVote && (
+              <div className="lesson-vote-bar">
+                <button
+                  type="button"
+                  className={lesson.hasVoted ? 'vote-button is-voted' : 'vote-button'}
+                  aria-pressed={lesson.hasVoted}
+                  aria-label={lesson.hasVoted
+                    ? `Remove vote for ${lesson.title} (${lesson.votesCount})`
+                    : `Vote for ${lesson.title} (${lesson.votesCount})`}
+                  disabled={isVotePending}
+                  onClick={() => onToggleVote(lesson)}
+                >
+                  <span aria-hidden="true">{lesson.hasVoted ? '★' : '☆'}</span>
+                  <span>{lesson.hasVoted ? 'Voted' : 'Vote'}</span>
+                  <span className="vote-count">{lesson.votesCount}</span>
+                </button>
+                {voteError && <p className="draft-error" role="alert">{voteError}</p>}
+              </div>
+            )}
             <dl className="submission-detail-list">
               {fields.map(([label, value]) => (
                 <div key={label}>
                   <dt>{label}</dt>
-                  <dd>{value}</dd>
+                  <dd>
+                    {label === 'Author' && onOpenAuthorProfile ? (
+                      <button
+                        type="button"
+                        className="author-profile-link"
+                        aria-label={`View profile of ${value}`}
+                        onClick={() => onOpenAuthorProfile(lesson.authorId)}
+                      >
+                        {value}
+                      </button>
+                    ) : value}
+                  </dd>
                 </div>
               ))}
               {dates.map(([label, value]) => (
@@ -496,6 +553,16 @@ export function LessonSubmissionDetailsDialog({
                 </ol>
               </section>
             )}
+            {profileId && (
+              <LessonCommentsSection
+                lessonId={lesson.id}
+                profileId={profileId}
+                isPmo={isPmo}
+                initialPublicCommentCount={lesson.commentCount ?? 0}
+                onPublicCommentCountChange={onPublicCommentCountChange}
+                closeGuardRef={closeGuardRef}
+              />
+            )}
           </>
         )}
         <div className="draft-editor-actions">
@@ -517,7 +584,7 @@ export function LessonSubmissionDetailsDialog({
               Close lesson
             </button>
           )}
-          <button className="draft-editor-secondary" type="button" onClick={onClose}>{isLibrarySurface ? 'Back to Lessons Library' : 'Close details'}</button>
+          <button className="draft-editor-secondary" type="button" onClick={requestClose}>{isLibrarySurface ? 'Back to Lessons Library' : 'Close details'}</button>
         </div>
       </div>
     </dialog>,

@@ -11,6 +11,10 @@ const lessonsPath = '/api/lessons-learned/v1/lessons';
 const projectsPath = `${lessonsPath}/projects`;
 const submissionsPath = `${lessonsPath}/mine`;
 const pmoDraftsPath = `${lessonsPath}/pmo-drafts`;
+const pmoDashboardPath = '/api/lessons-learned/v1/pmo/dashboard';
+const profilesPath = '/api/lessons-learned/v1/profiles';
+const profileDetailPath = `${profilesPath}/{userId}`;
+const rankingsPath = '/api/lessons-learned/v1/rankings';
 const evaluationQueuePath = `${lessonsPath}/evaluation-queue`;
 const evaluationProjectsPath = evaluationQueuePath + '/projects';
 const libraryPath = `${lessonsPath}/library`;
@@ -24,6 +28,13 @@ const cancelPath = `${draftPath}/cancel`;
 const approvePath = `${draftPath}/approve`;
 const rejectPath = `${draftPath}/reject`;
 const closePath = `${draftPath}/close`;
+const votePath = `${draftPath}/vote`;
+const commentsPath = `${draftPath}/comments`;
+const commentRepliesPath = `${commentsPath}/{commentId}/replies`;
+const commentHidePath = `${commentsPath}/{commentId}/hide`;
+const notificationsPath = '/api/lessons-learned/v1/notifications';
+const notificationReadPath = `${notificationsPath}/{id}/read`;
+const notificationsReadBatchPath = `${notificationsPath}/read-batch`;
 const contract = JSON.parse(await readFile(contractPath, 'utf8'));
 const operation = contract.paths?.[healthPath]?.get;
 const responseSchema = operation?.responses?.['200']?.content?.['application/json']?.schema;
@@ -40,6 +51,14 @@ const submissionsOperation = contract.paths?.[submissionsPath]?.get;
 const submissionsResponseSchema = submissionsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const pmoDraftsOperation = contract.paths?.[pmoDraftsPath]?.get;
 const pmoDraftsResponseSchema = pmoDraftsOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const pmoDashboardOperation = contract.paths?.[pmoDashboardPath]?.get;
+const pmoDashboardResponseSchema = pmoDashboardOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const profilesOperation = contract.paths?.[profilesPath]?.get;
+const profilesResponseSchema = profilesOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const profileDetailOperation = contract.paths?.[profileDetailPath]?.get;
+const profileDetailResponseSchema = profileDetailOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const rankingsOperation = contract.paths?.[rankingsPath]?.get;
+const rankingsResponseSchema = rankingsOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const evaluationQueueOperation = contract.paths?.[evaluationQueuePath]?.get;
 const evaluationQueueResponseSchema = evaluationQueueOperation?.responses?.['200']?.content?.['application/json']?.schema;
 const libraryOperation = contract.paths?.[libraryPath]?.get;
@@ -74,6 +93,28 @@ const rejectLessonResponseSchema = rejectLessonOperation?.responses?.['200']?.co
 const closeLessonOperation = contract.paths?.[closePath]?.post;
 const closeLessonRequestSchema = closeLessonOperation?.requestBody?.content?.['application/json']?.schema;
 const closeLessonResponseSchema = closeLessonOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const castVoteOperation = contract.paths?.[votePath]?.put;
+const castVoteResponseSchema = castVoteOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const removeVoteOperation = contract.paths?.[votePath]?.delete;
+const removeVoteResponseSchema = removeVoteOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const listCommentsOperation = contract.paths?.[commentsPath]?.get;
+const listCommentsResponseSchema = listCommentsOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const createCommentOperation = contract.paths?.[commentsPath]?.post;
+const createCommentRequestSchema = createCommentOperation?.requestBody?.content?.['application/json']?.schema;
+const createCommentResponseSchema = createCommentOperation?.responses?.['201']?.content?.['application/json']?.schema;
+const createReplyOperation = contract.paths?.[commentRepliesPath]?.post;
+const createReplyRequestSchema = createReplyOperation?.requestBody?.content?.['application/json']?.schema;
+const createReplyResponseSchema = createReplyOperation?.responses?.['201']?.content?.['application/json']?.schema;
+const hideCommentOperation = contract.paths?.[commentHidePath]?.post;
+const hideCommentRequestSchema = hideCommentOperation?.requestBody?.content?.['application/json']?.schema;
+const hideCommentResponseSchema = hideCommentOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const listNotificationsOperation = contract.paths?.[notificationsPath]?.get;
+const listNotificationsResponseSchema = listNotificationsOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const markNotificationReadOperation = contract.paths?.[notificationReadPath]?.post;
+const markNotificationReadResponseSchema = markNotificationReadOperation?.responses?.['200']?.content?.['application/json']?.schema;
+const markNotificationsReadBatchOperation = contract.paths?.[notificationsReadBatchPath]?.post;
+const markNotificationsReadBatchRequestSchema = markNotificationsReadBatchOperation?.requestBody?.content?.['application/json']?.schema;
+const markNotificationsReadBatchResponseSchema = markNotificationsReadBatchOperation?.responses?.['200']?.content?.['application/json']?.schema;
 
 if (!operation || responseSchema?.$ref !== '#/components/schemas/HealthResponse') {
   throw new Error(`Expected GET ${healthPath} with a HealthResponse schema in ${contractPath}`);
@@ -106,6 +147,22 @@ if (!submissionsOperation || submissionsResponseSchema?.type !== 'array' ||
 if (!pmoDraftsOperation || pmoDraftsResponseSchema?.type !== 'array' ||
   pmoDraftsResponseSchema.items?.$ref !== '#/components/schemas/LessonDraftResponse') {
   throw new Error(`Expected GET ${pmoDraftsPath} with an array of LessonDraftResponse in ${contractPath}`);
+}
+
+if (!pmoDashboardOperation || pmoDashboardResponseSchema?.$ref !== '#/components/schemas/PmoDashboardResponse') {
+  throw new Error(`Expected GET ${pmoDashboardPath} with PmoDashboardResponse in ${contractPath}`);
+}
+
+if (!profilesOperation || !profilesResponseSchema?.oneOf?.some((schema) => schema.$ref === '#/components/schemas/ProfileSearchPage')) {
+  throw new Error(`Expected GET ${profilesPath} with ProfileSearchPage in ${contractPath}`);
+}
+
+if (!profileDetailOperation || profileDetailResponseSchema?.$ref !== '#/components/schemas/ContributorProfileResponse') {
+  throw new Error(`Expected GET ${profileDetailPath} with ContributorProfileResponse in ${contractPath}`);
+}
+
+if (!rankingsOperation || rankingsResponseSchema?.$ref !== '#/components/schemas/RankingsResponse') {
+  throw new Error(`Expected GET ${rankingsPath} with RankingsResponse in ${contractPath}`);
 }
 
 if (!evaluationQueueResponseSchema?.oneOf?.some((schema) => schema.$ref === '#/components/schemas/LessonPage')) {
@@ -170,6 +227,46 @@ if (!closeLessonOperation || closeLessonRequestSchema?.$ref !== '#/components/sc
   throw new Error(`Expected POST ${closePath} with CloseLessonRequest and LessonDraftResponse in ${contractPath}`);
 }
 
+if (!castVoteOperation || castVoteResponseSchema?.$ref !== '#/components/schemas/LessonVoteResponse') {
+  throw new Error(`Expected PUT ${votePath} with LessonVoteResponse in ${contractPath}`);
+}
+
+if (!removeVoteOperation || removeVoteResponseSchema?.$ref !== '#/components/schemas/LessonVoteResponse') {
+  throw new Error(`Expected DELETE ${votePath} with LessonVoteResponse in ${contractPath}`);
+}
+
+if (!listCommentsOperation || listCommentsResponseSchema?.$ref !== '#/components/schemas/LessonCommentPageResponse') {
+  throw new Error(`Expected GET ${commentsPath} with LessonCommentPageResponse in ${contractPath}`);
+}
+
+if (!createCommentOperation || createCommentRequestSchema?.$ref !== '#/components/schemas/CreateLessonCommentRequest' ||
+  createCommentResponseSchema?.$ref !== '#/components/schemas/LessonCommentThreadResponse') {
+  throw new Error(`Expected POST ${commentsPath} with CreateLessonCommentRequest and LessonCommentThreadResponse in ${contractPath}`);
+}
+
+if (!createReplyOperation || createReplyRequestSchema?.$ref !== '#/components/schemas/CreateLessonCommentRequest' ||
+  createReplyResponseSchema?.$ref !== '#/components/schemas/LessonCommentItemResponse') {
+  throw new Error(`Expected POST ${commentRepliesPath} with CreateLessonCommentRequest and LessonCommentItemResponse in ${contractPath}`);
+}
+
+if (!hideCommentOperation || hideCommentRequestSchema?.$ref !== '#/components/schemas/HideLessonCommentRequest' ||
+  hideCommentResponseSchema?.$ref !== '#/components/schemas/LessonCommentItemResponse') {
+  throw new Error(`Expected POST ${commentHidePath} with HideLessonCommentRequest and LessonCommentItemResponse in ${contractPath}`);
+}
+
+if (!listNotificationsOperation || listNotificationsResponseSchema?.$ref !== '#/components/schemas/LessonNotificationPageResponse') {
+  throw new Error(`Expected GET ${notificationsPath} with LessonNotificationPageResponse in ${contractPath}`);
+}
+
+if (!markNotificationReadOperation || markNotificationReadResponseSchema?.$ref !== '#/components/schemas/MarkNotificationReadResponse') {
+  throw new Error(`Expected POST ${notificationReadPath} with MarkNotificationReadResponse in ${contractPath}`);
+}
+
+if (!markNotificationsReadBatchOperation || markNotificationsReadBatchRequestSchema?.$ref !== '#/components/schemas/MarkNotificationsReadBatchRequest' ||
+  markNotificationsReadBatchResponseSchema?.$ref !== '#/components/schemas/MarkNotificationsReadBatchResponse') {
+  throw new Error(`Expected POST ${notificationsReadBatchPath} with MarkNotificationsReadBatchRequest and MarkNotificationsReadBatchResponse in ${contractPath}`);
+}
+
 const generatedClient = `/* This file is generated from services/lessons-learned-api/openapi/lessons-learned-v1.json. Do not edit directly. */
 import axios from 'axios';
 import type { components, paths } from './lessons-learned-api';
@@ -180,6 +277,10 @@ export const LESSONS_LEARNED_LESSONS_PATH = '${lessonsPath}' satisfies keyof pat
 export const LESSONS_LEARNED_PROJECTS_PATH = '${projectsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_SUBMISSIONS_PATH = '${submissionsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_PMO_DRAFTS_PATH = '${pmoDraftsPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_PMO_DASHBOARD_PATH = '${pmoDashboardPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_PROFILES_PATH = '${profilesPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_PROFILE_DETAIL_PATH = '${profileDetailPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_RANKINGS_PATH = '${rankingsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_QUEUE_PATH = '${evaluationQueuePath}' satisfies keyof paths;
 export const LESSONS_LEARNED_EVALUATION_PROJECTS_PATH = '${evaluationProjectsPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_LIBRARY_PATH = '${libraryPath}' satisfies keyof paths;
@@ -193,13 +294,41 @@ export const LESSONS_LEARNED_CANCEL_PATH = '${cancelPath}' satisfies keyof paths
 export const LESSONS_LEARNED_APPROVE_PATH = '${approvePath}' satisfies keyof paths;
 export const LESSONS_LEARNED_REJECT_PATH = '${rejectPath}' satisfies keyof paths;
 export const LESSONS_LEARNED_CLOSE_PATH = '${closePath}' satisfies keyof paths;
+export const LESSONS_LEARNED_VOTE_PATH = '${votePath}' satisfies keyof paths;
+export const LESSONS_LEARNED_COMMENTS_PATH = '${commentsPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_COMMENT_REPLIES_PATH = '${commentRepliesPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_COMMENT_HIDE_PATH = '${commentHidePath}' satisfies keyof paths;
+export const LESSONS_LEARNED_NOTIFICATIONS_PATH = '${notificationsPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_NOTIFICATION_READ_PATH = '${notificationReadPath}' satisfies keyof paths;
+export const LESSONS_LEARNED_NOTIFICATIONS_READ_BATCH_PATH = '${notificationsReadBatchPath}' satisfies keyof paths;
 type HealthResponse = paths[typeof LESSONS_LEARNED_HEALTH_PATH]['get']['responses'][200]['content']['application/json'];
-type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
+export type HomeResponse = paths[typeof LESSONS_LEARNED_HOME_PATH]['get']['responses'][200]['content']['application/json'];
+export type HomeNotificationsSummary = HomeResponse['notifications'];
+export type HomeLessonSummary = HomeResponse['recentWork'][number];
+export type HomeHighlights = HomeResponse['highlights'];
+export type HomePrimaryAction = HomeResponse['primaryAction'];
+export type HomeShortcut = HomeResponse['shortcuts'][number];
+export type HomeTargetPage = HomePrimaryAction['targetPage'];
 export type LessonDraft = paths[typeof LESSONS_LEARNED_LESSONS_PATH]['get']['responses'][200]['content']['application/json'][number];
 export type LessonDetails = paths[typeof LESSONS_LEARNED_DRAFT_PATH]['get']['responses'][200]['content']['application/json'];
 export type LessonHistoryEvent = LessonDetails['history'][number];
 export type LessonSubmissionsFilters = NonNullable<paths[typeof LESSONS_LEARNED_SUBMISSIONS_PATH]['get']['parameters']['query']>;
 export type PmoDraftsFilters = NonNullable<paths[typeof LESSONS_LEARNED_PMO_DRAFTS_PATH]['get']['parameters']['query']>;
+export type PmoDashboardFilters = NonNullable<paths[typeof LESSONS_LEARNED_PMO_DASHBOARD_PATH]['get']['parameters']['query']>;
+export type PmoDashboardCard = NonNullable<PmoDashboardFilters['card']>;
+export type PmoDashboardSort = NonNullable<PmoDashboardFilters['sort']>;
+export type PmoDashboardResponse = paths[typeof LESSONS_LEARNED_PMO_DASHBOARD_PATH]['get']['responses'][200]['content']['application/json'];
+export type PmoDashboardSummary = PmoDashboardResponse['summary'];
+export type PmoDashboardLesson = PmoDashboardResponse['items'][number];
+export type ProfileSearchFilters = NonNullable<paths[typeof LESSONS_LEARNED_PROFILES_PATH]['get']['parameters']['query']>;
+export type ProfileSearchPage = Extract<paths[typeof LESSONS_LEARNED_PROFILES_PATH]['get']['responses'][200]['content']['application/json'], { items: unknown[] }>;
+export type ProfileSummary = ProfileSearchPage['items'][number];
+export type ContributorProfileFilters = NonNullable<paths[typeof LESSONS_LEARNED_PROFILE_DETAIL_PATH]['get']['parameters']['query']>;
+export type ContributorProfileSort = NonNullable<ContributorProfileFilters['sort']>;
+export type ContributorProfileResponse = paths[typeof LESSONS_LEARNED_PROFILE_DETAIL_PATH]['get']['responses'][200]['content']['application/json'];
+export type RankingsResponse = paths[typeof LESSONS_LEARNED_RANKINGS_PATH]['get']['responses'][200]['content']['application/json'];
+export type RankedLesson = RankingsResponse['mostVotedLessons'][number];
+export type RankedContributor = RankingsResponse['topContributors'][number];
 export type LessonPage = components['schemas']['LessonPage'];
 export type LibraryLesson = components['schemas']['LessonLibraryResponse'];
 export type LibraryPage = components['schemas']['LessonLibraryPage'];
@@ -218,6 +347,21 @@ export type RejectLessonBody = paths[typeof LESSONS_LEARNED_REJECT_PATH]['post']
 export type CloseLessonBody = paths[typeof LESSONS_LEARNED_CLOSE_PATH]['post']['requestBody']['content']['application/json'] & { version: number; etag?: string };
 export type RecordLibraryViewBody = paths[typeof LESSONS_LEARNED_LIBRARY_VIEW_PATH]['post']['requestBody']['content']['application/json'];
 export type RecordLibraryViewResponse = paths[typeof LESSONS_LEARNED_LIBRARY_VIEW_PATH]['post']['responses'][200]['content']['application/json'];
+export type LessonVoteResponse = paths[typeof LESSONS_LEARNED_VOTE_PATH]['put']['responses'][200]['content']['application/json'];
+export type LessonCommentModeration = components['schemas']['LessonCommentModerationResponse'];
+export type LessonCommentItem = components['schemas']['LessonCommentItemResponse'];
+export type LessonCommentThread = components['schemas']['LessonCommentThreadResponse'];
+export type LessonCommentPage = components['schemas']['LessonCommentPageResponse'];
+export type LessonCommentsQuery = NonNullable<paths[typeof LESSONS_LEARNED_COMMENTS_PATH]['get']['parameters']['query']>;
+export type CreateLessonCommentBody = paths[typeof LESSONS_LEARNED_COMMENTS_PATH]['post']['requestBody']['content']['application/json'];
+export type HideLessonCommentBody = paths[typeof LESSONS_LEARNED_COMMENT_HIDE_PATH]['post']['requestBody']['content']['application/json'];
+export type LessonNotificationItem = components['schemas']['LessonNotificationItemResponse'];
+export type LessonNotificationEventType = LessonNotificationItem['eventType'];
+export type LessonNotificationPage = components['schemas']['LessonNotificationPageResponse'];
+export type LessonNotificationsQuery = NonNullable<paths[typeof LESSONS_LEARNED_NOTIFICATIONS_PATH]['get']['parameters']['query']>;
+export type MarkNotificationReadResponse = components['schemas']['MarkNotificationReadResponse'];
+export type MarkNotificationsReadBatchBody = paths[typeof LESSONS_LEARNED_NOTIFICATIONS_READ_BATCH_PATH]['post']['requestBody']['content']['application/json'];
+export type MarkNotificationsReadBatchResponse = components['schemas']['MarkNotificationsReadBatchResponse'];
 
 export const LESSONS_LEARNED_API_TIMEOUT_MS = 5_000;
 
@@ -284,6 +428,52 @@ export async function getPmoDrafts(localUserId: string, filters: PmoDraftsFilter
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId },
     params: filters,
+  });
+
+  return data;
+}
+
+export async function getPmoDashboard(localUserId: string, filters: PmoDashboardFilters = {}): Promise<PmoDashboardResponse> {
+  const { data } = await api.get<PmoDashboardResponse>(LESSONS_LEARNED_PMO_DASHBOARD_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+    params: filters,
+  });
+
+  return data;
+}
+
+export async function getProfiles(localUserId: string, filters: ProfileSearchFilters = {}): Promise<ProfileSearchPage> {
+  const { data } = await api.get<ProfileSearchPage | ProfileSummary[]>(LESSONS_LEARNED_PROFILES_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
+    params: { ...filters, paged: true },
+  });
+
+  return Array.isArray(data) ? { items: data, page: { limit: 50, nextCursor: null } } : data;
+}
+
+export async function getContributorProfile(
+  localUserId: string,
+  userId: string,
+  filters: ContributorProfileFilters = {},
+): Promise<ContributorProfileResponse> {
+  const { data } = await api.get<ContributorProfileResponse>(
+    LESSONS_LEARNED_PROFILE_DETAIL_PATH.replace('{userId}', encodeURIComponent(userId)),
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+      params: filters,
+    },
+  );
+
+  return data;
+}
+
+export async function getRankings(localUserId: string): Promise<RankingsResponse> {
+  const { data } = await api.get<RankingsResponse>(LESSONS_LEARNED_RANKINGS_PATH, {
+    timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+    headers: { 'X-PMO-Local-User-ID': localUserId },
   });
 
   return data;
@@ -503,6 +693,161 @@ export async function closeLesson(
     timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
     headers: { 'X-PMO-Local-User-ID': localUserId, ...(etag ? { 'If-Match': etag } : {}) },
   });
+
+  return data;
+}
+
+export async function castLessonVote(
+  localUserId: string,
+  lessonId: number,
+): Promise<LessonVoteResponse> {
+  const { data } = await api.put<LessonVoteResponse>(
+    LESSONS_LEARNED_VOTE_PATH.replace('{id}', String(lessonId)),
+    undefined,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function removeLessonVote(
+  localUserId: string,
+  lessonId: number,
+): Promise<LessonVoteResponse> {
+  const { data } = await api.delete<LessonVoteResponse>(
+    LESSONS_LEARNED_VOTE_PATH.replace('{id}', String(lessonId)),
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function getLessonComments(
+  localUserId: string,
+  lessonId: number,
+  query: LessonCommentsQuery = {},
+): Promise<LessonCommentPage> {
+  const { data } = await api.get<LessonCommentPage>(
+    LESSONS_LEARNED_COMMENTS_PATH.replace('{id}', String(lessonId)),
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+      params: query,
+    },
+  );
+
+  return data;
+}
+
+export async function createLessonComment(
+  localUserId: string,
+  lessonId: number,
+  input: CreateLessonCommentBody,
+): Promise<LessonCommentThread> {
+  const { data } = await api.post<LessonCommentThread>(
+    LESSONS_LEARNED_COMMENTS_PATH.replace('{id}', String(lessonId)),
+    input,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function createLessonCommentReply(
+  localUserId: string,
+  lessonId: number,
+  commentId: number,
+  input: CreateLessonCommentBody,
+): Promise<LessonCommentItem> {
+  const { data } = await api.post<LessonCommentItem>(
+    LESSONS_LEARNED_COMMENT_REPLIES_PATH
+      .replace('{id}', String(lessonId))
+      .replace('{commentId}', String(commentId)),
+    input,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function hideLessonComment(
+  localUserId: string,
+  lessonId: number,
+  commentId: number,
+  input: HideLessonCommentBody,
+): Promise<LessonCommentItem> {
+  const { data } = await api.post<LessonCommentItem>(
+    LESSONS_LEARNED_COMMENT_HIDE_PATH
+      .replace('{id}', String(lessonId))
+      .replace('{commentId}', String(commentId)),
+    input,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function getNotifications(
+  localUserId: string,
+  query: LessonNotificationsQuery = {},
+  signal?: AbortSignal,
+): Promise<LessonNotificationPage> {
+  const { data } = await api.get<LessonNotificationPage>(
+    LESSONS_LEARNED_NOTIFICATIONS_PATH,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+      params: query,
+      signal,
+    },
+  );
+
+  return data;
+}
+
+export async function markNotificationAsRead(
+  localUserId: string,
+  notificationId: number,
+): Promise<MarkNotificationReadResponse> {
+  const { data } = await api.post<MarkNotificationReadResponse>(
+    LESSONS_LEARNED_NOTIFICATION_READ_PATH.replace('{id}', String(notificationId)),
+    undefined,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
+
+  return data;
+}
+
+export async function markNotificationsReadBatch(
+  localUserId: string,
+  input: MarkNotificationsReadBatchBody,
+): Promise<MarkNotificationsReadBatchResponse> {
+  const { data } = await api.post<MarkNotificationsReadBatchResponse>(
+    LESSONS_LEARNED_NOTIFICATIONS_READ_BATCH_PATH,
+    input,
+    {
+      timeout: LESSONS_LEARNED_API_TIMEOUT_MS,
+      headers: { 'X-PMO-Local-User-ID': localUserId },
+    },
+  );
 
   return data;
 }

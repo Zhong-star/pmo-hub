@@ -25,24 +25,24 @@ function sortOperationParameters(document: OpenAPIObject): OpenAPIObject {
   return document;
 }
 
+type OpenApiOperationContract = {
+  security?: Record<string, string[]>[];
+  requestBody?: { content?: Record<string, { schema?: { $ref?: string } }> };
+  responses?: Record<string, {
+    headers?: Record<string, unknown>;
+    content?: Record<string, { schema?: { $ref?: string; type?: string; items?: { $ref?: string } } }>;
+  }>;
+};
+
 type OpenApiContract = {
   paths: Record<
     string,
     {
-      get?: {
-        security?: Record<string, string[]>[];
-        responses?: Record<string, { content?: Record<string, { schema?: { $ref?: string } }> }>;
-      };
-      post?: {
-        security?: Record<string, string[]>[];
-        requestBody?: { content?: Record<string, { schema?: { $ref?: string } }> };
-        responses?: Record<string, { content?: Record<string, { schema?: { $ref?: string; type?: string; items?: { $ref?: string } } }> }>;
-      };
-      patch?: {
-        security?: Record<string, string[]>[];
-        requestBody?: { content?: Record<string, { schema?: { $ref?: string } }> };
-        responses?: Record<string, { content?: Record<string, { schema?: { $ref?: string } }> }>;
-      };
+      get?: OpenApiOperationContract;
+      post?: OpenApiOperationContract;
+      patch?: OpenApiOperationContract;
+      put?: OpenApiOperationContract;
+      delete?: OpenApiOperationContract;
     }
   >;
   components?: {
@@ -153,25 +153,46 @@ describe('Lessons Learned health API', () => {
       .toEqual(['Technology', 'Business', 'Infrastructure', 'Data']);
     expect(contract.components?.schemas?.LessonDraftResponse?.properties?.version?.minimum).toBe(1);
 
+    expect(lessons?.post?.responses?.['201']?.headers?.ETag).toBeDefined();
+    expect(contract.paths['/api/lessons-learned/v1/lessons/{id}']?.get?.responses?.['200']?.headers?.ETag).toBeDefined();
+    expect(contract.paths['/api/lessons-learned/v1/lessons/library/{id}']?.get?.responses?.['200']?.headers?.ETag).toBeDefined();
+    expect(updateDraft?.responses?.['200']?.headers?.ETag).toBeDefined();
+    expect(contract.paths['/api/lessons-learned/v1/lessons/{id}/vote']?.put?.responses?.['200']?.headers?.ETag).toBeUndefined();
+    expect(contract.paths['/api/lessons-learned/v1/lessons/{id}/vote']?.delete?.responses?.['200']?.headers?.ETag).toBeUndefined();
+    expect(contract.paths['/api/lessons-learned/v1/lessons/{id}/comments']?.get?.responses?.['200']?.headers?.ETag).toBeUndefined();
+    expect(contract.paths['/api/lessons-learned/v1/lessons/{id}/comments']?.post?.responses?.['201']?.headers?.ETag).toBeUndefined();
+    expect(contract.paths['/api/lessons-learned/v1/lessons/{id}/comments/{commentId}/replies']?.post?.responses?.['201']?.headers?.ETag).toBeUndefined();
+    expect(contract.paths['/api/lessons-learned/v1/lessons/{id}/comments/{commentId}/hide']?.post?.responses?.['200']?.headers?.ETag).toBeUndefined();
+    expect(contract.paths['/api/lessons-learned/v1/lessons/library/{id}/views']?.post?.responses?.['200']?.headers?.ETag).toBeUndefined();
+
     await request(app.getHttpServer())
       .get('/api/lessons-learned/v1/health')
       .expect(200)
       .expect({ status: 'ok' });
   });
 
-  it('authorizes a Contributor and returns only the Home destination', async () => {
+  it('authorizes a Contributor and returns the role-aware Home payload', async () => {
     await request(app.getHttpServer())
       .get('/api/lessons-learned/v1/home')
       .set('X-PMO-Local-User-ID', 'local-contributor')
       .expect('Cache-Control', 'no-store')
       .expect(200)
-      .expect({
-        profile: {
+      .expect(({ body }) => {
+        expect(body.profile).toEqual({
           id: 'local-contributor',
           displayName: 'Local Contributor',
           role: 'LESSONS_USER',
-        },
-        navigation: [{ id: 'home', label: 'Home', current: true }],
+        });
+        expect(body.navigation).toEqual([{ id: 'home', label: 'Home', current: true }]);
+        expect(body.notifications).toEqual({ unreadCount: 0, items: [] });
+        expect(body.recentWork).toEqual([]);
+        expect(body.primaryAction).toMatchObject({ kind: 'create-lesson', targetPage: 'create-lesson', lessonId: null });
+        expect((body.shortcuts as { id: string }[]).map((s) => s.id)).toEqual([
+          'create-lesson',
+          'my-submissions',
+          'library',
+          'profiles',
+        ]);
       });
   });
 

@@ -8,6 +8,7 @@ import {
   getLibrary,
   getLibraryLessonDetails,
   getLibraryProjectSnapshots,
+  getRankings,
   getLessonDetails,
   getLessonProjects,
   getMyOpenDrafts,
@@ -21,23 +22,38 @@ import {
   type LessonDetails,
 } from '../src/api';
 
+import { emptyHomeSections } from './homeFixtures';
+
 vi.mock('../src/api', () => ({
   approveLesson: vi.fn(),
+  castLessonVote: vi.fn(),
   closeLesson: vi.fn(),
   cancelLesson: vi.fn(),
   createLessonDraft: vi.fn(),
+  createLessonComment: vi.fn(),
+  createLessonCommentReply: vi.fn(),
   getHome: vi.fn(),
   getLibrary: vi.fn(),
   getLibraryLessonDetails: vi.fn(),
   getLibraryProjectSnapshots: vi.fn(),
   recordLibraryView: vi.fn(),
+  removeLessonVote: vi.fn(),
+  getLessonComments: vi.fn().mockResolvedValue({ items: [], page: { limit: 20, nextCursor: null }, publicCommentCount: 0 }),
   getLessonDetails: vi.fn(),
   getLessonProjects: vi.fn(),
   getMyOpenDrafts: vi.fn(),
   getMySubmissions: vi.fn(),
+  getNotifications: vi.fn().mockResolvedValue({ items: [], page: { limit: 20, nextCursor: null }, unreadCount: 0 }),
   getPmoDrafts: vi.fn(),
+  getPmoDashboard: vi.fn(),
+  getProfiles: vi.fn(),
+  getContributorProfile: vi.fn(),
+  getRankings: vi.fn().mockResolvedValue({ mostVotedLessons: [], topContributors: [] }),
   getPmoEvaluationQueue: vi.fn(),
   getEvaluationProjectSnapshots: vi.fn(),
+  hideLessonComment: vi.fn(),
+  markNotificationAsRead: vi.fn(),
+  markNotificationsReadBatch: vi.fn(),
   returnLesson: vi.fn(),
   rejectLesson: vi.fn(),
   submitLesson: vi.fn(),
@@ -47,11 +63,13 @@ vi.mock('../src/api', () => ({
 const contributor = {
   profile: { id: 'local-contributor', displayName: 'Local Contributor', role: 'LESSONS_USER' as const },
   navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
+  ...emptyHomeSections,
 };
 
 const pmo = {
   profile: { id: 'local-pmo', displayName: 'Local PMO', role: 'LESSONS_MODERATOR' as const },
   navigation: [{ id: 'home' as const, label: 'Home' as const, current: true as const }],
+  ...emptyHomeSections,
 };
 
 function publishedLesson(overrides: Partial<LessonDraft> = {}): LessonDraft {
@@ -85,6 +103,9 @@ function libraryLesson(overrides: Partial<LibraryLesson> = {}): LibraryLesson {
     ...publishedLesson(overrides),
     authorName: overrides.authorName ?? 'Local Contributor',
     viewCount: overrides.viewCount ?? 0,
+    votesCount: overrides.votesCount ?? 0,
+    hasVoted: overrides.hasVoted ?? false,
+    commentCount: overrides.commentCount ?? 0,
     ...overrides,
   };
 }
@@ -95,6 +116,9 @@ function publishedDetails(overrides: Partial<LessonDetails> = {}): LessonDetails
     ...lesson,
     authorName: 'Local Contributor',
     history: [],
+    votesCount: overrides.votesCount ?? 0,
+    hasVoted: overrides.hasVoted ?? false,
+    commentCount: overrides.commentCount ?? 0,
     ...overrides,
   };
 }
@@ -115,6 +139,7 @@ beforeEach(() => {
   vi.mocked(getHome).mockResolvedValue(contributor);
   vi.mocked(getLibrary).mockResolvedValue([]);
   vi.mocked(getLibraryProjectSnapshots).mockResolvedValue([]);
+  vi.mocked(getRankings).mockResolvedValue({ mostVotedLessons: [], topContributors: [] });
   vi.mocked(recordLibraryView).mockResolvedValue({ viewCount: 1 });
   vi.mocked(getLibraryLessonDetails).mockImplementation(async (_profileId, lessonId) => publishedDetails({ id: lessonId }));
   vi.mocked(getLessonProjects).mockResolvedValue([]);
