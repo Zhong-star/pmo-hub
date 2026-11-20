@@ -864,8 +864,7 @@ test.describe('change profile from PMO moderation destinations', () => {
     urlPattern: /\/lessons-learned\/\?page=pmo-drafts$/,
     apiPath: '/api/lessons-learned/v1/lessons/pmo-drafts',
   } as const;
-  type PmoDestinationKey = keyof typeof pmoDestinations;
-  type PmoDestination = typeof pmoDestinations[PmoDestinationKey] | typeof pmoDraftsDestination;
+  type PmoDestination = typeof pmoDestinations[keyof typeof pmoDestinations] | typeof pmoDraftsDestination;
   const profileSelectionUrl = /^http:\/\/(?:localhost|127\.0\.0\.1):\d+\/(\?.*)?$/;
 
   async function openPmoDestination(page: Page, destination: PmoDestination) {
@@ -880,10 +879,6 @@ test.describe('change profile from PMO moderation destinations', () => {
     await page.getByRole('link', { name: destination.name }).click();
     await expect(page).toHaveURL(destination.urlPattern);
     await expect(page.getByRole('heading', { name: destination.name })).toBeVisible();
-  }
-
-  async function openPmoModerationDestination(page: Page, destinationKey: PmoDestinationKey) {
-    await openPmoDestination(page, pmoDestinations[destinationKey]);
   }
 
   async function changeProfileFromPmoHeader(page: Page) {
@@ -975,7 +970,7 @@ test.describe('change profile from PMO moderation destinations', () => {
     await submitLessonForReview(request, submittedTitle, { authorId: 'local-developer' });
 
     const destination = pmoDestinations['evaluation-queue'];
-    await openPmoModerationDestination(page, 'evaluation-queue');
+    await openPmoDestination(page, pmoDestinations['evaluation-queue']);
     await expect(page.getByRole('button', { name: `View ${submittedTitle}` })).toBeVisible();
 
     await returnToAccessCheckBeforeProfileSelection(page, destination, submittedTitle);
@@ -999,7 +994,7 @@ test.describe('change profile from PMO moderation destinations', () => {
 
     const destination = pmoDestinations['pmo-management'];
     const summaryGroup = page.getByRole('group', { name: /Operational summary/i });
-    await openPmoModerationDestination(page, 'pmo-management');
+    await openPmoDestination(page, pmoDestinations['pmo-management']);
     await expect(summaryGroup).toBeVisible();
     await expect(page.getByRole('button', { name: `View ${dashboardTitle}` })).toBeVisible();
 
@@ -1047,7 +1042,7 @@ test.describe('change profile from PMO moderation destinations', () => {
     await submitLessonForReview(request, submittedTitle, { authorId: 'local-developer' });
 
     const destination = pmoDestinations['evaluation-queue'];
-    await openPmoModerationDestination(page, 'evaluation-queue');
+    await openPmoDestination(page, pmoDestinations['evaluation-queue']);
     await expect(page.getByRole('button', { name: `View ${submittedTitle}` })).toBeVisible();
     await switchProfileAndReturnToDestination(page, destination, 'local-no-access', 'Local User Without Access');
 
