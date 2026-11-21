@@ -29,6 +29,9 @@ export class ResourceRequest {
   @Column({ name: 'expiration_due_at', type: 'timestamptz' })
   expirationDueAt!: Date;
 
+  @Column({ name: 'removed_at', type: 'timestamptz', nullable: true })
+  removedAt!: Date | null;
+
   @VersionColumn({ default: 1 })
   version!: number;
 }
