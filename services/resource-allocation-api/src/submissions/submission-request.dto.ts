@@ -97,7 +97,7 @@ export class ResourceSubmissionLineResponseDto {
   @ApiPropertyOptional({ type: () => SubmissionLineProblemDto }) problem?: SubmissionLineProblemDto;
   @ApiProperty({ type: String, format: 'date-time' }) receivedAt!: string;
   @ApiPropertyOptional({ type: String, format: 'date-time' }) completedAt?: string;
-  @ApiPropertyOptional({ oneOf: [{ type: 'string' }, { $ref: '#/components/schemas/SubmissionRequestOutcomeDto' }] })
+  @ApiPropertyOptional({ type: Object, oneOf: [{ type: 'string' }, { $ref: '#/components/schemas/SubmissionRequestOutcomeDto' }] })
   requestOutcome?: string | SubmissionRequestOutcomeDto;
 }
 

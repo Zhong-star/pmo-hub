@@ -278,6 +278,7 @@ export class RequestRevalidationDto {
   impediments!: string[];
 
   @ApiProperty({
+    type: Object,
     oneOf: [
       { $ref: getSchemaPath(RequestResponsibleRoleDto) },
       {

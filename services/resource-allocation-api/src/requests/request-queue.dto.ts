@@ -50,6 +50,7 @@ export class RequestQueueItemDto {
   impediments!: string[];
 
   @ApiProperty({
+    type: Object,
     oneOf: [
       { $ref: getSchemaPath(RequestResponsibleRoleDto) },
       {
