@@ -115,8 +115,10 @@ describe('Tech Resource Allocation request deadlines (#67)', () => {
       WHERE id = $1
     `, [created.id]);
 
-    const processed = await app!.get(ResourceAllocationDeadlineWorker).processBatch();
-    await app!.get(ResourceAllocationDeadlineWorker).processBatch();
+    const worker = app!.get(ResourceAllocationDeadlineWorker);
+    const secondWorker = new ResourceAllocationDeadlineWorker(dataSource!);
+    const [processed, concurrentProcessed] = await Promise.all([worker.processBatch(), secondWorker.processBatch()]);
+    expect(await worker.processBatch()).toBe(0);
     const reminders = await dataSource!.query(`
       SELECT recipient_id, event_code
       FROM resource_allocation_notifications
@@ -124,7 +126,7 @@ describe('Tech Resource Allocation request deadlines (#67)', () => {
       ORDER BY recipient_id
     `, [created.id]);
 
-    expect(processed).toBe(1);
+    expect(processed + concurrentProcessed).toBe(1);
     expect(reminders).toEqual([
       { recipient_id: fixture.requester.id, event_code: 'REQUEST_WAITING_REMINDER_7D' },
       { recipient_id: fixture.admin.id, event_code: 'REQUEST_WAITING_REMINDER_7D' },
@@ -180,7 +182,9 @@ describe('Tech Resource Allocation request deadlines (#67)', () => {
     `, [created.id]);
 
     const worker = app!.get(ResourceAllocationDeadlineWorker);
-    expect(await worker.processBatch()).toBe(1);
+    const secondWorker = new ResourceAllocationDeadlineWorker(dataSource!);
+    const [processed, concurrentProcessed] = await Promise.all([worker.processBatch(), secondWorker.processBatch()]);
+    expect(processed + concurrentProcessed).toBe(1);
     expect(await worker.processBatch()).toBe(0);
 
     const operationalList = await request(app!.getHttpServer())
