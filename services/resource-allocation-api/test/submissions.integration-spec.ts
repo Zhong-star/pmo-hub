@@ -124,9 +124,10 @@ describe('Tech Resource Allocation submissions (#60)', () => {
       .expect(404);
 
     const worker = app!.get(ResourceAllocationSubmissionWorker);
-    const processed = await worker.processBatch(1);
+    const processed = await worker.processBatch();
     const workerRows = await dataSource!.query('SELECT status, claim_token, claimed_at FROM resource_submission_lines WHERE submission_id = $1', [received.body.id]);
     expect({ processed, workerRows }).toMatchObject({ processed: 1, workerRows: [{ status: 'SUCCEEDED', claim_token: null }] });
+    expect(await worker.processBatch()).toBe(0);
 
     const rows = await request(app!.getHttpServer())
       .get(`${submissionPath}/${received.body.id}/lines`)

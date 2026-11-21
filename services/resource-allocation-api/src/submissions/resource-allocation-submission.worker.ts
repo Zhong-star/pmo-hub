@@ -79,12 +79,14 @@ export class ResourceAllocationSubmissionWorker {
           ORDER BY received_at ASC, submission_id ASC, line_number ASC, id ASC
           FOR UPDATE SKIP LOCKED
           LIMIT 1
+        ), claimed AS (
+          UPDATE resource_submission_lines AS line
+          SET status = 'PROCESSING', claim_token = $1::uuid, claimed_at = clock_timestamp()
+          FROM ready
+          WHERE line.id = ready.id
+          RETURNING line.id
         )
-        UPDATE resource_submission_lines AS line
-        SET status = 'PROCESSING', claim_token = $1::uuid, claimed_at = clock_timestamp()
-        FROM ready
-        WHERE line.id = ready.id
-        RETURNING line.id
+        SELECT id FROM claimed
       `, [token]) as Array<{ id: string }>;
       return rows.length === 0 ? undefined : { id: rows[0].id, claimToken: token };
     });
