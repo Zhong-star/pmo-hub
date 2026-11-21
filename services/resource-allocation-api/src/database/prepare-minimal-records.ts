@@ -35,6 +35,8 @@ export interface NormalizedMinimalRecordsConfig {
 }
 
 export interface PrepareMinimalRecordsResult {
+  operational: boolean;
+  diagnostics: string[];
   groupCreated: boolean;
   group: ResourceGroup;
   profilesCreated: number;
@@ -309,8 +311,31 @@ async function findExistingGroup(manager: EntityManager, groupName: string): Pro
   const byName = await groups
     .createQueryBuilder('group')
     .where('LOWER(BTRIM(group.name)) = LOWER(BTRIM(:name))', { name: groupName })
+    .orderBy('group.active', 'DESC')
+    .addOrderBy('group.id', 'ASC')
+    .getOne();
+  if (
+    byName?.active &&
+    (await manager.getRepository(ResourceProfile).count({ where: { groupId: byName.id, active: true } })) > 0
+  ) {
+    return byName;
+  }
+
+  const activeGroupWithProfiles = await groups
+    .createQueryBuilder('group')
+    .innerJoin(ResourceProfile, 'profile', 'profile.groupId = group.id AND profile.active = true')
+    .where('group.active = true')
     .orderBy('group.id', 'ASC')
     .getOne();
+  if (activeGroupWithProfiles) return activeGroupWithProfiles;
+  if (byName?.active) return byName;
+
+  const activeGroup = await groups
+    .createQueryBuilder('group')
+    .where('group.active = true')
+    .orderBy('group.id', 'ASC')
+    .getOne();
+  if (activeGroup) return activeGroup;
   if (byName) return byName;
 
   return groups
@@ -328,14 +353,29 @@ async function findExistingNonDemoInitiative(
   const byCode = await initiatives
     .createQueryBuilder('initiative')
     .where('LOWER(BTRIM(initiative.code)) = LOWER(BTRIM(:code))', { code: initiativeCode })
+    .andWhere('initiative.active = true')
     .getOne();
   if (byCode) return byCode;
+
+  const activeNonDemoInitiative = await initiatives
+    .createQueryBuilder('initiative')
+    .where("LOWER(BTRIM(initiative.code)) NOT LIKE 'itdm-demo-%'")
+    .andWhere('initiative.active = true')
+    .orderBy('initiative.active', 'DESC')
+    .addOrderBy('initiative.id', 'ASC')
+    .getOne();
+  if (activeNonDemoInitiative) return activeNonDemoInitiative;
+
+  const inactiveMatch = await initiatives
+    .createQueryBuilder('initiative')
+    .where('LOWER(BTRIM(initiative.code)) = LOWER(BTRIM(:code))', { code: initiativeCode })
+    .getOne();
+  if (inactiveMatch) return inactiveMatch;
 
   return initiatives
     .createQueryBuilder('initiative')
     .where("LOWER(BTRIM(initiative.code)) NOT LIKE 'itdm-demo-%'")
-    .orderBy('initiative.active', 'DESC')
-    .addOrderBy('initiative.id', 'ASC')
+    .orderBy('initiative.id', 'ASC')
     .getOne();
 }
 
@@ -439,9 +479,12 @@ export async function ensureMinimalOperationalBaseline(
     where: { groupId: group.id },
     order: { name: 'ASC', id: 'ASC' },
   });
+  const activeProfiles = existingProfiles.filter((profile) => profile.active);
   let profiles: ResourceProfile[];
   let profilesCreated = 0;
-  if (existingProfiles.length > 0) {
+  if (activeProfiles.length > 0) {
+    profiles = activeProfiles;
+  } else if (existingProfiles.length > 0) {
     profiles = existingProfiles;
   } else if (group.active) {
     const savedProfiles = await profileRepo.save(
@@ -477,7 +520,20 @@ export async function ensureMinimalOperationalBaseline(
     initiativeCreated = true;
   }
 
+  const diagnostics: string[] = [];
+  if (!group.active) {
+    diagnostics.push(`The selected resource group "${group.name}" is inactive.`);
+  }
+  if (!profiles.some((profile) => profile.active)) {
+    diagnostics.push(`No active resource profiles are available for resource group "${group.name}".`);
+  }
+  if (!initiative.active) {
+    diagnostics.push(`The selected ITDM initiative "${initiative.code}" is inactive.`);
+  }
+
   return {
+    operational: diagnostics.length === 0,
+    diagnostics,
     groupCreated,
     group,
     profilesCreated,
@@ -509,6 +565,10 @@ async function run(): Promise<void> {
   await ResourceAllocationDataSource.initialize();
   try {
     const result = await prepareMinimalRecords(ResourceAllocationDataSource, options);
+    if (!result.operational) {
+      console.error(`Minimal Tech Resource Allocation baseline is not operational: ${result.diagnostics.join(' ')}`);
+      return;
+    }
     const createdTotal =
       (result.groupCreated ? 1 : 0) +
       result.profilesCreated +

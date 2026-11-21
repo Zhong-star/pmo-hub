@@ -220,8 +220,9 @@ test('skip link moves keyboard focus to the main content', async ({ page }) => {
   });
   await openWithProfile(page, 'profile-user');
 
-  await page.keyboard.press('Tab');
   const skipLink = page.getByRole('link', { name: 'Skip to main content' });
+  await expect(skipLink).toBeAttached();
+  await page.keyboard.press('Tab');
   await expect(skipLink).toBeFocused();
   await expect(skipLink).toBeInViewport();
   await expect(skipLink).toHaveCSS('outline-style', 'solid');

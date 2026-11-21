@@ -112,6 +112,8 @@ describe('Tech Resource Allocation local preparation scripts (#75)', () => {
 
     const result = await prepareMinimalRecords(dataSource!);
 
+    expect(result.operational).toBe(true);
+    expect(result.diagnostics).toEqual([]);
     expect(result.groupCreated).toBe(true);
     expect(result.group).toMatchObject({ name: 'Platform Engineering', active: true });
     expect(result.profilesCreated).toBe(2);
@@ -221,6 +223,8 @@ describe('Tech Resource Allocation local preparation scripts (#75)', () => {
       prepareMinimalRecords(dataSource!),
     ]);
     for (const runResult of [second, concurrent]) {
+      expect(runResult.operational).toBe(true);
+      expect(runResult.diagnostics).toEqual([]);
       expect(runResult.groupCreated).toBe(false);
       expect(runResult.profilesCreated).toBe(0);
       expect(runResult.initiativeCreated).toBe(false);
@@ -274,6 +278,10 @@ describe('Tech Resource Allocation local preparation scripts (#75)', () => {
 
     // Re-run minimal preparation after manual edits.
     const afterEdits = await prepareMinimalRecords(dataSource!);
+    expect(afterEdits.operational).toBe(false);
+    expect(afterEdits.diagnostics).toEqual([
+      'The selected ITDM initiative "ITDM-CUSTOM-001" is inactive.',
+    ]);
     expect(afterEdits.groupCreated).toBe(false);
     expect(afterEdits.profilesCreated).toBe(0);
     expect(afterEdits.initiativeCreated).toBe(false);
@@ -316,6 +324,149 @@ describe('Tech Resource Allocation local preparation scripts (#75)', () => {
       active: false,
       version: deactivatedModerator.body.version,
     });
+  });
+
+  it('prefers active compatible baseline references and diagnoses an all-inactive preexisting baseline', async () => {
+    const inactiveGroup = await dataSource!.getRepository(ResourceGroup).save({
+      name: 'Platform Engineering',
+      active: false,
+      supervisorId: null,
+      managerId: null,
+    });
+    const inactiveProfile = await dataSource!.getRepository(ResourceProfile).save({
+      name: 'Software Engineer',
+      groupId: inactiveGroup.id,
+      active: false,
+    });
+    const inactiveInitiative = await dataSource!.getRepository(ResourceInitiative).save({
+      code: 'ITDM-LOCAL-001',
+      name: 'Manually deactivated ITDM',
+      active: false,
+      codeUsed: false,
+    });
+
+    const peopleRepo = dataSource!.getRepository(ResourcePerson);
+    const supervisor = await peopleRepo.save(peopleRepo.create({
+      localUserId: 'local-supervisor',
+      displayName: 'Active Supervisor',
+      email: 'active-supervisor@example.test',
+      role: ResourceAllocationRole.Supervisor,
+      active: true,
+      groupId: null,
+      coveredGroupIds: [],
+    }));
+    const manager = await peopleRepo.save(peopleRepo.create({
+      localUserId: 'local-pmo',
+      displayName: 'Active PMO',
+      email: 'active-pmo@example.test',
+      role: ResourceAllocationRole.Manager,
+      active: true,
+      groupId: null,
+      coveredGroupIds: [],
+    }));
+    await peopleRepo.save(peopleRepo.create({
+      localUserId: 'local-moderator',
+      displayName: 'Active Moderator',
+      email: 'active-moderator@example.test',
+      role: ResourceAllocationRole.Moderator,
+      active: true,
+      groupId: null,
+      coveredGroupIds: [],
+    }));
+    await peopleRepo.save(peopleRepo.create({
+      localUserId: 'local-contributor',
+      displayName: 'Active Contributor',
+      email: 'active-contributor@example.test',
+      role: ResourceAllocationRole.User,
+      active: true,
+      groupId: null,
+      coveredGroupIds: [],
+    }));
+    const activeGroup = await dataSource!.getRepository(ResourceGroup).save({
+      name: 'Data Architecture',
+      active: true,
+      supervisorId: supervisor.id,
+      managerId: manager.id,
+    });
+    const activeProfile = await dataSource!.getRepository(ResourceProfile).save({
+      name: 'Data Engineer',
+      groupId: activeGroup.id,
+      active: true,
+    });
+    const activeInitiative = await dataSource!.getRepository(ResourceInitiative).save({
+      code: 'ITDM-ACTIVE-001',
+      name: 'Active ITDM',
+      active: true,
+      codeUsed: false,
+    });
+
+    const selectedActiveBaseline = await prepareMinimalRecords(dataSource!);
+    expect(selectedActiveBaseline).toMatchObject({
+      operational: true,
+      diagnostics: [],
+      groupCreated: false,
+      group: { id: activeGroup.id },
+      profilesCreated: 0,
+      profiles: [{ id: activeProfile.id }],
+      initiativeCreated: false,
+      initiative: { id: activeInitiative.id },
+    });
+    expect(selectedActiveBaseline.peopleCreated).toBe(0);
+    expect(await dataSource!.getRepository(ResourceGroup).count()).toBe(2);
+    expect(await dataSource!.getRepository(ResourceProfile).count()).toBe(2);
+    expect(await dataSource!.getRepository(ResourceInitiative).count()).toBe(2);
+    expect(await dataSource!.getRepository(ResourcePerson).count()).toBe(4);
+
+    await dataSource!.getRepository(ResourceGroup).update(inactiveGroup.id, { active: false });
+    await dataSource!.getRepository(ResourceGroup).update(activeGroup.id, { active: false });
+    await dataSource!.getRepository(ResourceProfile).update(activeProfile.id, { active: false });
+    await dataSource!.getRepository(ResourceInitiative).update(activeInitiative.id, { active: false });
+    const countsBeforeDiagnosticRun = {
+      groups: await dataSource!.getRepository(ResourceGroup).count(),
+      profiles: await dataSource!.getRepository(ResourceProfile).count(),
+      initiatives: await dataSource!.getRepository(ResourceInitiative).count(),
+      people: await dataSource!.getRepository(ResourcePerson).count(),
+    };
+
+    const inactiveBaseline = await prepareMinimalRecords(dataSource!);
+    expect(inactiveBaseline.operational).toBe(false);
+    expect(inactiveBaseline.diagnostics).toEqual(expect.arrayContaining([
+      expect.stringContaining('resource group "Platform Engineering" is inactive'),
+      expect.stringContaining('No active resource profiles'),
+      expect.stringContaining('ITDM initiative "ITDM-LOCAL-001" is inactive'),
+    ]));
+    expect(inactiveBaseline.groupCreated).toBe(false);
+    expect(inactiveBaseline.profilesCreated).toBe(0);
+    expect(inactiveBaseline.initiativeCreated).toBe(false);
+    expect(inactiveBaseline.peopleCreated).toBe(0);
+    expect({
+      groups: await dataSource!.getRepository(ResourceGroup).count(),
+      profiles: await dataSource!.getRepository(ResourceProfile).count(),
+      initiatives: await dataSource!.getRepository(ResourceInitiative).count(),
+      people: await dataSource!.getRepository(ResourcePerson).count(),
+    }).toEqual(countsBeforeDiagnosticRun);
+    expect(await dataSource!.getRepository(ResourceGroup).find({ where: { active: true } })).toHaveLength(0);
+    expect(await dataSource!.getRepository(ResourceProfile).find({ where: { active: true } })).toHaveLength(0);
+    expect(await dataSource!.getRepository(ResourceInitiative).find({ where: { active: true } })).toHaveLength(0);
+    expect(await dataSource!.getRepository(ResourceProfile).findOneByOrFail({ id: inactiveProfile.id })).toMatchObject({
+      name: 'Software Engineer',
+      active: false,
+    });
+    expect(await dataSource!.getRepository(ResourceInitiative).findOneByOrFail({ id: inactiveInitiative.id })).toMatchObject({
+      code: 'ITDM-LOCAL-001',
+      name: 'Manually deactivated ITDM',
+      active: false,
+    });
+
+    const cliEnv = {
+      ...process.env,
+      RESOURCE_ALLOCATION_DATABASE_URL: container!.getConnectionUri(),
+    };
+    const cliResult = await runNpmScript('prepare:minimal', cliEnv);
+    expect(`${cliResult.stdout}\n${cliResult.stderr}`).toContain('baseline is not operational');
+    expect(await dataSource!.getRepository(ResourceGroup).find({ where: { active: true } })).toHaveLength(0);
+    expect(await dataSource!.getRepository(ResourceProfile).find({ where: { active: true } })).toHaveLength(0);
+    expect(await dataSource!.getRepository(ResourceInitiative).find({ where: { active: true } })).toHaveLength(0);
   });
 
   it('supports environment overrides, fails safely on conflicting role without overwriting, and does not block First Admin', async () => {
