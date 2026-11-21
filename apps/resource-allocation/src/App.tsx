@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AccessRequestError,
@@ -211,30 +211,19 @@ export function App() {
           </section>
 
           {canUseModuleData && profileId && (
-            <RequestQueues
-              key={`${profileId}:${generation}`}
-              localUserId={profileId}
-              personId={accessQuery.data.person.id}
-              role={accessQuery.data.person.role}
-              groupId={accessQuery.data.person.groupId ?? null}
-              onAccessDenied={handleQueueAccessDenied}
-            />
-          )}
-
-          {canUseModuleData && profileId && (
-            <SubmissionWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
-          )}
-
-          {canUseModuleData && profileId && (
-            <NotificationsInbox localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
-          )}
-
-          {canUseModuleData && profileId && (
-            <RequestWorkspace key={profileId} localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
-          )}
-
-          {canUseModuleData && profileId && (
-            <AllocationsWorkspace key={profileId} localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
+            <Fragment key={`${profileId}:${generation}`}>
+              <RequestQueues
+                localUserId={profileId}
+                personId={accessQuery.data.person.id}
+                role={accessQuery.data.person.role}
+                groupId={accessQuery.data.person.groupId ?? null}
+                onAccessDenied={handleQueueAccessDenied}
+              />
+              <SubmissionWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
+              <NotificationsInbox localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
+              <RequestWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
+              <AllocationsWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
+            </Fragment>
           )}
 
           {moduleDataAccessBlocked && (

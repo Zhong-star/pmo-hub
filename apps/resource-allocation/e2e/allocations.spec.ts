@@ -50,6 +50,33 @@ async function installBaseRoutes(page: Page) {
   });
 }
 
+test('removes mounted requests and allocations when an allocation refresh confirms access was revoked', async ({ page }) => {
+  await installBaseRoutes(page);
+  let revoked = false;
+  const denied = { status: 403, contentType: 'application/problem+json', json: { code: 'ACCESS_DENIED', status: 403 } };
+  await page.route(`${apiRoot}/access`, (route) => route.fulfill(revoked ? denied : { json: { person: user } }));
+  await page.route(`${apiRoot}/allocations**`, (route) => route.fulfill(revoked ? denied : {
+    json: { items: [allocation()], page: emptyPage },
+  }));
+  await page.route(`${apiRoot}/allocation-load**`, (route) => route.fulfill({
+    json: { date: '2026-11-21', items: [], page: emptyPage },
+  }));
+
+  await page.goto('/resource-allocation/');
+  const requests = page.getByRole('heading', { name: 'My requests' });
+  const allocations = page.getByRole('heading', { name: 'Allocations and capacity' });
+  await expect(requests).toBeVisible();
+  await expect(allocations).toBeVisible();
+  await expect(page.getByRole('button', { name: 'View allocation ITDM-69' })).toBeVisible();
+
+  revoked = true;
+  await page.getByRole('button', { name: 'Refresh allocations' }).click();
+  await expect(page.getByRole('heading', { name: 'Access not available' })).toBeVisible();
+  await expect(requests).toHaveCount(0);
+  await expect(allocations).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'View allocation ITDM-69' })).toHaveCount(0);
+});
+
 test('opens an authorized allocation detail from a notification', async ({ page }) => {
   await installBaseRoutes(page);
   await page.route(`${apiRoot}/notification**`, (route) => route.fulfill({
