@@ -177,6 +177,9 @@ describe('Tech Resource Allocation administration (#59)', () => {
       .expect('Content-Type', /application\/problem\+json/)
       .expect(400);
     expect(tooLongCode.body.code).toBe('VALIDATION_ERROR');
+    expect(tooLongCode.body.errors).toEqual([
+      { path: 'code', code: 'IS_TRIMMED_LENGTH', message: expect.any(String) },
+    ]);
 
     await request(app!.getHttpServer())
       .post(path)
@@ -193,13 +196,26 @@ describe('Tech Resource Allocation administration (#59)', () => {
       .expect('Content-Type', /application\/problem\+json/)
       .expect(400);
 
-    await request(app!.getHttpServer())
+    const invalidPerson = await request(app!.getHttpServer())
       .post('/api/resource-allocation/v1/admin/people')
       .set('X-PMO-Local-User-ID', admin.localUserId)
       .set('Idempotency-Key', randomUUID())
-      .send({ localUserId: 'invalid-role-person', displayName: 'Invalid', email: 'invalid@example.test', role: 'ALLOCATION_COORDINATOR' })
+      .send({
+        localUserId: 'invalid-role-person',
+        displayName: 'Invalid',
+        email: 'not-an-email',
+        role: 'ALLOCATION_COORDINATOR',
+        unexpectedField: 'ignore',
+      })
       .expect('Content-Type', /application\/problem\+json/)
       .expect(400);
+    expect(invalidPerson.body.code).toBe('VALIDATION_ERROR');
+    expect(invalidPerson.body.errors).toEqual(expect.arrayContaining([
+      { path: 'email', code: 'IS_EMAIL', message: expect.any(String) },
+      { path: 'role', code: 'IS_ENUM', message: expect.any(String) },
+      { path: 'unexpectedField', code: 'WHITELIST_VALIDATION', message: expect.any(String) },
+    ]));
+    expect(JSON.stringify(invalidPerson.body)).not.toMatch(/SELECT|INSERT|at\s+\w+\s+\(/i);
   });
 
   it('replays an identical create receipt and conflicts when its content changes', async () => {
@@ -215,6 +231,7 @@ describe('Tech Resource Allocation administration (#59)', () => {
       .expect('Content-Type', /application\/problem\+json/)
       .expect(400);
     expect(missingKey.body.code).toBe('VALIDATION_ERROR');
+    expect(missingKey.body).not.toHaveProperty('errors');
 
     const created = await request(app!.getHttpServer())
       .post(path)
@@ -383,6 +400,14 @@ describe('Tech Resource Allocation administration (#59)', () => {
     })]));
     expect(initiatives.body.items).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'ITDM-044', name: 'Cloud migration' })]));
     expect(JSON.stringify(initiatives.body)).not.toContain('version');
+
+    const unauthenticated = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/people')
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect('WWW-Authenticate', /LocalProfile/)
+      .expect(401);
+    expect(unauthenticated.body.code).toBe('AUTHENTICATION_REQUIRED');
+    expect(unauthenticated.body).not.toHaveProperty('errors');
   });
 
   it('preserves one active Admin when two deactivations race', async () => {

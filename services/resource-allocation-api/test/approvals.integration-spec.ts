@@ -849,4 +849,26 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
     ) as Array<{ recipient_id: string }>;
     expect(notices.map((notice) => notice.recipient_id).sort()).toEqual([fixture.groupAdmin.id, fixture.manager.id, fixture.supervisor.id].sort());
   });
+
+  it('serializes approval query and body DTO validation failures into RFC 9457 errors[]', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+
+    const invalidQuery = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/requests/${resourceRequest.id}/approval-candidates?limit=0`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(400);
+    expect(invalidQuery.body.errors).toEqual([{ path: 'limit', code: 'MIN', message: expect.any(String) }]);
+
+    const invalidBody = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ personId: fixture.assignee.id, weeklyHours: 0 })
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(400);
+    expect(invalidBody.body.errors).toEqual([{ path: 'weeklyHours', code: 'MIN', message: expect.any(String) }]);
+  });
 });

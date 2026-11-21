@@ -1,30 +1,17 @@
 import { Controller, Get, Headers, Inject } from '@nestjs/common';
 import {
-  ApiExtraModels,
   ApiOkResponse,
   ApiOperation,
-  ApiResponse,
   ApiSecurity,
   ApiTags,
-  getSchemaPath,
 } from '@nestjs/swagger';
-import { ResourceAccessResponseDto, ResourceAllocationProblemDto } from './access-response.dto';
+import { ResourceAccessResponseDto } from './access-response.dto';
+import { ProblemResponse, ProtectedResourceProblems } from './problem-response.decorator';
 import { ResourceAllocationAccessService } from './resource-allocation-access.service';
-import { localProfileChallenge, localProfileHeader } from './resource-allocation-problem';
-
-function accessProblem(status: number, description: string) {
-  return ApiResponse({
-    status,
-    description,
-    content: { 'application/problem+json': { schema: { $ref: getSchemaPath(ResourceAllocationProblemDto) } } },
-    ...(status === 401 ? {
-      headers: { 'WWW-Authenticate': { schema: { type: 'string', example: localProfileChallenge } } },
-    } : {}),
-  });
-}
+import { localProfileHeader } from './resource-allocation-problem';
 
 @ApiTags('Tech Resource Allocation access')
-@ApiExtraModels(ResourceAllocationProblemDto)
+@ProtectedResourceProblems()
 @Controller()
 export class ResourceAllocationAccessController {
   constructor(@Inject(ResourceAllocationAccessService) private readonly accessService: ResourceAllocationAccessService) {}
@@ -33,10 +20,8 @@ export class ResourceAllocationAccessController {
   @ApiOperation({ summary: 'Resolve the selected Hub profile against Tech Resource Allocation access' })
   @ApiSecurity('localProfile')
   @ApiOkResponse({ type: ResourceAccessResponseDto })
-  @accessProblem(401, 'A local Hub profile is required.')
-  @accessProblem(403, 'The profile is not active in this module; active Admin contacts are included.')
-  @accessProblem(503, 'The access database or local identity mode is unavailable.')
-  @accessProblem(500, 'An unexpected server error occurred.')
+  @ProblemResponse(403, 'The profile is not active in this module; active Admin contacts are included.')
+  @ProblemResponse(503, 'The access database or local identity mode is unavailable.')
   async getAccess(
     @Headers(localProfileHeader) localUserId?: string,
   ): Promise<ResourceAccessResponseDto> {

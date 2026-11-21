@@ -1,9 +1,9 @@
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { INestApplication } from '@nestjs/common';
+import { localProfileChallenge, localProfileHeader } from './access/resource-allocation-problem';
 
-const accessPath = '/api/resource-allocation/v1/access';
-const localProfileHeader = 'X-PMO-Local-User-ID';
-const localProfileChallenge = 'LocalProfile realm="Tech Resource Allocation"';
+const apiPrefix = '/api/resource-allocation/v1/';
+const accessPath = `${apiPrefix}access`;
 
 export function createOpenApiDocument(app: INestApplication) {
   const config = new DocumentBuilder()
@@ -24,18 +24,7 @@ export function createOpenApiDocument(app: INestApplication) {
   }
 
   for (const [path, pathItem] of Object.entries(document.paths)) {
-    if (!path.startsWith('/api/resource-allocation/v1/admin/') &&
-      !path.startsWith('/api/resource-allocation/v1/submissions') &&
-      !path.startsWith('/api/resource-allocation/v1/notifications') &&
-      !path.startsWith('/api/resource-allocation/v1/allocations') &&
-      path !== '/api/resource-allocation/v1/allocation-load' &&
-      path !== '/api/resource-allocation/v1/notification-readings' &&
-      !path.startsWith('/api/resource-allocation/v1/requests') &&
-      !path.startsWith('/api/resource-allocation/v1/request-queues/') &&
-      !path.startsWith('/api/resource-allocation/v1/request-audits') &&
-      !path.startsWith('/api/resource-allocation/v1/operation-results/') &&
-      !['/api/resource-allocation/v1/people', '/api/resource-allocation/v1/groups',
-        '/api/resource-allocation/v1/resource-profiles', '/api/resource-allocation/v1/initiatives'].includes(path)) continue;
+    if (!path.startsWith(apiPrefix)) continue;
     for (const operation of Object.values(pathItem)) {
       if (!operation || typeof operation !== 'object' || !('responses' in operation)) continue;
       const responses = operation.responses as Record<string, {

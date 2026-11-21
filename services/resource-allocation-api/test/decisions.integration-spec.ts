@@ -829,4 +829,26 @@ describe('Tech Resource Allocation denials and exception resolution (#65/#66)', 
     expect(await dataSource!.query('SELECT id FROM resource_allocation_notifications WHERE source_request_id = $1', [resourceRequest.id]))
       .toHaveLength(1);
   });
+
+  it('serializes decision body and history query DTO validation failures into RFC 9457 errors[]', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture);
+
+    const invalidQuery = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/requests/${resourceRequest.id}/history?limit=101`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(400);
+    expect(invalidQuery.body.errors).toEqual([{ path: 'limit', code: 'MAX', message: expect.any(String) }]);
+
+    const invalidBody = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/denials`)
+      .set(commandHeaders(fixture.moderator.localUserId, 1))
+      .send({ explanation: 123 })
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(400);
+    expect(invalidBody.body.errors).toEqual(expect.arrayContaining([
+      { path: 'explanation', code: 'IS_STRING', message: expect.any(String) },
+    ]));
+  });
 });

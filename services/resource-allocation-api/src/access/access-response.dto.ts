@@ -34,6 +34,17 @@ export class AdministratorContactDto {
   email!: string;
 }
 
+export class ResourceAllocationFieldErrorDto {
+  @ApiProperty({ type: String, example: 'email' })
+  path!: string;
+
+  @ApiProperty({ type: String, example: 'IS_EMAIL' })
+  code!: string;
+
+  @ApiProperty({ type: String, example: 'email must be an email' })
+  message!: string;
+}
+
 export class ResourceAllocationProblemDto {
   @ApiProperty({ type: String, example: 'https://pmo-hub.example/problems/access-denied' })
   type!: string;
@@ -58,4 +69,7 @@ export class ResourceAllocationProblemDto {
 
   @ApiProperty({ type: [AdministratorContactDto], required: false })
   administrators?: AdministratorContactDto[];
+
+  @ApiProperty({ type: [ResourceAllocationFieldErrorDto], required: false })
+  errors?: ResourceAllocationFieldErrorDto[];
 }

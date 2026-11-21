@@ -245,6 +245,16 @@
               }
             }
           },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
           "503": {
             "description": "The Resource Allocation database is unavailable.",
             "content": {
@@ -357,6 +367,16 @@
               }
             }
           },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
           "503": {
             "description": "The Resource Allocation database is unavailable.",
             "content": {
@@ -423,8 +443,46 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -497,6 +555,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
             "content": {
@@ -519,6 +595,26 @@
           },
           "422": {
             "description": "The role or group reference is not eligible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -571,6 +667,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
             "content": {
@@ -583,6 +697,26 @@
           },
           "404": {
             "description": "The person was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -661,6 +795,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
             "content": {
@@ -693,6 +845,26 @@
           },
           "422": {
             "description": "The last Admin or an assigned group responsible cannot be removed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -757,8 +929,46 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -831,6 +1041,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
             "content": {
@@ -843,6 +1071,26 @@
           },
           "422": {
             "description": "The group needs active Supervisor and Manager references.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -895,6 +1143,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
             "content": {
@@ -907,6 +1173,26 @@
           },
           "404": {
             "description": "The group was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -985,6 +1271,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
             "content": {
@@ -1017,6 +1321,26 @@
           },
           "422": {
             "description": "The responsible assignment is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1081,8 +1405,46 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1155,6 +1517,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
             "content": {
@@ -1167,6 +1547,26 @@
           },
           "422": {
             "description": "The profile must belong to an active group.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1219,6 +1619,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
             "content": {
@@ -1231,6 +1649,26 @@
           },
           "404": {
             "description": "The resource profile was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1309,6 +1747,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
             "content": {
@@ -1341,6 +1797,26 @@
           },
           "422": {
             "description": "The profile must belong to an active group.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1393,6 +1869,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
             "content": {
@@ -1405,6 +1899,26 @@
           },
           "404": {
             "description": "The ITDM was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1484,6 +1998,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may manage administrative records.",
             "content": {
@@ -1516,6 +2048,26 @@
           },
           "422": {
             "description": "A used ITDM code cannot be changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1575,6 +2127,64 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "A filter, limit, or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The active module profile is not allowed to perform this operation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1616,6 +2226,64 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ResourceGroupSelectionCollectionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The limit or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The active module profile is not allowed to perform this operation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
                 }
               }
             }
@@ -1671,6 +2339,64 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "A filter, limit, or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The active module profile is not allowed to perform this operation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1712,6 +2438,64 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ResourceInitiativeSelectionCollectionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The limit or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The active module profile is not allowed to perform this operation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
                 }
               }
             }
@@ -1786,6 +2570,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "An active Resource Allocation person record is required.",
             "content": {
@@ -1798,6 +2600,16 @@
           },
           "409": {
             "description": "The key was reused with changed content or a line attempt key already exists.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1859,8 +2671,46 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "An active Resource Allocation person record is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1922,6 +2772,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "An active Resource Allocation person record is required.",
             "content": {
@@ -1934,6 +2802,26 @@
           },
           "404": {
             "description": "The submission does not exist for this user.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1973,7 +2861,25 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResourceSubmissionLineResponseDto"
+                  "$ref": "#/components/schemas/ResourceSubmissionResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
                 }
               }
             }
@@ -1990,6 +2896,26 @@
           },
           "404": {
             "description": "The submission does not exist for this user.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2040,7 +2966,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResourceSubmissionResponseDto"
+                  "$ref": "#/components/schemas/ResourceSubmissionLineResponseDto"
                 }
               }
             }
@@ -2051,6 +2977,24 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
                 }
               }
             }
@@ -2067,6 +3011,26 @@
           },
           "404": {
             "description": "No result exists for this user and operation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2141,7 +3105,7 @@
             }
           },
           "401": {
-            "description": "An active local profile is required.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2159,7 +3123,7 @@
             }
           },
           "403": {
-            "description": "The profile is not active in this module.",
+            "description": "The active module profile is not allowed to perform this operation.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2169,7 +3133,7 @@
             }
           },
           "500": {
-            "description": "An unexpected persistence error occurred.",
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2260,7 +3224,7 @@
             }
           },
           "401": {
-            "description": "An active local profile is required.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2278,7 +3242,7 @@
             }
           },
           "403": {
-            "description": "The profile is not active in this module.",
+            "description": "The active module profile is not allowed to perform this operation.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2318,7 +3282,7 @@
             }
           },
           "500": {
-            "description": "An unexpected persistence error occurred.",
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2386,7 +3350,7 @@
             }
           },
           "401": {
-            "description": "An active local profile is required.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2404,7 +3368,7 @@
             }
           },
           "403": {
-            "description": "The profile is not active in this module.",
+            "description": "The active module profile is not allowed to perform this operation.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2424,7 +3388,7 @@
             }
           },
           "500": {
-            "description": "An unexpected persistence error occurred.",
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2545,7 +3509,7 @@
             }
           },
           "401": {
-            "description": "A selected local profile is required.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2564,6 +3528,16 @@
           },
           "403": {
             "description": "The active role is not allowed to view this queue or group.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2671,6 +3645,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may refer requests.",
             "content": {
@@ -2713,6 +3705,26 @@
           },
           "422": {
             "description": "The request cannot be referred in its current state or its references are not eligible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2810,6 +3822,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may correct request references.",
             "content": {
@@ -2852,6 +3882,26 @@
           },
           "422": {
             "description": "The reference correction is not allowed or a selected reference is inactive.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2942,6 +3992,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin may remove another person’s waiting request.",
             "content": {
@@ -2984,6 +4052,26 @@
           },
           "422": {
             "description": "The request cannot be removed from its current state.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3108,8 +4196,46 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "An active Resource Allocation person record is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3162,6 +4288,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "An active Resource Allocation person record is required.",
             "content": {
@@ -3174,6 +4318,26 @@
           },
           "404": {
             "description": "The request is not operational or is outside the caller’s current read scope.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3253,6 +4417,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "The current profile is not active.",
             "content": {
@@ -3285,6 +4467,26 @@
           },
           "422": {
             "description": "The request is no longer waiting or selected references/dates are ineligible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3374,6 +4576,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "The current profile is not active.",
             "content": {
@@ -3423,6 +4643,26 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3460,6 +4700,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "An active Resource Allocation person record is required.",
             "content": {
@@ -3472,6 +4730,26 @@
           },
           "404": {
             "description": "The audit does not exist or the current profile is not allowed to read it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3533,6 +4811,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "An active Resource Allocation person record is required.",
             "content": {
@@ -3545,6 +4841,26 @@
           },
           "404": {
             "description": "The audit does not exist or the current profile is not allowed to read it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3641,6 +4957,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "The actor is not a current in-scope decision maker or is the requester.",
             "content": {
@@ -3683,6 +5017,26 @@
           },
           "422": {
             "description": "The request is not awaiting a decision or its deadline has passed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3779,6 +5133,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only the current requester can contest the denial.",
             "content": {
@@ -3821,6 +5193,26 @@
           },
           "422": {
             "description": "The request is not contestable or its denial/proposal response deadline has passed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3917,6 +5309,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "The actor is not the requester canceling a denial or an Admin canceling another requester’s exception.",
             "content": {
@@ -3959,6 +5369,26 @@
           },
           "422": {
             "description": "The request is not in a cancellable state or its denial response deadline has passed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4055,6 +5485,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin other than the requester may escalate the request.",
             "content": {
@@ -4097,6 +5545,26 @@
           },
           "422": {
             "description": "Only a Pre N3 request may be escalated.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4193,6 +5661,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin other than the requester may resolve the exception.",
             "content": {
@@ -4235,6 +5721,26 @@
           },
           "422": {
             "description": "The request is not in Pre N3/Escalation or an affected ITDM is inactive.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4331,6 +5837,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only an active Admin other than the requester may resolve the exception.",
             "content": {
@@ -4373,6 +5897,26 @@
           },
           "422": {
             "description": "The request is not in Pre N3/Escalation or final conditions are not currently eligible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4447,6 +5991,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "An active Resource Allocation person record is required.",
             "content": {
@@ -4459,6 +6021,26 @@
           },
           "404": {
             "description": "The request is not operational or is outside the caller’s current read scope.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4533,6 +6115,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "The actor is not an authorized in-scope decider or global Admin, or the request is their own.",
             "content": {
@@ -4545,6 +6145,26 @@
           },
           "404": {
             "description": "The current request was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4641,6 +6261,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "The actor is not an authorized in-scope decider or is approving their own request.",
             "content": {
@@ -4683,6 +6321,26 @@
           },
           "422": {
             "description": "The request is ineligible, expired, or cannot be approved in its current state.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4779,6 +6437,24 @@
               }
             }
           },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
             "description": "Only the requester may accept this proposal.",
             "content": {
@@ -4821,6 +6497,26 @@
           },
           "422": {
             "description": "The request has no pending proposal. At the deadline the automatic transition takes precedence.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4957,7 +6653,7 @@
             }
           },
           "401": {
-            "description": "Select an active local profile.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4976,6 +6672,16 @@
           },
           "403": {
             "description": "An active Resource Allocation profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5039,7 +6745,7 @@
             }
           },
           "401": {
-            "description": "Select an active local profile.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5068,6 +6774,16 @@
           },
           "404": {
             "description": "The allocation does not exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5189,7 +6905,7 @@
             }
           },
           "401": {
-            "description": "Select an active local profile.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5208,6 +6924,16 @@
           },
           "403": {
             "description": "An active Resource Allocation profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5280,7 +7006,7 @@
             }
           },
           "401": {
-            "description": "Select an active local profile.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5309,6 +7035,16 @@
           },
           "404": {
             "description": "The allocation does not exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5423,7 +7159,7 @@
             }
           },
           "401": {
-            "description": "Select an active local profile.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5436,6 +7172,16 @@
                 "schema": {
                   "type": "string",
                   "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The active module profile is not allowed to perform this operation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
                 }
               }
             }
@@ -5462,6 +7208,16 @@
           },
           "422": {
             "description": "The allocation cannot be suspended from its current state.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5573,7 +7329,7 @@
             }
           },
           "401": {
-            "description": "Select an active local profile.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5586,6 +7342,16 @@
                 "schema": {
                   "type": "string",
                   "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The active module profile is not allowed to perform this operation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
                 }
               }
             }
@@ -5612,6 +7378,16 @@
           },
           "422": {
             "description": "The allocation cannot be reserved from its current state.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5723,7 +7499,7 @@
             }
           },
           "401": {
-            "description": "Select an active local profile.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5736,6 +7512,16 @@
                 "schema": {
                   "type": "string",
                   "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The active module profile is not allowed to perform this operation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
                 }
               }
             }
@@ -5762,6 +7548,16 @@
           },
           "422": {
             "description": "Only a suspended allocation can be resumed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5873,7 +7669,7 @@
             }
           },
           "401": {
-            "description": "Select an active local profile.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5886,6 +7682,16 @@
                 "schema": {
                   "type": "string",
                   "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The active module profile is not allowed to perform this operation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
                 }
               }
             }
@@ -5912,6 +7718,16 @@
           },
           "422": {
             "description": "Only a reserved allocation can be activated.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6023,7 +7839,7 @@
             }
           },
           "401": {
-            "description": "Select an active local profile.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6036,6 +7852,16 @@
                 "schema": {
                   "type": "string",
                   "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The active module profile is not allowed to perform this operation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
                 }
               }
             }
@@ -6062,6 +7888,16 @@
           },
           "422": {
             "description": "A future or closed allocation cannot be completed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6173,7 +8009,7 @@
             }
           },
           "401": {
-            "description": "Select an active local profile.",
+            "description": "A local Hub profile is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6186,6 +8022,16 @@
                 "schema": {
                   "type": "string",
                   "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The active module profile is not allowed to perform this operation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
                 }
               }
             }
@@ -6212,6 +8058,16 @@
           },
           "422": {
             "description": "A closed allocation cannot be canceled.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6286,6 +8142,28 @@
           "email"
         ]
       },
+      "ResourceAllocationFieldErrorDto": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "example": "email"
+          },
+          "code": {
+            "type": "string",
+            "example": "IS_EMAIL"
+          },
+          "message": {
+            "type": "string",
+            "example": "email must be an email"
+          }
+        },
+        "required": [
+          "path",
+          "code",
+          "message"
+        ]
+      },
       "ResourceAllocationProblemDto": {
         "type": "object",
         "properties": {
@@ -6321,6 +8199,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AdministratorContactDto"
+            }
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceAllocationFieldErrorDto"
             }
           }
         },

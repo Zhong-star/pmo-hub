@@ -3,7 +3,7 @@ import { SwaggerModule } from '@nestjs/swagger';
 import { randomUUID } from 'node:crypto';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { createOpenApiDocument } from './openapi-document';
-import { ResourceAllocationProblemFilter } from './access/resource-allocation-problem';
+import { createValidationException, ResourceAllocationProblemFilter } from './access/resource-allocation-problem';
 
 interface RequestWithHeaders {
   headers: Record<string, string | string[] | undefined>;
@@ -39,7 +39,11 @@ export function configureApp(app: INestApplication) {
     response.setHeader('Cache-Control', 'no-store');
     next();
   });
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+  app.useGlobalPipes(new ValidationPipe({
+    transform: true,
+    whitelist: true,
+    exceptionFactory: createValidationException,
+  }));
   app.useGlobalFilters(new ResourceAllocationProblemFilter());
 
   const document = createOpenApiDocument(app);

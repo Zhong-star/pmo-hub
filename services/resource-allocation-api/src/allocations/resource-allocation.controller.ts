@@ -11,7 +11,6 @@ import {
   Post,
   Query,
   Res,
-  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -23,12 +22,11 @@ import {
   ApiQuery,
   ApiResponse,
   ApiSecurity,
-  ApiServiceUnavailableResponse,
   ApiTags,
-  ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
-import { localProfileHeader } from '../access/resource-allocation-problem';
+import { ProtectedResourceProblems } from '../access/problem-response.decorator';
+import { createValidationPipe, localProfileHeader } from '../access/resource-allocation-problem';
 import {
   AllocationCollectionQueryDto,
   AllocationCollectionResponseDto,
@@ -44,14 +42,13 @@ interface ResponseWithHeaders {
   setHeader(name: string, value: string): void;
 }
 
-const collectionQueryValidation = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true, expectedType: AllocationCollectionQueryDto });
-const loadQueryValidation = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true, expectedType: AllocationLoadQueryDto });
-const commandValidation = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true, expectedType: AllocationCommandDto });
+const collectionQueryValidation = createValidationPipe(AllocationCollectionQueryDto);
+const loadQueryValidation = createValidationPipe(AllocationLoadQueryDto);
+const commandValidation = createValidationPipe(AllocationCommandDto);
 
 @ApiTags('Tech Resource Allocations')
 @ApiSecurity('localProfile')
-@ApiUnauthorizedResponse({ description: 'Select an active local profile.' })
-@ApiServiceUnavailableResponse({ description: 'The Resource Allocation database is unavailable.' })
+@ProtectedResourceProblems()
 @Controller()
 export class ResourceAllocationController {
   constructor(

@@ -144,7 +144,7 @@ export class ResourceAllocationRequestService {
     ifMatch: string | undefined,
     correlationId: string | undefined,
     input: UpdateRequestedConditionsDto,
-  ): Promise<ResourceRequest> {
+  ) {
     const expectedVersion = this.parseIfMatch(ifMatch);
     const correlation = this.requireCorrelationId(correlationId);
     const changes = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as UpdateRequestedConditionsDto;
@@ -174,9 +174,9 @@ export class ResourceAllocationRequestService {
              WHERE id = $2 AND removed_at IS NULL
              RETURNING version
            )
-           SELECT version FROM changed`,
+           SELECT version, clock_timestamp() AS now FROM changed`,
           [JSON.stringify(nextConditions), item.id],
-        ) as Array<{ version: number }>;
+        ) as Array<{ version: number; now: Date }>;
         if (updated.length === 0) throw this.notFound('Request');
         const version = Number(updated[0].version);
         const actorSnapshot = this.actorSnapshot(actor);
@@ -196,7 +196,11 @@ export class ResourceAllocationRequestService {
         });
         item.requestedConditions = nextConditions;
         item.version = version;
-        return item;
+        return {
+          ...this.toRequestResponse(item, new Date(updated[0].now), true),
+          allocation: null,
+          revalidation: null,
+        };
       });
     } catch (error) {
       throw this.translateDatabaseError(error);

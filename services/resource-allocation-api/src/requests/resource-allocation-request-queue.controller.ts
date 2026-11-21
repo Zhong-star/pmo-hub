@@ -11,8 +11,6 @@ import {
   Post,
   Query,
   Res,
-  type Type,
-  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiForbiddenResponse,
@@ -26,7 +24,8 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { localProfileHeader } from '../access/resource-allocation-problem';
+import { ProtectedResourceProblems } from '../access/problem-response.decorator';
+import { createValidationPipe, localProfileHeader } from '../access/resource-allocation-problem';
 import {
   AdministrativeRequestRemovalDto,
   CorrectRequestReferencesDto,
@@ -55,16 +54,10 @@ interface QueueFilters {
   decisionState?: string;
 }
 
-function validatedBody(expectedType: Type<unknown>): ValidationPipe {
-  return new ValidationPipe({
-    transform: true,
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    expectedType,
-  });
-}
+const validatedBody = createValidationPipe;
 
 @ApiTags('Tech Resource Allocation requests')
+@ProtectedResourceProblems()
 @Controller()
 export class ResourceAllocationRequestQueueController {
   constructor(
@@ -85,8 +78,6 @@ export class ResourceAllocationRequestQueueController {
   @ApiQuery({ name: 'decisionState', required: false, type: String })
   @ApiForbiddenResponse({ description: 'The active role is not allowed to view this queue or group.' })
   @ApiResponse({ status: 400, description: 'The queue, filters, page size, or cursor is invalid.' })
-  @ApiResponse({ status: 401, description: 'A selected local profile is required.' })
-  @ApiResponse({ status: 503, description: 'The Resource Allocation database is unavailable.' })
   listQueue(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Param('queueCode') queueCode: string,

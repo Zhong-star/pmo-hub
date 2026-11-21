@@ -266,8 +266,11 @@ describe('Tech Resource Allocation requests (#61)', () => {
       decisionState: 'WAITING_FOR_PRESENTATION',
       requestedConditions: { comment: 'Updated scope.', weeklyHours: 18.5 },
       receivedAt: created.receivedAt,
+      dueAt: edit.body.expirationDueAt,
+      availableActions: [],
       version: 2,
     });
+    expect(edit.body.dueAt).toEqual(expect.any(String));
     const history = await dataSource!.query(
       'SELECT action, after_snapshot FROM resource_request_history WHERE request_id = $1 ORDER BY occurred_at, id',
       [created.id],
@@ -275,12 +278,33 @@ describe('Tech Resource Allocation requests (#61)', () => {
     expect(history.map((event: { action: string }) => event.action)).toEqual(['SUBMITTED', 'EDITED']);
     expect(history[1].after_snapshot.requestedConditions).toMatchObject({ comment: 'Updated scope.', weeklyHours: 18.5 });
 
-    await request(app!.getHttpServer())
+    const invalidPrecondition = await request(app!.getHttpServer())
       .patch(`/api/resource-allocation/v1/requests/${created.id}`)
       .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
       .send({ comment: 'Missing precondition.' })
       .expect('Content-Type', /application\/problem\+json/)
       .expect(400);
+    expect(invalidPrecondition.body).not.toHaveProperty('errors');
+
+    const invalidPatchBody = await request(app!.getHttpServer())
+      .patch(`/api/resource-allocation/v1/requests/${created.id}`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('If-Match', '"2"')
+      .send({ weeklyHours: 100 })
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(400);
+    expect(invalidPatchBody.body.errors).toEqual([
+      { path: 'weeklyHours', code: 'MAX', message: expect.any(String) },
+    ]);
+
+    const invalidQuery = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/requests?limit=999')
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(400);
+    expect(invalidQuery.body.errors).toEqual([
+      { path: 'limit', code: 'MAX', message: expect.any(String) },
+    ]);
     await request(app!.getHttpServer())
       .patch(`/api/resource-allocation/v1/requests/${created.id}`)
       .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
@@ -413,14 +437,26 @@ describe('Tech Resource Allocation requests (#61)', () => {
       FOR EACH ROW EXECUTE FUNCTION fail_request_audit()
     `);
 
+    const invalidUuid = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/requests/not-a-uuid')
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(400);
+    expect(invalidUuid.body.code).toBe('VALIDATION_ERROR');
+    expect(invalidUuid.body).not.toHaveProperty('errors');
+
     try {
-      await request(app!.getHttpServer())
+      const serverFailure = await request(app!.getHttpServer())
         .post(path)
         .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
         .set('If-Match', '"1"')
         .set('Idempotency-Key', idempotencyKey)
         .send({ reason: 'Cancel the request.' })
+        .expect('Content-Type', /application\/problem\+json/)
         .expect(500);
+      expect(serverFailure.body).toMatchObject({ status: 500, code: 'INTERNAL_ERROR', detail: 'Internal Server Error' });
+      expect(serverFailure.body).not.toHaveProperty('errors');
+      expect(JSON.stringify(serverFailure.body)).not.toContain('test audit failure');
       expect(await dataSource!.query('SELECT removed_at FROM resource_requests WHERE id = $1', [created.id]))
         .toEqual([{ removed_at: null }]);
       expect(await dataSource!.query('SELECT id FROM resource_request_audits WHERE request_id = $1', [created.id])).toHaveLength(0);

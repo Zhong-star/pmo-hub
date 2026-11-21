@@ -11,7 +11,6 @@ import {
   Post,
   Query,
   Res,
-  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -26,7 +25,8 @@ import {
   ApiTags,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
-import { localProfileHeader } from '../access/resource-allocation-problem';
+import { ProtectedResourceProblems } from '../access/problem-response.decorator';
+import { createValidationPipe, localProfileHeader } from '../access/resource-allocation-problem';
 import { AcceptRequestChangesDto, ApprovalCandidateCollectionDto, ApprovalCandidateQueryDto, ApproveRequestDto, ApproveRequestResponseDto } from './approve-request.dto';
 import { ResourceAllocationApprovalService } from './resource-allocation-approval.service';
 
@@ -36,6 +36,7 @@ interface ResponseWithHeaders {
 
 @ApiTags('Tech Resource Allocation approvals')
 @ApiSecurity('localProfile')
+@ProtectedResourceProblems()
 @Controller('requests')
 export class ResourceAllocationApprovalController {
   constructor(
@@ -54,7 +55,7 @@ export class ResourceAllocationApprovalController {
   async listApprovalCandidates(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Param('id', new ParseUUIDPipe()) requestId: string,
-    @Query(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true })) query: ApprovalCandidateQueryDto,
+    @Query(createValidationPipe(ApprovalCandidateQueryDto)) query: ApprovalCandidateQueryDto,
   ) {
     return this.approvalService.listCandidates(localUserId, requestId, query);
   }
@@ -77,7 +78,7 @@ export class ResourceAllocationApprovalController {
     @Headers('if-match') ifMatch: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
-    @Body(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true, expectedType: ApproveRequestDto })) input: ApproveRequestDto,
+    @Body(createValidationPipe(ApproveRequestDto)) input: ApproveRequestDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
     const operation = await this.approvalService.approve(localUserId, requestId, ifMatch, idempotencyKey, correlationId, input);
@@ -107,7 +108,7 @@ export class ResourceAllocationApprovalController {
     @Headers('if-match') ifMatch: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
-    @Body(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true, expectedType: AcceptRequestChangesDto })) _input: AcceptRequestChangesDto,
+    @Body(createValidationPipe(AcceptRequestChangesDto)) _input: AcceptRequestChangesDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
     void _input;

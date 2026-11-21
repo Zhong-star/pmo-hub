@@ -11,8 +11,6 @@ import {
   Post,
   Query,
   Res,
-  type Type,
-  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiAcceptedResponse,
@@ -26,7 +24,8 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { localProfileHeader } from '../access/resource-allocation-problem';
+import { ProtectedResourceProblems } from '../access/problem-response.decorator';
+import { createValidationPipe, localProfileHeader } from '../access/resource-allocation-problem';
 import { ResourceAllocationSubmissionService } from './resource-allocation-submission.service';
 import {
   CreateResourceSubmissionRequestDto,
@@ -40,16 +39,10 @@ interface ResponseWithHeaders {
   setHeader(name: string, value: string): void;
 }
 
-function validatedBody(expectedType: Type<unknown>): ValidationPipe {
-  return new ValidationPipe({
-    transform: true,
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    expectedType,
-  });
-}
+const validatedBody = createValidationPipe;
 
 @ApiTags('Tech Resource Allocation submissions')
+@ProtectedResourceProblems()
 @Controller('submissions')
 export class ResourceAllocationSubmissionController {
   constructor(
@@ -69,7 +62,6 @@ export class ResourceAllocationSubmissionController {
   @ApiForbiddenResponse({ description: 'An active Resource Allocation person record is required.' })
   @ApiResponse({ status: 400, description: 'The envelope, line structure, or idempotency key is invalid.' })
   @ApiResponse({ status: 409, description: 'The key was reused with changed content or a line attempt key already exists.' })
-  @ApiResponse({ status: 503, description: 'The Resource Allocation database is unavailable.' })
   async receive(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
@@ -118,7 +110,7 @@ export class ResourceAllocationSubmissionController {
   @Get(':id')
   @ApiOperation({ summary: 'Recover the current user’s durable submission receipt' })
   @ApiSecurity('localProfile')
-  @ApiOkResponse({ type: ResourceSubmissionLineResponseDto })
+  @ApiOkResponse({ type: ResourceSubmissionResponseDto })
   @ApiForbiddenResponse({ description: 'An active Resource Allocation person record is required.' })
   @ApiNotFoundResponse({ description: 'The submission does not exist for this user.' })
   get(
@@ -130,6 +122,7 @@ export class ResourceAllocationSubmissionController {
 }
 
 @ApiTags('Tech Resource Allocation operation results')
+@ProtectedResourceProblems()
 @Controller('operation-results')
 export class ResourceAllocationOperationResultController {
   constructor(
@@ -140,7 +133,7 @@ export class ResourceAllocationOperationResultController {
   @Get(':attemptKey')
   @ApiOperation({ summary: 'Recover a result by its original line attempt key' })
   @ApiSecurity('localProfile')
-  @ApiOkResponse({ type: ResourceSubmissionResponseDto })
+  @ApiOkResponse({ type: ResourceSubmissionLineResponseDto })
   @ApiQuery({ name: 'operation', required: true, enum: ['submission.create'] })
   @ApiForbiddenResponse({ description: 'An active Resource Allocation person record is required.' })
   @ApiNotFoundResponse({ description: 'No result exists for this user and operation.' })

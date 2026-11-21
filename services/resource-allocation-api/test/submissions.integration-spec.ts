@@ -113,6 +113,7 @@ describe('Tech Resource Allocation submissions (#60)', () => {
       .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
       .expect(200);
     expect(detailBeforeProcessing.body).toEqual(received.body);
+    expect(detailBeforeProcessing.body).not.toHaveProperty('attemptKey');
     const listBeforeProcessing = await request(app!.getHttpServer())
       .get(submissionPath)
       .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
@@ -146,7 +147,14 @@ describe('Tech Resource Allocation submissions (#60)', () => {
       .get(`/api/resource-allocation/v1/operation-results/${payload.lines[0].attemptKey}?operation=submission.create`)
       .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
       .expect(200);
-    expect(replay.body).toMatchObject({ id: rows.body.items[0].id, status: 'SUCCEEDED', requestId: rows.body.items[0].requestId });
+    expect(replay.body).toMatchObject({
+      id: rows.body.items[0].id,
+      attemptKey: payload.lines[0].attemptKey,
+      submittedConditions: expect.objectContaining({ weeklyHours: 1.25 }),
+      status: 'SUCCEEDED',
+      requestId: rows.body.items[0].requestId,
+      receivedAt: expect.any(String),
+    });
 
     const requests = await dataSource!.query('SELECT id, requested_conditions, decision_state FROM resource_requests');
     const history = await dataSource!.query('SELECT request_id, action FROM resource_request_history');
@@ -285,15 +293,22 @@ describe('Tech Resource Allocation submissions (#60)', () => {
       .expect('Content-Type', /application\/problem\+json/)
       .expect(400);
     expect(response.body.code).toBe('VALIDATION_ERROR');
+    expect(response.body.errors).toEqual(expect.arrayContaining([
+      { path: 'lines', code: 'ARRAY_MAX_SIZE', message: expect.any(String) },
+    ]));
     expect(await dataSource!.query('SELECT id FROM resource_submissions')).toHaveLength(0);
 
-    await request(app!.getHttpServer())
+    const invalidLine = await request(app!.getHttpServer())
       .post('/api/resource-allocation/v1/submissions')
       .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
       .set('Idempotency-Key', randomUUID())
       .send({ ...payload, lines: [{ ...payload.lines[0], comment: 'C'.repeat(2001) }] })
       .expect('Content-Type', /application\/problem\+json/)
       .expect(400);
+    expect(invalidLine.body.code).toBe('VALIDATION_ERROR');
+    expect(invalidLine.body.errors).toEqual([
+      { path: 'lines.0.comment', code: 'MAX_LENGTH', message: expect.any(String) },
+    ]);
     expect(await dataSource!.query('SELECT id FROM resource_submissions')).toHaveLength(0);
   });
 

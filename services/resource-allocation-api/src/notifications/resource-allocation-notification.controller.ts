@@ -12,17 +12,14 @@ import {
   Res,
 } from '@nestjs/common';
 import {
-  ApiNotFoundResponse,
   ApiHeader,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
-  ApiResponse,
   ApiSecurity,
   ApiTags,
-  getSchemaPath,
 } from '@nestjs/swagger';
-import { ResourceAllocationProblemDto } from '../access/access-response.dto';
+import { ProblemResponse, ProtectedResourceProblems } from '../access/problem-response.decorator';
 import { localProfileHeader } from '../access/resource-allocation-problem';
 import { ResourceNotificationDto, ResourceNotificationPageDto, ResourceNotificationReadAllDto } from './resource-allocation-notification.dto';
 import { ResourceAllocationNotificationService } from './resource-allocation-notification.service';
@@ -31,18 +28,8 @@ interface ResponseWithHeaders {
   setHeader(name: string, value: string): void;
 }
 
-function notificationProblem(status: number, description: string) {
-  return ApiResponse({
-    status,
-    description,
-    content: { 'application/problem+json': { schema: { $ref: getSchemaPath(ResourceAllocationProblemDto) } } },
-    ...(status === 401 ? { headers: {
-      'WWW-Authenticate': { schema: { type: 'string', example: 'LocalProfile realm="Tech Resource Allocation"' } },
-    } } : {}),
-  });
-}
-
 @ApiTags('Tech Resource Allocation notifications')
+@ProtectedResourceProblems()
 @Controller()
 export class ResourceAllocationNotificationController {
   constructor(
@@ -57,11 +44,7 @@ export class ResourceAllocationNotificationController {
   @ApiQuery({ name: 'read', required: false, type: Boolean, description: 'Filter by read state.' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size (default 50, maximum 100).' })
   @ApiQuery({ name: 'cursor', required: false, type: String, description: 'Opaque cursor for the same read filter.' })
-  @notificationProblem(400, 'A filter, limit, or cursor is invalid.')
-  @notificationProblem(401, 'An active local profile is required.')
-  @notificationProblem(403, 'The profile is not active in this module.')
-  @notificationProblem(503, 'The Resource Allocation database is unavailable.')
-  @notificationProblem(500, 'An unexpected persistence error occurred.')
+  @ProblemResponse(400, 'A filter, limit, or cursor is invalid.')
   list(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Query('read') read?: string,
@@ -78,16 +61,10 @@ export class ResourceAllocationNotificationController {
   @ApiHeader({ name: 'If-Match', required: true, description: 'Strong ETag returned with the current notification.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, description: 'UUID identifying this mark-read attempt.' })
   @ApiOkResponse({ type: ResourceNotificationDto, headers: { ETag: { schema: { type: 'string' } } } })
-  @ApiNotFoundResponse({ description: 'The notification does not exist for this user.', content: {
-    'application/problem+json': { schema: { $ref: getSchemaPath(ResourceAllocationProblemDto) } },
-  } })
-  @notificationProblem(400, 'If-Match or Idempotency-Key is missing or invalid.')
-  @notificationProblem(401, 'An active local profile is required.')
-  @notificationProblem(403, 'The profile is not active in this module.')
-  @notificationProblem(409, 'The idempotency key was reused with different content.')
-  @notificationProblem(412, 'The notification ETag is stale.')
-  @notificationProblem(503, 'The Resource Allocation database is unavailable.')
-  @notificationProblem(500, 'An unexpected persistence error occurred.')
+  @ProblemResponse(404, 'The notification does not exist for this user.')
+  @ProblemResponse(400, 'If-Match or Idempotency-Key is missing or invalid.')
+  @ProblemResponse(409, 'The idempotency key was reused with different content.')
+  @ProblemResponse(412, 'The notification ETag is stale.')
   async markOne(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Param('id', new ParseUUIDPipe()) notificationId: string,
@@ -112,12 +89,8 @@ export class ResourceAllocationNotificationController {
     type: ResourceNotificationReadAllDto,
     description: 'Returns the original cutoff and marked count for an idempotent replay.',
   })
-  @notificationProblem(400, 'The idempotency key is missing or invalid.')
-  @notificationProblem(401, 'An active local profile is required.')
-  @notificationProblem(403, 'The profile is not active in this module.')
-  @notificationProblem(409, 'The idempotency key was reused with different content.')
-  @notificationProblem(503, 'The Resource Allocation database is unavailable.')
-  @notificationProblem(500, 'An unexpected persistence error occurred.')
+  @ProblemResponse(400, 'The idempotency key is missing or invalid.')
+  @ProblemResponse(409, 'The idempotency key was reused with different content.')
   markAll(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
