@@ -42,6 +42,9 @@ export class ResourceSubmissionLine {
   @Column({ name: 'claimed_at', type: 'timestamptz', nullable: true })
   claimedAt!: Date | null;
 
+  @Column({ name: 'processing_attempts', type: 'integer', default: 0 })
+  processingAttempts!: number;
+
   @CreateDateColumn({ name: 'received_at', type: 'timestamptz' })
   receivedAt!: Date;
 

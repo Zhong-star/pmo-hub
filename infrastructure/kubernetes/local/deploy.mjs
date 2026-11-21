@@ -262,12 +262,38 @@ function resources(layer, { images, withPostgres, lessonTokenFormat }) {
       },
     ];
   });
+  if (layer === 'backend') {
+    const labels = { app: 'resource-allocation-worker', layer };
+    items.push({
+      apiVersion: 'apps/v1',
+      kind: 'Deployment',
+      metadata: { name: 'resource-allocation-worker', labels },
+      spec: {
+        replicas: withPostgres ? 1 : 0,
+        selector: { matchLabels: labels },
+        template: {
+          metadata: { labels },
+          spec: {
+            containers: [{
+              name: 'resource-allocation-worker',
+              image: images['resource-allocation-api'],
+              imagePullPolicy: 'Never',
+              command: ['node', 'dist/submissions/run-submission-worker.js'],
+              ...(withPostgres ? { env: resourceAllocationDatabaseEnv() } : {}),
+            }],
+          },
+        },
+      },
+    });
+  }
   return { apiVersion: 'v1', kind: 'List', items };
 }
 
 function release(layer, configuration) {
   apply(resources(layer, configuration));
-  for (const { name } of layers[layer]) {
+  const names = layers[layer].map(({ name }) => name);
+  if (layer === 'backend') names.push('resource-allocation-worker');
+  for (const name of names) {
     kubectl(['rollout', 'status', `deployment/${name}`, '--timeout=90s']);
   }
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
+import { handleTabListKeyDown } from './tabNavigation';
 import type { ResourceAllocationRole } from './accessApi';
 import { approveRequest, cancelExceptionRequest, correctRequestReferences, escalateRequest, getQueueSelections, getRequestQueue, recordExceptionStrategy, referRequest, removeRequestAdministratively, resolveException, REQUEST_QUEUES_QUERY_ROOT, RequestQueueRequestError, type ExceptionResolutionInput, type ExceptionResolutionStrategy, type ExceptionStrategyInput, type RequestQueueCode, type RequestQueueFilters, type RequestQueueItem, type QueueSelections } from './requestQueueApi';
 import { denyRequest, RequestDecisionApiError } from './requestDecisionApi';
@@ -386,7 +387,9 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
             type="button"
             role="tab"
             aria-selected={activeQueue === queue}
+            tabIndex={activeQueue === queue ? 0 : -1}
             key={queue}
+            onKeyDown={handleTabListKeyDown}
             onClick={() => {
               setActionError(null);
               setSelectedQueue(queue);
@@ -415,7 +418,9 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
               type="button"
               role="tab"
               aria-selected={exceptionState === value}
+              tabIndex={exceptionState === value ? 0 : -1}
               key={value ?? 'all'}
+              onKeyDown={handleTabListKeyDown}
               onClick={() => {
                 setActionError(null);
                 setExceptionState(value);

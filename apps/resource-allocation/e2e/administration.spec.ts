@@ -76,6 +76,33 @@ test('shows administrative collections only after current access confirms Admin'
   await expect(page.getByText('No people have been added yet.')).toBeVisible();
 });
 
+test('moves through administrative collections with the tablist arrow keys', async ({ page }) => {
+  await installAdminAccess(page);
+  await installEmptyAdminCollections(page);
+  await openWithProfile(page, 'profile-admin');
+
+  const people = page.getByRole('tab', { name: 'People' });
+  const groups = page.getByRole('tab', { name: 'Groups' });
+  const profiles = page.getByRole('tab', { name: 'Resource profiles' });
+  const initiatives = page.getByRole('tab', { name: 'Initiatives' });
+
+  await people.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(groups).toBeFocused();
+  await expect(groups).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { name: 'Groups' })).toBeVisible();
+
+  await page.keyboard.press('ArrowRight');
+  await expect(profiles).toBeFocused();
+  await expect(page.getByRole('heading', { name: 'Resource profiles' })).toBeVisible();
+  await page.keyboard.press('End');
+  await expect(initiatives).toBeFocused();
+  await expect(page.getByRole('heading', { name: 'Initiatives' })).toBeVisible();
+  await page.keyboard.press('Home');
+  await expect(people).toBeFocused();
+  await expect(page.getByRole('heading', { name: 'People' })).toBeVisible();
+});
+
 test('does not request or display administrative records for a non-Admin', async ({ page }) => {
   let adminRequests = 0;
   await page.route(accessPath, async (route) => {

@@ -49,6 +49,33 @@ async function openWithProfile(page: Page, profileId: string) {
   await page.goto('/resource-allocation/');
 }
 
+async function measureInterfaceContrast(page: Page) {
+  return page.evaluate(() => {
+    const luminance = (color: string) => {
+      const channels = (color.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number).map((value) => {
+        const normalized = value / 255;
+        return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    };
+    const ratio = (foreground: string, background: string) => {
+      const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+      return (values[0] + 0.05) / (values[1] + 0.05);
+    };
+    const body = getComputedStyle(document.body);
+    const topbar = getComputedStyle(document.querySelector('.topbar')!);
+    const brand = getComputedStyle(document.querySelector('.brand')!);
+    const control = getComputedStyle(document.querySelector('.submission-panel select')!);
+    const focus = getComputedStyle(document.querySelector('.skip-link')!);
+    return {
+      body: ratio(body.color, body.backgroundColor),
+      brand: ratio(brand.color, topbar.backgroundColor),
+      control: ratio(control.color, control.backgroundColor),
+      focus: ratio(focus.outlineColor, body.backgroundColor),
+    };
+  });
+}
+
 test('opens with the selected Hub profile and links back to the catalog', async ({ page }) => {
   let sentProfile: string | undefined;
   await page.route(accessPath, async (route) => {
@@ -149,4 +176,71 @@ test('refreshes access for the new Hub profile without showing the previous prof
   await expect(page.getByText('Taylor User')).toHaveCount(0);
   expect(sentProfiles[0]).toBe('profile-user');
   expect(sentProfiles.at(-1)).toBe('profile-leader');
+});
+
+test('uses the shared theme preference already saved in this tab', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('pmo-hub.theme')) sessionStorage.setItem('pmo-hub.theme', 'dark');
+  });
+  await page.route(accessPath, async (route) => {
+    await route.fulfill({ json: { person: people['profile-user'] } });
+  });
+
+  await openWithProfile(page, 'profile-user');
+
+  await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(17, 24, 32)');
+  await expect(page.getByLabel('Initiative', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Category', { exact: true })).toBeVisible();
+
+  await page.keyboard.press('Tab');
+  const contrast = await measureInterfaceContrast(page);
+  expect(contrast.body).toBeGreaterThanOrEqual(4.5);
+  expect(contrast.brand).toBeGreaterThanOrEqual(4.5);
+  expect(contrast.control).toBeGreaterThanOrEqual(4.5);
+  expect(contrast.focus).toBeGreaterThanOrEqual(3);
+
+  await page.evaluate(() => sessionStorage.setItem('pmo-hub.theme', 'light'));
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(241, 245, 247)');
+  await expect(page.getByLabel('Initiative', { exact: true })).toBeVisible();
+  await page.keyboard.press('Tab');
+  const lightContrast = await measureInterfaceContrast(page);
+  expect(lightContrast.body).toBeGreaterThanOrEqual(4.5);
+  expect(lightContrast.brand).toBeGreaterThanOrEqual(4.5);
+  expect(lightContrast.control).toBeGreaterThanOrEqual(4.5);
+  expect(lightContrast.focus).toBeGreaterThanOrEqual(3);
+});
+
+test('skip link moves keyboard focus to the main content', async ({ page }) => {
+  await page.route(accessPath, async (route) => {
+    await route.fulfill({ json: { person: people['profile-user'] } });
+  });
+  await openWithProfile(page, 'profile-user');
+
+  await page.keyboard.press('Tab');
+  const skipLink = page.getByRole('link', { name: 'Skip to main content' });
+  await expect(skipLink).toBeFocused();
+  await expect(skipLink).toBeInViewport();
+  await expect(skipLink).toHaveCSS('outline-style', 'solid');
+  await expect(skipLink).toHaveCSS('outline-width', '3px');
+  await page.keyboard.press('Enter');
+
+  await expect(page.locator('#main-content')).toBeFocused();
+});
+
+test('keeps the page within desktop widths used at 200 percent zoom', async ({ page }) => {
+  await page.route(accessPath, async (route) => {
+    await route.fulfill({ json: { person: people['profile-user'] } });
+  });
+  await openWithProfile(page, 'profile-user');
+  await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
+
+  for (const width of [640, 700]) {
+    await page.setViewportSize({ width, height: 960 });
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(overflow, `page should not overflow at ${width}px`).toBe(false);
+  }
 });

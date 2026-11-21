@@ -19,6 +19,8 @@ npm run migration:run --workspace @pmo-hub/resource-allocation-api
 
 Migrations are explicit. API startup does not synchronize the schema or apply migrations. `/health/startup` returns `503` until the database is reachable and every configured migration is already recorded; the check reads the migration ledger without creating it.
 
+The worker-operation migration (`2026112100001`) must be applied before starting the worker or its status check. It records each job's latest start and successful cycle, sanitized error class/count, and processed count. Submission claim attempts are also durable so abandoned claims can be identified as retries.
+
 ## Prepare the first Admin
 
 Use the Hub profile ID, display name, and email for the first local Admin. This command is repeatable: it inserts one active Admin when none exists, does nothing if an active Admin already exists, and never updates an existing person.
@@ -38,9 +40,12 @@ If that Hub profile is already recorded without an active Admin and no other act
 - `npm run openapi:generate --workspace @pmo-hub/resource-allocation-api` generates `openapi/resource-allocation-v1.json` from Nest Swagger decorators and response DTOs.
 - `npm run migration:run --workspace @pmo-hub/resource-allocation-api` applies pending TypeORM migrations explicitly.
 - `npm run prepare:first-admin --workspace @pmo-hub/resource-allocation-api` safely prepares the first Admin after migration.
-- `npm run worker --workspace @pmo-hub/resource-allocation-api` runs the background worker. Every ten seconds it independently processes durable submissions and Waiting request deadlines, so a failing job is logged without stopping the other jobs. Submission claims abandoned for at least a minute are recovered.
+- `npm run worker --workspace @pmo-hub/resource-allocation-api` runs the background worker. Every ten seconds it independently processes submissions, Waiting reminders/expiration, Denied expiration, changed-proposal reminders/deadlines, and São Paulo allocation lifecycle changes. A failing job does not stop the other jobs. Submission claims abandoned for at least a minute are recovered.
 - `npm run worker:once --workspace @pmo-hub/resource-allocation-api` processes one batch for each job and exits. The workspace alias `npm run resource-allocation:worker` starts the background worker from the monorepo root.
+- `npm run worker:status --workspace @pmo-hub/resource-allocation-api` prints a local JSON operational check and returns exit code `1` if any job has not succeeded in the last 60 seconds, has a due item older than 60 seconds, has a recent cycle error, or has never completed a cycle. It includes per-job due count, age of the oldest due item, retry count, successful cycle time, error count, and the last sanitized error class. Retry count means items still due after at least one worker interval; for submissions, it counts lines claimed more than once. It reads PostgreSQL directly and adds no API route or product dashboard.
 - `npm run test --workspace @pmo-hub/resource-allocation-api` validates the generated contract.
 - `npm run test:integration --workspace @pmo-hub/resource-allocation-api` runs Supertest against PostgreSQL 17 in Testcontainers; Docker is required.
 
-Health routes are `GET /health/live`, `/health/ready`, and `/health/startup`. Swagger UI is available at `/api/resource-allocation/v1/docs`.
+Health routes are `GET /health/live`, `/health/ready`, and `/health/startup`. These routes report API process/dependency/migration health independently of the worker. Use `worker:status` for processing health. Swagger UI is available at `/api/resource-allocation/v1/docs`.
+
+The local Kubernetes backend release includes a separate `resource-allocation-worker` Deployment that reuses the API image and database secret. It has no Service or API health probe. Without `--with-postgres`, the Deployment stays at zero replicas; the release and rollback continue to manage the API and worker together.

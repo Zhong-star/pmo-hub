@@ -12,6 +12,7 @@ import { NotificationsInbox } from './NotificationsInbox';
 import { RequestQueues } from './RequestQueues';
 import { SubmissionWorkspace } from './SubmissionWorkspace';
 import { RequestWorkspace } from './RequestWorkspace';
+import { useThemePreference } from '../../shared-ui/src/theme';
 
 type ProfileSelection = { profileId: string | null; generation: number };
 
@@ -28,6 +29,7 @@ function administratorContacts(error: AccessRequestError) {
 }
 
 export function App() {
+  useThemePreference();
   const queryClient = useQueryClient();
   const [selection, setSelection] = useState<ProfileSelection>(() => ({
     profileId: readSelectedProfileId(),

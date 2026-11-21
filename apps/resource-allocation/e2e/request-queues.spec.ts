@@ -83,6 +83,24 @@ async function installCommonRoutes(page: Page, profileId: string, person: typeof
   });
 }
 
+test('moves between request queues with the tablist arrow keys', async ({ page }) => {
+  await installCommonRoutes(page, admin.localUserId, admin);
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    await route.fulfill({ json: { items: [], page: emptyPage } });
+  });
+  await page.goto('/resource-allocation/');
+
+  const presentation = page.getByRole('tab', { name: 'Presentation queue' });
+  const teamDecision = page.getByRole('tab', { name: 'Group decision queue' });
+  await expect(presentation).toHaveAttribute('aria-selected', 'true');
+  await presentation.focus();
+  await page.keyboard.press('ArrowRight');
+
+  await expect(teamDecision).toBeFocused();
+  await expect(teamDecision).toHaveAttribute('aria-selected', 'true');
+  await expect(page).toHaveURL(/queue=team-decision/);
+});
+
 test('corrects eligible references, preserves the deadline, and refers the request with the current ETag', async ({ page }) => {
   await installCommonRoutes(page, admin.localUserId, admin);
   let queueItem = requestItem();

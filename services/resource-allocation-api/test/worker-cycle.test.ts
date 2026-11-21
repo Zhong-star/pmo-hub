@@ -33,6 +33,26 @@ describe('Resource Allocation worker cycle', () => {
     expect(reportFailure).toHaveBeenCalledWith('submission', expect.any(Error));
   });
 
+  it('records each operation independently with safe success and failure callbacks', async () => {
+    const observer = {
+      onStarted: vi.fn(async () => undefined),
+      onSucceeded: vi.fn(async () => undefined),
+      onFailed: vi.fn(async () => undefined),
+    };
+    const jobs = [
+      { name: 'submission', runBatch: async () => 3 },
+      { name: 'waiting deadline', runBatch: async () => { throw new Error('database password must never be reported'); } },
+      { name: 'denied response deadline', runBatch: async () => 1 },
+    ];
+
+    const failures = await runResourceAllocationWorkerCycle(jobs, vi.fn(), observer);
+
+    expect(failures).toBe(1);
+    expect(observer.onStarted.mock.calls).toEqual([['submission'], ['waiting deadline'], ['denied response deadline']]);
+    expect(observer.onSucceeded.mock.calls).toEqual([['submission', 3], ['denied response deadline', 1]]);
+    expect(observer.onFailed.mock.calls).toEqual([['waiting deadline', expect.any(Error)]]);
+  });
+
   it('schedules proposal decisions and allocation state changes without replacing existing jobs', async () => {
     const proposalBatch = vi.fn(async () => 1);
     const allocationBatch = vi.fn(async () => 1);

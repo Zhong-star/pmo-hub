@@ -14,6 +14,7 @@ import {
   createResourceAllocationWorkerJobs,
   runResourceAllocationWorkerCycle,
 } from '../workers/resource-allocation-worker-cycle';
+import { ResourceAllocationWorkerOperationMonitor, safeWorkerErrorCode } from '../workers/resource-allocation-worker-health';
 
 async function main() {
   const databaseUrl = getResourceAllocationDatabaseUrl();
@@ -27,6 +28,7 @@ async function main() {
   const allocationService = new ResourceAllocationService(dataSource, new ResourceAllocationAccessService(dataSource, true));
   const allocationLifecycle = new ResourceAllocationLifecycleWorker(allocationService);
   const proposalWorker = new ResourceAllocationProposalWorker(new ResourceAllocationApprovalService(dataSource, true));
+  const operationMonitor = new ResourceAllocationWorkerOperationMonitor(dataSource);
   const jobs = createResourceAllocationWorkerJobs({
     processSubmissions: () => submissionWorker.processBatch(),
     processWaitingDeadlines: () => deadlineWorker.processBatch(),
@@ -42,11 +44,11 @@ async function main() {
 
   try {
     if (once) {
-      if (await runResourceAllocationWorkerCycle(jobs, reportWorkerFailure) > 0) process.exitCode = 1;
+      if (await runResourceAllocationWorkerCycle(jobs, reportWorkerFailure, operationMonitor) > 0) process.exitCode = 1;
       return;
     }
     while (!stopping) {
-      await runResourceAllocationWorkerCycle(jobs, reportWorkerFailure);
+      await runResourceAllocationWorkerCycle(jobs, reportWorkerFailure, operationMonitor);
       if (!stopping) await new Promise((resolve) => setTimeout(resolve, RESOURCE_ALLOCATION_WORKER_INTERVAL_MS));
     }
   } finally {
@@ -54,15 +56,11 @@ async function main() {
   }
 }
 
-function safeErrorName(error: unknown): string {
-  return error instanceof Error ? error.name : 'UnknownError';
-}
-
 function reportWorkerFailure(jobName: string, error: unknown): void {
-  process.stderr.write(`Resource Allocation ${jobName} worker cycle failed: ${safeErrorName(error)}\n`);
+  process.stderr.write(`Resource Allocation ${jobName} worker cycle failed: ${safeWorkerErrorCode(error)}\n`);
 }
 
 void main().catch((error: unknown) => {
-  process.stderr.write(`Resource Allocation worker could not start: ${safeErrorName(error)}\n`);
+  process.stderr.write(`Resource Allocation worker could not start: ${safeWorkerErrorCode(error)}\n`);
   process.exitCode = 1;
 });

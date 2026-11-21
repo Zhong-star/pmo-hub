@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
+import { handleTabListKeyDown } from './tabNavigation';
 import {
   AdministrationRequestError,
   createAdminResource,
@@ -277,6 +278,7 @@ function Administration({ localUserId, onAccessDenied }: AdministrationProps) {
             aria-controls="admin-record-panel"
             tabIndex={selectedCollection === collection ? 0 : -1}
             onClick={() => openCollection(collection)}
+            onKeyDown={handleTabListKeyDown}
           >
             {collectionLabels[collection]}
           </button>

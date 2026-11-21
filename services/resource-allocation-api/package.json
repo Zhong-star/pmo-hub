@@ -8,6 +8,7 @@
     "start": "node dist/main.js",
     "worker": "npm run build && node dist/submissions/run-submission-worker.js",
     "worker:once": "npm run build && node dist/submissions/run-submission-worker.js --once",
+    "worker:status": "npm run build && node dist/workers/check-resource-allocation-worker-status.js",
     "migration:run": "npm run build && typeorm migration:run -d dist/database/data-source.js",
     "prepare:first-admin": "npm run build && node dist/database/prepare-first-admin.js",
     "lint": "eslint src test",

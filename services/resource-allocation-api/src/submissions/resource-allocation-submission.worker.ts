@@ -81,7 +81,7 @@ export class ResourceAllocationSubmissionWorker {
           LIMIT 1
         ), claimed AS (
           UPDATE resource_submission_lines AS line
-          SET status = 'PROCESSING', claim_token = $1::uuid, claimed_at = clock_timestamp()
+          SET status = 'PROCESSING', claim_token = $1::uuid, claimed_at = clock_timestamp(), processing_attempts = processing_attempts + 1
           FROM ready
           WHERE line.id = ready.id
           RETURNING line.id
