@@ -20,6 +20,7 @@ async function installModuleFixtures(page: Page, person = user) {
   await page.route(`${apiRoot}/initiatives**`, async (route) => route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 100 } } }));
   await page.route(`${apiRoot}/submissions**`, async (route) => route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 50 } } }));
   await page.route(`${apiRoot}/requests**`, async (route) => route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 50 } } }));
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 50 } } }));
 }
 
 function notification(id: string, title: string, available: boolean, readAt: string | null = null) {
@@ -179,6 +180,52 @@ test('opens an owned notification in the scoped request detail view', async ({ p
   const requestDetail = page.getByRole('region', { name: 'ITDM-70' });
   await expect(requestDetail).toBeVisible();
   await expect(requestDetail.getByRole('textbox', { name: /Comment/ })).toHaveValue('Original request text.');
+});
+
+test('opens the scoped team queue from a notice without requesting private owner detail', async ({ page }) => {
+  const groupId = '20000000-0000-4000-8000-000000000076';
+  await installModuleFixtures(page, { ...user, coveredGroupIds: [groupId] });
+  await page.route(`${apiRoot}/access`, (route) => route.fulfill({ json: { person: { ...user, groupId } } }));
+  let ownerDetailRequests = 0;
+  await page.route(`${apiRoot}/requests/${requestId}`, async (route) => {
+    ownerDetailRequests += 1;
+    await route.fulfill({ status: 404 });
+  });
+  await page.route(`${apiRoot}/notifications**`, (route) => route.fulfill({
+    json: {
+      items: [{
+        ...notification(notificationId, 'Review the referred request', true),
+        target: { type: 'REQUEST', requestId, available: true, destination: 'TEAM_DECISION_QUEUE' },
+      }],
+      page: { nextCursor: null, limit: 50 },
+    },
+  }));
+  await page.route(`${apiRoot}/request-queues/team-decision**`, (route) => route.fulfill({
+    json: {
+      items: [{
+        id: requestId,
+        requester: { displayName: 'Jordan Requester', role: 'ALLOCATION_USER' },
+        requestedConditions: {
+          initiativeId: requestId, initiativeCode: 'ITDM-TEAM', initiativeName: 'Team planning',
+          groupId, groupName: 'Platform Engineering', resourceProfileId: requestId,
+          resourceProfileName: 'API Engineering', weeklyHours: 8,
+          startDate: '2027-01-05', endDate: '2027-01-19',
+        },
+        decisionState: 'PENDING_TEAM_DECISION', receivedAt: '2026-11-20T12:00:00Z',
+        stageEnteredAt: '2026-11-20T13:00:00Z', dueAt: null, nextResponsible: [],
+        availableActions: [], impediments: [], version: 2,
+      }],
+      page: { nextCursor: null, limit: 50 },
+    },
+  }));
+
+  await openAsUser(page);
+  await page.getByRole('link', { name: 'Open related request' }).click();
+  await expect(page).toHaveURL(new RegExp(`queue=team-decision&requestId=${requestId}`));
+  const item = page.locator(`[id="resource-request-${requestId}"]`);
+  await expect(item).toContainText('Team planning');
+  await expect(item).toBeFocused();
+  expect(ownerDetailRequests).toBe(0);
 });
 
 test('refreshes every 30 seconds while visible and when the user returns to the tab', async ({ page }) => {

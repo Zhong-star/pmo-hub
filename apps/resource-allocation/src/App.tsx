@@ -8,6 +8,7 @@ import {
 } from './accessApi';
 import { Administration } from './Administration';
 import { NotificationsInbox } from './NotificationsInbox';
+import { RequestQueues } from './RequestQueues';
 import { SubmissionWorkspace } from './SubmissionWorkspace';
 import { RequestWorkspace } from './RequestWorkspace';
 
@@ -44,6 +45,7 @@ export function App() {
       predicate: (query) => query.queryKey[0] === 'resource-allocation-access'
         || query.queryKey[0] === 'resource-allocation-admin'
         || query.queryKey[0] === 'resource-allocation-selections'
+        || query.queryKey[0] === 'resource-allocation-request-queues'
         || query.queryKey[0] === 'resource-allocation-submissions'
         || query.queryKey[0] === 'resource-allocation-notifications'
         || query.queryKey[0] === 'resource-allocation-requests',
@@ -84,6 +86,7 @@ export function App() {
       queryClient.removeQueries({
         predicate: (query) => query.queryKey[0] === 'resource-allocation-admin'
           || query.queryKey[0] === 'resource-allocation-selections'
+          || query.queryKey[0] === 'resource-allocation-request-queues'
           || query.queryKey[0] === 'resource-allocation-submissions'
           || query.queryKey[0] === 'resource-allocation-notifications'
           || query.queryKey[0] === 'resource-allocation-requests',
@@ -92,6 +95,7 @@ export function App() {
     }
     if (profileId && accessConfirmedNonAdmin) {
       queryClient.removeQueries({ queryKey: ['resource-allocation-admin', profileId] });
+      queryClient.removeQueries({ queryKey: ['resource-allocation-request-queues', profileId] });
     }
   }, [accessConfirmedNonAdmin, accessDenied, profileId, queryClient]);
 
@@ -116,6 +120,12 @@ export function App() {
     });
     void refetchAccess();
   }, [queryClient, refetchAccess]);
+
+  const handleQueueAccessDenied = useCallback(() => {
+    queryClient.removeQueries({ queryKey: ['resource-allocation-request-queues', profileId] });
+    queryClient.removeQueries({ queryKey: ['resource-allocation-requests', profileId] });
+    void refetchAccess();
+  }, [profileId, queryClient, refetchAccess]);
 
   const heading = profileId === null || (accessQuery.isError && isMissingProfile(accessQuery.error))
     ? 'Select a local profile in PMO Hub'
@@ -196,6 +206,16 @@ export function App() {
               </div>
             )}
           </section>
+
+          {canUseModuleData && profileId && (
+            <RequestQueues
+              key={`${profileId}:${generation}`}
+              localUserId={profileId}
+              role={accessQuery.data.person.role}
+              groupId={accessQuery.data.person.groupId ?? null}
+              onAccessDenied={handleQueueAccessDenied}
+            />
+          )}
 
           {canUseModuleData && profileId && (
             <SubmissionWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />

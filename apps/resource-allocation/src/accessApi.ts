@@ -16,6 +16,7 @@ export interface ResourcePersonAccess {
   localUserId: string;
   displayName: string;
   role: ResourceAllocationRole;
+  groupId?: string | null;
   coveredGroupIds: string[];
 }
 
