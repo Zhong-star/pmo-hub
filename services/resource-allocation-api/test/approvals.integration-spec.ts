@@ -272,7 +272,7 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
       .expect(200);
     expect(detail.body).toMatchObject({
       dueAt: decision.body.dueAt,
-      availableActions: ['ACCEPT'],
+      availableActions: ['ACCEPT', 'CONTEST'],
       allocation: null,
       decisionState: 'APPROVED_WITH_CHANGES',
       approvedConditions: decision.body.approvedConditions,
