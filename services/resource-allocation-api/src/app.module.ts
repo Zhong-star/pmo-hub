@@ -17,6 +17,8 @@ import { ResourceAllocationRequestQueueService } from './requests/resource-alloc
 import { ResourceAllocationRequestAuditController, ResourceAllocationRequestController } from './requests/resource-allocation-request.controller';
 import { ResourceAllocationRequestService } from './requests/resource-allocation-request.service';
 import { ResourceAllocationDeadlineWorker } from './deadlines/resource-allocation-deadline.worker';
+import { ResourceAllocationDecisionController } from './decisions/resource-allocation-decision.controller';
+import { ResourceAllocationDecisionService } from './decisions/resource-allocation-decision.service';
 
 @Module({
   controllers: [
@@ -30,6 +32,7 @@ import { ResourceAllocationDeadlineWorker } from './deadlines/resource-allocatio
     ResourceAllocationRequestQueueController,
     ResourceAllocationRequestController,
     ResourceAllocationRequestAuditController,
+    ResourceAllocationDecisionController,
   ],
   providers: [
     ResourceAllocationAccessService,
@@ -40,6 +43,7 @@ import { ResourceAllocationDeadlineWorker } from './deadlines/resource-allocatio
     ResourceAllocationRequestQueueService,
     ResourceAllocationRequestService,
     ResourceAllocationDeadlineWorker,
+    ResourceAllocationDecisionService,
   ],
 })
 export class AppModule {

@@ -14,6 +14,7 @@ import {
   type RequestFilters,
   type ResourceRequestItem,
 } from './requestApi';
+import { DeniedRequestResponse } from './DeniedRequestResponse';
 
 interface RequestWorkspaceProps {
   localUserId: string;
@@ -497,6 +498,19 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
                   <span><strong>Waiting expiry</strong>{formatTimestamp(currentItem.expirationDueAt)}</span>
                   <span><strong>Version</strong>{currentItem.version}</span>
                 </div>
+                {(currentItem.decisionState === 'DENIED' || currentItem.decisionState === 'PRE_N3' || currentItem.decisionState === 'CANCELLED') && (
+                  <DeniedRequestResponse
+                    localUserId={localUserId}
+                    item={currentItem}
+                    disabled={selectedRequest.isFetching || requestsQuery.isError || formVersionChanged}
+                    onChanged={(updated) => {
+                      queryClient.setQueryData([...REQUESTS_QUERY_ROOT, localUserId, 'detail', updated.id], updated);
+                      setFormVersion(updated.version);
+                      void invalidateRequestSurfaces(updated.id);
+                    }}
+                    onAccessDenied={onAccessDenied}
+                  />
+                )}
                 {currentItem.decisionState !== 'WAITING_FOR_PRESENTATION' && (
                   <p className="field-help request-readonly-message">This request can no longer be edited or withdrawn because it has left the presentation-waiting stage.</p>
                 )}

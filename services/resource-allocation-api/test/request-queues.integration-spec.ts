@@ -197,7 +197,7 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
       decisionState: 'WAITING_FOR_PRESENTATION',
       dueAt: expect.any(String),
       nextResponsible: { role: 'ALLOCATION_ADMIN' },
-      availableActions: ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE'],
+      availableActions: ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', 'DENY'],
     });
 
     const firstPage = await request(app!.getHttpServer())
@@ -215,6 +215,20 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
       .get(`/api/resource-allocation/v1/request-queues/presentation?groupId=${fixture.groupA.id}&cursor=${encodeURIComponent(firstPage.body.page.nextCursor)}`)
       .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
       .expect(400);
+  });
+
+  it('projects DENY only for a current in-scope decision maker who is not the requester', async () => {
+    const fixture = await setup();
+    const otherRequest = await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'PENDING_TEAM_DECISION' });
+    const ownRequest = await createRequest(fixture.moderatorA, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'PENDING_TEAM_DECISION' });
+
+    const response = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/request-queues/team-decision')
+      .set('X-PMO-Local-User-ID', fixture.moderatorA.localUserId)
+      .expect(200);
+
+    expect(response.body.items.find((item: { id: string }) => item.id === otherRequest.id).availableActions).toEqual(['DENY']);
+    expect(response.body.items.find((item: { id: string }) => item.id === ownRequest.id).availableActions).toEqual([]);
   });
 
   it('limits leadership queues to the actor’s active scope, including an Admin’s assigned group', async () => {

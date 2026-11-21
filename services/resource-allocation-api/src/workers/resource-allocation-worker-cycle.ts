@@ -3,7 +3,21 @@ export interface ResourceAllocationWorkerJob {
   runBatch(): Promise<unknown>;
 }
 
+export interface ResourceAllocationWorkerActions {
+  processSubmissions(): Promise<unknown>;
+  processWaitingDeadlines(): Promise<unknown>;
+  expireDeniedRequests(): Promise<unknown>;
+}
+
 export const RESOURCE_ALLOCATION_WORKER_INTERVAL_MS = 10_000;
+
+export function createResourceAllocationWorkerJobs(actions: ResourceAllocationWorkerActions): ResourceAllocationWorkerJob[] {
+  return [
+    { name: 'submission', runBatch: actions.processSubmissions },
+    { name: 'waiting deadline', runBatch: actions.processWaitingDeadlines },
+    { name: 'denied response deadline', runBatch: actions.expireDeniedRequests },
+  ];
+}
 
 /** Runs each durable job independently so one failing subsystem does not starve the remaining work. */
 export async function runResourceAllocationWorkerCycle(

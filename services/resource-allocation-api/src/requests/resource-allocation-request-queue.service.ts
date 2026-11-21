@@ -162,7 +162,7 @@ export class ResourceAllocationRequestQueueService {
       }) : null;
 
       return {
-        items: selected.map((row) => this.toQueueItem(row, queue)),
+        items: selected.map((row) => this.toQueueItem(row, queue, actor.id)),
         page: { nextCursor, limit: pageSize },
       };
     } catch (error) {
@@ -371,7 +371,8 @@ export class ResourceAllocationRequestQueueService {
     return { decisionState: 'PENDING_TEAM_DECISION', groupIds: effectiveGroupIds };
   }
 
-  private toQueueItem(row: QueueRow, queue: RequestQueueCode) {
+  private toQueueItem(row: QueueRow, queue: RequestQueueCode, actorId: string) {
+    const canDecide = row.requester_snapshot.personId !== actorId;
     return {
       id: row.id,
       requester: row.requester_snapshot,
@@ -384,9 +385,11 @@ export class ResourceAllocationRequestQueueService {
       nextResponsible: queue === 'team-decision'
         ? row.next_responsible
         : { role: 'ALLOCATION_ADMIN' },
-      availableActions: queue === 'presentation' && !row.deadline_passed
-        ? ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE']
-        : [],
+      availableActions: queue === 'presentation'
+        ? !row.deadline_passed
+          ? ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', ...(canDecide ? ['DENY'] : [])]
+          : []
+        : canDecide ? ['DENY'] : [],
       version: Number(row.version),
     };
   }

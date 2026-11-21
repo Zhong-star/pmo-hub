@@ -458,6 +458,14 @@ h1 {
 .request-metadata span { display: grid; gap: 5px; color: #526979; font-size: 13px; }
 .request-metadata strong { color: #263d4b; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
 .request-readonly-message { margin: 0; padding: 12px 14px; border-radius: 8px; background: #f3f7f8; }
+.request-denial-response { display: grid; gap: 12px; padding: 18px; border: 1px solid #cbd8de; border-radius: 10px; background: #f8fafb; }
+.request-denial-response h4, .request-response-form h5 { margin: 0; color: #193b4a; font-size: 16px; }
+.request-denial-response > .field-help { margin: 0; }
+.request-denial-explanation, .request-denial-response-event { padding: 14px; border-radius: 8px; background: #fff; color: #263d4b; line-height: 1.5; }
+.request-denial-explanation p, .request-denial-response-event p { margin: 5px 0; }
+.request-response-form { display: grid; gap: 14px; padding-top: 14px; border-top: 1px solid #dce5e9; }
+.request-response-form > p { margin: -8px 0 0; color: #526979; font-size: 13px; line-height: 1.5; }
+.request-response-form textarea { min-height: 110px; }
 .request-edit-form { display: grid; gap: 18px; }
 .request-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
 .request-comment-field { grid-column: 1 / -1; }
@@ -582,6 +590,7 @@ h1 {
 .request-queue-action-form > p { margin-top: -10px; color: #526979; font-size: 13px; line-height: 1.5; }
 .request-queue-reason-field { grid-column: 1 / -1; }
 .request-queue-action-form .form-actions { grid-column: 1 / -1; }
+.request-denial-action { margin-top: 20px; }
 .request-queue-load-more { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 18px; }
 .request-queue-load-more .form-error { margin: 0; }
 
