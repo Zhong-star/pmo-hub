@@ -12,6 +12,7 @@ import { RESOURCE_ALLOCATION_DATA_SOURCE } from '../src/database/database.module
 import { ResourcePerson } from '../src/people/resource-person.entity';
 import { ResourceAllocationRole } from '../src/people/resource-allocation-role';
 import { ResourceInitiative } from '../src/initiatives/resource-initiative.entity';
+import { ResourceAllocationSubmissionWorker } from '../src/submissions/resource-allocation-submission.worker';
 
 describe('Tech Resource Allocation administration (#59)', () => {
   let container: StartedPostgreSqlContainer | undefined;
@@ -435,5 +436,177 @@ describe('Tech Resource Allocation administration (#59)', () => {
     });
     expect(activeAdmins).toBe(1);
     expect(responses.find(({ status }) => status === 422)?.body.code).toBe('LAST_ACTIVE_ADMIN_REQUIRED');
+  });
+
+  it('notifies all active Admins globally and target group leadership when deactivating a person with active commitments', async () => {
+    const actingAdmin = await addPerson('acting-admin', ResourceAllocationRole.Admin);
+    const unassignedAdmin = await addPerson('unassigned-admin', ResourceAllocationRole.Admin);
+    const inactiveAdmin = await dataSource!.getRepository(ResourcePerson).save(dataSource!.getRepository(ResourcePerson).create({
+      localUserId: 'inactive-admin',
+      displayName: 'inactive-admin',
+      email: 'inactive-admin@example.test',
+      role: ResourceAllocationRole.Admin,
+      active: false,
+      coveredGroupIds: [],
+      groupId: null,
+    }));
+
+    const targetSupervisor = await addPerson('target-supervisor', ResourceAllocationRole.Supervisor);
+    const targetManager = await addPerson('target-manager', ResourceAllocationRole.Manager);
+    const otherSupervisor = await addPerson('other-supervisor', ResourceAllocationRole.Supervisor);
+    const otherManager = await addPerson('other-manager', ResourceAllocationRole.Manager);
+
+    const createGroup = async (name: string, supervisorId: string, managerId: string) => {
+      const response = await request(app!.getHttpServer())
+        .post('/api/resource-allocation/v1/admin/groups')
+        .set('X-PMO-Local-User-ID', actingAdmin.localUserId)
+        .set('Idempotency-Key', randomUUID())
+        .send({ name, supervisorId, managerId })
+        .expect(201);
+      return response.body.id as string;
+    };
+
+    const targetGroupId = await createGroup('Target Group', targetSupervisor.id, targetManager.id);
+    const otherGroupId = await createGroup('Other Group', otherSupervisor.id, otherManager.id);
+
+    const otherGroupAdmin = await addPerson('other-group-admin', ResourceAllocationRole.Admin, otherGroupId);
+    const targetModerator = await addPerson('target-moderator', ResourceAllocationRole.Moderator, targetGroupId);
+    const otherModerator = await addPerson('other-moderator', ResourceAllocationRole.Moderator, otherGroupId);
+    await dataSource!.getRepository(ResourcePerson).save(dataSource!.getRepository(ResourcePerson).create({
+      localUserId: 'inactive-target-moderator',
+      displayName: 'inactive-target-moderator',
+      email: 'inactive-target-moderator@example.test',
+      role: ResourceAllocationRole.Moderator,
+      active: false,
+      coveredGroupIds: [],
+      groupId: targetGroupId,
+    }));
+
+    const requester = await addPerson('commitment-requester', ResourceAllocationRole.User, targetGroupId);
+    const assignee = await addPerson('commitment-assignee', ResourceAllocationRole.User, targetGroupId);
+
+    const profileRes = await request(app!.getHttpServer())
+      .post('/api/resource-allocation/v1/admin/resource-profiles')
+      .set('X-PMO-Local-User-ID', actingAdmin.localUserId)
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: 'Backend Dev', groupId: targetGroupId })
+      .expect(201);
+    const initiativeRes = await request(app!.getHttpServer())
+      .post('/api/resource-allocation/v1/admin/initiatives')
+      .set('X-PMO-Local-User-ID', actingAdmin.localUserId)
+      .set('Idempotency-Key', randomUUID())
+      .send({ code: 'ITDM-073', name: 'Global Admin Notice' })
+      .expect(201);
+
+    const futureDate = (days: number) => {
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+      const [year, month, day] = today.split('-').map(Number);
+      return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+    };
+
+    const activeAttemptKey = randomUUID();
+    const endedAttemptKey = randomUUID();
+    const submission = await request(app!.getHttpServer())
+      .post('/api/resource-allocation/v1/submissions')
+      .set('X-PMO-Local-User-ID', requester.localUserId)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        initiativeId: initiativeRes.body.id,
+        category: 'EXECUTION_PROJECT',
+        lines: [
+          {
+            attemptKey: activeAttemptKey,
+            groupId: targetGroupId,
+            resourceProfileId: profileRes.body.id,
+            startDate: futureDate(1),
+            endDate: futureDate(10),
+            weeklyHours: 16,
+          },
+          {
+            attemptKey: endedAttemptKey,
+            groupId: targetGroupId,
+            resourceProfileId: profileRes.body.id,
+            startDate: futureDate(0),
+            endDate: futureDate(5),
+            weeklyHours: 8,
+          },
+        ],
+      })
+      .expect(202);
+    await app!.get(ResourceAllocationSubmissionWorker).processBatch(2);
+    const lines = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/submissions/${submission.body.id}/lines`)
+      .set('X-PMO-Local-User-ID', requester.localUserId)
+      .expect(200);
+    const activeRequestId = lines.body.items.find((line: { attemptKey: string }) => line.attemptKey === activeAttemptKey).requestId as string;
+    const endedRequestId = lines.body.items.find((line: { attemptKey: string }) => line.attemptKey === endedAttemptKey).requestId as string;
+
+    const approveActive = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${activeRequestId}/approvals`)
+      .set('X-PMO-Local-User-ID', actingAdmin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Correlation-ID', randomUUID())
+      .send({ personId: assignee.id })
+      .expect(200);
+    expect(approveActive.body.decisionState).toBe('APPROVED');
+
+    const approveEnded = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${endedRequestId}/approvals`)
+      .set('X-PMO-Local-User-ID', actingAdmin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Correlation-ID', randomUUID())
+      .send({ personId: assignee.id })
+      .expect(200);
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/allocations/${approveEnded.body.allocation.id}/completions`)
+      .set('X-PMO-Local-User-ID', actingAdmin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Correlation-ID', randomUUID())
+      .send({ reason: 'Already completed before deactivation.' })
+      .expect(200);
+
+    await request(app!.getHttpServer())
+      .patch(`/api/resource-allocation/v1/admin/people/${assignee.id}`)
+      .set('X-PMO-Local-User-ID', actingAdmin.localUserId)
+      .set('If-Match', `"${assignee.version}"`)
+      .set('Content-Type', 'application/merge-patch+json')
+      .send({ active: false })
+      .expect(200);
+
+    const activeNotices = await dataSource!.query(`
+      SELECT recipient_id
+      FROM resource_allocation_notifications
+      WHERE source_request_id = $1 AND event_code LIKE 'PERSON_DEACTIVATED_%'
+      ORDER BY recipient_id
+    `, [activeRequestId]) as Array<{ recipient_id: string }>;
+    expect(activeNotices.map((notice) => notice.recipient_id).sort()).toEqual([
+      unassignedAdmin.id,
+      otherGroupAdmin.id,
+      targetModerator.id,
+      targetSupervisor.id,
+      targetManager.id,
+    ].sort());
+    expect(activeNotices.map((notice) => notice.recipient_id)).not.toContain(actingAdmin.id);
+    expect(activeNotices.map((notice) => notice.recipient_id)).not.toContain(inactiveAdmin.id);
+    expect(activeNotices.map((notice) => notice.recipient_id)).not.toContain(otherModerator.id);
+
+    const endedNotices = await dataSource!.query(`
+      SELECT recipient_id
+      FROM resource_allocation_notifications
+      WHERE source_request_id = $1 AND event_code LIKE 'PERSON_DEACTIVATED_%'
+    `, [endedRequestId]);
+    expect(endedNotices).toHaveLength(0);
+
+    const [unassignedInbox, otherAdminInbox, actingInbox] = await Promise.all([
+      request(app!.getHttpServer()).get('/api/resource-allocation/v1/notifications').set('X-PMO-Local-User-ID', unassignedAdmin.localUserId).expect(200),
+      request(app!.getHttpServer()).get('/api/resource-allocation/v1/notifications').set('X-PMO-Local-User-ID', otherGroupAdmin.localUserId).expect(200),
+      request(app!.getHttpServer()).get('/api/resource-allocation/v1/notifications').set('X-PMO-Local-User-ID', actingAdmin.localUserId).expect(200),
+    ]);
+    expect(unassignedInbox.body.items.some((item: { eventCode: string }) => item.eventCode.startsWith('PERSON_DEACTIVATED_'))).toBe(true);
+    expect(otherAdminInbox.body.items.some((item: { eventCode: string }) => item.eventCode.startsWith('PERSON_DEACTIVATED_'))).toBe(true);
+    expect(actingInbox.body.items.some((item: { eventCode: string }) => item.eventCode.startsWith('PERSON_DEACTIVATED_'))).toBe(false);
   });
 });

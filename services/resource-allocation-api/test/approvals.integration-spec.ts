@@ -306,6 +306,108 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
     expect(await dataSource!.query("SELECT id FROM resource_request_history WHERE request_id = $1 AND action = 'CHANGES_ACCEPTED'", [resourceRequest.id])).toHaveLength(1);
   });
 
+  it('persists decidedByPersonId and notifies only allocated person and decider on explicit acceptance (no self-notice)', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative, 'PENDING_TEAM_DECISION');
+    const proposal = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.manager.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        personId: fixture.assignee.id,
+        startDate: '2027-02-01',
+        endDate: '2027-02-19',
+        weeklyHours: 15,
+        explanation: 'Schedule adjusted to team capacity.',
+      })
+      .expect(200);
+    expect(proposal.body.approvedConditions.decidedByPersonId).toBe(fixture.manager.id);
+
+    const accepted = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/acceptances`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('If-Match', '"2"')
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Correlation-ID', randomUUID())
+      .send({})
+      .expect(200);
+
+    const eventCode = `REQUEST_CHANGES_ACCEPTED_${accepted.body.version}`;
+    const notices = await dataSource!.query(
+      'SELECT recipient_id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code = $2 ORDER BY recipient_id',
+      [resourceRequest.id, eventCode],
+    ) as Array<{ recipient_id: string }>;
+    expect(notices.map((notice) => notice.recipient_id).sort()).toEqual([fixture.assignee.id, fixture.manager.id].sort());
+
+    const [requesterInbox, assigneeInbox, deciderInbox] = await Promise.all([
+      request(app!.getHttpServer()).get('/api/resource-allocation/v1/notifications').set('X-PMO-Local-User-ID', fixture.requester.localUserId).expect(200),
+      request(app!.getHttpServer()).get('/api/resource-allocation/v1/notifications').set('X-PMO-Local-User-ID', fixture.assignee.localUserId).expect(200),
+      request(app!.getHttpServer()).get('/api/resource-allocation/v1/notifications').set('X-PMO-Local-User-ID', fixture.manager.localUserId).expect(200),
+    ]);
+    expect(requesterInbox.body.items.filter((item: { eventCode: string }) => item.eventCode === eventCode)).toHaveLength(0);
+    expect(assigneeInbox.body.items.filter((item: { eventCode: string }) => item.eventCode === eventCode)).toHaveLength(1);
+    expect(deciderInbox.body.items.filter((item: { eventCode: string }) => item.eventCode === eventCode)).toHaveLength(1);
+
+    // When requester is also the allocated person, explicit acceptance still suppresses self-notification.
+    const selfAllocatedRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative, 'PENDING_TEAM_DECISION');
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${selfAllocatedRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.manager.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        personId: fixture.requester.id,
+        startDate: '2027-02-01',
+        endDate: '2027-02-19',
+        weeklyHours: 15,
+        explanation: 'Requester assigned with adjusted dates.',
+      })
+      .expect(200);
+    const selfAccepted = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${selfAllocatedRequest.id}/acceptances`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('If-Match', '"2"')
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Correlation-ID', randomUUID())
+      .send({})
+      .expect(200);
+    const selfNotices = await dataSource!.query(
+      'SELECT recipient_id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code = $2',
+      [selfAllocatedRequest.id, `REQUEST_CHANGES_ACCEPTED_${selfAccepted.body.version}`],
+    ) as Array<{ recipient_id: string }>;
+    expect(selfNotices.map((notice) => notice.recipient_id)).toEqual([fixture.manager.id]);
+
+    // When decider === allocated person, explicit acceptance emits a single deduplicated notice.
+    const deciderAssigneeRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative, 'PENDING_TEAM_DECISION');
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${deciderAssigneeRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        personId: fixture.admin.id,
+        startDate: '2027-02-01',
+        endDate: '2027-02-19',
+        weeklyHours: 15,
+        explanation: 'Decider is also the assigned person.',
+      })
+      .expect(200);
+    const overlapAccepted = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${deciderAssigneeRequest.id}/acceptances`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('If-Match', '"2"')
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Correlation-ID', randomUUID())
+      .send({})
+      .expect(200);
+    const overlapNotices = await dataSource!.query(
+      'SELECT recipient_id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code = $2',
+      [deciderAssigneeRequest.id, `REQUEST_CHANGES_ACCEPTED_${overlapAccepted.body.version}`],
+    ) as Array<{ recipient_id: string }>;
+    expect(overlapNotices.map((notice) => notice.recipient_id)).toEqual([fixture.admin.id]);
+  });
+
   it('automatically confirms an eligible proposal at its deadline and suppresses the overdue reminder', async () => {
     const fixture = await setup();
     const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
@@ -338,6 +440,137 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
     expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(1);
     expect(await dataSource!.query("SELECT id FROM resource_request_history WHERE request_id = $1 AND action = 'AUTO_ACCEPTED_CHANGES'", [resourceRequest.id])).toHaveLength(1);
     expect(await dataSource!.query("SELECT id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code LIKE 'REQUEST_CHANGES_REMINDER_48H_%'", [resourceRequest.id])).toHaveLength(0);
+  });
+
+  it('notifies requester, allocated person, and decider deduplicated on automatic acceptance, with history fallback for legacy proposals', async () => {
+    const fixture = await setup();
+    const worker = new ResourceAllocationProposalWorker(app!.get(ResourceAllocationApprovalService));
+
+    // 1. Distinct requester, allocated person, and decider -> 3 notifications
+    const distinctRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative, 'PENDING_TEAM_DECISION');
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${distinctRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.manager.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        personId: fixture.assignee.id,
+        startDate: '2027-02-01',
+        endDate: '2027-02-19',
+        weeklyHours: 15,
+        explanation: 'Distinct roles proposal.',
+      })
+      .expect(200);
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET decision_response_due_at = clock_timestamp() - INTERVAL '1 second'
+      WHERE id = $1
+    `, [distinctRequest.id]);
+    expect(await worker.processBatch()).toBe(1);
+    const savedDistinct = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: distinctRequest.id });
+    const distinctNotices = await dataSource!.query(
+      'SELECT recipient_id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code = $2 ORDER BY recipient_id',
+      [distinctRequest.id, `REQUEST_CHANGES_AUTO_ACCEPTED_${savedDistinct.version}`],
+    ) as Array<{ recipient_id: string }>;
+    expect(distinctNotices.map((notice) => notice.recipient_id).sort()).toEqual([
+      fixture.requester.id,
+      fixture.assignee.id,
+      fixture.manager.id,
+    ].sort());
+
+    // 2. Overlapping decider === allocated person -> 2 deduplicated notifications (requester + groupAdmin)
+    const overlapRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative, 'PENDING_TEAM_DECISION');
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${overlapRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.groupAdmin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        personId: fixture.groupAdmin.id,
+        startDate: '2027-02-01',
+        endDate: '2027-02-19',
+        weeklyHours: 15,
+        explanation: 'Group admin proposes self as assignee.',
+      })
+      .expect(200);
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET decision_response_due_at = clock_timestamp() - INTERVAL '1 second'
+      WHERE id = $1
+    `, [overlapRequest.id]);
+    expect(await worker.processBatch()).toBe(1);
+    const savedOverlap = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: overlapRequest.id });
+    const overlapNotices = await dataSource!.query(
+      'SELECT recipient_id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code = $2 ORDER BY recipient_id',
+      [overlapRequest.id, `REQUEST_CHANGES_AUTO_ACCEPTED_${savedOverlap.version}`],
+    ) as Array<{ recipient_id: string }>;
+    expect(overlapNotices.map((notice) => notice.recipient_id).sort()).toEqual([
+      fixture.requester.id,
+      fixture.groupAdmin.id,
+    ].sort());
+
+    // 3. Legacy proposal missing decidedByPersonId resolves decider from the latest APPROVAL_CHANGES_PROPOSED history event
+    const legacyRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative, 'PENDING_TEAM_DECISION');
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${legacyRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        personId: fixture.assignee.id,
+        startDate: '2027-02-01',
+        endDate: '2027-02-19',
+        weeklyHours: 15,
+        explanation: 'First proposal by admin.',
+      })
+      .expect(200);
+    // Trigger real revalidation + new proposal by supervisor, then strip decidedByPersonId to simulate a legacy record
+    const assigneeRecord = await dataSource!.getRepository(ResourcePerson).findOneByOrFail({ id: fixture.assignee.id });
+    await request(app!.getHttpServer())
+      .patch(`/api/resource-allocation/v1/admin/people/${fixture.assignee.id}`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', `"${assigneeRecord.version}"`)
+      .set('Content-Type', 'application/merge-patch+json')
+      .send({ active: false })
+      .expect(200);
+    await request(app!.getHttpServer())
+      .patch(`/api/resource-allocation/v1/admin/people/${fixture.assignee.id}`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', `"${assigneeRecord.version + 1}"`)
+      .set('Content-Type', 'application/merge-patch+json')
+      .send({ active: true })
+      .expect(200);
+    const revalidating = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: legacyRequest.id });
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${legacyRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.supervisor.localUserId)
+      .set('If-Match', `"${revalidating.version}"`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        personId: fixture.assignee.id,
+        startDate: '2027-02-05',
+        endDate: '2027-02-22',
+        weeklyHours: 16,
+        explanation: 'Latest proposal by supervisor.',
+      })
+      .expect(200);
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET approved_conditions = approved_conditions - 'decidedByPersonId',
+          decision_response_due_at = clock_timestamp() - INTERVAL '1 second'
+      WHERE id = $1
+    `, [legacyRequest.id]);
+    expect(await worker.processBatch()).toBe(1);
+    const savedLegacy = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: legacyRequest.id });
+    const legacyNotices = await dataSource!.query(
+      'SELECT recipient_id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code = $2 ORDER BY recipient_id',
+      [legacyRequest.id, `REQUEST_CHANGES_AUTO_ACCEPTED_${savedLegacy.version}`],
+    ) as Array<{ recipient_id: string }>;
+    expect(legacyNotices.map((notice) => notice.recipient_id).sort()).toEqual([
+      fixture.requester.id,
+      fixture.assignee.id,
+      fixture.supervisor.id,
+    ].sort());
   });
 
   it('rolls back the proposal, history, notice, and idempotency receipt when notice persistence fails', async () => {
