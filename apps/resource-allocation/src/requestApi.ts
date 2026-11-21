@@ -30,6 +30,36 @@ export interface RequestedConditions {
   comment?: string;
 }
 
+export interface ApprovedRequestConditions {
+  personId: string;
+  personName: string;
+  resourceProfileId: string;
+  resourceProfileName: string;
+  groupId: string;
+  groupName: string;
+  initiativeId: string;
+  initiativeCode: string;
+  initiativeName: string;
+  startDate: string;
+  endDate: string;
+  weeklyHours: number;
+  explanation?: string;
+}
+
+export interface RequestAllocation {
+  id: string;
+  person: { personId: string; displayName: string };
+  group: { id: string; name: string };
+  initiative: { id: string; code: string; name: string };
+  resourceProfile: { id: string; name: string };
+  startDate: string;
+  endDate: string;
+  weeklyHours: number;
+  state: string;
+  approvedAt: string;
+  version: number;
+}
+
 export interface ResourceRequestItem {
   id: string;
   requesterSnapshot: { personId: string; displayName: string; role: string };
@@ -38,6 +68,8 @@ export interface ResourceRequestItem {
   receivedAt: string;
   stageEnteredAt: string;
   expirationDueAt: string;
+  approvedConditions?: ApprovedRequestConditions;
+  allocation?: RequestAllocation;
   version: number;
 }
 

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getSelectionCollection, type SelectionItem } from './submissionApi';
+import type { ApprovedRequestConditions, RequestAllocation } from './requestApi';
 
 export const REQUEST_QUEUES_QUERY_ROOT = ['resource-allocation-request-queues'] as const;
 const API_ROOT = '/api/resource-allocation/v1';
@@ -29,6 +30,8 @@ export interface RequestQueueItem {
   impediments?: string[];
   nextResponsible: { role?: string } | Array<{ personId: string; displayName: string; role: string }>;
   availableActions: string[];
+  approvedConditions?: ApprovedRequestConditions;
+  allocation?: RequestAllocation;
   version: number;
 }
 
@@ -43,6 +46,13 @@ export interface QueueSelections {
   groups: SelectionItem[];
   profiles: SelectionItem[];
   initiatives: SelectionItem[];
+  people: QueuePersonSelection[];
+}
+
+export interface QueuePersonSelection {
+  id: string;
+  displayName: string;
+  groupId: string | null;
 }
 
 export interface RequestActionProblem {
@@ -102,17 +112,36 @@ export async function getRequestQueue(
   }
 }
 
-export async function getQueueSelections(localUserId: string): Promise<QueueSelections> {
+export async function getQueueSelections(localUserId: string, approvalRequestId?: string): Promise<QueueSelections> {
   try {
-    const [groups, profiles, initiatives] = await Promise.all([
+    const [groups, profiles, initiatives, people] = await Promise.all([
       loadSelectionPages(localUserId, 'groups'),
       loadSelectionPages(localUserId, 'resource-profiles'),
       loadSelectionPages(localUserId, 'initiatives'),
+      approvalRequestId ? loadPeoplePages(localUserId, approvalRequestId) : Promise.resolve([]),
     ]);
-    return { groups, profiles, initiatives };
+    return { groups, profiles, initiatives, people };
   } catch (error) {
     return throwRequestError(error);
   }
+}
+
+async function loadPeoplePages(localUserId: string, requestId: string): Promise<QueuePersonSelection[]> {
+  const people: QueuePersonSelection[] = [];
+  let cursor: string | null = null;
+  do {
+    try {
+      const response: { data: { items: QueuePersonSelection[]; page: { nextCursor: string | null } } } = await api.get(`${API_ROOT}/requests/${encodeURIComponent(requestId)}/approval-candidates`, {
+        headers: headers(localUserId),
+        params: { limit: 50, ...(cursor ? { cursor } : {}) },
+      });
+      people.push(...response.data.items);
+      cursor = response.data.page.nextCursor;
+    } catch (error) {
+      return throwRequestError(error);
+    }
+  } while (cursor !== null);
+  return people;
 }
 
 async function loadSelectionPages(
@@ -132,7 +161,7 @@ async function loadSelectionPages(
 async function postAction<T>(
   localUserId: string,
   requestId: string,
-  action: 'referrals' | 'reference-corrections' | 'administrative-removals',
+  action: 'referrals' | 'reference-corrections' | 'administrative-removals' | 'approvals',
   version: number,
   idempotencyKey: string,
   body: Record<string, string | undefined>,
@@ -143,6 +172,7 @@ async function postAction<T>(
         ...headers(localUserId),
         'If-Match': `"${version}"`,
         'Idempotency-Key': idempotencyKey,
+        'X-Correlation-ID': crypto.randomUUID(),
       },
     });
     return response.data;
@@ -153,6 +183,16 @@ async function postAction<T>(
 
 export function referRequest(localUserId: string, requestId: string, version: number, idempotencyKey: string) {
   return postAction<RequestActionResult>(localUserId, requestId, 'referrals', version, idempotencyKey, {});
+}
+
+export function approveRequest(
+  localUserId: string,
+  requestId: string,
+  version: number,
+  idempotencyKey: string,
+  approval: { personId: string; resourceProfileId?: string; explanation?: string },
+) {
+  return postAction<RequestActionResult>(localUserId, requestId, 'approvals', version, idempotencyKey, approval);
 }
 
 export function correctRequestReferences(

@@ -497,6 +497,42 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
                   <span><strong>Waiting expiry</strong>{formatTimestamp(currentItem.expirationDueAt)}</span>
                   <span><strong>Version</strong>{currentItem.version}</span>
                 </div>
+                <section className="request-detail-outcome" aria-label="Requested conditions">
+                  <h4>Requested conditions</h4>
+                  <dl className="request-queue-details">
+                    <div><dt>Group</dt><dd>{currentConditions?.groupName ?? 'Group unavailable'}</dd></div>
+                    <div><dt>Resource profile</dt><dd>{currentConditions?.resourceProfileName ?? 'Profile unavailable'}</dd></div>
+                    <div><dt>Period</dt><dd>{currentConditions?.startDate ?? '—'} to {currentConditions?.endDate ?? '—'}</dd></div>
+                    <div><dt>Weekly hours</dt><dd>{currentConditions?.weeklyHours ?? '—'} hours per week</dd></div>
+                  </dl>
+                </section>
+                {currentItem.approvedConditions && (
+                  <section className="request-detail-outcome" aria-label="Approved conditions">
+                    <h4>Approved conditions</h4>
+                    <dl className="request-queue-details">
+                      <div><dt>Approved person</dt><dd>{currentItem.approvedConditions.personName}</dd></div>
+                      <div><dt>Approved resource profile</dt><dd>{currentItem.approvedConditions.resourceProfileName}</dd></div>
+                      <div><dt>Group</dt><dd>{currentItem.approvedConditions.groupName}</dd></div>
+                      <div><dt>Period</dt><dd>{currentItem.approvedConditions.startDate} to {currentItem.approvedConditions.endDate}</dd></div>
+                      <div><dt>Weekly hours</dt><dd>{currentItem.approvedConditions.weeklyHours} hours per week</dd></div>
+                    </dl>
+                    {currentItem.approvedConditions.explanation && <p className="request-queue-comment">Approval explanation: {currentItem.approvedConditions.explanation}</p>}
+                  </section>
+                )}
+                {currentItem.allocation && (
+                  <section className="request-detail-outcome" aria-label="Approved allocation">
+                    <h4>Approved allocation</h4>
+                    <dl className="request-queue-details">
+                      <div><dt>Allocated person</dt><dd>{currentItem.allocation.person.displayName}</dd></div>
+                      <div><dt>Resource profile</dt><dd>{currentItem.allocation.resourceProfile.name}</dd></div>
+                      <div><dt>Group</dt><dd>{currentItem.allocation.group.name}</dd></div>
+                      <div><dt>Period</dt><dd>{currentItem.allocation.startDate} to {currentItem.allocation.endDate}</dd></div>
+                      <div><dt>Weekly hours</dt><dd>{currentItem.allocation.weeklyHours} hours per week</dd></div>
+                      <div><dt>Allocation state</dt><dd>{currentItem.allocation.state.replaceAll('_', ' ')}</dd></div>
+                      <div><dt>Approved</dt><dd>{formatTimestamp(currentItem.allocation.approvedAt)}</dd></div>
+                    </dl>
+                  </section>
+                )}
                 {currentItem.decisionState !== 'WAITING_FOR_PRESENTATION' && (
                   <p className="field-help request-readonly-message">This request can no longer be edited or withdrawn because it has left the presentation-waiting stage.</p>
                 )}

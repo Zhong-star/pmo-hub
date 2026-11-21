@@ -197,7 +197,7 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
       decisionState: 'WAITING_FOR_PRESENTATION',
       dueAt: expect.any(String),
       nextResponsible: { role: 'ALLOCATION_ADMIN' },
-      availableActions: ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE'],
+      availableActions: ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', 'APPROVE'],
     });
 
     const firstPage = await request(app!.getHttpServer())

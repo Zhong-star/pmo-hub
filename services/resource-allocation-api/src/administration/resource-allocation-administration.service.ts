@@ -145,7 +145,7 @@ export class ResourceAllocationAdministrationService {
       throw new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, 'At least one editable field is required.');
     }
     try {
-      return await this.withAdminMutation(localUserId, async (manager) => {
+      return await this.withAdminMutation(localUserId, async (manager, actor) => {
         const repository = manager.getRepository(ResourcePerson);
         const person = await repository.createQueryBuilder('person')
           .setLock('pessimistic_write')
@@ -163,9 +163,12 @@ export class ResourceAllocationAdministrationService {
         person.displayName = input.displayName?.trim() ?? person.displayName;
         person.email = input.email?.trim() ?? person.email;
         person.role = nextRole;
+        const wasActive = person.active;
         person.active = nextActive;
         person.groupId = await this.validatePersonGroup(manager, nextRole, nextGroupId, nextActive);
-        return this.toPerson(await repository.save(person));
+        const saved = await repository.save(person);
+        if (wasActive && !saved.active) await this.notifyPersonDeactivationCommitments(manager, saved, actor.id);
+        return this.toPerson(saved);
       });
     } catch (error) {
       if (error instanceof ResourceAllocationException) throw error;
@@ -635,6 +638,52 @@ export class ResourceAllocationAdministrationService {
       const actor = await this.requireAdmin(localUserId, manager);
       return operation(manager, actor);
     });
+  }
+
+  private async notifyPersonDeactivationCommitments(
+    manager: EntityManager,
+    person: ResourcePerson,
+    actorId: string,
+  ): Promise<void> {
+    await manager.query(`
+      WITH operation_clock AS (
+        SELECT clock_timestamp() AS now
+      ), commitments AS (
+        SELECT allocation.source_request_id, allocation.group_id, group_record.supervisor_id, group_record.manager_id
+        FROM resource_allocations AS allocation
+        INNER JOIN resource_groups AS group_record ON group_record.id = allocation.group_id
+        CROSS JOIN operation_clock
+        WHERE allocation.person_id = $1
+          AND allocation.state NOT IN ('DONE', 'CANCELED')
+          AND allocation.effective_end_date >= (operation_clock.now AT TIME ZONE 'America/Sao_Paulo')::date
+      ), recipients AS (
+        SELECT DISTINCT commitment.source_request_id, recipient.id AS recipient_id
+        FROM commitments AS commitment
+        INNER JOIN resource_people AS recipient ON recipient.active = TRUE
+        WHERE recipient.id <> $2
+          AND (
+            (recipient.role IN ('ALLOCATION_MODERATOR', 'ALLOCATION_ADMIN') AND recipient.group_id = commitment.group_id)
+            OR recipient.id = commitment.supervisor_id
+            OR recipient.id = commitment.manager_id
+          )
+      )
+      INSERT INTO resource_allocation_notifications
+        (recipient_id, source_request_id, event_code, title, message, created_at)
+      SELECT
+        recipient_id,
+        source_request_id,
+        'PERSON_DEACTIVATED_' || $3::text,
+        'Allocated person deactivated',
+        $4::text,
+        (SELECT now FROM operation_clock)
+      FROM recipients
+      ON CONFLICT (recipient_id, event_code, source_request_id) DO NOTHING
+    `, [
+      person.id,
+      actorId,
+      person.version,
+      `${person.displayName} was deactivated. Existing resource commitments are preserved; review the affected allocation.`,
+    ]);
   }
 
   private parseIdempotencyKey(value: string | undefined): string {

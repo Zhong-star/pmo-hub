@@ -17,6 +17,9 @@ export class ResourceRequest {
   @Column({ name: 'requested_conditions', type: 'jsonb' })
   requestedConditions!: Record<string, unknown>;
 
+  @Column({ name: 'approved_conditions', type: 'jsonb', nullable: true })
+  approvedConditions!: Record<string, unknown> | null;
+
   @Column({ name: 'decision_state', type: 'varchar', length: 40 })
   decisionState!: string;
 

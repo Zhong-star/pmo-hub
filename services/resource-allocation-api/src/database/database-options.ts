@@ -12,6 +12,7 @@ import { ResourceRequest } from '../requests/resource-request.entity';
 import { ResourceRequestHistory } from '../requests/resource-request-history.entity';
 import { ResourceRequestAudit } from '../requests/resource-request-audit.entity';
 import { ResourceAllocationNotification } from '../notifications/resource-allocation-notification.entity';
+import { ResourceAllocation } from '../allocations/resource-allocation.entity';
 
 export const RESOURCE_ALLOCATION_DATABASE_URL_ENV = 'RESOURCE_ALLOCATION_DATABASE_URL';
 
@@ -38,6 +39,7 @@ export function createResourceAllocationDataSourceOptions(databaseUrl?: string):
       ResourceRequestHistory,
       ResourceRequestAudit,
       ResourceAllocationNotification,
+      ResourceAllocation,
     ],
     migrations: [resolve(__dirname, 'migrations/*{.js,.ts}')],
     migrationsRun: false,

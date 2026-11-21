@@ -176,6 +176,63 @@ test('opens a linked request, edits it, confirms withdrawal, and shows its retai
   expect(withdrawalBody).toEqual({ reason: 'The plan was changed.' });
 });
 
+test('shows requested conditions, corrected approval conditions, and the resulting allocation in request detail', async ({ page }) => {
+  await installAccessAndSelections(page);
+  const approvedRequest = {
+    ...record(),
+    decisionState: 'APPROVED',
+    approvedConditions: {
+      personId: 'person-resource',
+      personName: 'Alex Resource',
+      resourceProfileId: 'profile-corrected',
+      resourceProfileName: 'Platform Integration',
+      groupId,
+      groupName: 'Platform Engineering',
+      initiativeId,
+      initiativeCode: 'ITDM-61',
+      initiativeName: 'Resource planning',
+      startDate: '2027-01-05',
+      endDate: '2027-01-28',
+      weeklyHours: 12,
+      explanation: 'The corrected profile best matches the work.',
+    },
+    allocation: {
+      id: 'allocation-1',
+      person: { personId: 'person-resource', displayName: 'Alex Resource' },
+      group: { id: groupId, name: 'Platform Engineering' },
+      initiative: { id: initiativeId, code: 'ITDM-61', name: 'Resource planning' },
+      resourceProfile: { id: 'profile-corrected', name: 'Platform Integration' },
+      startDate: '2027-01-05',
+      endDate: '2027-01-28',
+      weeklyHours: 12,
+      state: 'NOT_STARTED',
+      approvedAt: '2026-11-21T12:00:00.000Z',
+      version: 1,
+    },
+  };
+  await page.route(`${apiRoot}/requests**`, async (route: Route) => {
+    const url = new URL(route.request().url());
+    await route.fulfill({
+      headers: { etag: '"2"' },
+      json: url.pathname.endsWith(`/requests/${requestId}`)
+        ? approvedRequest
+        : { items: [approvedRequest], page: emptyPage },
+    });
+  });
+
+  await page.goto(`/resource-allocation/?requestId=${requestId}`);
+  const detail = page.getByRole('region', { name: 'ITDM-61' });
+  await expect(detail.getByRole('region', { name: 'Requested conditions' }).getByText('API Engineering')).toBeVisible();
+  const approved = detail.getByRole('region', { name: 'Approved conditions' });
+  await expect(approved.getByText('Platform Integration')).toBeVisible();
+  await expect(approved.getByText('Alex Resource')).toBeVisible();
+  await expect(approved.getByText('The corrected profile best matches the work.')).toBeVisible();
+  const allocation = detail.getByRole('region', { name: 'Approved allocation' });
+  await expect(allocation.getByText('Alex Resource')).toBeVisible();
+  await expect(allocation.getByText('2027-01-05 to 2027-01-28')).toBeVisible();
+  await expect(allocation.getByText('12 hours per week')).toBeVisible();
+});
+
 test('preserves edited text after temporary and version-conflict failures until the user reloads', async ({ page }) => {
   await installAccessAndSelections(page);
   let currentRequest = record();

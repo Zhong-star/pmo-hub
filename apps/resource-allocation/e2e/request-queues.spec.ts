@@ -28,6 +28,7 @@ const groups = [
 ];
 const profiles = [
   { id: 'profile-a', name: 'API Engineering', groupId: 'group-a' },
+  { id: 'profile-c', name: 'Platform Integration', groupId: 'group-a' },
   { id: 'profile-b', name: 'Data Platform', groupId: 'group-b' },
 ];
 const initiatives = [
@@ -282,4 +283,218 @@ test('keeps cached requests visible and pauses actions when a queue refresh fail
   await queue.getByRole('button', { name: 'Try again' }).click();
   await expect(queue.getByText('The queue could not be refreshed. Loaded requests remain visible, but actions are paused until you refresh.')).toHaveCount(0);
   await expect(queue.getByRole('button', { name: 'Refer to group decision' })).toBeEnabled();
+});
+
+test('approves the requested period for an eligible person from the queue action', async ({ page }) => {
+  await installCommonRoutes(page, moderator.localUserId, moderator);
+  let queueItem: ReturnType<typeof requestItem> | null = requestItem({
+    decisionState: 'PENDING_TEAM_DECISION',
+    dueAt: null,
+    availableActions: ['APPROVE'],
+  });
+  let approval: { path: string; body: Record<string, unknown>; headers: Record<string, string> } | null = null;
+  let candidatePath = '';
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: { items: path.endsWith('/team-decision') && queueItem ? [queueItem] : [], page: emptyPage } });
+  });
+  await page.route(`${apiRoot}/requests/**`, async (route) => {
+    if (route.request().method() !== 'POST') {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith('/approval-candidates')) {
+        candidatePath = url.pathname;
+        await route.fulfill({ json: { items: [{ id: 'person-a', displayName: 'Alex Resource', groupId: 'group-a' }], page: emptyPage } });
+        return;
+      }
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+    approval = {
+      path: new URL(route.request().url()).pathname,
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: route.request().headers(),
+    };
+    queueItem = null;
+    await route.fulfill({ json: { ...requestItem(), decisionState: 'APPROVED', version: 2 } });
+  });
+
+  await page.goto('/resource-allocation/');
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await expect(card.getByRole('button', { name: 'Approve request' })).toBeVisible();
+  await card.getByRole('button', { name: 'Approve request' }).click();
+  const form = card.getByRole('form', { name: 'Approve request request-a' });
+  await expect(form.getByText('This approval keeps the requested period and weekly hours.')).toBeVisible();
+  await expect(form.getByText('2027-01-11 to 2027-01-29')).toBeVisible();
+  await expect(form.getByText('20 hours per week')).toBeVisible();
+  await expect(form.getByLabel('Start date')).toHaveCount(0);
+  await expect(form.getByLabel('End date')).toHaveCount(0);
+  await expect(form.getByLabel('Weekly hours')).toHaveCount(0);
+  await form.getByLabel('Eligible person').selectOption('person-a');
+  await form.getByRole('button', { name: 'Approve request' }).click();
+
+  await expect(page.getByText('There are no requests in this queue.')).toBeVisible();
+  expect(candidatePath).toContain('/requests/request-a/approval-candidates');
+  expect(approval?.path).toContain('/requests/request-a/approvals');
+  expect(approval?.body).toEqual({ personId: 'person-a' });
+  expect(approval?.headers['if-match']).toBe('"1"');
+  expect(approval?.headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i);
+  expect(approval?.headers['x-correlation-id']).toMatch(/^[0-9a-f-]{36}$/i);
+});
+
+test('offers approval from the Admin presentation queue when the server allows it', async ({ page }) => {
+  await installCommonRoutes(page, admin.localUserId, admin);
+  let queueItem: ReturnType<typeof requestItem> | null = requestItem({ availableActions: ['APPROVE'] });
+  let approvalPath = '';
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: { items: path.endsWith('/presentation') && queueItem ? [queueItem] : [], page: emptyPage } });
+  });
+  await page.route(`${apiRoot}/requests/**`, async (route) => {
+    if (route.request().method() !== 'POST') {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('/approval-candidates')) {
+        await route.fulfill({ json: { items: [{ id: 'person-a', displayName: 'Alex Resource', groupId: 'group-a' }], page: emptyPage } });
+        return;
+      }
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+    approvalPath = new URL(route.request().url()).pathname;
+    queueItem = null;
+    await route.fulfill({ json: { ...requestItem(), decisionState: 'APPROVED', version: 2 } });
+  });
+
+  await page.goto('/resource-allocation/');
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await expect(card.getByRole('button', { name: 'Approve request' })).toBeVisible();
+  await card.getByRole('button', { name: 'Approve request' }).click();
+  const form = card.getByRole('form', { name: 'Approve request request-a' });
+  await form.getByLabel('Eligible person').selectOption('person-a');
+  await form.getByRole('button', { name: 'Approve request' }).click();
+
+  await expect(page.getByText('There are no requests in this queue.')).toBeVisible();
+  expect(approvalPath).toContain('/requests/request-a/approvals');
+});
+
+test('requires a reason when approval changes only the resource profile', async ({ page }) => {
+  await installCommonRoutes(page, moderator.localUserId, moderator);
+  let queueItem: ReturnType<typeof requestItem> | null = requestItem({
+    decisionState: 'PENDING_TEAM_DECISION',
+    dueAt: null,
+    availableActions: ['APPROVE'],
+  });
+  let approvalBody: Record<string, unknown> | null = null;
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: { items: path.endsWith('/team-decision') && queueItem ? [queueItem] : [], page: emptyPage } });
+  });
+  await page.route(`${apiRoot}/requests/**`, async (route) => {
+    if (route.request().method() !== 'POST') {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('/approval-candidates')) {
+        await route.fulfill({ json: { items: [{ id: 'person-a', displayName: 'Alex Resource', groupId: 'group-a' }], page: emptyPage } });
+        return;
+      }
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+    approvalBody = route.request().postDataJSON() as Record<string, unknown>;
+    queueItem = null;
+    await route.fulfill({ json: { ...requestItem(), decisionState: 'APPROVED', version: 2 } });
+  });
+
+  await page.goto('/resource-allocation/');
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await card.getByRole('button', { name: 'Approve request' }).click();
+  const form = card.getByRole('form', { name: 'Approve request request-a' });
+  await form.getByLabel('Eligible person').selectOption('person-a');
+  await expect(form.getByLabel('Approved resource profile').locator('option', { hasText: 'Data Platform' })).toHaveCount(0);
+  await form.getByLabel('Approved resource profile').selectOption('profile-c');
+  await form.getByRole('button', { name: 'Approve request' }).click();
+  await expect(form.getByText('Provide an explanation when correcting the resource profile.')).toBeVisible();
+  await form.getByLabel('Explanation').fill('The requested profile was not the best fit.');
+  await form.getByRole('button', { name: 'Approve request' }).click();
+
+  await expect(page.getByText('There are no requests in this queue.')).toBeVisible();
+  expect(approvalBody).toEqual({ personId: 'person-a', resourceProfileId: 'profile-c', explanation: 'The requested profile was not the best fit.' });
+});
+
+test('preserves approval input after a stale-version response', async ({ page }) => {
+  await installCommonRoutes(page, moderator.localUserId, moderator);
+  let queueItem = requestItem({ decisionState: 'PENDING_TEAM_DECISION', dueAt: null, availableActions: ['APPROVE'] });
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: { items: path.endsWith('/team-decision') ? [queueItem] : [], page: emptyPage } });
+  });
+  await page.route(`${apiRoot}/requests/**`, async (route) => {
+    if (route.request().method() !== 'POST') {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('/approval-candidates')) {
+        await route.fulfill({ json: { items: [{ id: 'person-a', displayName: 'Alex Resource', groupId: 'group-a' }], page: emptyPage } });
+        return;
+      }
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+    queueItem = { ...queueItem, version: 2 };
+    await route.fulfill({ status: 412, json: { status: 412, code: 'PRECONDITION_FAILED', detail: 'The request changed.' } });
+  });
+
+  await page.goto('/resource-allocation/');
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await card.getByRole('button', { name: 'Approve request' }).click();
+  const form = card.getByRole('form', { name: 'Approve request request-a' });
+  await form.getByLabel('Eligible person').selectOption('person-a');
+  await form.getByLabel('Approved resource profile').selectOption('profile-c');
+  await form.getByLabel('Explanation').fill('Keep this explanation visible.');
+  await form.getByRole('button', { name: 'Approve request' }).click();
+
+  await expect(page.getByRole('alert').filter({ hasText: 'This request changed after you opened it.' })).toBeVisible();
+  await expect(form.getByLabel('Eligible person')).toHaveValue('person-a');
+  await expect(form.getByLabel('Explanation')).toHaveValue('Keep this explanation visible.');
+});
+
+test('reuses the approval attempt key after a lost response and page reload', async ({ page }) => {
+  await installCommonRoutes(page, moderator.localUserId, moderator);
+  const queueItem = requestItem({ decisionState: 'PENDING_TEAM_DECISION', dueAt: null, availableActions: ['APPROVE'] });
+  const keys: string[] = [];
+  let attempts = 0;
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: { items: path.endsWith('/team-decision') ? [queueItem] : [], page: emptyPage } });
+  });
+  await page.route(`${apiRoot}/requests/**`, async (route) => {
+    if (route.request().method() !== 'POST') {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('/approval-candidates')) {
+        await route.fulfill({ json: { items: [{ id: 'person-a', displayName: 'Alex Resource', groupId: 'group-a' }], page: emptyPage } });
+        return;
+      }
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+    attempts += 1;
+    keys.push(route.request().headers()['idempotency-key']);
+    if (attempts === 1) {
+      await route.fulfill({ status: 503, json: { title: 'Temporary service interruption.' } });
+      return;
+    }
+    await route.fulfill({ json: { ...requestItem(), decisionState: 'APPROVED', version: 2 } });
+  });
+
+  await page.goto('/resource-allocation/');
+  await page.getByRole('button', { name: 'Approve request' }).first().click();
+  let form = page.getByRole('form', { name: 'Approve request request-a' });
+  await form.getByLabel('Eligible person').selectOption('person-a');
+  await form.getByRole('button', { name: 'Approve request' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Temporary service interruption.' })).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Approve request' }).first().click();
+  form = page.getByRole('form', { name: 'Approve request request-a' });
+  await form.getByLabel('Eligible person').selectOption('person-a');
+  await form.getByRole('button', { name: 'Approve request' }).click();
+
+  await expect.poll(() => attempts).toBe(2);
+  expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/i);
+  expect(keys[1]).toBe(keys[0]);
 });

@@ -48,6 +48,7 @@ interface QueueCursor {
 
 interface QueueRow {
   id: string;
+  requester_id: string;
   requester_snapshot: Record<string, unknown>;
   requested_conditions: Record<string, unknown>;
   decision_state: string;
@@ -55,6 +56,7 @@ interface QueueRow {
   stage_entered_at: Date;
   due_at: Date | null;
   deadline_passed: boolean;
+  approval_date_invalid: boolean;
   next_responsible: Array<{ personId: string; displayName: string; role: string }>;
   version: number;
 }
@@ -119,10 +121,11 @@ export class ResourceAllocationRequestQueueService {
 
       const limitParameter = bind(pageSize + 1);
       const rows = await this.dataSource.query(
-        `SELECT r.id, r.requester_snapshot, r.requested_conditions, r.decision_state,
+        `SELECT r.id, r.requester_id, r.requester_snapshot, r.requested_conditions, r.decision_state,
                 r.received_at, r.stage_entered_at,
                 CASE WHEN r.decision_state = 'WAITING_FOR_PRESENTATION' THEN r.expiration_due_at ELSE NULL END AS due_at,
                 (r.decision_state = 'WAITING_FOR_PRESENTATION' AND r.expiration_due_at < clock_timestamp()) AS deadline_passed,
+                ((r.requested_conditions->>'startDate') < (clock_timestamp() AT TIME ZONE 'America/Sao_Paulo')::date::text) AS approval_date_invalid,
                 r.version,
                 COALESCE((
                   SELECT jsonb_agg(jsonb_build_object(
@@ -162,7 +165,7 @@ export class ResourceAllocationRequestQueueService {
       }) : null;
 
       return {
-        items: selected.map((row) => this.toQueueItem(row, queue)),
+        items: selected.map((row) => this.toQueueItem(row, queue, actor)),
         page: { nextCursor, limit: pageSize },
       };
     } catch (error) {
@@ -371,7 +374,8 @@ export class ResourceAllocationRequestQueueService {
     return { decisionState: 'PENDING_TEAM_DECISION', groupIds: effectiveGroupIds };
   }
 
-  private toQueueItem(row: QueueRow, queue: RequestQueueCode) {
+  private toQueueItem(row: QueueRow, queue: RequestQueueCode, actor: ResourcePerson) {
+    const canApprove = row.requester_id !== actor.id && !row.deadline_passed && !row.approval_date_invalid;
     return {
       id: row.id,
       requester: row.requester_snapshot,
@@ -385,8 +389,8 @@ export class ResourceAllocationRequestQueueService {
         ? row.next_responsible
         : { role: 'ALLOCATION_ADMIN' },
       availableActions: queue === 'presentation' && !row.deadline_passed
-        ? ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE']
-        : [],
+        ? ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', ...(canApprove ? ['APPROVE'] : [])]
+        : queue === 'team-decision' && canApprove ? ['APPROVE'] : [],
       version: Number(row.version),
     };
   }
