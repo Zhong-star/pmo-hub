@@ -11,6 +11,8 @@
     "worker:status": "npm run build && node dist/workers/check-resource-allocation-worker-status.js",
     "migration:run": "npm run build && typeorm migration:run -d dist/database/data-source.js",
     "prepare:first-admin": "npm run build && node dist/database/prepare-first-admin.js",
+    "prepare:minimal": "npm run build && node dist/database/prepare-minimal-records.js",
+    "prepare:demo": "npm run build && node dist/database/prepare-demo-data.js",
     "lint": "eslint src test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",

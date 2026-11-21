@@ -290,7 +290,7 @@ export class ResourceAllocationSubmissionService {
       submittedConditions: line.submitted_conditions as Record<string, unknown>,
       status: String(line.status),
       ...(line.request_id ? { requestId: String(line.request_id) } : {}),
-      ...(line.problem ? { problem: line.problem as { code: string; message: string } } : {}),
+      ...(line.problem ? { problem: line.problem as { code: string; message: string; detail?: string; title?: string } } : {}),
       receivedAt: receivedAt.toISOString(),
       ...(completedAt ? { completedAt: completedAt.toISOString() } : {}),
       ...(line.request_outcome ? { requestOutcome: line.request_outcome as Record<string, unknown> } : {}),

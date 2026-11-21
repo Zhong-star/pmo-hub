@@ -42,6 +42,7 @@ export class RequestQueueItemDto {
   impediments!: string[];
 
   @ApiProperty({
+    type: Array,
     oneOf: [
       { type: 'object', properties: { role: { type: 'string' } } },
       {

@@ -124,7 +124,7 @@ export class ResourceAllocationSubmissionWorker {
         line.status = ResourceSubmissionLineStatus.Failed;
         line.requestId = null;
         line.requestOutcome = null;
-        line.problem = { code: error.code, message: error.detail };
+        line.problem = { code: error.code, title: error.title, detail: error.detail, message: error.detail };
         line.completedAt = completionTimes[0].completed_at;
         line.claimToken = null;
         line.claimedAt = null;

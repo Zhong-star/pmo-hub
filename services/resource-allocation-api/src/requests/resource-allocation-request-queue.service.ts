@@ -66,7 +66,6 @@ interface QueueRow {
   due_at: Date | null;
   cursor_due_at: string | null;
   deadline_passed: boolean;
-  approval_date_invalid: boolean;
   next_responsible: Array<{ personId: string; displayName: string; role: string }>;
   version: number;
 }
@@ -212,7 +211,6 @@ export class ResourceAllocationRequestQueueService {
                   WHEN r.decision_state = 'DENIED' THEN operation_clock.now > r.expiration_due_at
                   ELSE FALSE
                 END AS deadline_passed,
-                ((r.requested_conditions->>'startDate') < (operation_clock.now AT TIME ZONE 'America/Sao_Paulo')::date::text) AS approval_date_invalid,
                 r.version,
                 COALESCE((
                   SELECT jsonb_agg(jsonb_build_object(
@@ -561,7 +559,6 @@ export class ResourceAllocationRequestQueueService {
 
   private toQueueItem(row: QueueRow, queue: RequestQueueCode, actor: ResourcePerson) {
     const canDecide = row.requester_id !== actor.id && !row.deadline_passed;
-    const canApprove = canDecide && !row.approval_date_invalid;
     const canResolveException = (row.exception_impediments?.length ?? 0) === 0;
     const groupId = typeof row.requested_conditions.groupId === 'string' ? row.requested_conditions.groupId : '';
     const inGroupScope = actor.role === ResourceAllocationRole.Admin
@@ -636,9 +633,9 @@ export class ResourceAllocationRequestQueueService {
           : [])]
         : queue === 'presentation'
         ? !row.deadline_passed
-          ? ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', ...(canApprove ? ['APPROVE'] : []), ...(canDecide ? ['DENY'] : [])]
+          ? ['REFER', 'REFERENCE_CORRECTION', ...(!isRequester ? ['ADMINISTRATIVE_REMOVE'] : []), ...(canDecide ? ['APPROVE', 'DENY'] : [])]
           : []
-        : [...(canApprove ? ['APPROVE'] : []), ...(canDecide ? ['DENY'] : [])],
+        : canDecide ? ['APPROVE', 'DENY'] : [],
       version: Number(row.version),
     };
   }

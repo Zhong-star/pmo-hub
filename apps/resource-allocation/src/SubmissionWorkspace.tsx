@@ -300,6 +300,13 @@ function submissionStatus(status: string) {
   return 'Pending';
 }
 
+function lineFailureMessage(problem: SubmissionLine['problem']): string {
+  return problem?.message?.trim()
+    || problem?.detail?.trim()
+    || problem?.title?.trim()
+    || 'This request line failed and can be corrected.';
+}
+
 function SubmissionResults({
   localUserId,
   submissionId,
@@ -418,7 +425,7 @@ function SubmissionResults({
                 )}
                 {line.status === 'FAILED' && (
                   <div className="submission-failure-detail">
-                    <p>{line.problem?.detail ?? line.problem?.title ?? 'This request line failed and can be corrected.'}</p>
+                    <p>{lineFailureMessage(line.problem)}</p>
                     <button
                       type="button"
                       className="secondary-button"

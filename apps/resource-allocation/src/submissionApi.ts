@@ -62,6 +62,7 @@ export interface SubmissionCollection {
 
 export interface SubmissionProblem {
   code?: string;
+  message?: string;
   detail?: string;
   title?: string;
   errors?: Array<{ path?: string; message?: string }>;
@@ -114,7 +115,7 @@ export interface SubmissionReceipt {
 
 export class SubmissionRequestError extends Error {
   constructor(readonly status: number | null, readonly problem: SubmissionProblem | null) {
-    super(problem?.detail ?? problem?.title ?? (status === null
+    super(problem?.detail ?? problem?.message ?? problem?.title ?? (status === null
       ? 'The submission service could not be reached.'
       : `The submission request failed with status ${status}.`));
     this.name = 'SubmissionRequestError';
@@ -137,6 +138,7 @@ function parseProblem(payload: unknown): SubmissionProblem | null {
     : undefined;
   return {
     code: typeof value.code === 'string' ? value.code : undefined,
+    message: typeof value.message === 'string' ? value.message : undefined,
     detail: typeof value.detail === 'string' ? value.detail : undefined,
     title: typeof value.title === 'string' ? value.title : undefined,
     errors,

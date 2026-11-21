@@ -891,4 +891,42 @@ describe('Tech Resource Allocation submissions (#60)', () => {
       .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
       .expect(404);
   });
+
+  it('persists and exposes aligned problem details (code, title, detail, message) for definitively failed submission lines', async () => {
+    const fixture = await setup();
+    const payload = bodyFor(fixture, 20);
+    payload.lines[0].startDate = futureDate(-1);
+    const accepted = await request(app!.getHttpServer())
+      .post('/api/resource-allocation/v1/submissions')
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('Idempotency-Key', randomUUID())
+      .send(payload)
+      .expect(202);
+
+    expect(await app!.get(ResourceAllocationSubmissionWorker).processBatch(1)).toBe(1);
+
+    const lines = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/submissions/${accepted.body.id}/lines`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(200);
+    const expectedProblem = {
+      code: 'INVALID_BUSINESS_DATE',
+      title: 'Invalid business date',
+      detail: 'The request dates must be valid, start today or later, and end on or after the start date. Review the dates and submit a corrected attempt.',
+      message: 'The request dates must be valid, start today or later, and end on or after the start date. Review the dates and submit a corrected attempt.',
+    };
+    expect(lines.body.items[0]).toMatchObject({
+      status: 'FAILED',
+      problem: expectedProblem,
+    });
+
+    const operationResult = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${payload.lines[0].attemptKey}?operation=submission.create`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(200);
+    expect(operationResult.body).toMatchObject({
+      status: 'FAILED',
+      problem: expectedProblem,
+    });
+  });
 });

@@ -740,6 +740,8 @@ function RequestQueueCard({
   const ownRequest = item.requester.personId === personId;
   const canRecordStrategy = item.availableActions.includes('RECORD_STRATEGY');
   const canResolve = item.availableActions.includes('RESOLVE');
+  const today = saoPauloDate(new Date());
+  const requestedStartDatePassed = Boolean(conditions.startDate && conditions.startDate < today);
 
   return (
     <article id={`resource-request-${item.id}`} tabIndex={-1} className={`request-queue-card${highlighted ? ' request-queue-card-highlighted' : ''}`} aria-labelledby={`request-title-${item.id}`}>
@@ -774,6 +776,11 @@ function RequestQueueCard({
           <p>Review these conditions before final approval:</p>
           <ul>{item.impediments?.map((impediment) => <li key={impediment}>{revalidationImpedimentLabel(impediment)}</li>)}</ul>
         </div>
+      )}
+      {requestedStartDatePassed && item.availableActions.includes('APPROVE') && (
+        <p className="request-queue-guidance" role="status">
+          The requested start date has already passed. Open Approve request to propose a valid future period starting on or after the 72-hour acceptance deadline with an explanation.
+        </p>
       )}
       {conditions.comment && <p className="request-queue-comment">{conditions.comment}</p>}
 
@@ -812,7 +819,7 @@ function RequestQueueCard({
           <button type="button" className="primary-button" onClick={onRefer} disabled={actionDisabled}>
             {busy ? 'Updating request…' : 'Refer to group decision'}
           </button>
-          {role === 'ALLOCATION_ADMIN' && item.availableActions.includes('ADMINISTRATIVE_REMOVE') && (
+          {role === 'ALLOCATION_ADMIN' && !ownRequest && item.availableActions.includes('ADMINISTRATIVE_REMOVE') && (
             <button type="button" className="secondary-button" aria-expanded={openRemoval} onClick={onRemovalToggle} disabled={actionDisabled}>
               Remove request
             </button>
@@ -933,10 +940,12 @@ function ApprovalForm({
   const weeklyHours = normalizedHours(selectedWeeklyHours ?? '');
   const weeklyHoursChanged = weeklyHours !== conditions.weeklyHours;
   const periodOrHoursChanged = startDateChanged || endDateChanged || weeklyHoursChanged;
-  const explanationRequired = profileChanged || periodOrHoursChanged;
-  const minimumStartDate = periodOrHoursChanged ? startDates.afterAcceptanceWindow : startDates.today;
-  const startDateValidationMessage = periodOrHoursChanged
-    ? 'The proposed start date must be on or after the 72-hour acceptance deadline.'
+  const requestedStartDatePassed = Boolean(conditions.startDate && conditions.startDate < startDates.today);
+  const mustProposeChangedPeriod = requestedStartDatePassed || periodOrHoursChanged;
+  const explanationRequired = profileChanged || mustProposeChangedPeriod;
+  const minimumStartDate = mustProposeChangedPeriod ? startDates.afterAcceptanceWindow : startDates.today;
+  const startDateValidationMessage = mustProposeChangedPeriod
+    ? 'Propose a start date on or after the 72-hour acceptance deadline.'
     : 'The start date must be today or later.';
   const eligiblePeople = selections.people.filter((person) => person.groupId === conditions.groupId);
   const eligibleProfiles = selections.profiles.filter((profile) => profile.groupId === conditions.groupId);
@@ -956,13 +965,18 @@ function ApprovalForm({
       }))}
     >
       <h4>Approve request</h4>
+      {requestedStartDatePassed && (
+        <p className="request-queue-guidance" role="status">
+          The requested start date has already passed. Propose a valid future period starting on or after {startDates.afterAcceptanceWindow} (the 72-hour acceptance deadline) and provide an explanation.
+        </p>
+      )}
       {periodOrHoursChanged ? (
         <p>The date or hours differ from the request. An explanation is required, and no allocation is created until the requester accepts.</p>
       ) : profileChanged ? (
         <p>This approval keeps the requested period and weekly hours but changes the resource profile. An explanation is required.</p>
-      ) : (
+      ) : !requestedStartDatePassed ? (
         <p>This approval keeps the requested period and weekly hours.</p>
-      )}
+      ) : null}
       <div className="request-approval-comparison">
         <section aria-label="Requested conditions">
           <h5>Requested conditions</h5>
@@ -1016,7 +1030,7 @@ function ApprovalForm({
           disabled={disabled}
         />
         {errors.startDate && <span className="field-error">{errors.startDate.message}</span>}
-        <span className="field-help">{periodOrHoursChanged
+        <span className="field-help">{mustProposeChangedPeriod
           ? 'A proposal that needs acceptance must start on or after its 72-hour response deadline.'
           : 'A final approval cannot start in the past.'}</span>
       </label>
@@ -1027,7 +1041,14 @@ function ApprovalForm({
           min={selectedStartDate || minimumStartDate}
           {...register('endDate', {
             required: 'Enter a proposed end date.',
-            validate: (value) => value >= (selectedStartDate || minimumStartDate) || 'The end date cannot be before the start date.',
+            validate: (value) => {
+              if (value < minimumStartDate) {
+                return mustProposeChangedPeriod
+                  ? 'The proposed end date must be on or after the 72-hour acceptance deadline.'
+                  : 'The end date must be today or later.';
+              }
+              return value >= (selectedStartDate || minimumStartDate) || 'The end date cannot be before the start date.';
+            },
           })}
           aria-invalid={errors.endDate ? 'true' : 'false'}
           disabled={disabled}
@@ -1053,7 +1074,7 @@ function ApprovalForm({
         <textarea
           {...register('explanation', {
             maxLength: { value: 2000, message: 'Use no more than 2,000 characters.' },
-            validate: (value) => !explanationRequired || Boolean(value.trim()) || (periodOrHoursChanged
+            validate: (value) => !explanationRequired || Boolean(value.trim()) || (mustProposeChangedPeriod
               ? 'Explain the proposed date or hours changes.'
               : 'Provide an explanation when correcting the resource profile.'),
           })}
