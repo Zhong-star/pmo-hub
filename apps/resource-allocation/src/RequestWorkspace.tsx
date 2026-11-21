@@ -635,7 +635,8 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
                     <p>This request requires revalidation. The previous proposal cannot be accepted. A decision maker must review eligible conditions before a new decision is issued.</p>
                   </section>
                 )}
-                {(currentItem.decisionState === 'DENIED' || currentItem.decisionState === 'PRE_N3' || currentItem.decisionState === 'CANCELLED') && (
+                {(currentItem.decisionState === 'DENIED' || currentItem.decisionState === 'PRE_N3' || currentItem.decisionState === 'CANCELLED'
+                  || (currentItem.decisionState === 'APPROVED_WITH_CHANGES' && currentItem.availableActions?.includes('CONTEST') === true)) && (
                   <DeniedRequestResponse
                     localUserId={localUserId}
                     item={currentItem}

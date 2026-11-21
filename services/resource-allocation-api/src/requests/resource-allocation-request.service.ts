@@ -116,8 +116,7 @@ export class ResourceAllocationRequestService {
       request,
       allocation: allocation ? allocationResponse(allocation) : null,
       dueAt: this.actionableDeadline(request)?.toISOString() ?? null,
-      availableActions: request.decisionState === ResourceRequestDecisionState.ApprovedWithChanges &&
-        request.decisionResponseDueAt && now < request.decisionResponseDueAt ? ['ACCEPT'] : [],
+      availableActions: this.availableActions(request, now),
     };
   }
 
@@ -457,8 +456,7 @@ export class ResourceAllocationRequestService {
       stageEnteredAt: request.stageEnteredAt.toISOString(),
       expirationDueAt: request.expirationDueAt.toISOString(),
       dueAt: this.actionableDeadline(request)?.toISOString() ?? null,
-      availableActions: request.decisionState === ResourceRequestDecisionState.ApprovedWithChanges &&
-        request.decisionResponseDueAt && now < request.decisionResponseDueAt ? ['ACCEPT'] : [],
+      availableActions: this.availableActions(request, now),
       version: request.version,
     };
   }
@@ -467,6 +465,14 @@ export class ResourceAllocationRequestService {
     if (request.decisionState === ResourceRequestDecisionState.ApprovedWithChanges) return request.decisionResponseDueAt;
     if (request.decisionState === ResourceRequestDecisionState.WaitingForPresentation || request.decisionState === ResourceRequestDecisionState.Denied) return request.expirationDueAt;
     return null;
+  }
+
+  private availableActions(request: ResourceRequest, now: Date): string[] {
+    if (request.decisionState === ResourceRequestDecisionState.ApprovedWithChanges &&
+      request.decisionResponseDueAt && now < request.decisionResponseDueAt) {
+      return ['ACCEPT', 'CONTEST'];
+    }
+    return [];
   }
 
   private async databaseNow(): Promise<Date> {

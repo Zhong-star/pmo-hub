@@ -26,7 +26,7 @@ const defaultPageSize = 50;
 const maximumPageSize = 100;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type RequestQueueCode = 'presentation' | 'team-decision';
+type RequestQueueCode = 'presentation' | 'team-decision' | 'exceptions';
 
 interface QueueFilters {
   limit?: string;
@@ -51,6 +51,11 @@ interface QueueRow {
   requester_id: string;
   requester_snapshot: Record<string, unknown>;
   requested_conditions: Record<string, unknown>;
+  approved_conditions: Record<string, unknown> | null;
+  resolution_strategy: string | null;
+  resolution_reason: string | null;
+  affected_initiative_ids: string[] | null;
+  exception_impediments: string[] | null;
   decision_state: string;
   received_at: Date;
   stage_entered_at: Date;
@@ -94,8 +99,9 @@ export class ResourceAllocationRequestQueueService {
       const scope = await this.authorizeQueue(actor, queue, normalizedFilters.groupId);
       const filterHash = this.hashPayload({ queue, filters: normalizedFilters, groupIds: scope.groupIds });
       const cursor = filters.cursor ? this.decodeCursor(filters.cursor, queue, filterHash) : undefined;
-      const conditions = ['r.removed_at IS NULL', 'r.decision_state = $1'];
-      const parameters: unknown[] = [scope.decisionState];
+      const decisionStates = Array.isArray(scope.decisionState) ? scope.decisionState : [scope.decisionState];
+      const conditions = ['r.removed_at IS NULL', 'r.decision_state = ANY($1::text[])'];
+      const parameters: unknown[] = [decisionStates];
       const bind = (value: unknown) => {
         parameters.push(value);
         return `$${parameters.length}`;
@@ -121,9 +127,38 @@ export class ResourceAllocationRequestQueueService {
 
       const limitParameter = bind(pageSize + 1);
       const rows = await this.dataSource.query(
-        `SELECT r.id, r.requester_id, r.requester_snapshot, r.requested_conditions, r.decision_state,
+        `SELECT r.id, r.requester_id, r.requester_snapshot, r.requested_conditions, r.approved_conditions, r.decision_state,
                 r.received_at, r.stage_entered_at,
                 CASE WHEN r.decision_state = 'WAITING_FOR_PRESENTATION' THEN r.expiration_due_at ELSE NULL END AS due_at,
+                (
+                  SELECT history.after_snapshot->>'resolutionStrategy'
+                  FROM resource_request_history AS history
+                  WHERE history.request_id = r.id AND history.action = 'STRATEGY_RECORDED'
+                  ORDER BY history.occurred_at DESC, history.id DESC
+                  LIMIT 1
+                ) AS resolution_strategy,
+                (
+                  SELECT history.after_snapshot->>'reason'
+                  FROM resource_request_history AS history
+                  WHERE history.request_id = r.id AND history.action = 'STRATEGY_RECORDED'
+                  ORDER BY history.occurred_at DESC, history.id DESC
+                  LIMIT 1
+                ) AS resolution_reason,
+                (
+                  SELECT history.after_snapshot->'affectedInitiativeIds'
+                  FROM resource_request_history AS history
+                  WHERE history.request_id = r.id AND history.action = 'STRATEGY_RECORDED'
+                  ORDER BY history.occurred_at DESC, history.id DESC
+                  LIMIT 1
+                ) AS affected_initiative_ids,
+                ARRAY_REMOVE(ARRAY[
+                  CASE WHEN r.decision_state IN ('PRE_N3', 'ESCALATION') AND (g.id IS NULL OR g.active = FALSE) THEN 'GROUP_INACTIVE' END,
+                  CASE WHEN r.decision_state IN ('PRE_N3', 'ESCALATION') AND i.active IS DISTINCT FROM TRUE THEN 'INITIATIVE_INACTIVE' END,
+                  CASE WHEN r.decision_state IN ('PRE_N3', 'ESCALATION') AND p.active IS DISTINCT FROM TRUE THEN 'PROFILE_INACTIVE' END,
+                  CASE WHEN r.decision_state IN ('PRE_N3', 'ESCALATION') AND p.active = TRUE AND p.group_id::text <> r.requested_conditions->>'groupId' THEN 'PROFILE_GROUP_MISMATCH' END,
+                  CASE WHEN r.decision_state IN ('PRE_N3', 'ESCALATION') AND r.approved_conditions ? 'personId' AND person.active IS DISTINCT FROM TRUE THEN 'PERSON_INACTIVE' END,
+                  CASE WHEN r.decision_state IN ('PRE_N3', 'ESCALATION') AND person.active = TRUE AND person.group_id::text <> r.requested_conditions->>'groupId' THEN 'PERSON_LEFT_GROUP' END
+                ], NULL::text) AS exception_impediments,
                 (r.decision_state = 'WAITING_FOR_PRESENTATION' AND r.expiration_due_at < clock_timestamp()) AS deadline_passed,
                 ((r.requested_conditions->>'startDate') < (clock_timestamp() AT TIME ZONE 'America/Sao_Paulo')::date::text) AS approval_date_invalid,
                 r.version,
@@ -143,6 +178,9 @@ export class ResourceAllocationRequestQueueService {
                 ), '[]'::jsonb) AS next_responsible
          FROM resource_requests AS r
          LEFT JOIN resource_groups AS g ON g.id::text = r.requested_conditions->>'groupId'
+         LEFT JOIN resource_initiatives AS i ON i.id::text = r.requested_conditions->>'initiativeId'
+         LEFT JOIN resource_profiles AS p ON p.id::text = COALESCE(r.approved_conditions->>'resourceProfileId', r.requested_conditions->>'resourceProfileId')
+         LEFT JOIN resource_people AS person ON person.id::text = r.approved_conditions->>'personId'
          WHERE ${conditions.join(' AND ')}
          ORDER BY CASE WHEN r.decision_state = 'WAITING_FOR_PRESENTATION' THEN 0 ELSE 1 END ASC,
                   CASE WHEN r.decision_state = 'WAITING_FOR_PRESENTATION' THEN r.expiration_due_at END ASC NULLS LAST,
@@ -351,6 +389,16 @@ export class ResourceAllocationRequestQueueService {
       };
     }
 
+    if (queue === 'exceptions') {
+      if (actor.role !== ResourceAllocationRole.Admin) {
+        throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'Only an active Admin can view exception requests.');
+      }
+      return {
+        decisionState: ['PRE_N3', 'ESCALATION'],
+        groupIds: null as string[] | null,
+      };
+    }
+
     let groupIds: string[];
     switch (actor.role) {
       case ResourceAllocationRole.Moderator:
@@ -377,19 +425,31 @@ export class ResourceAllocationRequestQueueService {
   private toQueueItem(row: QueueRow, queue: RequestQueueCode, actor: ResourcePerson) {
     const canDecide = row.requester_id !== actor.id && !row.deadline_passed;
     const canApprove = canDecide && !row.approval_date_invalid;
+    const canResolveException = !row.exception_impediments?.includes('GROUP_INACTIVE') &&
+      !row.exception_impediments?.includes('INITIATIVE_INACTIVE');
     return {
       id: row.id,
       requester: row.requester_snapshot,
       requestedConditions: row.requested_conditions,
+      approvedConditions: row.approved_conditions,
+      resolutionStrategy: row.resolution_strategy,
+      resolutionReason: row.resolution_reason,
+      affectedInitiativeIds: row.affected_initiative_ids ?? [],
       decisionState: row.decision_state,
       receivedAt: new Date(row.received_at).toISOString(),
       stageEnteredAt: new Date(row.stage_entered_at).toISOString(),
       dueAt: row.due_at ? new Date(row.due_at).toISOString() : null,
-      impediments: row.deadline_passed ? ['PRESENTATION_DEADLINE_PASSED'] : [],
+      impediments: queue === 'exceptions'
+        ? row.exception_impediments ?? []
+        : row.deadline_passed ? ['PRESENTATION_DEADLINE_PASSED'] : [],
       nextResponsible: queue === 'team-decision'
         ? row.next_responsible
         : { role: 'ALLOCATION_ADMIN' },
-      availableActions: queue === 'presentation'
+      availableActions: queue === 'exceptions'
+        ? row.requester_id === actor.id
+          ? []
+          : [...(row.decision_state === 'PRE_N3' ? ['ESCALATE'] : []), 'CANCEL', 'RECORD_STRATEGY', ...(canResolveException ? ['RESOLVE'] : [])]
+        : queue === 'presentation'
         ? !row.deadline_passed
           ? ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', ...(canApprove ? ['APPROVE'] : []), ...(canDecide ? ['DENY'] : [])]
           : []
@@ -564,8 +624,8 @@ export class ResourceAllocationRequestQueueService {
   }
 
   private parseQueueCode(value: string): RequestQueueCode {
-    if (value === 'presentation' || value === 'team-decision') return value;
-    throw this.validationError('queueCode must be presentation or team-decision.');
+    if (value === 'presentation' || value === 'team-decision' || value === 'exceptions') return value;
+    throw this.validationError('queueCode must be presentation, team-decision, or exceptions.');
   }
 
   private parsePageSize(value: string | undefined): number {

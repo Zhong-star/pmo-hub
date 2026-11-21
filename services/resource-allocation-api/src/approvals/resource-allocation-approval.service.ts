@@ -65,14 +65,18 @@ export class ResourceAllocationApprovalService {
       if (request.requesterId === actor.id) {
         throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'A person cannot approve their own request.');
       }
-      if (!['WAITING_FOR_PRESENTATION', 'PENDING_TEAM_DECISION'].includes(request.decisionState)) {
+      const exceptionResolution = ['PRE_N3', 'ESCALATION'].includes(request.decisionState);
+      if (!exceptionResolution && !['WAITING_FOR_PRESENTATION', 'PENDING_TEAM_DECISION'].includes(request.decisionState)) {
         throw new ResourceAllocationException('INVALID_REQUEST_TRANSITION', 'Request cannot be approved', 422, 'This request is not waiting for an approval.');
+      }
+      if (exceptionResolution && actor.role !== ResourceAllocationRole.Admin) {
+        throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'Only an active Admin may select a person for exception resolution.');
       }
       const conditions = request.requestedConditions as Record<string, unknown>;
       const groupId = this.normalizeUuid(String(conditions.groupId ?? ''), 'request group');
       const group = await this.dataSource.getRepository(ResourceGroup).findOne({ where: { id: groupId, active: true } });
       if (!group) throw this.ineligibleReference();
-      this.requireDeciderScope(actor, request, group.id);
+      if (!exceptionResolution) this.requireDeciderScope(actor, request, group.id);
       const clock = await this.dataSource.query(`
         WITH operation_clock AS (SELECT clock_timestamp() AS now)
         SELECT now, (now AT TIME ZONE 'America/Sao_Paulo')::date::text AS today

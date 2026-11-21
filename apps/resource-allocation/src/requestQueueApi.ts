@@ -5,7 +5,16 @@ import type { ApprovedRequestConditions, RequestAllocation, RequestConfirmationS
 export const REQUEST_QUEUES_QUERY_ROOT = ['resource-allocation-request-queues'] as const;
 const API_ROOT = '/api/resource-allocation/v1';
 
-export type RequestQueueCode = 'presentation' | 'team-decision';
+export type RequestQueueCode = 'presentation' | 'team-decision' | 'exceptions';
+export type ExceptionDecisionState = 'PRE_N3' | 'ESCALATION';
+export type ExceptionResolutionStrategy = 'OUTSOURCE' | 'WAIT_FOR_EMB_RESOURCE' | 'DEPRIORITIZE_OTHER_DEMANDS';
+
+export interface RequestQueueFilters {
+  groupId?: string;
+  initiativeId?: string;
+  resourceProfileId?: string;
+  decisionState?: ExceptionDecisionState;
+}
 
 export interface RequestQueueItem {
   id: string;
@@ -30,6 +39,9 @@ export interface RequestQueueItem {
   impediments?: string[];
   nextResponsible: { role?: string } | Array<{ personId: string; displayName: string; role: string }>;
   availableActions: string[];
+  resolutionStrategy?: ExceptionResolutionStrategy | null;
+  resolutionReason?: string | null;
+  affectedInitiativeIds?: string[];
   confirmationSource?: RequestConfirmationSource;
   approvedConditions?: ApprovedRequestConditions;
   allocation?: RequestAllocation;
@@ -101,11 +113,12 @@ export async function getRequestQueue(
   localUserId: string,
   queue: RequestQueueCode,
   cursor: string | null,
+  filters: RequestQueueFilters = {},
 ): Promise<RequestQueueCollection> {
   try {
     const response = await api.get<RequestQueueCollection>(`${API_ROOT}/request-queues/${queue}`, {
       headers: headers(localUserId),
-      params: { limit: 50, ...(cursor ? { cursor } : {}) },
+      params: { limit: 50, ...(cursor ? { cursor } : {}), ...filters },
     });
     return response.data;
   } catch (error) {
@@ -162,10 +175,10 @@ async function loadSelectionPages(
 async function postAction<T>(
   localUserId: string,
   requestId: string,
-  action: 'referrals' | 'reference-corrections' | 'administrative-removals' | 'approvals',
+  action: 'referrals' | 'reference-corrections' | 'administrative-removals' | 'approvals' | 'escalations' | 'cancellations' | 'strategies' | 'resolutions',
   version: number,
   idempotencyKey: string,
-  body: Record<string, string | number | undefined>,
+  body: Record<string, unknown>,
 ): Promise<T> {
   try {
     const response = await api.post<T>(`${API_ROOT}/requests/${encodeURIComponent(requestId)}/${action}`, body, {
@@ -223,4 +236,46 @@ export function removeRequestAdministratively(
   return postAction<{ requestId: string; action: 'ADMIN_REMOVED'; removedAt: string }>(
     localUserId, requestId, 'administrative-removals', version, idempotencyKey, { reason },
   );
+}
+
+export interface ExceptionStrategyInput {
+  strategy: ExceptionResolutionStrategy;
+  reason: string;
+  affectedInitiativeIds?: string[];
+}
+
+export interface ExceptionResolutionInput extends ExceptionStrategyInput {
+  personId: string;
+  resourceProfileId: string;
+  startDate: string;
+  endDate: string;
+  weeklyHours: number;
+}
+
+export function escalateRequest(localUserId: string, requestId: string, version: number, idempotencyKey: string, reason: string) {
+  return postAction<RequestActionResult>(localUserId, requestId, 'escalations', version, idempotencyKey, { reason });
+}
+
+export function cancelExceptionRequest(localUserId: string, requestId: string, version: number, idempotencyKey: string, reason: string) {
+  return postAction<RequestActionResult>(localUserId, requestId, 'cancellations', version, idempotencyKey, { reason });
+}
+
+export function recordExceptionStrategy(
+  localUserId: string,
+  requestId: string,
+  version: number,
+  idempotencyKey: string,
+  strategy: ExceptionStrategyInput,
+) {
+  return postAction<RequestActionResult>(localUserId, requestId, 'strategies', version, idempotencyKey, { ...strategy });
+}
+
+export function resolveException(
+  localUserId: string,
+  requestId: string,
+  version: number,
+  idempotencyKey: string,
+  resolution: ExceptionResolutionInput,
+) {
+  return postAction<RequestActionResult>(localUserId, requestId, 'resolutions', version, idempotencyKey, { ...resolution });
 }

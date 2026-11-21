@@ -36,6 +36,7 @@ import {
   RequestHistoryCollectionDto,
   RequestHistoryQueryDto,
 } from './request-decision.dto';
+import { RecordRequestStrategyDto, ResolveRequestExceptionDto } from './resolve-exception.dto';
 import { ResourceAllocationDecisionService } from './resource-allocation-decision.service';
 
 interface ResponseWithHeaders {
@@ -82,14 +83,14 @@ export class ResourceAllocationDecisionController {
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
     const operation = await this.decisions.deny(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
-    response.setHeader('ETag', `"${operation.result.version}"`);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
   }
 
   @Post('requests/:id/contests')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Contest a denied request and send it to Pre N3' })
+  @ApiOperation({ summary: 'Contest a denial or a changed proposal and send it to Pre N3' })
   @ApiHeader({ name: 'If-Match', required: true, description: 'Current strong request ETag.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, description: 'UUID for this exact contest action.' })
   @ApiOkResponse({ type: RequestDecisionResponseDto, headers: { ETag: { schema: { type: 'string', example: '"3"' } }, 'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } } } })
@@ -98,7 +99,7 @@ export class ResourceAllocationDecisionController {
   @ApiNotFoundResponse({ description: 'The request is no longer operational or does not belong to the requester.' })
   @ApiResponse({ status: 409, description: 'The Idempotency-Key was reused with different request content.' })
   @ApiResponse({ status: 412, description: 'The request version changed.' })
-  @ApiUnprocessableEntityResponse({ description: 'The request is not denied or the 14-day response deadline has passed.' })
+  @ApiUnprocessableEntityResponse({ description: 'The request is not contestable or its denial/proposal response deadline has passed.' })
   async contest(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Param('id', new ParseUUIDPipe()) id: string,
@@ -109,23 +110,23 @@ export class ResourceAllocationDecisionController {
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
     const operation = await this.decisions.contest(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
-    response.setHeader('ETag', `"${operation.result.version}"`);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
   }
 
   @Post('requests/:id/cancellations')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Cancel a denied request with a reason' })
+  @ApiOperation({ summary: 'Cancel a denied request as requester or a Pre N3/Escalation request as Admin' })
   @ApiHeader({ name: 'If-Match', required: true, description: 'Current strong request ETag.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, description: 'UUID for this exact cancellation action.' })
   @ApiOkResponse({ type: RequestDecisionResponseDto, headers: { ETag: { schema: { type: 'string', example: '"3"' } }, 'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } } } })
   @ApiBadRequestResponse({ description: 'If-Match, Idempotency-Key, correlation ID, or reason is invalid.' })
-  @ApiForbiddenResponse({ description: 'Only the current requester can cancel a denied request.' })
+  @ApiForbiddenResponse({ description: 'The actor is not the requester canceling a denial or an Admin canceling another requester’s exception.' })
   @ApiNotFoundResponse({ description: 'The request is no longer operational or does not belong to the requester.' })
   @ApiResponse({ status: 409, description: 'The Idempotency-Key was reused with different request content.' })
   @ApiResponse({ status: 412, description: 'The request version changed.' })
-  @ApiUnprocessableEntityResponse({ description: 'The request is not denied or the 14-day response deadline has passed.' })
+  @ApiUnprocessableEntityResponse({ description: 'The request is not in a cancellable state or its denial response deadline has passed.' })
   async cancelDenied(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Param('id', new ParseUUIDPipe()) id: string,
@@ -136,8 +137,89 @@ export class ResourceAllocationDecisionController {
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
     const operation = await this.decisions.cancelDenied(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
-    response.setHeader('ETag', `"${operation.result.version}"`);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    else response.setHeader('ETag', `"${operation.result.version}"`);
+    return operation.result;
+  }
+
+  @Post('requests/:id/escalations')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Explicitly escalate a Pre N3 request as an Admin' })
+  @ApiHeader({ name: 'If-Match', required: true, description: 'Current strong request ETag.' })
+  @ApiHeader({ name: 'Idempotency-Key', required: true, description: 'UUID for this exact escalation action.' })
+  @ApiOkResponse({ type: RequestDecisionResponseDto, headers: { ETag: { schema: { type: 'string', example: '"3"' } }, 'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } } } })
+  @ApiBadRequestResponse({ description: 'If-Match, Idempotency-Key, correlation ID, or reason is invalid.' })
+  @ApiForbiddenResponse({ description: 'Only an active Admin other than the requester may escalate the request.' })
+  @ApiNotFoundResponse({ description: 'The request is no longer operational.' })
+  @ApiResponse({ status: 409, description: 'The Idempotency-Key was reused with different request content.' })
+  @ApiResponse({ status: 412, description: 'The request version changed.' })
+  @ApiUnprocessableEntityResponse({ description: 'Only a Pre N3 request may be escalated.' })
+  async escalate(
+    @Headers(localProfileHeader) localUserId: string | undefined,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Headers('if-match') ifMatch: string | undefined,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined,
+    @Body(validatedBody(CancelDeniedRequestDto)) input: CancelDeniedRequestDto,
+    @Res({ passthrough: true }) response: ResponseWithHeaders,
+  ) {
+    const operation = await this.decisions.escalate(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
+    if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    else response.setHeader('ETag', `"${operation.result.version}"`);
+    return operation.result;
+  }
+
+  @Post('requests/:id/strategies')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Record an exception strategy without assigning a person or approving the request' })
+  @ApiHeader({ name: 'If-Match', required: true, description: 'Current strong request ETag.' })
+  @ApiHeader({ name: 'Idempotency-Key', required: true, description: 'UUID for this exact strategy action.' })
+  @ApiOkResponse({ type: RequestDecisionResponseDto, headers: { ETag: { schema: { type: 'string', example: '"3"' } }, 'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } } } })
+  @ApiBadRequestResponse({ description: 'The strategy, affected initiative IDs, reason, or command headers are invalid.' })
+  @ApiForbiddenResponse({ description: 'Only an active Admin other than the requester may resolve the exception.' })
+  @ApiNotFoundResponse({ description: 'The request is no longer operational.' })
+  @ApiResponse({ status: 409, description: 'The Idempotency-Key was reused with different request content.' })
+  @ApiResponse({ status: 412, description: 'The request version changed.' })
+  @ApiUnprocessableEntityResponse({ description: 'The request is not in Pre N3/Escalation or an affected ITDM is inactive.' })
+  async recordStrategy(
+    @Headers(localProfileHeader) localUserId: string | undefined,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Headers('if-match') ifMatch: string | undefined,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined,
+    @Body(validatedBody(RecordRequestStrategyDto)) input: RecordRequestStrategyDto,
+    @Res({ passthrough: true }) response: ResponseWithHeaders,
+  ) {
+    const operation = await this.decisions.recordStrategy(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
+    if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    else response.setHeader('ETag', `"${operation.result.version}"`);
+    return operation.result;
+  }
+
+  @Post('requests/:id/resolutions')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Approve a Pre N3/Escalation request through a final strategy resolution without requester acceptance' })
+  @ApiHeader({ name: 'If-Match', required: true, description: 'Current strong request ETag.' })
+  @ApiHeader({ name: 'Idempotency-Key', required: true, description: 'UUID for this exact resolution action.' })
+  @ApiOkResponse({ type: RequestDecisionResponseDto, headers: { ETag: { schema: { type: 'string', example: '"3"' } }, 'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } } } })
+  @ApiBadRequestResponse({ description: 'The strategy, final conditions, affected initiative IDs, reason, or command headers are invalid.' })
+  @ApiForbiddenResponse({ description: 'Only an active Admin other than the requester may resolve the exception.' })
+  @ApiNotFoundResponse({ description: 'The request is no longer operational.' })
+  @ApiResponse({ status: 409, description: 'The Idempotency-Key was reused with different request content.' })
+  @ApiResponse({ status: 412, description: 'The request version changed.' })
+  @ApiUnprocessableEntityResponse({ description: 'The request is not in Pre N3/Escalation or final conditions are not currently eligible.' })
+  async resolveException(
+    @Headers(localProfileHeader) localUserId: string | undefined,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Headers('if-match') ifMatch: string | undefined,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined,
+    @Body(validatedBody(ResolveRequestExceptionDto)) input: ResolveRequestExceptionDto,
+    @Res({ passthrough: true }) response: ResponseWithHeaders,
+  ) {
+    const operation = await this.decisions.resolveException(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
+    if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
   }
 

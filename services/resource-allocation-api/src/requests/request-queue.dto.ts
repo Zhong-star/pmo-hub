@@ -11,6 +11,18 @@ export class RequestQueueItemDto {
   @ApiProperty({ type: Object })
   requestedConditions!: Record<string, unknown>;
 
+  @ApiPropertyOptional({ type: Object, nullable: true })
+  approvedConditions!: Record<string, unknown> | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, enum: ['OUTSOURCE', 'WAIT_FOR_EMB_RESOURCE', 'DEPRIORITIZE_OTHER_DEMANDS'] })
+  resolutionStrategy!: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  resolutionReason!: string | null;
+
+  @ApiPropertyOptional({ type: [String], format: 'uuid' })
+  affectedInitiativeIds!: string[];
+
   @ApiProperty({ type: String })
   decisionState!: string;
 

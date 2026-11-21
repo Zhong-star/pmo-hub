@@ -42,6 +42,10 @@ export class RequestDecisionResponseDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty({ type: Object }) requesterSnapshot!: Record<string, unknown>;
   @ApiProperty({ type: Object }) requestedConditions!: Record<string, unknown>;
+  @ApiPropertyOptional({ type: Object, nullable: true }) approvedConditions?: Record<string, unknown> | null;
+  @ApiPropertyOptional({ type: Object, nullable: true }) allocation?: Record<string, unknown> | null;
+  @ApiPropertyOptional({ enum: ['OUTSOURCE', 'WAIT_FOR_EMB_RESOURCE', 'DEPRIORITIZE_OTHER_DEMANDS'] }) resolutionStrategy?: string;
+  @ApiPropertyOptional({ type: [String], format: 'uuid' }) affectedInitiativeIds?: string[];
   @ApiProperty({ type: String }) decisionState!: string;
   @ApiProperty({ type: String, format: 'date-time' }) receivedAt!: string;
   @ApiProperty({ type: String, format: 'date-time' }) stageEnteredAt!: string;

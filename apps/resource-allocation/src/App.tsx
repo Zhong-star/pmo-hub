@@ -211,6 +211,7 @@ export function App() {
             <RequestQueues
               key={`${profileId}:${generation}`}
               localUserId={profileId}
+              personId={accessQuery.data.person.id}
               role={accessQuery.data.person.role}
               groupId={accessQuery.data.person.groupId ?? null}
               onAccessDenied={handleQueueAccessDenied}

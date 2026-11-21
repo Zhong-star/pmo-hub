@@ -4,14 +4,20 @@ import { DataSource, type EntityManager } from 'typeorm';
 import { ResourceAllocationException } from '../access/resource-allocation-problem';
 import { isDatabaseUnavailable } from '../database/database-errors';
 import { RESOURCE_ALLOCATION_DATA_SOURCE, RESOURCE_ALLOCATION_DATABASE_CONFIGURED } from '../database/database.module';
+import { allocationResponse } from '../allocations/allocation-response';
+import { createResourceAllocationForRequest } from '../allocations/create-resource-allocation-for-request';
 import { runIdempotentOperation } from '../administration/idempotency/run-idempotent-operation';
 import { lockResourceAllocationAdministrationWrites } from '../administration/resource-allocation-write-lock';
 import { ResourceGroup } from '../groups/resource-group.entity';
+import { ResourceInitiative } from '../initiatives/resource-initiative.entity';
 import { ResourceAllocationRole } from '../people/resource-allocation-role';
 import { ResourcePerson } from '../people/resource-person.entity';
+import { ResourceProfile } from '../resource-profiles/resource-profile.entity';
 import { ResourceRequestHistory } from '../requests/resource-request-history.entity';
 import { ResourceRequest } from '../requests/resource-request.entity';
+import { normalizeRequestedWeeklyHours } from '../requests/requested-weekly-hours';
 import type { CancelDeniedRequestDto, ContestRequestDto, DenyRequestDto, RequestHistoryQueryDto } from './request-decision.dto';
+import { resolutionStrategies, type RecordRequestStrategyDto, type ResolutionStrategy, type ResolveRequestExceptionDto } from './resolve-exception.dto';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const maximumBatchSize = 100;
@@ -107,18 +113,292 @@ export class ResourceAllocationDecisionService {
           const item = await this.lockRequest(manager, requestId);
           this.requireRequester(actor, item);
           this.requireVersion(item, expectedVersion);
-          this.requireState(item, ['DENIED'], 'Only the requester may contest a denied request.');
-          await this.requireDeadlineNotPassed(manager, item.expirationDueAt, 'DENIAL_RESPONSE_EXPIRED', 'The 14-day response deadline has passed.');
+          this.requireState(item, ['DENIED', 'APPROVED_WITH_CHANGES'], 'Only a denied request or a changed proposal may be contested.');
+          if (item.decisionState === 'APPROVED_WITH_CHANGES') {
+            if (!item.decisionResponseDueAt) {
+              throw new ResourceAllocationException('REQUEST_DECISION_NOT_ALLOWED', 'Request cannot be contested', 422, 'This proposal has no active response deadline.');
+            }
+            await this.requireDeadlineNotReached(manager, item.decisionResponseDueAt, 'PROPOSAL_RESPONSE_EXPIRED', 'The proposal response deadline has been reached.');
+          } else {
+            await this.requireDeadlineNotPassed(manager, item.expirationDueAt, 'DENIAL_RESPONSE_EXPIRED', 'The 14-day response deadline has passed.');
+          }
 
           const occurredAt = await this.currentTimestamp(manager);
           const before = this.snapshot(item);
           item.decisionState = 'PRE_N3';
           item.stageEnteredAt = occurredAt;
+          item.decisionResponseDueAt = null;
           const saved = await manager.getRepository(ResourceRequest).save(item);
           await this.recordHistory(manager, saved, actor, 'CONTESTED', before, this.snapshot(saved), explanation, correlation, occurredAt);
           const admins = await this.activeAdminIds(manager);
           await this.notifyRecipients(manager, admins, actor.id, saved, `REQUEST_CONTESTED_${saved.version}`, 'Resource request contested', 'A requester contested a denied request. Review it in the Pre N3 queue.', occurredAt);
           return this.toResponse(saved);
+        });
+      });
+    } catch (error) {
+      throw this.translateDatabaseError(error);
+    }
+  }
+
+  async escalate(
+    localUserId: string | undefined,
+    requestId: string,
+    ifMatch: string | undefined,
+    idempotencyKey: string | undefined,
+    correlationId: string | undefined,
+    input: CancelDeniedRequestDto,
+  ) {
+    const expectedVersion = this.parseIfMatch(ifMatch);
+    const reason = this.normalizeReason(input.reason, 'reason');
+    const correlation = this.requireCorrelationId(correlationId);
+    this.ensureDatabaseAvailable();
+
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        await lockResourceAllocationAdministrationWrites(manager);
+        const actor = await this.requireActivePerson(manager, localUserId);
+        const current = await this.lockRequest(manager, requestId);
+        this.requireAdminExceptionActor(actor, current);
+        return runIdempotentOperation(manager, {
+          actorId: actor.id,
+          operation: 'request.exception.escalate',
+          key: idempotencyKey,
+          payload: { requestId, ifMatch: expectedVersion, reason },
+        }, async () => {
+          const item = await this.lockRequest(manager, requestId);
+          this.requireAdminExceptionActor(actor, item);
+          this.requireVersion(item, expectedVersion);
+          this.requireState(item, ['PRE_N3'], 'Only a Pre N3 request may be escalated.');
+
+          const occurredAt = await this.currentTimestamp(manager);
+          const before = this.snapshot(item);
+          item.decisionState = 'ESCALATION';
+          item.stageEnteredAt = occurredAt;
+          const saved = await manager.getRepository(ResourceRequest).save(item);
+          await this.recordHistory(manager, saved, actor, 'ESCALATED', before, this.snapshot(saved), reason, correlation, occurredAt);
+          const admins = await this.activeAdminIds(manager);
+          await this.notifyRecipients(manager, admins, actor.id, saved, `REQUEST_EXCEPTION_ESCALATED_${saved.version}`, 'Resource request escalated', 'A contested resource request was explicitly escalated for resolution.', occurredAt);
+          return this.toResponse(saved);
+        });
+      });
+    } catch (error) {
+      throw this.translateDatabaseError(error);
+    }
+  }
+
+  async recordStrategy(
+    localUserId: string | undefined,
+    requestId: string,
+    ifMatch: string | undefined,
+    idempotencyKey: string | undefined,
+    correlationId: string | undefined,
+    input: RecordRequestStrategyDto,
+  ) {
+    const expectedVersion = this.parseIfMatch(ifMatch);
+    const reason = this.normalizeReason(input.reason, 'reason');
+    const correlation = this.requireCorrelationId(correlationId);
+    const strategy = this.normalizeStrategy(input.strategy);
+    const affectedIds = this.normalizeAffectedInitiativeIds(strategy, input.affectedInitiativeIds);
+    this.ensureDatabaseAvailable();
+
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        await lockResourceAllocationAdministrationWrites(manager);
+        const actor = await this.requireActivePerson(manager, localUserId);
+        const current = await this.lockRequest(manager, requestId);
+        this.requireAdminExceptionActor(actor, current);
+        return runIdempotentOperation(manager, {
+          actorId: actor.id,
+          operation: 'request.exception.recordStrategy',
+          key: idempotencyKey,
+          payload: { requestId, ifMatch: expectedVersion, strategy, reason, affectedInitiativeIds: affectedIds },
+        }, async () => {
+          const item = await this.lockRequest(manager, requestId);
+          this.requireAdminExceptionActor(actor, item);
+          this.requireVersion(item, expectedVersion);
+          this.requireState(item, ['PRE_N3', 'ESCALATION'], 'A resolution strategy can only be recorded for Pre N3 or Escalation.');
+          const affectedInitiatives = await this.lockActiveInitiatives(manager, strategy, affectedIds);
+          const occurredAt = await this.currentTimestamp(manager);
+          const before = this.snapshot(item);
+          await manager.query('UPDATE resource_requests SET version = version + 1 WHERE id = $1', [item.id]);
+          const saved = await manager.getRepository(ResourceRequest).findOneByOrFail({ id: item.id });
+          await manager.getRepository(ResourceRequestHistory).insert({
+            requestId: item.id,
+            actorSnapshot: this.actorSnapshot(actor),
+            action: 'STRATEGY_RECORDED',
+            afterSnapshot: {
+              requestId: item.id,
+              before,
+              after: this.snapshot(saved),
+              reason,
+              resolutionStrategy: strategy,
+              affectedInitiativeIds: affectedIds,
+              affectedInitiatives,
+            },
+            correlationId: correlation,
+            occurredAt,
+          });
+          await this.notifyRecipients(manager, [saved.requesterId], actor.id, saved, `REQUEST_STRATEGY_RECORDED_${saved.version}`, 'Resource request resolution strategy recorded', 'An Admin recorded a resolution strategy. The request remains in the exception queue until eligible conditions can be confirmed.', occurredAt);
+          return { ...this.toResponse(saved), resolutionStrategy: strategy, affectedInitiativeIds: affectedIds, allocation: null };
+        });
+      });
+    } catch (error) {
+      throw this.translateDatabaseError(error);
+    }
+  }
+
+  async resolveException(
+    localUserId: string | undefined,
+    requestId: string,
+    ifMatch: string | undefined,
+    idempotencyKey: string | undefined,
+    correlationId: string | undefined,
+    input: ResolveRequestExceptionDto,
+  ) {
+    const expectedVersion = this.parseIfMatch(ifMatch);
+    const reason = this.normalizeReason(input.reason, 'reason');
+    const correlation = this.requireCorrelationId(correlationId);
+    const strategy = this.normalizeStrategy(input.strategy);
+    const affectedIds = this.normalizeAffectedInitiativeIds(strategy, input.affectedInitiativeIds);
+    const personId = this.normalizeUuid(input.personId, 'personId');
+    const resourceProfileId = this.normalizeUuid(input.resourceProfileId, 'resourceProfileId');
+    const startDate = this.normalizeBusinessDate(input.startDate, 'startDate');
+    const endDate = this.normalizeBusinessDate(input.endDate, 'endDate');
+    if (endDate < startDate) {
+      throw new ResourceAllocationException('INVALID_BUSINESS_DATE', 'Invalid business date', 422, 'The final allocation end date must be on or after its start date.');
+    }
+    const weeklyHours = normalizeRequestedWeeklyHours(input.weeklyHours);
+    this.ensureDatabaseAvailable();
+
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        await lockResourceAllocationAdministrationWrites(manager);
+        const actor = await this.requireActivePerson(manager, localUserId);
+        const current = await this.lockRequest(manager, requestId);
+        this.requireAdminExceptionActor(actor, current);
+        return runIdempotentOperation(manager, {
+          actorId: actor.id,
+          operation: 'request.exception.resolve',
+          key: idempotencyKey,
+          payload: {
+            requestId,
+            ifMatch: expectedVersion,
+            strategy,
+            reason,
+            affectedInitiativeIds: affectedIds,
+            personId,
+            resourceProfileId,
+            startDate,
+            endDate,
+            weeklyHours,
+          },
+        }, async () => {
+          const item = await this.lockRequest(manager, requestId);
+          this.requireAdminExceptionActor(actor, item);
+          this.requireVersion(item, expectedVersion);
+          this.requireState(item, ['PRE_N3', 'ESCALATION'], 'Only a Pre N3 or Escalation request can be resolved.');
+          const requested = item.requestedConditions;
+          const groupId = this.normalizeUuid(String(requested.groupId ?? ''), 'request group');
+          const initiativeId = this.normalizeUuid(String(requested.initiativeId ?? ''), 'request ITDM');
+          const group = await manager.getRepository(ResourceGroup).createQueryBuilder('group')
+            .setLock('pessimistic_write')
+            .where('group.id = :id AND group.active = TRUE', { id: groupId })
+            .getOne();
+          const person = await manager.getRepository(ResourcePerson).createQueryBuilder('person')
+            .setLock('pessimistic_write')
+            .where('person.id = :id AND person.active = TRUE AND person.group_id = :groupId', { id: personId, groupId })
+            .getOne();
+          const initiative = await manager.getRepository(ResourceInitiative).createQueryBuilder('initiative')
+            .setLock('pessimistic_write')
+            .where('initiative.id = :id AND initiative.active = TRUE', { id: initiativeId })
+            .getOne();
+          const profile = await manager.getRepository(ResourceProfile).createQueryBuilder('profile')
+            .setLock('pessimistic_write')
+            .where('profile.id = :id AND profile.active = TRUE AND profile.group_id = :groupId', { id: resourceProfileId, groupId })
+            .getOne();
+          if (!group || !person || !initiative || !profile) {
+            throw new ResourceAllocationException('INELIGIBLE_REFERENCE', 'Ineligible reference', 422, 'Select an active person, group, ITDM, and profile that belong together.');
+          }
+          const affectedInitiatives = await this.lockActiveInitiatives(manager, strategy, affectedIds);
+          const clockRows = await manager.query(`
+            WITH operation_clock AS (SELECT clock_timestamp() AS now)
+            SELECT now, (now AT TIME ZONE 'America/Sao_Paulo')::date::text AS today
+            FROM operation_clock
+          `) as Array<{ now: Date; today: string }>;
+          const occurredAt = new Date(clockRows[0].now);
+          if (startDate < clockRows[0].today) {
+            throw new ResourceAllocationException('INVALID_BUSINESS_DATE', 'Invalid business date', 422, 'The final allocation period must start today or in the future.');
+          }
+          const approvedConditions = {
+            personId: person.id,
+            personName: person.displayName,
+            resourceProfileId: profile.id,
+            resourceProfileName: profile.name,
+            groupId: group.id,
+            groupName: group.name,
+            initiativeId: initiative.id,
+            initiativeCode: initiative.code,
+            initiativeName: initiative.name,
+            startDate,
+            endDate,
+            weeklyHours,
+            resolutionStrategy: strategy,
+            resolutionReason: reason,
+            ...(affectedIds.length > 0 ? { affectedInitiativeIds: affectedIds } : {}),
+          };
+          const before = this.snapshot(item);
+          item.approvedConditions = approvedConditions;
+          item.decisionState = 'APPROVED';
+          item.stageEnteredAt = occurredAt;
+          item.decisionResponseDueAt = null;
+          const saved = await manager.getRepository(ResourceRequest).save(item);
+          const allocation = await createResourceAllocationForRequest(manager, {
+            requestId: saved.id,
+            person,
+            group,
+            initiative,
+            profile,
+            startDate,
+            endDate,
+            weeklyHours,
+            occurredAt,
+            businessDate: clockRows[0].today,
+          });
+          await manager.getRepository(ResourceRequestHistory).insert({
+            requestId: saved.id,
+            actorSnapshot: this.actorSnapshot(actor),
+            action: 'EXCEPTION_RESOLVED',
+            afterSnapshot: {
+              requestId: saved.id,
+              before,
+              after: this.snapshot(saved),
+              reason,
+              resolutionStrategy: strategy,
+              affectedInitiativeIds: affectedIds,
+              affectedInitiatives,
+              approvedConditions,
+              allocationId: allocation.id,
+            },
+            correlationId: correlation,
+            occurredAt,
+          });
+          await this.notifyRecipients(
+            manager,
+            [saved.requesterId, person.id],
+            actor.id,
+            saved,
+            `REQUEST_EXCEPTION_RESOLVED_${saved.version}`,
+            'Resource request resolved',
+            `The request was approved through ${strategy.toLowerCase().replaceAll('_', ' ')} for ${startDate} to ${endDate} at ${weeklyHours.toFixed(1)} weekly hours.`,
+            occurredAt,
+          );
+          return {
+            ...this.toResponse(saved),
+            approvedConditions,
+            allocation: allocationResponse(allocation),
+            resolutionStrategy: strategy,
+            affectedInitiativeIds: affectedIds,
+          };
         });
       });
     } catch (error) {
@@ -144,6 +424,31 @@ export class ResourceAllocationDecisionService {
         await lockResourceAllocationAdministrationWrites(manager);
         const actor = await this.requireActivePerson(manager, localUserId);
         const currentForAuthorization = await this.lockRequest(manager, requestId);
+        const exceptionCancellationOrReplay = ['PRE_N3', 'ESCALATION'].includes(currentForAuthorization.decisionState) ||
+          currentForAuthorization.requesterId !== actor.id && currentForAuthorization.decisionState !== 'DENIED';
+        if (actor.role === ResourceAllocationRole.Admin && exceptionCancellationOrReplay) {
+          this.requireAdminExceptionActor(actor, currentForAuthorization);
+          return runIdempotentOperation(manager, {
+            actorId: actor.id,
+            operation: 'request.exception.cancel',
+            key: idempotencyKey,
+            payload: { requestId, ifMatch: expectedVersion, reason },
+          }, async () => {
+            const item = await this.lockRequest(manager, requestId);
+            this.requireAdminExceptionActor(actor, item);
+            this.requireVersion(item, expectedVersion);
+            this.requireState(item, ['PRE_N3', 'ESCALATION'], 'Only a Pre N3 or Escalation request may be cancelled by an Admin.');
+            const occurredAt = await this.currentTimestamp(manager);
+            const before = this.snapshot(item);
+            item.decisionState = 'CANCELLED';
+            item.stageEnteredAt = occurredAt;
+            const saved = await manager.getRepository(ResourceRequest).save(item);
+            await this.recordHistory(manager, saved, actor, 'EXCEPTION_CANCELLED', before, this.snapshot(saved), reason, correlation, occurredAt);
+            const leaders = await this.groupLeaderIds(manager, this.groupId(saved));
+            await this.notifyRecipients(manager, [saved.requesterId, ...leaders], actor.id, saved, `REQUEST_EXCEPTION_CANCELLED_${saved.version}`, 'Resource request cancelled', 'An Admin cancelled the contested resource request.', occurredAt);
+            return this.toResponse(saved);
+          });
+        }
         this.requireRequester(actor, currentForAuthorization);
         return runIdempotentOperation(manager, {
           actorId: actor.id,
@@ -350,6 +655,13 @@ export class ResourceAllocationDecisionService {
     }
   }
 
+  private async requireDeadlineNotReached(manager: EntityManager, dueAt: Date, code: string, detail: string): Promise<void> {
+    const rows = await manager.query('SELECT clock_timestamp() >= $1::timestamptz AS passed', [dueAt]) as Array<{ passed: boolean }>;
+    if (rows[0].passed) {
+      throw new ResourceAllocationException(code, 'Request deadline passed', 422, detail);
+    }
+  }
+
   private async currentTimestamp(manager: EntityManager): Promise<Date> {
     const rows = await manager.query('SELECT clock_timestamp() AS now') as Array<{ now: Date | string }>;
     return new Date(rows[0].now);
@@ -470,11 +782,69 @@ export class ResourceAllocationDecisionService {
     return normalized;
   }
 
+  private requireAdminExceptionActor(actor: ResourcePerson, item: ResourceRequest): void {
+    if (actor.role !== ResourceAllocationRole.Admin) {
+      throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'Only an active Admin may resolve exception requests.');
+    }
+    if (item.requesterId === actor.id) {
+      throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'An Admin cannot resolve their own request.');
+    }
+  }
+
+  private normalizeStrategy(value: unknown): ResolutionStrategy {
+    if (typeof value !== 'string' || !resolutionStrategies.includes(value as ResolutionStrategy)) {
+      throw this.validationError('strategy must be OUTSOURCE, WAIT_FOR_EMB_RESOURCE, or DEPRIORITIZE_OTHER_DEMANDS.');
+    }
+    return value as ResolutionStrategy;
+  }
+
+  private normalizeAffectedInitiativeIds(strategy: ResolutionStrategy, values: string[] | undefined): string[] {
+    const ids = (values ?? []).map((value) => this.normalizeUuid(value, 'affectedInitiativeIds'));
+    if (new Set(ids).size !== ids.length) throw this.validationError('affectedInitiativeIds must not contain duplicate IDs.');
+    if (strategy === 'DEPRIORITIZE_OTHER_DEMANDS' && ids.length === 0) {
+      throw this.validationError('affectedInitiativeIds is required for DEPRIORITIZE_OTHER_DEMANDS.');
+    }
+    if (strategy !== 'DEPRIORITIZE_OTHER_DEMANDS' && ids.length > 0) {
+      throw this.validationError('affectedInitiativeIds only applies to DEPRIORITIZE_OTHER_DEMANDS.');
+    }
+    return ids.sort();
+  }
+
+  private async lockActiveInitiatives(manager: EntityManager, strategy: ResolutionStrategy, ids: string[]) {
+    if (ids.length === 0) return [];
+    const initiatives = await manager.getRepository(ResourceInitiative).createQueryBuilder('initiative')
+      .setLock('pessimistic_write')
+      .where('initiative.id IN (:...ids) AND initiative.active = TRUE', { ids })
+      .orderBy('initiative.id', 'ASC')
+      .getMany();
+    if (initiatives.length !== ids.length) {
+      throw new ResourceAllocationException('INELIGIBLE_REFERENCE', 'Ineligible reference', 422, 'Select active ITDMs for the Deprioritize other demands strategy.');
+    }
+    return initiatives.map((initiative) => ({ id: initiative.id, code: initiative.code, name: initiative.name }));
+  }
+
+  private normalizeUuid(value: string, field: string): string {
+    if (typeof value !== 'string' || !uuidPattern.test(value)) throw this.validationError(`${field} must be a UUID.`);
+    return value.toLowerCase();
+  }
+
+  private normalizeBusinessDate(value: string, field: string): string {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      throw this.validationError(`${field} must be an ISO calendar date (YYYY-MM-DD).`);
+    }
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+      throw this.validationError(`${field} must be a valid ISO calendar date.`);
+    }
+    return value;
+  }
+
   private toResponse(item: ResourceRequest) {
     return {
       id: item.id,
       requesterSnapshot: item.requesterSnapshot,
       requestedConditions: item.requestedConditions,
+      approvedConditions: item.approvedConditions,
       decisionState: item.decisionState,
       receivedAt: item.receivedAt.toISOString(),
       stageEnteredAt: item.stageEnteredAt.toISOString(),
@@ -501,8 +871,10 @@ export class ResourceAllocationDecisionService {
     return {
       decisionState: item.decisionState,
       requestedConditions: item.requestedConditions,
+      approvedConditions: item.approvedConditions,
       stageEnteredAt: item.stageEnteredAt.toISOString(),
       expirationDueAt: item.expirationDueAt.toISOString(),
+      decisionResponseDueAt: item.decisionResponseDueAt?.toISOString() ?? null,
       version: item.version,
     };
   }

@@ -44,11 +44,11 @@ export class ResourceAllocationApprovalController {
   ) {}
 
   @Get(':id/approval-candidates')
-  @ApiOperation({ summary: 'List eligible people for an approval in the actor’s current request scope' })
+  @ApiOperation({ summary: 'List eligible people for an in-scope approval or a global Admin exception resolution' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size (default 50, maximum 100).' })
   @ApiQuery({ name: 'cursor', required: false, type: String })
   @ApiOkResponse({ type: ApprovalCandidateCollectionDto, description: 'Active people in the request group with only their identifier and display name.' })
-  @ApiForbiddenResponse({ description: 'The actor is not an authorized in-scope decider or the request is their own.' })
+  @ApiForbiddenResponse({ description: 'The actor is not an authorized in-scope decider or global Admin, or the request is their own.' })
   @ApiNotFoundResponse({ description: 'The current request was not found.' })
   @ApiBadRequestResponse({ description: 'The limit or cursor is invalid.' })
   async listApprovalCandidates(

@@ -156,11 +156,100 @@ test('shows the denial explanation and lets the requester contest into Pre N3 wi
   await detail.getByLabel('Reason for contesting').fill('The new scope can be reduced to meet the deadline.');
   await detail.getByRole('button', { name: 'Submit contest' }).click();
 
-  await expect(detail).toContainText('Pre N3');
+  await expect(detail.locator('.request-metadata')).toContainText('Pre N3');
   await expect(detail.getByText('The new scope can be reduced to meet the deadline.')).toBeVisible();
   expect(contest.body).toEqual({ explanation: 'The new scope can be reduced to meet the deadline.' });
   expect(contest.headers?.['if-match']).toBe('"2"');
   expect(contest.headers?.['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i);
+});
+
+test('lets the requester contest changed approval conditions only when the server allows it', async ({ page }) => {
+  await installRequesterRoutes(page);
+  let item = {
+    ...deniedRequest('APPROVED_WITH_CHANGES', 2),
+    dueAt: '2026-11-24T13:00:00.000Z',
+    availableActions: ['ACCEPT', 'CONTEST'],
+    approvedConditions: {
+      personId: 'person-a',
+      personName: 'Alex Engineer',
+      resourceProfileId: '229ed3e8-cc69-4982-9b2b-e786270bd9f4',
+      resourceProfileName: 'API Engineering',
+      groupId: '361988f3-fbbf-48ac-9d70-86070f69fc9d',
+      groupName: 'Platform Engineering',
+      initiativeId: 'ff5d471a-a57f-4bfd-924e-fb1eeaa8d4f1',
+      initiativeCode: 'ITDM-65',
+      initiativeName: 'Resource planning',
+      startDate: '2027-01-12',
+      endDate: '2027-01-29',
+      weeklyHours: 12,
+      explanation: 'The start date was moved by one day.',
+    },
+  };
+  let contest: { body?: Record<string, string>; headers?: Record<string, string> } = {};
+
+  await page.route(`${apiRoot}/requests**`, async (route: Route) => {
+    const incoming = route.request();
+    const url = new URL(incoming.url());
+    if (incoming.method() === 'GET' && url.pathname.endsWith('/history')) {
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+    if (incoming.method() === 'GET' && url.pathname.endsWith(`/requests/${requestId}`)) {
+      await route.fulfill({ headers: { etag: `"${item.version}"` }, json: item });
+      return;
+    }
+    if (incoming.method() === 'GET' && url.pathname.endsWith('/requests')) {
+      await route.fulfill({ json: { items: [item], page: emptyPage } });
+      return;
+    }
+    if (incoming.method() === 'POST' && url.pathname.endsWith(`/requests/${requestId}/contests`)) {
+      contest = { body: incoming.postDataJSON() as Record<string, string>, headers: incoming.headers() };
+      item = { ...item, decisionState: 'PRE_N3', version: 3, availableActions: [] };
+      await route.fulfill({ headers: { etag: '"3"' }, json: item });
+      return;
+    }
+    await route.fulfill({ status: 404, contentType: 'application/problem+json', json: { status: 404, code: 'RESOURCE_NOT_FOUND' } });
+  });
+
+  await page.goto(`/resource-allocation/?requestId=${requestId}`);
+  const detail = page.getByRole('region', { name: 'ITDM-65' });
+  await expect(detail).toContainText('Approved with changes');
+  await detail.getByRole('button', { name: 'Contest proposed changes' }).click();
+  await detail.getByLabel('Reason for contesting').fill('The revised start date conflicts with the initiative schedule.');
+  await detail.getByRole('button', { name: 'Submit contest' }).click();
+
+  await expect(detail.locator('.request-metadata')).toContainText('Pre N3');
+  expect(contest.body).toEqual({ explanation: 'The revised start date conflicts with the initiative schedule.' });
+  expect(contest.headers?.['if-match']).toBe('"2"');
+  expect(contest.headers?.['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i);
+});
+
+test('does not offer a changed-proposal contest without the server action', async ({ page }) => {
+  await installRequesterRoutes(page);
+  const item = {
+    ...deniedRequest('APPROVED_WITH_CHANGES', 2),
+    dueAt: '2026-11-24T13:00:00.000Z',
+    availableActions: ['ACCEPT'],
+  };
+
+  await page.route(`${apiRoot}/requests**`, async (route: Route) => {
+    const incoming = route.request();
+    const url = new URL(incoming.url());
+    if (incoming.method() === 'GET' && url.pathname.endsWith(`/requests/${requestId}`)) {
+      await route.fulfill({ headers: { etag: `"${item.version}"` }, json: item });
+      return;
+    }
+    if (incoming.method() === 'GET') {
+      await route.fulfill({ json: { items: [item], page: emptyPage } });
+      return;
+    }
+    await route.fulfill({ status: 404, contentType: 'application/problem+json', json: { status: 404, code: 'RESOURCE_NOT_FOUND' } });
+  });
+
+  await page.goto(`/resource-allocation/?requestId=${requestId}`);
+  const detail = page.getByRole('region', { name: 'ITDM-65' });
+  await expect(detail.locator('.request-metadata')).toContainText('Approved with changes');
+  await expect(detail.getByRole('button', { name: 'Contest proposed changes' })).toHaveCount(0);
 });
 
 test('lets the requester cancel a denial with a reason and keeps both explanations in history', async ({ page }) => {

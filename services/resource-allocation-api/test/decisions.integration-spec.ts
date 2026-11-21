@@ -16,12 +16,13 @@ import { ResourceProfile } from '../src/resource-profiles/resource-profile.entit
 import { ResourceInitiative } from '../src/initiatives/resource-initiative.entity';
 import { ResourceRequest } from '../src/requests/resource-request.entity';
 import { ResourceRequestHistory } from '../src/requests/resource-request-history.entity';
+import { ResourceAllocation } from '../src/allocations/resource-allocation.entity';
 import { ResourceSubmission } from '../src/submissions/resource-submission.entity';
 import { ResourceSubmissionLine } from '../src/submissions/resource-submission-line.entity';
 import { ResourceAllocationDecisionService } from '../src/decisions/resource-allocation-decision.service';
 import { createResourceAllocationWorkerJobs } from '../src/workers/resource-allocation-worker-cycle';
 
-describe('Tech Resource Allocation denials and responses (#65)', () => {
+describe('Tech Resource Allocation denials and exception resolution (#65/#66)', () => {
   let container: StartedPostgreSqlContainer | undefined;
   let app: INestApplication | undefined;
   let dataSource: DataSource | undefined;
@@ -295,6 +296,337 @@ describe('Tech Resource Allocation denials and responses (#65)', () => {
     expect((history[2].afterSnapshot as { reason: string }).reason).toBe('The new scope can be reduced to fit the available capacity.');
     expect(await dataSource!.query('SELECT recipient_id, event_code FROM resource_allocation_notifications WHERE source_request_id = $1 ORDER BY recipient_id', [resourceRequest.id]))
       .toEqual([{ recipient_id: fixture.admin.id, event_code: `REQUEST_CONTESTED_${resourceRequest.version + 1}` }]);
+  });
+
+  it('lets the requester contest a changed proposal only before its 72-hour deadline, without creating an allocation', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture);
+    const dueAt = new Date(Date.now() + 60_000);
+    await dataSource!.getRepository(ResourceRequest).update(resourceRequest.id, {
+      decisionState: 'APPROVED_WITH_CHANGES',
+      version: 2,
+      decisionResponseDueAt: dueAt,
+      approvedConditions: {
+        personId: fixture.moderator.id,
+        groupId: fixture.group.id,
+        initiativeId: fixture.initiative.id,
+        resourceProfileId: fixture.profile.id,
+        startDate: '2027-01-12',
+        endDate: '2027-01-30',
+        weeklyHours: 18,
+      },
+    });
+
+    const response = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/contests`)
+      .set(commandHeaders(fixture.requester.localUserId, 2))
+      .send({ explanation: 'The proposed period conflicts with the initiative plan.' })
+      .expect(200);
+
+    expect(response.body).toMatchObject({ decisionState: 'PRE_N3', version: 3 });
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(0);
+    expect(await dataSource!.query('SELECT recipient_id, event_code FROM resource_allocation_notifications WHERE source_request_id = $1', [resourceRequest.id]))
+      .toEqual([{ recipient_id: fixture.admin.id, event_code: 'REQUEST_CONTESTED_3' }]);
+    const expiredRequest = await createRequest(fixture);
+    await dataSource!.getRepository(ResourceRequest).update(expiredRequest.id, {
+      decisionState: 'APPROVED_WITH_CHANGES',
+      version: 2,
+      decisionResponseDueAt: new Date(Date.now() - 1_000),
+      approvedConditions: {
+        personId: fixture.moderator.id,
+        groupId: fixture.group.id,
+        initiativeId: fixture.initiative.id,
+        resourceProfileId: fixture.profile.id,
+        startDate: '2027-01-12',
+        endDate: '2027-01-30',
+        weeklyHours: 18,
+      },
+    });
+    const expired = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${expiredRequest.id}/contests`)
+      .set(commandHeaders(fixture.requester.localUserId, 2))
+      .send({ explanation: 'A late contest must not alter the accepted proposal.' })
+      .expect(422);
+    expect(expired.body.code).toBe('PROPOSAL_RESPONSE_EXPIRED');
+    expect(await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: expiredRequest.id }))
+      .toMatchObject({ decisionState: 'APPROVED_WITH_CHANGES', version: 2 });
+  });
+
+  it('shows Pre N3 and Escalation in a global Admin queue with only current exception actions', async () => {
+    const fixture = await setup();
+    const preN3 = await createRequest(fixture, { state: 'PRE_N3' });
+    const escalation = await createRequest(fixture, { state: 'ESCALATION' });
+    const queuePath = '/api/resource-allocation/v1/request-queues/exceptions';
+
+    const response = await request(app!.getHttpServer())
+      .get(queuePath)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+
+    expect(response.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: preN3.id, decisionState: 'PRE_N3', availableActions: ['ESCALATE', 'CANCEL', 'RECORD_STRATEGY', 'RESOLVE'] }),
+      expect.objectContaining({ id: escalation.id, decisionState: 'ESCALATION', availableActions: ['CANCEL', 'RECORD_STRATEGY', 'RESOLVE'] }),
+    ]));
+    await request(app!.getHttpServer())
+      .get(queuePath)
+      .set('X-PMO-Local-User-ID', fixture.moderator.localUserId)
+      .expect(403);
+  });
+
+  it('keeps an exception in its stage and reports distinct current eligibility impediments', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture, { state: 'PRE_N3' });
+    await dataSource!.getRepository(ResourceRequest).update(resourceRequest.id, {
+      approvedConditions: {
+        personId: fixture.moderator.id,
+        groupId: fixture.group.id,
+        initiativeId: fixture.initiative.id,
+        resourceProfileId: fixture.profile.id,
+        startDate: '2027-01-12',
+        endDate: '2027-01-30',
+        weeklyHours: 18,
+      },
+    });
+    await dataSource!.getRepository(ResourcePerson).update(fixture.moderator.id, { active: false });
+    await dataSource!.getRepository(ResourceProfile).update(fixture.profile.id, { active: false });
+    await dataSource!.getRepository(ResourceInitiative).update(fixture.initiative.id, { active: false });
+    await dataSource!.getRepository(ResourceGroup).update(fixture.group.id, { active: false });
+
+    const queue = await request(app!.getHttpServer()).get('/api/resource-allocation/v1/request-queues/exceptions')
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(queue.body.items).toContainEqual(expect.objectContaining({
+      id: resourceRequest.id,
+      decisionState: 'PRE_N3',
+      impediments: ['GROUP_INACTIVE', 'INITIATIVE_INACTIVE', 'PROFILE_INACTIVE', 'PERSON_INACTIVE'],
+      availableActions: ['ESCALATE', 'CANCEL', 'RECORD_STRATEGY'],
+    }));
+  });
+
+  it('records an Admin strategy without assigning a person or creating an allocation and replays it once', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture, { state: 'PRE_N3' });
+    const path = `/api/resource-allocation/v1/requests/${resourceRequest.id}/strategies`;
+    const key = randomUUID();
+    const headers = commandHeaders(fixture.admin.localUserId, resourceRequest.version, key);
+    const payload = { strategy: 'OUTSOURCE', reason: 'Use an external supplier while capacity is unavailable.' };
+
+    const recorded = await request(app!.getHttpServer()).post(path).set(headers).send(payload).expect(200);
+    expect(recorded.body).toMatchObject({ decisionState: 'PRE_N3', version: 2, resolutionStrategy: 'OUTSOURCE' });
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(0);
+    const replay = await request(app!.getHttpServer()).post(path).set(headers).send(payload).expect(200);
+    expect(replay.headers['idempotency-replayed']).toBe('true');
+    const history = await dataSource!.getRepository(ResourceRequestHistory).findOneByOrFail({ requestId: resourceRequest.id, action: 'STRATEGY_RECORDED' });
+    expect(history.afterSnapshot).toMatchObject({ resolutionStrategy: 'OUTSOURCE', reason: payload.reason });
+    const queue = await request(app!.getHttpServer()).get('/api/resource-allocation/v1/request-queues/exceptions')
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(queue.body.items).toContainEqual(expect.objectContaining({ id: resourceRequest.id, resolutionStrategy: 'OUTSOURCE' }));
+    await dataSource!.getRepository(ResourcePerson).update(fixture.admin.id, { role: ResourceAllocationRole.User });
+    await request(app!.getHttpServer()).post(path).set(headers).send(payload).expect(403);
+    expect(await dataSource!.getRepository(ResourceRequestHistory).find({ where: { requestId: resourceRequest.id, action: 'STRATEGY_RECORDED' } }))
+      .toHaveLength(1);
+  });
+
+  it('lets only a non-requester Admin load request-specific candidates for a global exception', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture, { state: 'PRE_N3' });
+    const path = `/api/resource-allocation/v1/requests/${resourceRequest.id}/approval-candidates`;
+
+    const candidates = await request(app!.getHttpServer())
+      .get(path)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(candidates.body.items).toContainEqual({ id: fixture.moderator.id, displayName: fixture.moderator.displayName, groupId: fixture.group.id });
+    await request(app!.getHttpServer())
+      .get(path)
+      .set('X-PMO-Local-User-ID', fixture.moderator.localUserId)
+      .expect(403);
+
+    const ownException = await createRequest(fixture, { state: 'PRE_N3', requester: fixture.admin });
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/requests/${ownException.id}/approval-candidates`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(403);
+  });
+
+  it('resolves a Deprioritize exception once with a final allocation and leaves unrelated allocations unchanged', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture, { state: 'PRE_N3' });
+    const otherRequest = await createRequest(fixture);
+    const allocations = dataSource!.getRepository(ResourceAllocation);
+    const unrelated = await allocations.save(allocations.create({
+      sourceRequestId: otherRequest.id,
+      personId: fixture.moderator.id,
+      personSnapshot: { personId: fixture.moderator.id, displayName: fixture.moderator.displayName, role: fixture.moderator.role },
+      groupId: fixture.group.id,
+      groupSnapshot: { id: fixture.group.id, name: fixture.group.name },
+      initiativeId: fixture.initiative.id,
+      initiativeSnapshot: { id: fixture.initiative.id, code: fixture.initiative.code, name: fixture.initiative.name },
+      resourceProfileId: fixture.profile.id,
+      resourceProfileSnapshot: { id: fixture.profile.id, name: fixture.profile.name },
+      approvedStartDate: '2027-01-01',
+      approvedEndDate: '2027-01-31',
+      effectiveStartDate: '2027-01-01',
+      effectiveEndDate: '2027-01-31',
+      weeklyHours: '12.0',
+      state: 'SUSPENDED',
+      stateEnteredAt: new Date(),
+      approvedAt: new Date(),
+    }));
+    const path = `/api/resource-allocation/v1/requests/${resourceRequest.id}/resolutions`;
+    const key = randomUUID();
+    const headers = commandHeaders(fixture.admin.localUserId, resourceRequest.version, key);
+    const payload = {
+      strategy: 'DEPRIORITIZE_OTHER_DEMANDS',
+      reason: 'Make room by deprioritizing these ITDMs while protecting the committed allocation.',
+      affectedInitiativeIds: [fixture.initiative.id],
+      personId: fixture.moderator.id,
+      resourceProfileId: fixture.profile.id,
+      startDate: '2027-01-12',
+      endDate: '2027-01-30',
+      weeklyHours: 16.25,
+    };
+
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/strategies`)
+      .set(commandHeaders(fixture.admin.localUserId, resourceRequest.version))
+      .send({ strategy: 'DEPRIORITIZE_OTHER_DEMANDS', reason: 'This strategy needs an explicit ITDM list.' })
+      .expect(400);
+    const inactivePerson = await dataSource!.getRepository(ResourcePerson).save({
+      localUserId: 'inactive-resolution-candidate', displayName: 'Inactive Candidate', email: 'inactive@example.test',
+      role: ResourceAllocationRole.User, active: false, coveredGroupIds: [], groupId: fixture.group.id,
+    });
+    await request(app!.getHttpServer())
+      .post(path)
+      .set(commandHeaders(fixture.admin.localUserId, resourceRequest.version))
+      .send({ ...payload, personId: inactivePerson.id })
+      .expect(422);
+    await request(app!.getHttpServer())
+      .post(path)
+      .set({ ...commandHeaders(fixture.admin.localUserId, 99), 'If-Match': '"99"' })
+      .send(payload)
+      .expect(412);
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(0);
+
+    const resolved = await request(app!.getHttpServer()).post(path).set(headers).send(payload).expect(200);
+    expect(resolved.body).toMatchObject({
+      decisionState: 'APPROVED',
+      resolutionStrategy: 'DEPRIORITIZE_OTHER_DEMANDS',
+      affectedInitiativeIds: [fixture.initiative.id],
+      approvedConditions: { weeklyHours: 16.3, resolutionStrategy: 'DEPRIORITIZE_OTHER_DEMANDS' },
+      allocation: { person: { personId: fixture.moderator.id }, weeklyHours: 16.3 },
+    });
+    const replay = await request(app!.getHttpServer()).post(path).set(headers).send(payload).expect(200);
+    expect(replay.headers['idempotency-replayed']).toBe('true');
+    expect(replay.headers.etag).toBeUndefined();
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(1);
+    expect(await allocations.findOneByOrFail({ id: unrelated.id })).toMatchObject({ state: 'SUSPENDED', effectiveEndDate: '2027-01-31', weeklyHours: '12.0' });
+    const history = await dataSource!.getRepository(ResourceRequestHistory).find({ where: { requestId: resourceRequest.id, action: 'EXCEPTION_RESOLVED' } });
+    expect(history).toHaveLength(1);
+    expect(history[0].afterSnapshot).toMatchObject({ reason: payload.reason, resolutionStrategy: payload.strategy, affectedInitiativeIds: payload.affectedInitiativeIds });
+    expect(await dataSource!.query('SELECT recipient_id, event_code FROM resource_allocation_notifications WHERE source_request_id = $1 ORDER BY recipient_id', [resourceRequest.id]))
+      .toEqual([
+        { recipient_id: fixture.moderator.id, event_code: `REQUEST_EXCEPTION_RESOLVED_${resourceRequest.version + 1}` },
+        { recipient_id: fixture.requester.id, event_code: `REQUEST_EXCEPTION_RESOLVED_${resourceRequest.version + 1}` },
+      ].sort((a, b) => a.recipient_id.localeCompare(b.recipient_id)));
+
+    const ownRequest = await createRequest(fixture, { state: 'PRE_N3', requester: fixture.admin });
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${ownRequest.id}/resolutions`)
+      .set(commandHeaders(fixture.admin.localUserId, ownRequest.version))
+      .send({
+        strategy: 'OUTSOURCE',
+        reason: 'A person cannot resolve their own request.',
+        personId: fixture.moderator.id,
+        resourceProfileId: fixture.profile.id,
+        startDate: '2027-01-12',
+        endDate: '2027-01-30',
+        weeklyHours: 12,
+      })
+      .expect(403);
+  });
+
+  it('requires an Admin reason to escalate or cancel, replays after state changes, and blocks self-resolution', async () => {
+    const fixture = await setup();
+    const otherAdmin = await dataSource!.getRepository(ResourcePerson).save({
+      localUserId: 'decision-observer-admin', displayName: 'Observer Admin', email: 'observer@example.test',
+      role: ResourceAllocationRole.Admin, active: true, coveredGroupIds: [], groupId: null,
+    });
+    const resourceRequest = await createRequest(fixture, { state: 'PRE_N3' });
+    const escalationPath = `/api/resource-allocation/v1/requests/${resourceRequest.id}/escalations`;
+    const escalationKey = randomUUID();
+    const escalationHeaders = commandHeaders(fixture.admin.localUserId, resourceRequest.version, escalationKey);
+    const escalationBody = { reason: 'The contested request needs an executive decision.' };
+    const escalated = await request(app!.getHttpServer()).post(escalationPath).set(escalationHeaders).send(escalationBody).expect(200);
+    expect(escalated.body).toMatchObject({ decisionState: 'ESCALATION', version: 2 });
+    const escalationReplay = await request(app!.getHttpServer()).post(escalationPath).set(escalationHeaders).send(escalationBody).expect(200);
+    expect(escalationReplay.headers['idempotency-replayed']).toBe('true');
+    expect(await dataSource!.query('SELECT recipient_id, event_code FROM resource_allocation_notifications WHERE source_request_id = $1', [resourceRequest.id]))
+      .toEqual([{ recipient_id: otherAdmin.id, event_code: 'REQUEST_EXCEPTION_ESCALATED_2' }]);
+
+    const cancellationPath = `/api/resource-allocation/v1/requests/${resourceRequest.id}/cancellations`;
+    const cancellationKey = randomUUID();
+    const cancellationHeaders = commandHeaders(fixture.admin.localUserId, 2, cancellationKey);
+    const cancellationBody = { reason: 'The sponsor withdrew the request.' };
+    const cancelled = await request(app!.getHttpServer()).post(cancellationPath).set(cancellationHeaders).send(cancellationBody).expect(200);
+    expect(cancelled.body).toMatchObject({ decisionState: 'CANCELLED', version: 3 });
+    const cancellationReplay = await request(app!.getHttpServer()).post(cancellationPath).set(cancellationHeaders).send(cancellationBody).expect(200);
+    expect(cancellationReplay.headers['idempotency-replayed']).toBe('true');
+
+    const ownRequest = await createRequest(fixture, { state: 'PRE_N3', requester: fixture.admin });
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${ownRequest.id}/escalations`)
+      .set(commandHeaders(fixture.admin.localUserId, ownRequest.version))
+      .send({ reason: 'A person cannot resolve their own request.' })
+      .expect(403);
+  });
+
+  it('rolls back resolution, allocation, history, notice, and receipt if a required notice cannot be persisted', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture, { state: 'PRE_N3' });
+    const key = randomUUID();
+    const path = `/api/resource-allocation/v1/requests/${resourceRequest.id}/resolutions`;
+    await dataSource!.query(`
+      CREATE FUNCTION fail_resource_request_exception_notice() RETURNS trigger AS $$
+      BEGIN
+        RAISE EXCEPTION 'forced exception-resolution notice failure';
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+    await dataSource!.query(`
+      CREATE TRIGGER fail_resource_request_exception_notice_trigger
+      BEFORE INSERT ON resource_allocation_notifications
+      FOR EACH ROW WHEN (NEW.event_code LIKE 'REQUEST_EXCEPTION_RESOLVED_%')
+      EXECUTE FUNCTION fail_resource_request_exception_notice()
+    `);
+    try {
+      await request(app!.getHttpServer())
+        .post(path)
+        .set(commandHeaders(fixture.admin.localUserId, resourceRequest.version, key))
+        .send({
+          strategy: 'WAIT_FOR_EMB_RESOURCE',
+          reason: 'Keep the demand in the approved capacity window.',
+          personId: fixture.moderator.id,
+          resourceProfileId: fixture.profile.id,
+          startDate: '2027-01-12',
+          endDate: '2027-01-30',
+          weeklyHours: 12,
+        })
+        .expect(500);
+    } finally {
+      await dataSource!.query('DROP TRIGGER fail_resource_request_exception_notice_trigger ON resource_allocation_notifications');
+      await dataSource!.query('DROP FUNCTION fail_resource_request_exception_notice()');
+    }
+
+    expect(await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id }))
+      .toMatchObject({ decisionState: 'PRE_N3', version: resourceRequest.version, approvedConditions: null });
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(0);
+    expect(await dataSource!.query('SELECT id FROM resource_request_history WHERE request_id = $1 AND action = $2', [resourceRequest.id, 'EXCEPTION_RESOLVED'])).toHaveLength(0);
+    expect(await dataSource!.query(
+      "SELECT id FROM resource_allocation_operation_receipts WHERE actor_id = $1 AND operation = 'request.exception.resolve' AND idempotency_key = $2",
+      [fixture.admin.id, key],
+    )).toHaveLength(0);
   });
 
   it('rejects a contest after more than 14 days with a stable deadline code', async () => {

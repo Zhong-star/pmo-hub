@@ -88,6 +88,7 @@ async function postDecision(
         ...headers(localUserId),
         'If-Match': `"${version}"`,
         'Idempotency-Key': idempotencyKey,
+        'X-Correlation-ID': crypto.randomUUID(),
       },
     });
     return response.data;
@@ -106,7 +107,7 @@ export function denyRequest(
   return postDecision(localUserId, requestId, 'denials', version, idempotencyKey, { explanation });
 }
 
-export function contestDeniedRequest(
+export function contestRequest(
   localUserId: string,
   requestId: string,
   version: number,

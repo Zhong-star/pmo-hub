@@ -2,13 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import type { ResourceAllocationRole } from './accessApi';
-import { approveRequest, getQueueSelections, getRequestQueue, correctRequestReferences, referRequest, removeRequestAdministratively, REQUEST_QUEUES_QUERY_ROOT, RequestQueueRequestError, type RequestQueueCode, type RequestQueueItem, type QueueSelections } from './requestQueueApi';
+import { approveRequest, cancelExceptionRequest, correctRequestReferences, escalateRequest, getQueueSelections, getRequestQueue, recordExceptionStrategy, referRequest, removeRequestAdministratively, resolveException, REQUEST_QUEUES_QUERY_ROOT, RequestQueueRequestError, type ExceptionResolutionInput, type ExceptionResolutionStrategy, type ExceptionStrategyInput, type RequestQueueCode, type RequestQueueFilters, type RequestQueueItem, type QueueSelections } from './requestQueueApi';
 import { denyRequest, RequestDecisionApiError } from './requestDecisionApi';
 import { DenialAction } from './DenialAction';
+import { ExceptionResolutionAction } from './ExceptionResolutionAction';
+import { ExceptionStageAction } from './ExceptionStageAction';
 import { SUBMISSIONS_QUERY_ROOT, type SelectionItem } from './submissionApi';
 
 interface RequestQueuesProps {
   localUserId: string;
+  personId: string;
   role: ResourceAllocationRole;
   groupId: string | null;
   onAccessDenied: () => void;
@@ -46,10 +49,26 @@ type ApprovalDecision = {
 const queueLabels: Record<RequestQueueCode, string> = {
   presentation: 'Presentation queue',
   'team-decision': 'Group decision queue',
+  exceptions: 'Admin exceptions',
+};
+
+const exceptionStrategyLabels: Record<ExceptionResolutionStrategy, string> = {
+  OUTSOURCE: 'Outsource',
+  WAIT_FOR_EMB_RESOURCE: 'Wait for EMB Resource',
+  DEPRIORITIZE_OTHER_DEMANDS: 'Deprioritize other demands',
+};
+
+const exceptionImpedimentLabels: Record<string, string> = {
+  GROUP_INACTIVE: 'The request group is inactive.',
+  INITIATIVE_INACTIVE: 'The request ITDM is inactive.',
+  PROFILE_INACTIVE: 'The requested resource profile is inactive.',
+  PROFILE_GROUP_MISMATCH: 'The resource profile no longer belongs to the request group.',
+  PERSON_INACTIVE: 'The proposed person is inactive.',
+  PERSON_LEFT_GROUP: 'The proposed person has left the request group.',
 };
 
 function queuesFor(role: ResourceAllocationRole, groupId: string | null): RequestQueueCode[] {
-  if (role === 'ALLOCATION_ADMIN') return groupId ? ['presentation', 'team-decision'] : ['presentation'];
+  if (role === 'ALLOCATION_ADMIN') return groupId ? ['presentation', 'team-decision', 'exceptions'] : ['presentation', 'exceptions'];
   if (role === 'ALLOCATION_MODERATOR' || role === 'ALLOCATION_SUPERVISOR' || role === 'ALLOCATION_MANAGER') {
     return ['team-decision'];
   }
@@ -66,6 +85,41 @@ function updateQueueLocation(queue: RequestQueueCode) {
   const params = new URLSearchParams(window.location.search);
   params.set('queue', queue);
   params.delete('requestId');
+  if (queue !== 'exceptions') {
+    params.delete('decisionState');
+    params.delete('groupId');
+    params.delete('initiativeId');
+    params.delete('resourceProfileId');
+  }
+  const search = params.toString();
+  window.history.replaceState(null, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
+}
+
+function initialExceptionState(): 'PRE_N3' | 'ESCALATION' | null {
+  const value = new URLSearchParams(window.location.search).get('decisionState');
+  return value === 'PRE_N3' || value === 'ESCALATION' ? value : null;
+}
+
+type ExceptionFilterValues = Omit<RequestQueueFilters, 'decisionState'>;
+
+function initialExceptionFilters(): ExceptionFilterValues {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    ...(params.get('groupId') ? { groupId: params.get('groupId')! } : {}),
+    ...(params.get('initiativeId') ? { initiativeId: params.get('initiativeId')! } : {}),
+    ...(params.get('resourceProfileId') ? { resourceProfileId: params.get('resourceProfileId')! } : {}),
+  };
+}
+
+function updateExceptionQueueLocation(filters: ExceptionFilterValues, state: 'PRE_N3' | 'ESCALATION' | null) {
+  const params = new URLSearchParams(window.location.search);
+  params.set('queue', 'exceptions');
+  if (state) params.set('decisionState', state);
+  else params.delete('decisionState');
+  for (const name of ['groupId', 'initiativeId', 'resourceProfileId'] as const) {
+    if (filters[name]) params.set(name, filters[name]!);
+    else params.delete(name);
+  }
   const search = params.toString();
   window.history.replaceState(null, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
 }
@@ -106,6 +160,10 @@ function readValue(item: RequestQueueItem, key: keyof RequestQueueItem['requeste
 
 function optionLabel(item: SelectionItem): string {
   return item.code ? `${item.code} — ${item.name ?? ''}` : item.name ?? item.id;
+}
+
+function exceptionImpedimentLabel(code: string): string {
+  return exceptionImpedimentLabels[code] ?? code.replaceAll('_', ' ').toLowerCase();
 }
 
 function accessDenied(error: unknown): boolean {
@@ -153,29 +211,37 @@ function actionIdentity(
   requestId: string,
   version: number,
   operation: string,
-  payload: Record<string, string | number | undefined>,
+  payload: Record<string, unknown>,
 ): string {
   const canonicalPayload = Object.fromEntries(Object.entries(payload).sort(([left], [right]) => left.localeCompare(right)));
   return JSON.stringify([localUserId, requestId, version, operation, canonicalPayload]);
 }
 
-export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: RequestQueuesProps) {
+export function RequestQueues({ localUserId, personId, role, groupId, onAccessDenied }: RequestQueuesProps) {
   const queues = useMemo(() => queuesFor(role, groupId), [role, groupId]);
   const [selectedQueue, setSelectedQueue] = useState<RequestQueueCode>(() => initialQueue(queues));
   const activeQueue = queues.includes(selectedQueue) ? selectedQueue : initialQueue(queues);
+  const [exceptionState, setExceptionState] = useState<'PRE_N3' | 'ESCALATION' | null>(initialExceptionState);
+  const [exceptionFilters, setExceptionFilters] = useState<ExceptionFilterValues>(initialExceptionFilters);
   const [openCorrectionId, setOpenCorrectionId] = useState<string | null>(null);
   const [openRemovalId, setOpenRemovalId] = useState<string | null>(null);
   const [openDenialId, setOpenDenialId] = useState<string | null>(null);
   const [openApprovalId, setOpenApprovalId] = useState<string | null>(null);
+  const [openExceptionId, setOpenExceptionId] = useState<string | null>(null);
+  const [openEscalationId, setOpenEscalationId] = useState<string | null>(null);
+  const [openCancellationId, setOpenCancellationId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const locationQuery = new URLSearchParams(window.location.search);
   const selectedRequestId = locationQuery.has('queue') ? locationQuery.get('requestId') : null;
 
+  const queueFilters: RequestQueueFilters = activeQueue === 'exceptions'
+    ? { ...exceptionFilters, ...(exceptionState ? { decisionState: exceptionState } : {}) }
+    : {};
   const queueQuery = useInfiniteQuery({
-    queryKey: [...REQUEST_QUEUES_QUERY_ROOT, localUserId, activeQueue],
-    queryFn: ({ pageParam }) => getRequestQueue(localUserId, activeQueue, pageParam),
+    queryKey: [...REQUEST_QUEUES_QUERY_ROOT, localUserId, activeQueue, queueFilters],
+    queryFn: ({ pageParam }) => getRequestQueue(localUserId, activeQueue, pageParam, queueFilters),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.page.nextCursor ?? undefined,
     enabled: queues.includes(activeQueue),
@@ -186,13 +252,14 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
   });
   const items = queueQuery.data?.pages.flatMap((page) => page.items) ?? [];
 
-  const activeFormRequestId = openApprovalId ?? (role === 'ALLOCATION_ADMIN' ? openCorrectionId : null);
+  const activeFormRequestId = openApprovalId ?? (role === 'ALLOCATION_ADMIN' ? openCorrectionId ?? openExceptionId : null);
   const activeFormItem = items.find((item) => item.id === activeFormRequestId);
   const activeFormGroupId = activeFormItem ? readValue(activeFormItem, 'groupId') : null;
+  const candidateRequestId = openApprovalId ?? openExceptionId ?? undefined;
   const selectionsQuery = useQuery<QueueSelections>({
-    queryKey: [...REQUEST_QUEUES_QUERY_ROOT, localUserId, 'reference-selections', activeFormGroupId, openApprovalId],
-    queryFn: () => getQueueSelections(localUserId, openApprovalId ?? undefined),
-    enabled: activeFormGroupId !== null,
+    queryKey: [...REQUEST_QUEUES_QUERY_ROOT, localUserId, 'reference-selections', activeFormGroupId, candidateRequestId],
+    queryFn: () => getQueueSelections(localUserId, candidateRequestId),
+    enabled: activeQueue === 'exceptions' || activeFormGroupId !== null,
     retry: false,
   });
 
@@ -245,7 +312,7 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
     requestId: string,
     version: number,
     operation: string,
-    payload: Record<string, string | number | undefined>,
+    payload: Record<string, unknown>,
   ) {
     const identity = actionIdentity(userId, requestId, version, operation, payload);
     return getActionIdempotencyKey(identity);
@@ -261,10 +328,13 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
       setOpenRemovalId(null);
       setOpenDenialId(null);
       setOpenApprovalId(null);
+      setOpenExceptionId(null);
+      setOpenEscalationId(null);
+      setOpenCancellationId(null);
     } catch (error) {
       if (accessDenied(error)) onAccessDenied();
       if ((error instanceof RequestQueueRequestError || error instanceof RequestDecisionApiError) && error.status === 412) {
-        setActionError('This request changed after you opened it. Review the current details before trying again.');
+        setActionError('This request changed after you opened it. Your entries are preserved; review the current details before trying again.');
         void invalidateRequestSurfaces();
       } else if (!accessDenied(error)) {
         setActionError(error instanceof Error ? error.message : 'The request could not be updated. Try again.');
@@ -305,6 +375,10 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
             onClick={() => {
               setActionError(null);
               setSelectedQueue(queue);
+              if (queue !== 'exceptions') {
+                setExceptionState(null);
+                setExceptionFilters({});
+              }
               updateQueueLocation(queue);
             }}
           >
@@ -312,6 +386,80 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
           </button>
         ))}
       </div>
+
+      {activeQueue === 'exceptions' && (
+        <div className="request-exception-stage-tabs" role="tablist" aria-label="Exception stage">
+          {([
+            { value: null, label: 'All exceptions' },
+            { value: 'PRE_N3', label: 'Pre N3' },
+            { value: 'ESCALATION', label: 'Escalation' },
+          ] as const).map(({ value, label }) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={exceptionState === value}
+              key={value ?? 'all'}
+              onClick={() => {
+                setActionError(null);
+                setExceptionState(value);
+                updateExceptionQueueLocation(exceptionFilters, value);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activeQueue === 'exceptions' && (
+        <div className="request-exception-filters" role="group" aria-label="Filter exceptions">
+          <label className="form-field">
+            <span>Group</span>
+            <select
+              value={exceptionFilters.groupId ?? ''}
+              onChange={(event) => {
+                const next = { ...exceptionFilters, groupId: event.target.value || undefined };
+                setExceptionFilters(next);
+                updateExceptionQueueLocation(next, exceptionState);
+              }}
+              disabled={selectionsQuery.isPending}
+            >
+              <option value="">All groups</option>
+              {selectionsQuery.data?.groups.map((group) => <option key={group.id} value={group.id}>{optionLabel(group)}</option>)}
+            </select>
+          </label>
+          <label className="form-field">
+            <span>ITDM</span>
+            <select
+              value={exceptionFilters.initiativeId ?? ''}
+              onChange={(event) => {
+                const next = { ...exceptionFilters, initiativeId: event.target.value || undefined };
+                setExceptionFilters(next);
+                updateExceptionQueueLocation(next, exceptionState);
+              }}
+              disabled={selectionsQuery.isPending}
+            >
+              <option value="">All ITDMs</option>
+              {selectionsQuery.data?.initiatives.map((initiative) => <option key={initiative.id} value={initiative.id}>{optionLabel(initiative)}</option>)}
+            </select>
+          </label>
+          <label className="form-field">
+            <span>Resource profile</span>
+            <select
+              value={exceptionFilters.resourceProfileId ?? ''}
+              onChange={(event) => {
+                const next = { ...exceptionFilters, resourceProfileId: event.target.value || undefined };
+                setExceptionFilters(next);
+                updateExceptionQueueLocation(next, exceptionState);
+              }}
+              disabled={selectionsQuery.isPending}
+            >
+              <option value="">All profiles</option>
+              {selectionsQuery.data?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{optionLabel(profile)}</option>)}
+            </select>
+          </label>
+        </div>
+      )}
 
       <div role="tabpanel" aria-label={queueLabels[activeQueue]} className="request-queue-content">
         {queueQuery.isPending && <p role="status" className="supporting-copy">Loading requests…</p>}
@@ -338,6 +486,7 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
                 item={item}
                 queue={activeQueue}
                 localUserId={localUserId}
+                personId={personId}
                 role={role}
                 selections={selectionsQuery.data}
                 selectionsLoading={selectionsQuery.isPending}
@@ -347,6 +496,9 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
                 openRemoval={openRemovalId === item.id}
                 openDenial={openDenialId === item.id}
                 openApproval={openApprovalId === item.id}
+                openException={openExceptionId === item.id}
+                openEscalation={openEscalationId === item.id}
+                openCancellation={openCancellationId === item.id}
                 busy={pendingRequestId === item.id}
                 highlighted={item.id === selectedRequestId}
                 onCorrectionToggle={() => {
@@ -372,6 +524,33 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
                   setOpenRemovalId(null);
                   setOpenDenialId(null);
                   setOpenApprovalId(openApprovalId === item.id ? null : item.id);
+                }}
+                onExceptionToggle={() => {
+                  setOpenCorrectionId(null);
+                  setOpenRemovalId(null);
+                  setOpenDenialId(null);
+                  setOpenApprovalId(null);
+                  setOpenEscalationId(null);
+                  setOpenCancellationId(null);
+                  setOpenExceptionId(openExceptionId === item.id ? null : item.id);
+                }}
+                onEscalationToggle={() => {
+                  setOpenCorrectionId(null);
+                  setOpenRemovalId(null);
+                  setOpenDenialId(null);
+                  setOpenApprovalId(null);
+                  setOpenExceptionId(null);
+                  setOpenCancellationId(null);
+                  setOpenEscalationId(openEscalationId === item.id ? null : item.id);
+                }}
+                onCancellationToggle={() => {
+                  setOpenCorrectionId(null);
+                  setOpenRemovalId(null);
+                  setOpenDenialId(null);
+                  setOpenApprovalId(null);
+                  setOpenExceptionId(null);
+                  setOpenEscalationId(null);
+                  setOpenCancellationId(openCancellationId === item.id ? null : item.id);
                 }}
                 onRefer={() => void performAction(item.id, async () => referRequest(
                   localUserId,
@@ -410,6 +589,34 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
                   await requestActionKey(localUserId, item.id, item.version, 'approval', approval),
                   approval,
                 ))}
+                onRecordStrategy={(strategy) => performAction(item.id, async () => recordExceptionStrategy(
+                  localUserId,
+                  item.id,
+                  item.version,
+                  await requestActionKey(localUserId, item.id, item.version, 'record-strategy', { ...strategy }),
+                  strategy,
+                ))}
+                onResolveException={(resolution) => performAction(item.id, async () => resolveException(
+                  localUserId,
+                  item.id,
+                  item.version,
+                  await requestActionKey(localUserId, item.id, item.version, 'resolve-exception', { ...resolution }),
+                  resolution,
+                ))}
+                onEscalate={(reason) => performAction(item.id, async () => escalateRequest(
+                  localUserId,
+                  item.id,
+                  item.version,
+                  await requestActionKey(localUserId, item.id, item.version, 'escalation', { reason }),
+                  reason,
+                ))}
+                onCancelException={(reason) => performAction(item.id, async () => cancelExceptionRequest(
+                  localUserId,
+                  item.id,
+                  item.version,
+                  await requestActionKey(localUserId, item.id, item.version, 'exception-cancellation', { reason }),
+                  reason,
+                ))}
               />
             ))}
           </div>
@@ -437,6 +644,7 @@ interface RequestQueueCardProps {
   item: RequestQueueItem;
   queue: RequestQueueCode;
   localUserId: string;
+  personId: string;
   role: ResourceAllocationRole;
   selections?: QueueSelections;
   selectionsLoading: boolean;
@@ -446,22 +654,33 @@ interface RequestQueueCardProps {
   openRemoval: boolean;
   openDenial: boolean;
   openApproval: boolean;
+  openException: boolean;
+  openEscalation: boolean;
+  openCancellation: boolean;
   busy: boolean;
   highlighted: boolean;
   onCorrectionToggle: () => void;
   onRemovalToggle: () => void;
   onDenialToggle: () => void;
   onApprovalToggle: () => void;
+  onExceptionToggle: () => void;
+  onEscalationToggle: () => void;
+  onCancellationToggle: () => void;
   onRefer: () => void;
   onCorrect: (input: { initiativeId?: string; groupId?: string; resourceProfileId?: string; reason: string }) => Promise<void>;
   onRemove: (reason: string) => Promise<void>;
   onDeny: (explanation: string) => Promise<void>;
   onApprove: (approval: ApprovalDecision) => Promise<void>;
+  onRecordStrategy: (strategy: ExceptionStrategyInput) => Promise<void>;
+  onResolveException: (resolution: ExceptionResolutionInput) => Promise<void>;
+  onEscalate: (reason: string) => Promise<void>;
+  onCancelException: (reason: string) => Promise<void>;
 }
 
 function RequestQueueCard({
   item,
   queue,
+  personId,
   role,
   selections,
   selectionsLoading,
@@ -471,29 +690,42 @@ function RequestQueueCard({
   openRemoval,
   openDenial,
   openApproval,
+  openException,
+  openEscalation,
+  openCancellation,
   busy,
   highlighted,
   onCorrectionToggle,
   onRemovalToggle,
   onDenialToggle,
   onApprovalToggle,
+  onExceptionToggle,
+  onEscalationToggle,
+  onCancellationToggle,
   onRefer,
   onCorrect,
   onRemove,
   onDeny,
   onApprove,
+  onRecordStrategy,
+  onResolveException,
+  onEscalate,
+  onCancelException,
 }: RequestQueueCardProps) {
   const responsible = Array.isArray(item.nextResponsible)
     ? item.nextResponsible.map((person) => `${person.displayName} (${person.role.replace('ALLOCATION_', '')})`).join(', ')
     : item.nextResponsible.role === 'ALLOCATION_ADMIN' ? 'Tech Resource Allocation Admin' : 'Assigned group';
   const conditions = item.requestedConditions;
   const actionDisabled = busy || actionsBlocked;
+  const ownRequest = item.requester.personId === personId;
+  const canRecordStrategy = item.availableActions.includes('RECORD_STRATEGY');
+  const canResolve = item.availableActions.includes('RESOLVE');
 
   return (
     <article id={`resource-request-${item.id}`} tabIndex={-1} className={`request-queue-card${highlighted ? ' request-queue-card-highlighted' : ''}`} aria-labelledby={`request-title-${item.id}`}>
       <div className="request-queue-card-heading">
         <div>
-          <p className="eyebrow">{queue === 'presentation' ? 'Waiting for presentation' : 'Waiting for group decision'}</p>
+          <p className="eyebrow">{queue === 'presentation' ? 'Waiting for presentation' : queue === 'team-decision' ? 'Waiting for group decision' : 'Admin exception review'}</p>
           <h3 id={`request-title-${item.id}`}>{conditions.initiativeCode ?? 'ITDM'} — {conditions.initiativeName ?? 'Resource request'}</h3>
           <p className="request-queue-requester">Requested by {item.requester.displayName ?? 'Unknown requester'}</p>
         </div>
@@ -513,7 +745,30 @@ function RequestQueueCard({
       {item.impediments?.includes('PRESENTATION_DEADLINE_PASSED') && (
         <p className="form-error request-queue-impediment" role="status">The 21-day presentation deadline has passed. Automatic removal is pending, so actions are unavailable.</p>
       )}
+      {queue === 'exceptions' && (item.impediments?.length ?? 0) > 0 && (
+        <div className="form-error request-exception-impediments" role="status">
+          <p>Review these conditions before final approval:</p>
+          <ul>{item.impediments?.map((impediment) => <li key={impediment}>{exceptionImpedimentLabel(impediment)}</li>)}</ul>
+        </div>
+      )}
       {conditions.comment && <p className="request-queue-comment">{conditions.comment}</p>}
+
+      {queue === 'exceptions' && item.resolutionStrategy && (
+        <div className="request-exception-recorded-strategy" role="status">
+          <p>Recorded strategy: {exceptionStrategyLabels[item.resolutionStrategy]}</p>
+          {item.resolutionReason && <p><strong>Reason:</strong> {item.resolutionReason}</p>}
+          {(item.affectedInitiativeIds?.length ?? 0) > 0 && (
+            <p><strong>Affected ITDMs:</strong> {item.affectedInitiativeIds?.map((id) => {
+              const initiative = selections?.initiatives.find((candidate) => candidate.id === id);
+              return initiative ? optionLabel(initiative) : id;
+            }).join(', ')}</p>
+          )}
+        </div>
+      )}
+
+      {queue === 'exceptions' && ownRequest && (
+        <p className="form-error request-queue-impediment" role="status">You cannot resolve your own request.</p>
+      )}
 
       {item.availableActions.includes('REFER') && (
         <div className="request-queue-actions">
@@ -551,6 +806,44 @@ function RequestQueueCard({
         </div>
       )}
 
+      {queue === 'exceptions' && role === 'ALLOCATION_ADMIN' && !ownRequest && (
+        <div className="request-queue-actions request-exception-actions">
+          {item.availableActions.includes('ESCALATE') && (
+            <ExceptionStageAction
+              item={item}
+              action="escalate"
+              disabled={actionDisabled}
+              open={openEscalation}
+              onToggle={onEscalationToggle}
+              onSubmit={onEscalate}
+            />
+          )}
+          {item.availableActions.includes('CANCEL') && (
+            <ExceptionStageAction
+              item={item}
+              action="cancel"
+              disabled={actionDisabled}
+              open={openCancellation}
+              onToggle={onCancellationToggle}
+              onSubmit={onCancelException}
+            />
+          )}
+          {(canRecordStrategy || canResolve) && (
+            <ExceptionResolutionAction
+              item={item}
+              selections={selections ?? { groups: [], profiles: [], initiatives: [], people: [] }}
+              canRecord={canRecordStrategy}
+              canResolve={canResolve}
+              disabled={actionDisabled || selectionsLoading}
+              open={openException}
+              onToggle={onExceptionToggle}
+              onRecord={onRecordStrategy}
+              onResolve={onResolveException}
+            />
+          )}
+        </div>
+      )}
+
       {openCorrection && selections && <ReferenceCorrectionForm item={item} selections={selections} disabled={actionDisabled} onSubmit={onCorrect} />}
       {openCorrection && selectionsLoading && <p className="supporting-copy" role="status">Loading active reference choices…</p>}
       {openCorrection && selectionsError != null && <p className="form-error" role="alert">Reference choices could not be loaded. Close this form and try again.</p>}
@@ -558,6 +851,8 @@ function RequestQueueCard({
       {openApproval && selections && <ApprovalForm item={item} selections={selections} disabled={actionDisabled} onSubmit={onApprove} />}
       {openApproval && selectionsLoading && <p className="supporting-copy" role="status">Loading eligible people and active profiles…</p>}
       {openApproval && selectionsError != null && <p className="form-error" role="alert">Eligible people and profiles could not be loaded. Close this form and try again.</p>}
+      {openException && selectionsLoading && <p className="supporting-copy" role="status">Loading active ITDMs, profiles, and eligible people…</p>}
+      {openException && selectionsError != null && <p className="form-error" role="alert">Resolution choices could not be loaded. Close this form and try again.</p>}
     </article>
   );
 }

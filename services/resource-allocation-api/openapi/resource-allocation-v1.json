@@ -2466,7 +2466,8 @@
             "schema": {
               "enum": [
                 "presentation",
-                "team-decision"
+                "team-decision",
+                "exceptions"
               ],
               "type": "string"
             }
@@ -3790,7 +3791,7 @@
             }
           },
           "422": {
-            "description": "The request is not denied or the 14-day response deadline has passed.",
+            "description": "The request is not contestable or its denial/proposal response deadline has passed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3805,7 +3806,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Contest a denied request and send it to Pre N3",
+        "summary": "Contest a denial or a changed proposal and send it to Pre N3",
         "tags": [
           "Tech Resource Allocation decisions"
         ]
@@ -3888,7 +3889,7 @@
             }
           },
           "403": {
-            "description": "Only the current requester can cancel a denied request.",
+            "description": "The actor is not the requester canceling a denial or an Admin canceling another requester’s exception.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3928,7 +3929,7 @@
             }
           },
           "422": {
-            "description": "The request is not denied or the 14-day response deadline has passed.",
+            "description": "The request is not in a cancellable state or its denial response deadline has passed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3943,7 +3944,421 @@
             "localProfile": []
           }
         ],
-        "summary": "Cancel a denied request with a reason",
+        "summary": "Cancel a denied request as requester or a Pre N3/Escalation request as Admin",
+        "tags": [
+          "Tech Resource Allocation decisions"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/requests/{id}/escalations": {
+      "post": {
+        "operationId": "ResourceAllocationDecisionController_escalate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "UUID for this exact escalation action.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Current strong request ETag.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelDeniedRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"3\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestDecisionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match, Idempotency-Key, correlation ID, or reason is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin other than the requester may escalate the request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The request is no longer operational.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Idempotency-Key was reused with different request content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The request version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Only a Pre N3 request may be escalated.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Explicitly escalate a Pre N3 request as an Admin",
+        "tags": [
+          "Tech Resource Allocation decisions"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/requests/{id}/strategies": {
+      "post": {
+        "operationId": "ResourceAllocationDecisionController_recordStrategy",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "UUID for this exact strategy action.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Current strong request ETag.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordRequestStrategyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"3\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestDecisionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The strategy, affected initiative IDs, reason, or command headers are invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin other than the requester may resolve the exception.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The request is no longer operational.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Idempotency-Key was reused with different request content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The request version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request is not in Pre N3/Escalation or an affected ITDM is inactive.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Record an exception strategy without assigning a person or approving the request",
+        "tags": [
+          "Tech Resource Allocation decisions"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/requests/{id}/resolutions": {
+      "post": {
+        "operationId": "ResourceAllocationDecisionController_resolveException",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "UUID for this exact resolution action.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Current strong request ETag.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveRequestExceptionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"3\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestDecisionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The strategy, final conditions, affected initiative IDs, reason, or command headers are invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin other than the requester may resolve the exception.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The request is no longer operational.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Idempotency-Key was reused with different request content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The request version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request is not in Pre N3/Escalation or final conditions are not currently eligible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Approve a Pre N3/Escalation request through a final strategy resolution without requester acceptance",
         "tags": [
           "Tech Resource Allocation decisions"
         ]
@@ -4090,7 +4505,7 @@
             }
           },
           "403": {
-            "description": "The actor is not an authorized in-scope decider or the request is their own.",
+            "description": "The actor is not an authorized in-scope decider or global Admin, or the request is their own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4115,7 +4530,7 @@
             "localProfile": []
           }
         ],
-        "summary": "List eligible people for an approval in the actor’s current request scope",
+        "summary": "List eligible people for an in-scope approval or a global Admin exception resolution",
         "tags": [
           "Tech Resource Allocation approvals"
         ]
@@ -5546,6 +5961,30 @@
           "requestedConditions": {
             "type": "object"
           },
+          "approvedConditions": {
+            "type": "object",
+            "nullable": true
+          },
+          "resolutionStrategy": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "OUTSOURCE",
+              "WAIT_FOR_EMB_RESOURCE",
+              "DEPRIORITIZE_OTHER_DEMANDS"
+            ]
+          },
+          "resolutionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "affectedInitiativeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
           "decisionState": {
             "type": "string"
           },
@@ -5958,6 +6397,29 @@
           "requestedConditions": {
             "type": "object"
           },
+          "approvedConditions": {
+            "type": "object",
+            "nullable": true
+          },
+          "allocation": {
+            "type": "object",
+            "nullable": true
+          },
+          "resolutionStrategy": {
+            "type": "string",
+            "enum": [
+              "OUTSOURCE",
+              "WAIT_FOR_EMB_RESOURCE",
+              "DEPRIORITIZE_OTHER_DEMANDS"
+            ]
+          },
+          "affectedInitiativeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
           "decisionState": {
             "type": "string"
           },
@@ -6012,6 +6474,92 @@
         },
         "required": [
           "reason"
+        ]
+      },
+      "RecordRequestStrategyDto": {
+        "type": "object",
+        "properties": {
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "OUTSOURCE",
+              "WAIT_FOR_EMB_RESOURCE",
+              "DEPRIORITIZE_OTHER_DEMANDS"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "affectedInitiativeIds": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 100,
+            "type": "array"
+          }
+        },
+        "required": [
+          "strategy",
+          "reason"
+        ]
+      },
+      "ResolveRequestExceptionDto": {
+        "type": "object",
+        "properties": {
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "OUTSOURCE",
+              "WAIT_FOR_EMB_RESOURCE",
+              "DEPRIORITIZE_OTHER_DEMANDS"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "affectedInitiativeIds": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resourceProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "weeklyHours": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 40
+          }
+        },
+        "required": [
+          "strategy",
+          "reason",
+          "personId",
+          "resourceProfileId",
+          "startDate",
+          "endDate",
+          "weeklyHours"
         ]
       },
       "RequestHistoryEventDto": {
