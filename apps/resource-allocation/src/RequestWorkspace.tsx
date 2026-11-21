@@ -6,6 +6,7 @@ import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
 import { getSelectionCollection, SELECTIONS_QUERY_ROOT, SUBMISSIONS_QUERY_ROOT, type RequestCategory, type SelectionItem, SubmissionRequestError } from './submissionApi';
 import { REQUEST_QUEUES_QUERY_ROOT } from './requestQueueApi';
 import type { ResourceAllocationRole } from './accessApi';
+import { formatBusinessTimestamp, normalizeWeeklyHours } from './timeAndHours';
 import {
   acceptRequest,
   getRequest,
@@ -16,9 +17,11 @@ import {
   updateRequest,
   withdrawRequest,
   type RequestDecisionState,
+  type RequestConfirmationSource,
   type RequestFilters,
   type RequestScope,
   type ResourceRequestItem,
+  type ResourceRequestCollection,
 } from './requestApi';
 import { DeniedRequestResponse } from './DeniedRequestResponse';
 import { requestResponsibleLabel, revalidationImpedimentLabel, revalidationOriginLabel } from './revalidation';
@@ -134,18 +137,6 @@ async function acceptanceIdempotencyKey(localUserId: string, requestId: string, 
   return keyPromise;
 }
 
-function normalizeWeeklyHours(raw: string): { value: number | null; error?: string } {
-  const value = raw.trim();
-  const match = /^(\d+)(?:[.,](\d+))?$/.exec(value);
-  if (!match) return { value: null, error: 'Enter a positive number using a decimal point or comma.' };
-  const whole = BigInt(match[1]);
-  const fraction = match[2] ?? '';
-  if (whole > 40n || (whole === 40n && /[1-9]/.test(fraction))) return { value: null, error: 'Weekly hours cannot exceed 40 hours.' };
-  const tenths = Number(whole) * 10 + Number(fraction[0] ?? '0') + (Number(fraction[1] ?? '0') >= 5 ? 1 : 0);
-  if (tenths === 0) return { value: null, error: 'Hours must round to at least 0.1 hours.' };
-  return { value: tenths / 10 };
-}
-
 function formValues(item: ResourceRequestItem): RequestFormValues {
   return {
     initiativeId: item.requestedConditions.initiativeId,
@@ -169,15 +160,7 @@ function issueMutationError(error: unknown): string {
   return 'The request could not be saved. Your form values are still available.';
 }
 
-function formatTimestamp(value: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: 'America/Sao_Paulo',
-  }).format(new Date(value));
-}
-
-function useSelectionQuery(localUserId: string, collection: 'groups' | 'resource-profiles' | 'initiatives') {
+function useSelectionQuery<C extends 'groups' | 'resource-profiles' | 'initiatives'>(localUserId: string, collection: C) {
   return useInfiniteQuery({
     queryKey: [...SELECTIONS_QUERY_ROOT, localUserId, collection],
     queryFn: ({ pageParam }) => getSelectionCollection(collection, localUserId, pageParam),
@@ -200,6 +183,7 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
   const [auditRequestId, setAuditRequestId] = useState<string | null>(() => querySelectedAuditId());
   const [withdrawalOpen, setWithdrawalOpen] = useState(false);
   const [notice, setNotice] = useState('');
+  const [lastConfirmation, setLastConfirmation] = useState<{ requestId: string; source: RequestConfirmationSource } | null>(null);
   const [formVersion, setFormVersion] = useState<number | null>(null);
   const [editError, setEditError] = useState('');
   const [withdrawalError, setWithdrawalError] = useState('');
@@ -223,7 +207,7 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
     refetchOnWindowFocus: true,
     retry: false,
   });
-  const requests = useMemo(() => rowsFromPages<ResourceRequestItem>(requestsQuery.data), [requestsQuery.data]);
+  const requests = useMemo(() => rowsFromPages<ResourceRequestCollection['items'][number]>(requestsQuery.data), [requestsQuery.data]);
   const selectedRequest = useQuery({
     queryKey: [...REQUESTS_QUERY_ROOT, localUserId, 'detail', selectedRequestId],
     queryFn: () => getRequest(localUserId, selectedRequestId!),
@@ -243,9 +227,9 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
   const groupsQuery = useSelectionQuery(localUserId, 'groups');
   const profilesQuery = useSelectionQuery(localUserId, 'resource-profiles');
   const initiativesQuery = useSelectionQuery(localUserId, 'initiatives');
-  const groups = useMemo(() => rowsFromPages<SelectionItem>(groupsQuery.data), [groupsQuery.data]);
-  const profiles = useMemo(() => rowsFromPages<SelectionItem>(profilesQuery.data), [profilesQuery.data]);
-  const initiatives = useMemo(() => rowsFromPages<SelectionItem>(initiativesQuery.data), [initiativesQuery.data]);
+  const groups = useMemo(() => rowsFromPages<SelectionItem<'groups'>>(groupsQuery.data), [groupsQuery.data]);
+  const profiles = useMemo(() => rowsFromPages<SelectionItem<'resource-profiles'>>(profilesQuery.data), [profilesQuery.data]);
+  const initiatives = useMemo(() => rowsFromPages<SelectionItem<'initiatives'>>(initiativesQuery.data), [initiativesQuery.data]);
   const selectedGroupId = values?.groupId ?? '';
   const groupProfiles = profiles.filter((profile) => profile.groupId === selectedGroupId);
   const isDetailNotFound = selectedRequest.error instanceof RequestApiError && selectedRequest.error.status === 404;
@@ -390,8 +374,9 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
     }
     try {
       const updated = await updateMutation.mutateAsync({ requestId: currentItem.id, version: formVersion, patch });
-      queryClient.setQueryData([...REQUESTS_QUERY_ROOT, localUserId, 'detail', currentItem.id], updated);
-      editForm.reset(formValues(updated));
+      const updatedDetail: ResourceRequestItem = { ...currentItem, ...updated };
+      queryClient.setQueryData<ResourceRequestItem>([...REQUESTS_QUERY_ROOT, localUserId, 'detail', currentItem.id], updatedDetail);
+      editForm.reset(formValues(updatedDetail));
       setFormVersion(updated.version);
       setNotice('Your request was updated. The original submission and expiry dates were preserved.');
       await invalidateRequestSurfaces(currentItem.id);
@@ -454,6 +439,7 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
         version: currentItem.version,
         idempotencyKey,
       });
+      setLastConfirmation({ requestId: currentItem.id, source: accepted.confirmationSource ?? null });
       setFormVersion(accepted.version);
       setNotice(accepted.confirmationSource === 'SYSTEM_DEADLINE'
         ? 'The proposal was automatically confirmed when the 72-hour response deadline was reached.'
@@ -507,9 +493,10 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
     ? role === 'ALLOCATION_ADMIN' ? 'All requests' : 'Requests in my scope'
     : 'My requests';
   const currentConditions = currentItem?.requestedConditions;
-  const confirmationLabel = currentItem?.confirmationSource === 'SYSTEM_DEADLINE'
+  const confirmationSource = lastConfirmation?.requestId === currentItem?.id ? lastConfirmation?.source ?? null : null;
+  const confirmationLabel = confirmationSource === 'SYSTEM_DEADLINE'
     ? 'Automatically confirmed at deadline'
-    : currentItem?.confirmationSource === 'REQUESTER_ACCEPTANCE' ? 'Accepted by requester' : null;
+    : confirmationSource === 'REQUESTER_ACCEPTANCE' ? 'Accepted by requester' : null;
   const submitWithdrawal = handleWithdrawalSubmit(onWithdraw);
 
   return (
@@ -647,10 +634,10 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
               <>
                 <div className="request-metadata">
                   <span><strong>Decision</strong>{decisionStates.find((state) => state.value === currentItem.decisionState)?.label ?? currentItem.decisionState}</span>
-                  <span><strong>Submitted</strong>{formatTimestamp(currentItem.receivedAt)}</span>
-                  <span><strong>Waiting expiry</strong>{formatTimestamp(currentItem.expirationDueAt)}</span>
+                  <span><strong>Submitted</strong>{formatBusinessTimestamp(currentItem.receivedAt)}</span>
+                  <span><strong>Waiting expiry</strong>{formatBusinessTimestamp(currentItem.expirationDueAt)}</span>
                   {currentItem.decisionState === 'APPROVED_WITH_CHANGES' && currentItem.dueAt && (
-                    <span><strong>Response deadline (São Paulo)</strong>{formatTimestamp(currentItem.dueAt)}</span>
+                    <span><strong>Response deadline (São Paulo)</strong>{formatBusinessTimestamp(currentItem.dueAt)}</span>
                   )}
                   {confirmationLabel && <span><strong>Confirmation</strong>{confirmationLabel}</span>}
                   <span><strong>Version</strong>{currentItem.version}</span>
@@ -704,8 +691,8 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
                     readOnly={!isRequester}
                     disabled={selectedRequest.isFetching || requestsQuery.isError || formVersionChanged}
                     onChanged={(updated) => {
-                      queryClient.setQueryData([...REQUESTS_QUERY_ROOT, localUserId, 'detail', updated.id], updated);
                       setFormVersion(updated.version);
+                      void selectedRequest.refetch();
                       void invalidateRequestSurfaces(updated.id);
                     }}
                     onAccessDenied={onAccessDenied}
@@ -750,7 +737,7 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
                       <div><dt>Period</dt><dd>{currentItem.allocation.startDate} to {currentItem.allocation.endDate}</dd></div>
                       <div><dt>Weekly hours</dt><dd>{currentItem.allocation.weeklyHours} hours per week</dd></div>
                       <div><dt>Allocation state</dt><dd>{currentItem.allocation.state.replaceAll('_', ' ')}</dd></div>
-                      <div><dt>Approved</dt><dd>{formatTimestamp(currentItem.allocation.approvedAt)}</dd></div>
+                      <div><dt>Approved</dt><dd>{formatBusinessTimestamp(currentItem.allocation.approvedAt)}</dd></div>
                     </dl>
                   </section>
                 )}
@@ -861,7 +848,7 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
             {auditQuery.data?.events.map((event) => (
               <article className="request-audit-event" key={event.id}>
                 <h4>{event.action === 'WITHDRAWN' ? 'Withdrawn by requester' : event.action}</h4>
-                <p><strong>When:</strong> {formatTimestamp(event.occurredAt)}</p>
+                <p><strong>When:</strong> {formatBusinessTimestamp(event.occurredAt)}</p>
                 <p><strong>Reason:</strong> {event.reason}</p>
                 <p><strong>Requester:</strong> {String(event.requesterSnapshot.displayName ?? 'Requester')}</p>
                 <div className="request-audit-conditions">

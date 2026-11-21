@@ -2,6 +2,14 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsDateString, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 import { ResourceRequestCategory, ResourceRequestDecisionState } from '../submissions/submission-category';
+import {
+  ApprovedRequestConditionsDto,
+  CursorPageInfoDto,
+  RequestRevalidationDto,
+  ResourceAllocationSummaryDto,
+  ResourcePersonSnapshotDto,
+  ResourceRequestConditionsDto,
+} from '../common/resource-allocation-contract.dto';
 
 export class RequestCollectionQueryDto {
   @ApiPropertyOptional({ enum: ['visible'], description: 'Read requests across the caller’s current group scope. Requires a leadership role or Admin; the default is the caller’s own requests.' })
@@ -96,35 +104,38 @@ export class WithdrawResourceRequestDto {
   reason!: string;
 }
 
-export class ResourceRequestResponseDto {
+export class ResourceRequestCollectionItemDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
-  @ApiProperty({ type: Object }) requesterSnapshot!: Record<string, unknown>;
-  @ApiProperty({ type: Object }) requestedConditions!: Record<string, unknown>;
-  @ApiPropertyOptional({ type: Object, nullable: true }) approvedConditions!: Record<string, unknown> | null;
-  @ApiPropertyOptional({ type: Object, nullable: true }) allocation!: Record<string, unknown> | null;
+  @ApiProperty({ type: () => ResourcePersonSnapshotDto }) requesterSnapshot!: ResourcePersonSnapshotDto;
+  @ApiProperty({ type: () => ResourceRequestConditionsDto }) requestedConditions!: ResourceRequestConditionsDto;
+  @ApiPropertyOptional({ type: () => ApprovedRequestConditionsDto, nullable: true }) approvedConditions!: ApprovedRequestConditionsDto | null;
   @ApiProperty({ enum: ResourceRequestDecisionState }) decisionState!: ResourceRequestDecisionState;
   @ApiProperty({ type: String, format: 'date-time' }) receivedAt!: string;
   @ApiProperty({ type: String, format: 'date-time' }) stageEnteredAt!: string;
   @ApiProperty({ type: String, format: 'date-time' }) expirationDueAt!: string;
   @ApiProperty({ type: String, format: 'date-time', nullable: true, description: '72-hour requester response deadline when a date or hours proposal is awaiting acceptance.' }) dueAt!: string | null;
   @ApiProperty({ type: [String], example: ['ACCEPT'] }) availableActions!: string[];
-  @ApiPropertyOptional({ type: Object, nullable: true, description: 'Current eligibility blockers and responsible actor while the request requires revalidation.' })
-  revalidation!: { originState: string; impediments: string[]; nextResponsible: Record<string, unknown> | Array<Record<string, unknown>> } | null;
   @ApiProperty({ type: Number }) version!: number;
 }
 
+export class ResourceRequestResponseDto extends ResourceRequestCollectionItemDto {
+  @ApiProperty({ type: () => ResourceAllocationSummaryDto, nullable: true }) allocation!: ResourceAllocationSummaryDto | null;
+  @ApiPropertyOptional({ type: () => RequestRevalidationDto, nullable: true, description: 'Current eligibility blockers and responsible actor while the request requires revalidation.' })
+  revalidation!: RequestRevalidationDto | null;
+}
+
 export class ResourceRequestCollectionResponseDto {
-  @ApiProperty({ type: () => ResourceRequestResponseDto, isArray: true }) items!: ResourceRequestResponseDto[];
-  @ApiProperty({ type: Object, example: { nextCursor: null, limit: 50 } }) page!: { nextCursor: string | null; limit: number };
+  @ApiProperty({ type: () => ResourceRequestCollectionItemDto, isArray: true }) items!: ResourceRequestCollectionItemDto[];
+  @ApiProperty({ type: () => CursorPageInfoDto }) page!: CursorPageInfoDto;
 }
 
 export class ResourceRequestAuditEventResponseDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty({ type: String, format: 'uuid' }) requestId!: string;
   @ApiProperty({ enum: ['WITHDRAWN', 'ADMIN_REMOVED', 'EXPIRED'] }) action!: string;
-  @ApiProperty({ type: Object }) requesterSnapshot!: Record<string, unknown>;
-  @ApiProperty({ type: Object }) actorSnapshot!: Record<string, unknown>;
-  @ApiProperty({ type: Object }) requestSnapshot!: Record<string, unknown>;
+  @ApiProperty({ type: Object, additionalProperties: true }) requesterSnapshot!: Record<string, unknown>;
+  @ApiProperty({ type: Object, additionalProperties: true }) actorSnapshot!: Record<string, unknown>;
+  @ApiProperty({ type: Object, additionalProperties: true }) requestSnapshot!: Record<string, unknown>;
   @ApiProperty({ type: String, maxLength: 2000 }) reason!: string;
   @ApiProperty({ type: String, format: 'date-time' }) occurredAt!: string;
   @ApiProperty({ type: String, format: 'uuid' }) correlationId!: string;
@@ -137,5 +148,5 @@ export class ResourceRequestAuditResponseDto {
 
 export class ResourceRequestAuditCollectionResponseDto {
   @ApiProperty({ type: () => ResourceRequestAuditEventResponseDto, isArray: true }) items!: ResourceRequestAuditEventResponseDto[];
-  @ApiProperty({ type: Object, example: { nextCursor: null, limit: 50 } }) page!: { nextCursor: string | null; limit: number };
+  @ApiProperty({ type: () => CursorPageInfoDto }) page!: CursorPageInfoDto;
 }

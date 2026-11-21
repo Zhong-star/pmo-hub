@@ -1,72 +1,22 @@
-import axios from 'axios';
+import { api, throwApiRequestError, ResourceAllocationApiError } from './apiClient';
+import type { ApiProblem, ApiResponse, ApiSchemas } from './apiContracts';
 
 export const RESOURCE_ALLOCATION_ACCESS_PATH = '/api/resource-allocation/v1/access';
 export const LOCAL_USER_STORAGE_KEY = 'pmo-hub.local-user-id';
-export const RESOURCE_ALLOCATION_API_TIMEOUT_MS = 5_000;
 
-export type ResourceAllocationRole =
-  | 'ALLOCATION_USER'
-  | 'ALLOCATION_MODERATOR'
-  | 'ALLOCATION_SUPERVISOR'
-  | 'ALLOCATION_MANAGER'
-  | 'ALLOCATION_ADMIN';
+export type ResourceAllocationRole = ApiSchemas['ResourcePersonAccessDto']['role'];
+export type ResourcePersonAccess = ApiResponse<'/api/resource-allocation/v1/access', 'get'>['person'];
+export type AdministratorContact = ApiProblem['administrators'] extends Array<infer Contact> ? Contact : never;
+export type ResourceAccessResponse = ApiResponse<'/api/resource-allocation/v1/access', 'get'>;
+export type AccessProblem = ApiProblem;
 
-export interface ResourcePersonAccess {
-  id: string;
-  localUserId: string;
-  displayName: string;
-  role: ResourceAllocationRole;
-  groupId?: string | null;
-  coveredGroupIds: string[];
-}
-
-export interface AdministratorContact {
-  displayName: string;
-  email: string;
-}
-
-export interface ResourceAccessResponse {
-  person: ResourcePersonAccess;
-}
-
-export interface AccessProblem {
-  status?: number;
-  code?: string;
-  detail?: string;
-  administrators?: AdministratorContact[];
-}
-
-export class AccessRequestError extends Error {
-  constructor(readonly status: number, readonly problem: AccessProblem | null) {
-    super(problem?.detail ?? `Access request failed with status ${status}.`);
-    this.name = 'AccessRequestError';
+export class AccessRequestError extends ResourceAllocationApiError {
+  constructor(status: number | null, problem: AccessProblem | null) {
+    super(status, problem, status === null ? 'The access service could not be reached.' : `Access request failed with status ${status}.`, 'AccessRequestError');
   }
 }
 
-const api = axios.create({
-  baseURL: import.meta.env.VITE_RESOURCE_ALLOCATION_API_BASE_URL ?? '',
-  timeout: RESOURCE_ALLOCATION_API_TIMEOUT_MS,
-});
-
-function parseProblem(payload: unknown): AccessProblem | null {
-  if (typeof payload !== 'object' || payload === null) return null;
-  const value = payload as Record<string, unknown>;
-  const administrators = Array.isArray(value.administrators)
-    ? value.administrators.filter((item): item is AdministratorContact =>
-      typeof item === 'object' && item !== null &&
-      'displayName' in item && typeof item.displayName === 'string' &&
-      'email' in item && typeof item.email === 'string')
-    : undefined;
-  return {
-    status: typeof value.status === 'number' ? value.status : undefined,
-    code: typeof value.code === 'string' ? value.code : undefined,
-    detail: typeof value.detail === 'string' ? value.detail : undefined,
-    administrators,
-  };
-}
-
 export async function getResourceAllocationAccess(localUserId: string): Promise<ResourceAccessResponse> {
-  let payload: unknown;
   try {
     const response = await api.get<ResourceAccessResponse>(RESOURCE_ALLOCATION_ACCESS_PATH, {
       headers: {
@@ -74,18 +24,10 @@ export async function getResourceAllocationAccess(localUserId: string): Promise<
         'Cache-Control': 'no-cache',
       },
     });
-    payload = response.data;
+    return response.data;
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response) {
-      throw new AccessRequestError(error.response.status, parseProblem(error.response.data));
-    }
-    throw error;
+    return throwApiRequestError(error, AccessRequestError);
   }
-
-  if (typeof payload !== 'object' || payload === null || !('person' in payload)) {
-    throw new Error('The access response was invalid.');
-  }
-  return payload as ResourceAccessResponse;
 }
 
 export function readSelectedProfileId(): string | null {

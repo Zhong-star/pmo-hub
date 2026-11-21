@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsEmail, IsEnum, IsString, IsUUID, ValidateIf } from 'class-validator';
 import { ResourceAllocationRole } from '../people/resource-allocation-role';
 import { IsTrimmedLength } from './trimmed-length.validator';
+import { CursorPageInfoDto } from '../common/resource-allocation-contract.dto';
 
 export class CreateResourcePersonRequestDto {
   @ApiProperty({ type: String, maxLength: 200 })
@@ -23,7 +24,7 @@ export class CreateResourcePersonRequestDto {
   @IsEnum(ResourceAllocationRole)
   role!: ResourceAllocationRole;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @ValidateIf((_object, value) => value !== undefined && value !== null)
   @IsUUID()
   groupId?: string | null;
@@ -58,7 +59,7 @@ export class UpdateResourcePersonRequestDto {
   @IsEnum(ResourceAllocationRole)
   role?: ResourceAllocationRole;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @ValidateIf((_object, value) => value !== undefined && value !== null)
   @IsUUID()
   groupId?: string | null;
@@ -80,12 +81,12 @@ export class CreateResourceGroupRequestDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @ValidateIf((_object, value) => value !== undefined && value !== null)
   @IsUUID()
   supervisorId?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @ValidateIf((_object, value) => value !== undefined && value !== null)
   @IsUUID()
   managerId?: string | null;
@@ -103,12 +104,12 @@ export class UpdateResourceGroupRequestDto {
   @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @ValidateIf((_object, value) => value !== undefined && value !== null)
   @IsUUID()
   supervisorId?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @ValidateIf((_object, value) => value !== undefined && value !== null)
   @IsUUID()
   managerId?: string | null;
@@ -120,7 +121,7 @@ export class CreateResourceProfileRequestDto {
   @IsTrimmedLength(1)
   name!: string;
 
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({ type: String, format: 'uuid' })
   @IsUUID()
   groupId!: string;
 
@@ -137,7 +138,7 @@ export class UpdateResourceProfileRequestDto {
   @IsTrimmedLength(1)
   name?: string;
 
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({ type: String, format: 'uuid' })
   @ValidateIf((_object, value) => value !== undefined)
   @IsUUID()
   groupId?: string;
@@ -149,8 +150,8 @@ export class UpdateResourceProfileRequestDto {
 }
 
 export class AdminPageResponseDto {
-  @ApiProperty({ type: Object, example: { nextCursor: null, limit: 50 } })
-  page!: { nextCursor: string | null; limit: number };
+  @ApiProperty({ type: () => CursorPageInfoDto })
+  page!: CursorPageInfoDto;
 }
 
 export class ResourcePersonResponseDto {

@@ -2097,7 +2097,8 @@
             "required": false,
             "in": "query",
             "schema": {
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -2309,7 +2310,8 @@
             "required": false,
             "in": "query",
             "schema": {
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -3530,7 +3532,8 @@
             "required": false,
             "in": "query",
             "schema": {
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -3538,7 +3541,8 @@
             "required": false,
             "in": "query",
             "schema": {
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -3546,7 +3550,8 @@
             "required": false,
             "in": "query",
             "schema": {
-              "format": "uuid"
+              "format": "uuid",
+              "type": "string"
             }
           },
           {
@@ -4482,7 +4487,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResourceRequestResponseDto"
+                  "$ref": "#/components/schemas/ResourceRequestCollectionItemDto"
                 }
               }
             }
@@ -8413,6 +8418,24 @@
           "version"
         ]
       },
+      "CursorPageInfoDto": {
+        "type": "object",
+        "properties": {
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "limit": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "nextCursor",
+          "limit"
+        ]
+      },
       "ResourceInitiativeCollectionResponseDto": {
         "type": "object",
         "properties": {
@@ -8423,11 +8446,7 @@
             }
           },
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           }
         },
         "required": [
@@ -8497,11 +8516,7 @@
         "type": "object",
         "properties": {
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           },
           "items": {
             "type": "array",
@@ -8541,7 +8556,7 @@
             ]
           },
           "groupId": {
-            "type": "object",
+            "type": "string",
             "format": "uuid",
             "nullable": true
           },
@@ -8583,7 +8598,7 @@
             ]
           },
           "groupId": {
-            "type": "object",
+            "type": "string",
             "format": "uuid",
             "nullable": true
           },
@@ -8632,11 +8647,7 @@
         "type": "object",
         "properties": {
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           },
           "items": {
             "type": "array",
@@ -8661,12 +8672,12 @@
             "default": true
           },
           "supervisorId": {
-            "type": "object",
+            "type": "string",
             "format": "uuid",
             "nullable": true
           },
           "managerId": {
-            "type": "object",
+            "type": "string",
             "format": "uuid",
             "nullable": true
           }
@@ -8685,12 +8696,12 @@
             "type": "boolean"
           },
           "supervisorId": {
-            "type": "object",
+            "type": "string",
             "format": "uuid",
             "nullable": true
           },
           "managerId": {
-            "type": "object",
+            "type": "string",
             "format": "uuid",
             "nullable": true
           }
@@ -8729,11 +8740,7 @@
         "type": "object",
         "properties": {
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           },
           "items": {
             "type": "array",
@@ -8849,11 +8856,7 @@
         "type": "object",
         "properties": {
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           },
           "items": {
             "type": "array",
@@ -8887,11 +8890,7 @@
         "type": "object",
         "properties": {
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           },
           "items": {
             "type": "array",
@@ -8930,11 +8929,7 @@
         "type": "object",
         "properties": {
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           },
           "items": {
             "type": "array",
@@ -8972,11 +8967,7 @@
         "type": "object",
         "properties": {
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           },
           "items": {
             "type": "array",
@@ -9123,16 +9114,186 @@
             }
           },
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           }
         },
         "required": [
           "items",
           "page"
+        ]
+      },
+      "ResourceRequestConditionsDto": {
+        "type": "object",
+        "properties": {
+          "initiativeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "initiativeCode": {
+            "type": "string"
+          },
+          "initiativeName": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "DEMAND_ANALYSIS",
+              "POC_BBP",
+              "EXECUTION_PROJECT",
+              "EXECUTION_FAST_TRACK",
+              "EXECUTION_ENHANCEMENT"
+            ]
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "groupName": {
+            "type": "string"
+          },
+          "resourceProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resourceProfileName": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "weeklyHours": {
+            "type": "number"
+          },
+          "comment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "initiativeId",
+          "initiativeCode",
+          "initiativeName",
+          "category",
+          "groupId",
+          "groupName",
+          "resourceProfileId",
+          "resourceProfileName",
+          "startDate",
+          "endDate",
+          "weeklyHours"
+        ]
+      },
+      "SubmissionRequestOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "removedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decisionState": {
+            "type": "string",
+            "enum": [
+              "WAITING_FOR_PRESENTATION",
+              "PENDING_TEAM_DECISION",
+              "APPROVED_WITH_CHANGES",
+              "APPROVED",
+              "DENIED",
+              "PRE_N3",
+              "ESCALATION",
+              "REQUIRES_REVALIDATION",
+              "CANCELLED"
+            ]
+          },
+          "requestedConditions": {
+            "$ref": "#/components/schemas/ResourceRequestConditionsDto"
+          }
+        }
+      },
+      "SubmittedConditionsDto": {
+        "type": "object",
+        "properties": {
+          "initiativeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "DEMAND_ANALYSIS",
+              "POC_BBP",
+              "EXECUTION_PROJECT",
+              "EXECUTION_FAST_TRACK",
+              "EXECUTION_ENHANCEMENT"
+            ]
+          },
+          "attemptKey": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resourceProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "weeklyHours": {
+            "type": "number"
+          },
+          "comment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
+          "resourceProfileId",
+          "startDate",
+          "endDate",
+          "weeklyHours"
+        ]
+      },
+      "SubmissionLineProblemDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
         ]
       },
       "ResourceSubmissionLineResponseDto": {
@@ -9147,7 +9308,7 @@
             "format": "uuid"
           },
           "submittedConditions": {
-            "type": "object"
+            "$ref": "#/components/schemas/SubmittedConditionsDto"
           },
           "status": {
             "type": "string",
@@ -9163,7 +9324,7 @@
             "format": "uuid"
           },
           "problem": {
-            "type": "object"
+            "$ref": "#/components/schemas/SubmissionLineProblemDto"
           },
           "receivedAt": {
             "type": "string",
@@ -9174,7 +9335,14 @@
             "format": "date-time"
           },
           "requestOutcome": {
-            "type": "object"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/SubmissionRequestOutcomeDto"
+              }
+            ]
           }
         },
         "required": [
@@ -9195,11 +9363,7 @@
             }
           },
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           }
         },
         "required": [
@@ -9227,13 +9391,16 @@
             ]
           },
           "requesterSnapshot": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           },
           "actorSnapshot": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           },
           "requestSnapshot": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           },
           "reason": {
             "type": "string",
@@ -9260,6 +9427,26 @@
           "correlationId"
         ]
       },
+      "ResourcePersonSnapshotDto": {
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "personId",
+          "displayName",
+          "role"
+        ]
+      },
       "RequestChangeReceiptDto": {
         "type": "object",
         "properties": {
@@ -9268,10 +9455,10 @@
             "format": "uuid"
           },
           "requester": {
-            "type": "object"
+            "$ref": "#/components/schemas/ResourcePersonSnapshotDto"
           },
           "requestedConditions": {
-            "type": "object"
+            "$ref": "#/components/schemas/ResourceRequestConditionsDto"
           },
           "decisionState": {
             "type": "string"
@@ -9337,6 +9524,138 @@
           "removedAt"
         ]
       },
+      "ApprovedRequestConditionsDto": {
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "personName": {
+            "type": "string"
+          },
+          "resourceProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resourceProfileName": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "groupName": {
+            "type": "string"
+          },
+          "initiativeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "initiativeCode": {
+            "type": "string"
+          },
+          "initiativeName": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "weeklyHours": {
+            "type": "number"
+          },
+          "explanation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "personId",
+          "personName",
+          "resourceProfileId",
+          "resourceProfileName",
+          "groupId",
+          "groupName",
+          "initiativeId",
+          "initiativeCode",
+          "initiativeName",
+          "startDate",
+          "endDate",
+          "weeklyHours"
+        ]
+      },
+      "AllocationPersonSummaryDto": {
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "personId",
+          "displayName"
+        ]
+      },
+      "AllocationGroupSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "AllocationInitiativeSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ]
+      },
+      "AllocationResourceProfileSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
       "AllocationApprovalResponseDto": {
         "type": "object",
         "properties": {
@@ -9345,16 +9664,16 @@
             "format": "uuid"
           },
           "person": {
-            "type": "object"
+            "$ref": "#/components/schemas/AllocationPersonSummaryDto"
           },
           "group": {
-            "type": "object"
+            "$ref": "#/components/schemas/AllocationGroupSummaryDto"
           },
           "initiative": {
-            "type": "object"
+            "$ref": "#/components/schemas/AllocationInitiativeSummaryDto"
           },
           "resourceProfile": {
-            "type": "object"
+            "$ref": "#/components/schemas/AllocationResourceProfileSummaryDto"
           },
           "startDate": {
             "type": "string",
@@ -9404,13 +9723,13 @@
             "format": "uuid"
           },
           "requester": {
-            "type": "object"
+            "$ref": "#/components/schemas/ResourcePersonSnapshotDto"
           },
           "requestedConditions": {
-            "type": "object"
+            "$ref": "#/components/schemas/ResourceRequestConditionsDto"
           },
           "approvedConditions": {
-            "type": "object"
+            "$ref": "#/components/schemas/ApprovedRequestConditionsDto"
           },
           "allocation": {
             "nullable": true,
@@ -9469,6 +9788,69 @@
           "version"
         ]
       },
+      "ResourceAllocationSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "person": {
+            "$ref": "#/components/schemas/AllocationPersonSummaryDto"
+          },
+          "group": {
+            "$ref": "#/components/schemas/AllocationGroupSummaryDto"
+          },
+          "initiative": {
+            "$ref": "#/components/schemas/AllocationInitiativeSummaryDto"
+          },
+          "resourceProfile": {
+            "$ref": "#/components/schemas/AllocationResourceProfileSummaryDto"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "weeklyHours": {
+            "type": "number"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "NOT_STARTED",
+              "IN_PROGRESS",
+              "SUSPENDED",
+              "ALLOCATED_WITHOUT_ACTION",
+              "DONE",
+              "CANCELED"
+            ]
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "person",
+          "group",
+          "initiative",
+          "resourceProfile",
+          "startDate",
+          "endDate",
+          "weeklyHours",
+          "state",
+          "approvedAt",
+          "version"
+        ]
+      },
       "RequestDecisionResponseDto": {
         "type": "object",
         "properties": {
@@ -9477,18 +9859,28 @@
             "format": "uuid"
           },
           "requesterSnapshot": {
-            "type": "object"
+            "$ref": "#/components/schemas/ResourcePersonSnapshotDto"
           },
           "requestedConditions": {
-            "type": "object"
+            "$ref": "#/components/schemas/ResourceRequestConditionsDto"
           },
           "approvedConditions": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApprovedRequestConditionsDto"
+              }
+            ]
           },
           "allocation": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ResourceAllocationSummaryDto"
+              }
+            ]
           },
           "resolutionStrategy": {
             "type": "string",
@@ -9535,6 +9927,23 @@
           "version"
         ]
       },
+      "AllocationPeriodDto": {
+        "type": "object",
+        "properties": {
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": [
+          "startDate",
+          "endDate"
+        ]
+      },
       "AllocationViewDto": {
         "type": "object",
         "properties": {
@@ -9543,16 +9952,16 @@
             "format": "uuid"
           },
           "person": {
-            "type": "object"
+            "$ref": "#/components/schemas/AllocationPersonSummaryDto"
           },
           "group": {
-            "type": "object"
+            "$ref": "#/components/schemas/AllocationGroupSummaryDto"
           },
           "initiative": {
-            "type": "object"
+            "$ref": "#/components/schemas/AllocationInitiativeSummaryDto"
           },
           "resourceProfile": {
-            "type": "object"
+            "$ref": "#/components/schemas/AllocationResourceProfileSummaryDto"
           },
           "startDate": {
             "type": "string",
@@ -9588,11 +9997,7 @@
             "format": "uuid"
           },
           "approvedPeriod": {
-            "type": "object",
-            "example": {
-              "startDate": "2027-01-05",
-              "endDate": "2027-01-19"
-            }
+            "$ref": "#/components/schemas/AllocationPeriodDto"
           },
           "availableActions": {
             "type": "array",
@@ -9733,24 +10138,6 @@
           "markedCount"
         ]
       },
-      "ResourceNotificationPageInfoDto": {
-        "type": "object",
-        "properties": {
-          "nextCursor": {
-            "type": "string",
-            "nullable": true
-          },
-          "limit": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 100
-          }
-        },
-        "required": [
-          "nextCursor",
-          "limit"
-        ]
-      },
       "ResourceNotificationPageDto": {
         "type": "object",
         "properties": {
@@ -9761,12 +10148,23 @@
             }
           },
           "page": {
-            "$ref": "#/components/schemas/ResourceNotificationPageInfoDto"
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           }
         },
         "required": [
           "items",
           "page"
+        ]
+      },
+      "RequestResponsibleRoleDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
         ]
       },
       "RequestQueueItemDto": {
@@ -9777,14 +10175,19 @@
             "format": "uuid"
           },
           "requester": {
-            "type": "object"
+            "$ref": "#/components/schemas/ResourcePersonSnapshotDto"
           },
           "requestedConditions": {
-            "type": "object"
+            "$ref": "#/components/schemas/ResourceRequestConditionsDto"
           },
           "approvedConditions": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApprovedRequestConditionsDto"
+              }
+            ]
           },
           "resolutionStrategy": {
             "type": "string",
@@ -9841,29 +10244,12 @@
           "nextResponsible": {
             "oneOf": [
               {
-                "type": "object",
-                "properties": {
-                  "role": {
-                    "type": "string"
-                  }
-                }
+                "$ref": "#/components/schemas/RequestResponsibleRoleDto"
               },
               {
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "properties": {
-                    "personId": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "displayName": {
-                      "type": "string"
-                    },
-                    "role": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/ResourcePersonSnapshotDto"
                 }
               }
             ]
@@ -9906,7 +10292,7 @@
             }
           },
           "page": {
-            "type": "object"
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           }
         },
         "required": [
@@ -9961,7 +10347,7 @@
           "reason"
         ]
       },
-      "ResourceRequestResponseDto": {
+      "ResourceRequestCollectionItemDto": {
         "type": "object",
         "properties": {
           "id": {
@@ -9969,18 +10355,19 @@
             "format": "uuid"
           },
           "requesterSnapshot": {
-            "type": "object"
+            "$ref": "#/components/schemas/ResourcePersonSnapshotDto"
           },
           "requestedConditions": {
-            "type": "object"
+            "$ref": "#/components/schemas/ResourceRequestConditionsDto"
           },
           "approvedConditions": {
+            "nullable": true,
             "type": "object",
-            "nullable": true
-          },
-          "allocation": {
-            "type": "object",
-            "nullable": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApprovedRequestConditionsDto"
+              }
+            ]
           },
           "decisionState": {
             "type": "string",
@@ -10023,11 +10410,6 @@
               "type": "string"
             }
           },
-          "revalidation": {
-            "type": "object",
-            "nullable": true,
-            "description": "Current eligibility blockers and responsible actor while the request requires revalidation."
-          },
           "version": {
             "type": "number"
           }
@@ -10051,20 +10433,153 @@
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ResourceRequestResponseDto"
+              "$ref": "#/components/schemas/ResourceRequestCollectionItemDto"
             }
           },
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           }
         },
         "required": [
           "items",
           "page"
+        ]
+      },
+      "RequestRevalidationDto": {
+        "type": "object",
+        "properties": {
+          "originState": {
+            "type": "string",
+            "enum": [
+              "WAITING_FOR_PRESENTATION",
+              "PENDING_TEAM_DECISION",
+              "APPROVED_WITH_CHANGES"
+            ]
+          },
+          "impediments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nextResponsible": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RequestResponsibleRoleDto"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ResourcePersonSnapshotDto"
+                }
+              }
+            ]
+          }
+        },
+        "required": [
+          "originState",
+          "impediments",
+          "nextResponsible"
+        ]
+      },
+      "ResourceRequestResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requesterSnapshot": {
+            "$ref": "#/components/schemas/ResourcePersonSnapshotDto"
+          },
+          "requestedConditions": {
+            "$ref": "#/components/schemas/ResourceRequestConditionsDto"
+          },
+          "approvedConditions": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApprovedRequestConditionsDto"
+              }
+            ]
+          },
+          "decisionState": {
+            "type": "string",
+            "enum": [
+              "WAITING_FOR_PRESENTATION",
+              "PENDING_TEAM_DECISION",
+              "APPROVED_WITH_CHANGES",
+              "APPROVED",
+              "DENIED",
+              "PRE_N3",
+              "ESCALATION",
+              "REQUIRES_REVALIDATION",
+              "CANCELLED"
+            ]
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stageEnteredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expirationDueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "72-hour requester response deadline when a date or hours proposal is awaiting acceptance."
+          },
+          "availableActions": {
+            "example": [
+              "ACCEPT"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "number"
+          },
+          "allocation": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ResourceAllocationSummaryDto"
+              }
+            ]
+          },
+          "revalidation": {
+            "nullable": true,
+            "description": "Current eligibility blockers and responsible actor while the request requires revalidation.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RequestRevalidationDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "requesterSnapshot",
+          "requestedConditions",
+          "decisionState",
+          "receivedAt",
+          "stageEnteredAt",
+          "expirationDueAt",
+          "dueAt",
+          "availableActions",
+          "version",
+          "allocation"
         ]
       },
       "UpdateRequestedConditionsDto": {
@@ -10154,11 +10669,7 @@
             }
           },
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           }
         },
         "required": [
@@ -10302,13 +10813,16 @@
             "type": "string"
           },
           "actorSnapshot": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           },
           "before": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           },
           "after": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           },
           "reason": {
             "type": "string",
@@ -10345,11 +10859,7 @@
             }
           },
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           },
           "latestDenial": {
             "nullable": true,
@@ -10408,11 +10918,7 @@
             }
           },
           "page": {
-            "type": "object",
-            "example": {
-              "nextCursor": null,
-              "limit": 50
-            }
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           }
         },
         "required": [
@@ -10462,24 +10968,6 @@
         "type": "object",
         "properties": {}
       },
-      "AllocationPageInfoDto": {
-        "type": "object",
-        "properties": {
-          "nextCursor": {
-            "type": "string",
-            "nullable": true
-          },
-          "limit": {
-            "type": "number",
-            "minimum": 1,
-            "maximum": 100
-          }
-        },
-        "required": [
-          "nextCursor",
-          "limit"
-        ]
-      },
       "AllocationCollectionResponseDto": {
         "type": "object",
         "properties": {
@@ -10490,7 +10978,7 @@
             }
           },
           "page": {
-            "$ref": "#/components/schemas/AllocationPageInfoDto"
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           }
         },
         "required": [
@@ -10498,15 +10986,50 @@
           "page"
         ]
       },
+      "AllocationHoursByStateDto": {
+        "type": "object",
+        "properties": {
+          "NOT_STARTED": {
+            "type": "number"
+          },
+          "IN_PROGRESS": {
+            "type": "number"
+          },
+          "SUSPENDED": {
+            "type": "number"
+          },
+          "ALLOCATED_WITHOUT_ACTION": {
+            "type": "number"
+          },
+          "DONE": {
+            "type": "number"
+          },
+          "CANCELED": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "NOT_STARTED",
+          "IN_PROGRESS",
+          "SUSPENDED",
+          "ALLOCATED_WITHOUT_ACTION",
+          "DONE",
+          "CANCELED"
+        ]
+      },
       "AllocationLoadItemDto": {
         "type": "object",
         "properties": {
           "person": {
-            "type": "object"
+            "$ref": "#/components/schemas/AllocationPersonSummaryDto"
           },
           "weeklyHoursByState": {
-            "type": "object",
-            "description": "Weekly hours summed by current operational state."
+            "description": "Weekly hours summed by current operational state.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AllocationHoursByStateDto"
+              }
+            ]
           },
           "totalWeeklyHours": {
             "type": "number"
@@ -10532,7 +11055,7 @@
             }
           },
           "page": {
-            "$ref": "#/components/schemas/AllocationPageInfoDto"
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           }
         },
         "required": [
@@ -10549,7 +11072,8 @@
             "format": "uuid"
           },
           "actor": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           },
           "action": {
             "type": "string"
@@ -10559,10 +11083,12 @@
             "nullable": true
           },
           "before": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           },
           "after": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           },
           "occurredAt": {
             "type": "string",
@@ -10594,7 +11120,7 @@
             }
           },
           "page": {
-            "$ref": "#/components/schemas/AllocationPageInfoDto"
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           }
         },
         "required": [

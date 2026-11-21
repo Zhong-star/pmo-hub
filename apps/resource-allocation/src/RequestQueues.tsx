@@ -13,6 +13,7 @@ import { ALLOCATIONS_QUERY_ROOT } from './allocationApi';
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
 import { REQUESTS_QUERY_ROOT } from './requestApi';
 import { SUBMISSIONS_QUERY_ROOT, type SelectionItem } from './submissionApi';
+import { businessDate, businessDateAfterHours, formatBusinessTimestamp, normalizeWeeklyHours } from './timeAndHours';
 
 interface RequestQueuesProps {
   localUserId: string;
@@ -55,6 +56,7 @@ type ApprovalDecision = {
 const queueLabels: Record<RequestQueueCode, string> = {
   presentation: 'Presentation queue',
   'team-decision': 'Group decision queue',
+  'requester-response': 'Requester response queue',
   exceptions: 'Admin exceptions',
   revalidation: 'Revalidation queue',
 };
@@ -136,42 +138,14 @@ function updateRevalidationQueueLocation(filters: ExceptionFilterValues) {
   window.history.replaceState(null, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
 }
 
-function dateLabel(value: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: 'America/Sao_Paulo',
-  }).format(new Date(value));
-}
-
-function saoPauloDate(value: Date): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(value);
-  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? '';
-  return `${part('year')}-${part('month')}-${part('day')}`;
-}
-
-function normalizedHours(raw: string): number | null {
-  const match = /^(\d+)(?:[.,](\d+))?$/.exec(raw.trim());
-  if (!match) return null;
-  const whole = BigInt(match[1]);
-  const fraction = match[2] ?? '';
-  if (whole > 40n || (whole === 40n && /[1-9]/.test(fraction))) return null;
-  const tenths = Number(whole) * 10 + Number(fraction[0] ?? '0') + (Number(fraction[1] ?? '0') >= 5 ? 1 : 0);
-  return tenths > 0 ? tenths / 10 : null;
-}
-
 function readValue(item: RequestQueueItem, key: keyof RequestQueueItem['requestedConditions']): string {
   const value = item.requestedConditions[key];
   return typeof value === 'string' ? value : '';
 }
 
 function optionLabel(item: SelectionItem): string {
-  return item.code ? `${item.code} — ${item.name ?? ''}` : item.name ?? item.id;
+  const code = 'code' in item ? item.code : undefined;
+  return code ? `${code} — ${item.name}` : item.name ?? item.id;
 }
 
 function accessDenied(error: unknown): boolean {
@@ -740,7 +714,7 @@ function RequestQueueCard({
   const ownRequest = item.requester.personId === personId;
   const canRecordStrategy = item.availableActions.includes('RECORD_STRATEGY');
   const canResolve = item.availableActions.includes('RESOLVE');
-  const today = saoPauloDate(new Date());
+  const today = businessDate();
   const requestedStartDatePassed = Boolean(conditions.startDate && conditions.startDate < today);
 
   return (
@@ -760,12 +734,12 @@ function RequestQueueCard({
         <div><dt>Period</dt><dd>{conditions.startDate ?? '—'} to {conditions.endDate ?? '—'}</dd></div>
         <div><dt>Weekly hours</dt><dd>{conditions.weeklyHours ?? '—'}</dd></div>
         <div><dt>Next responsible</dt><dd>{responsible || 'No active group leaders'}</dd></div>
-        <div><dt>Received</dt><dd>{dateLabel(item.receivedAt)}</dd></div>
-        {item.dueAt && <div><dt>Presentation deadline</dt><dd>{dateLabel(item.dueAt)}</dd></div>}
+        <div><dt>Received</dt><dd>{formatBusinessTimestamp(item.receivedAt)}</dd></div>
+        {item.dueAt && <div><dt>Presentation deadline</dt><dd>{formatBusinessTimestamp(item.dueAt)}</dd></div>}
       </dl>
 
       {queue === 'revalidation' && (
-        <p className="request-revalidation-origin"><strong>Origin:</strong> {revalidationOriginLabel(item.originState)}</p>
+        <p className="request-revalidation-origin"><strong>Origin:</strong> {revalidationOriginLabel(item.originState ?? undefined)}</p>
       )}
 
       {item.impediments?.includes('PRESENTATION_DEADLINE_PASSED') && (
@@ -931,13 +905,13 @@ function ApprovalForm({
   const selectedEndDate = useWatch({ control, name: 'endDate' });
   const selectedWeeklyHours = useWatch({ control, name: 'weeklyHours' });
   const [startDates] = useState(() => ({
-    today: saoPauloDate(new Date()),
-    afterAcceptanceWindow: saoPauloDate(new Date(Date.now() + 72 * 60 * 60 * 1000)),
+    today: businessDate(),
+    afterAcceptanceWindow: businessDateAfterHours(72),
   }));
   const profileChanged = selectedProfileId !== conditions.resourceProfileId;
   const startDateChanged = selectedStartDate !== conditions.startDate;
   const endDateChanged = selectedEndDate !== conditions.endDate;
-  const weeklyHours = normalizedHours(selectedWeeklyHours ?? '');
+  const weeklyHours = normalizeWeeklyHours(selectedWeeklyHours ?? '').value;
   const weeklyHoursChanged = weeklyHours !== conditions.weeklyHours;
   const periodOrHoursChanged = startDateChanged || endDateChanged || weeklyHoursChanged;
   const requestedStartDatePassed = Boolean(conditions.startDate && conditions.startDate < startDates.today);
@@ -1062,7 +1036,7 @@ function ApprovalForm({
           inputMode="decimal"
           {...register('weeklyHours', {
             required: 'Enter proposed weekly hours.',
-            validate: (value) => normalizedHours(value) !== null || 'Enter hours above 0 and no more than 40, to one decimal place.',
+            validate: (value) => normalizeWeeklyHours(value).value !== null || 'Enter hours above 0 and no more than 40, to one decimal place.',
           })}
           aria-invalid={errors.weeklyHours ? 'true' : 'false'}
           disabled={disabled}

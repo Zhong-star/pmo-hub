@@ -30,7 +30,7 @@ export class ResourceAllocationSelectionController {
   @ApiSecurity('localProfile')
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'cursor', required: false, type: String })
-  @ApiQuery({ name: 'groupId', required: false, format: 'uuid' })
+  @ApiQuery({ name: 'groupId', required: false, type: String, format: 'uuid' })
   @ApiOkResponse({ type: ResourcePersonSelectionCollectionDto, description: 'Active people with display name and group only.' })
   @ProblemResponse(400, 'A filter, limit, or cursor is invalid.')
   listPeople(@Headers(localProfileHeader) localUserId: string | undefined, @Query() filters: SelectionFilters) {
@@ -53,7 +53,7 @@ export class ResourceAllocationSelectionController {
   @ApiSecurity('localProfile')
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'cursor', required: false, type: String })
-  @ApiQuery({ name: 'groupId', required: false, format: 'uuid' })
+  @ApiQuery({ name: 'groupId', required: false, type: String, format: 'uuid' })
   @ApiOkResponse({ type: ResourceProfileSelectionCollectionDto, description: 'Active profiles in active groups with name and group identifier only.' })
   @ProblemResponse(400, 'A filter, limit, or cursor is invalid.')
   listResourceProfiles(@Headers(localProfileHeader) localUserId: string | undefined, @Query() filters: SelectionFilters) {

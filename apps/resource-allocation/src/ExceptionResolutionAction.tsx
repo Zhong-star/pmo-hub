@@ -1,6 +1,7 @@
 import { useForm, useWatch } from 'react-hook-form';
 import type { ApprovedRequestConditions } from './requestApi';
 import type { ExceptionResolutionStrategy, ExceptionResolutionInput, ExceptionStrategyInput, QueueSelections, RequestQueueItem } from './requestQueueApi';
+import { businessDate, normalizeWeeklyHours } from './timeAndHours';
 
 interface ExceptionResolutionActionProps {
   item: RequestQueueItem;
@@ -32,27 +33,6 @@ const strategyOptions: Array<{ value: ExceptionResolutionStrategy; label: string
   { value: 'DEPRIORITIZE_OTHER_DEMANDS', label: 'Deprioritize other demands' },
 ];
 
-function normalizeHours(raw: string): number | null {
-  const match = /^(\d+)(?:[.,](\d+))?$/.exec(raw.trim());
-  if (!match) return null;
-  const whole = BigInt(match[1]);
-  const fraction = match[2] ?? '';
-  if (whole > 40n || (whole === 40n && /[1-9]/.test(fraction))) return null;
-  const tenths = Number(whole) * 10 + Number(fraction[0] ?? '0') + (Number(fraction[1] ?? '0') >= 5 ? 1 : 0);
-  return tenths > 0 ? tenths / 10 : null;
-}
-
-function saoPauloDate(date: Date): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? '';
-  return `${part('year')}-${part('month')}-${part('day')}`;
-}
-
 function approvedValue<T extends keyof ApprovedRequestConditions>(item: RequestQueueItem, key: T): ApprovedRequestConditions[T] | undefined {
   return item.approvedConditions?.[key];
 }
@@ -72,7 +52,7 @@ export function ExceptionResolutionAction({
   onRecord,
   onResolve,
 }: ExceptionResolutionActionProps) {
-  const today = saoPauloDate(new Date());
+  const today = businessDate();
   const initialAction = canResolve && !canRecord ? 'resolve' : 'record';
   const form = useForm<ResolutionValues>({
     defaultValues: {
@@ -105,7 +85,7 @@ export function ExceptionResolutionAction({
       await onRecord(common);
       return;
     }
-    const weeklyHours = normalizeHours(values.weeklyHours);
+    const weeklyHours = normalizeWeeklyHours(values.weeklyHours).value;
     if (weeklyHours === null) {
       form.setError('weeklyHours', { type: 'validate', message: 'Enter hours above 0 and no more than 40, to one decimal place.' });
       return;
@@ -262,7 +242,7 @@ export function ExceptionResolutionAction({
                   inputMode="decimal"
                   {...form.register('weeklyHours', {
                     required: 'Enter final weekly hours.',
-                    validate: (value) => normalizeHours(value) !== null || 'Enter hours above 0 and no more than 40, to one decimal place.',
+                    validate: (value) => normalizeWeeklyHours(value).value !== null || 'Enter hours above 0 and no more than 40, to one decimal place.',
                   })}
                   aria-invalid={Boolean(form.formState.errors.weeklyHours)}
                   disabled={disabled}

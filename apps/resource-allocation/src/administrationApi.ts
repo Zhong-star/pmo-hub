@@ -1,109 +1,48 @@
-import axios from 'axios';
+import { api, throwApiRequestError, ResourceAllocationApiError } from './apiClient';
+import type { ApiProblem, ApiQuery, ApiRequestBody, ApiResponse } from './apiContracts';
 
 export const RESOURCE_ALLOCATION_API_ROOT = '/api/resource-allocation/v1';
 
-export type ResourceAllocationRole =
-  | 'ALLOCATION_USER'
-  | 'ALLOCATION_MODERATOR'
-  | 'ALLOCATION_SUPERVISOR'
-  | 'ALLOCATION_MANAGER'
-  | 'ALLOCATION_ADMIN';
-
 export type AdminCollection = 'people' | 'groups' | 'resource-profiles' | 'initiatives';
+type AdminCollectionPath<C extends AdminCollection> = {
+  people: '/api/resource-allocation/v1/admin/people';
+  groups: '/api/resource-allocation/v1/admin/groups';
+  'resource-profiles': '/api/resource-allocation/v1/admin/resource-profiles';
+  initiatives: '/api/resource-allocation/v1/admin/initiatives';
+}[C];
 
-export interface AdminPerson {
-  id: string;
-  localUserId: string;
-  displayName: string;
-  email: string;
-  active: boolean;
-  role: ResourceAllocationRole;
-  groupId: string | null;
-  coveredGroupIds: string[];
-  version: number;
-}
+type AdminCollectionQueryMap = {
+  [C in AdminCollection]: ApiQuery<AdminCollectionPath<C>, 'get'>;
+};
 
-export interface AdminGroup {
-  id: string;
-  name: string;
-  active: boolean;
-  supervisorId: string | null;
-  managerId: string | null;
-  version: number;
-}
+type AdminResourcePath<C extends AdminCollection> = {
+  people: '/api/resource-allocation/v1/admin/people/{id}';
+  groups: '/api/resource-allocation/v1/admin/groups/{id}';
+  'resource-profiles': '/api/resource-allocation/v1/admin/resource-profiles/{id}';
+  initiatives: '/api/resource-allocation/v1/admin/initiatives/{id}';
+}[C];
 
-export interface AdminResourceProfile {
-  id: string;
-  name: string;
-  groupId: string;
-  active: boolean;
-  version: number;
-}
-
-export interface AdminInitiative {
-  id: string;
-  code: string;
-  name: string;
-  active: boolean;
-  version: number;
-}
-
-export interface AdminRecordMap {
+export type AdminPerson = ApiResponse<'/api/resource-allocation/v1/admin/people/{id}', 'get'>;
+export type AdminGroup = ApiResponse<'/api/resource-allocation/v1/admin/groups/{id}', 'get'>;
+export type AdminResourceProfile = ApiResponse<'/api/resource-allocation/v1/admin/resource-profiles/{id}', 'get'>;
+export type AdminInitiative = ApiResponse<'/api/resource-allocation/v1/admin/initiatives/{id}', 'get'>;
+export type ResourceAllocationRole = AdminPerson['role'];
+export type AdminRecordMap = {
   people: AdminPerson;
   groups: AdminGroup;
   'resource-profiles': AdminResourceProfile;
   initiatives: AdminInitiative;
-}
+};
+export type AdminCollectionResponse<C extends AdminCollection> = ApiResponse<AdminCollectionPath<C>, 'get'>;
+export type ApiFieldError = NonNullable<ApiProblem['errors']>[number];
+export type { ApiProblem };
 
-export interface AdminCollectionResponse<T> {
-  items: T[];
-  page: { nextCursor: string | null; limit: number };
-}
-
-export interface ApiFieldError {
-  path?: string;
-  message?: string;
-}
-
-export interface ApiProblem {
-  code?: string;
-  detail?: string;
-  errors?: ApiFieldError[];
-}
-
-export class AdministrationRequestError extends Error {
-  constructor(readonly status: number, readonly problem: ApiProblem | null) {
-    super(problem?.detail ?? `The administration request failed with status ${status}.`);
-    this.name = 'AdministrationRequestError';
+type AdminCreatePayload<C extends AdminCollection> = ApiRequestBody<AdminCollectionPath<C>, 'post'>;
+type AdminUpdatePayload<C extends AdminCollection> = ApiRequestBody<AdminResourcePath<C>, 'patch'>;
+export class AdministrationRequestError extends ResourceAllocationApiError {
+  constructor(status: number | null, problem: ApiProblem | null) {
+    super(status, problem, status === null ? 'The administration service could not be reached.' : `The administration request failed with status ${status}.`, 'AdministrationRequestError');
   }
-}
-
-const api = axios.create({
-  baseURL: import.meta.env.VITE_RESOURCE_ALLOCATION_API_BASE_URL ?? '',
-  timeout: 5_000,
-});
-
-function parseProblem(payload: unknown): ApiProblem | null {
-  if (typeof payload !== 'object' || payload === null) return null;
-  const value = payload as Record<string, unknown>;
-  const errors = Array.isArray(value.errors)
-    ? value.errors.filter((item): item is ApiFieldError =>
-      typeof item === 'object' && item !== null &&
-      (!('path' in item) || typeof item.path === 'string') &&
-      (!('message' in item) || typeof item.message === 'string'))
-    : undefined;
-  return {
-    code: typeof value.code === 'string' ? value.code : undefined,
-    detail: typeof value.detail === 'string' ? value.detail : undefined,
-    errors,
-  };
-}
-
-function requestError(error: unknown): never {
-  if (axios.isAxiosError(error) && error.response) {
-    throw new AdministrationRequestError(error.response.status, parseProblem(error.response.data));
-  }
-  throw error;
 }
 
 function requestHeaders(localUserId: string) {
@@ -117,18 +56,18 @@ export async function getAdminCollection<C extends AdminCollection>(
   collection: C,
   localUserId: string,
   cursor: string | null,
-): Promise<AdminCollectionResponse<AdminRecordMap[C]>> {
+): Promise<AdminCollectionResponse<C>> {
   try {
-    const response = await api.get<AdminCollectionResponse<AdminRecordMap[C]>>(
+    const response = await api.get<AdminCollectionResponse<C>>(
       `${RESOURCE_ALLOCATION_API_ROOT}/admin/${collection}`,
       {
         headers: requestHeaders(localUserId),
-        params: { limit: 50, ...(cursor ? { cursor } : {}) },
+        params: { limit: 50, ...(cursor ? { cursor } : {}) } satisfies Partial<AdminCollectionQueryMap[C]>,
       },
     );
     return response.data;
   } catch (error) {
-    return requestError(error);
+    return throwApiRequestError(error, AdministrationRequestError);
   }
 }
 
@@ -153,14 +92,14 @@ export async function getAdminResource<C extends AdminCollection>(
     }
     return { record: response.data, etag };
   } catch (error) {
-    return requestError(error);
+    return throwApiRequestError(error, AdministrationRequestError);
   }
 }
 
 export async function createAdminResource<C extends AdminCollection>(
   collection: C,
   localUserId: string,
-  payload: Record<string, unknown>,
+  payload: AdminCreatePayload<C>,
   idempotencyKey: string,
 ): Promise<AdminResourceResponse<AdminRecordMap[C]>> {
   try {
@@ -176,7 +115,7 @@ export async function createAdminResource<C extends AdminCollection>(
     );
     return { record: response.data, etag: response.headers.etag ?? '' };
   } catch (error) {
-    return requestError(error);
+    return throwApiRequestError(error, AdministrationRequestError);
   }
 }
 
@@ -185,7 +124,7 @@ export async function updateAdminResource<C extends AdminCollection>(
   id: string,
   localUserId: string,
   etag: string,
-  payload: Record<string, unknown>,
+  payload: AdminUpdatePayload<C>,
 ): Promise<AdminResourceResponse<AdminRecordMap[C]>> {
   try {
     const response = await api.patch<AdminRecordMap[C]>(
@@ -201,6 +140,6 @@ export async function updateAdminResource<C extends AdminCollection>(
     );
     return { record: response.data, etag: response.headers.etag ?? '' };
   } catch (error) {
-    return requestError(error);
+    return throwApiRequestError(error, AdministrationRequestError);
   }
 }

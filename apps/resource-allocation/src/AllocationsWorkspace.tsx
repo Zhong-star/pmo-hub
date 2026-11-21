@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useForm } from 'react-hook-form';
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
 import { REQUESTS_QUERY_ROOT } from './requestApi';
+import { businessDate, formatBusinessTimestamp, formatCalendarDate } from './timeAndHours';
 import {
   ALLOCATIONS_QUERY_ROOT,
   AllocationRequestError,
@@ -85,24 +86,8 @@ function emptyFilterForm(): AllocationFilterForm {
   };
 }
 
-function formatBusinessDate(date = new Date()): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' })
-    .format(new Date(`${value}T00:00:00.000Z`));
-}
-
 function formatDateRange(start: string, end: string): string {
-  return `${formatDate(start)} – ${formatDate(end)}`;
+  return `${formatCalendarDate(start)} – ${formatCalendarDate(end)}`;
 }
 
 function stateLabel(value: AllocationState): string {
@@ -158,7 +143,7 @@ function createAttempt(
 export function AllocationsWorkspace({ localUserId, onAccessDenied }: AllocationsWorkspaceProps) {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<AllocationFilters>({});
-  const [loadDate, setLoadDate] = useState(() => formatBusinessDate());
+  const [loadDate, setLoadDate] = useState(() => businessDate());
   const [selectedAllocationId, setSelectedAllocationId] = useState<string | null>(
     () => new URLSearchParams(window.location.search).get('allocationId'),
   );
@@ -390,12 +375,12 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
           </div>
         )}
         {loadQuery.isSuccess && loadQuery.data.items.length === 0 && (
-          <p className="allocation-empty">No active allocation hours were found for {formatDate(loadDate)}.</p>
+          <p className="allocation-empty">No active allocation hours were found for {formatCalendarDate(loadDate)}.</p>
         )}
         {loadQuery.isSuccess && loadQuery.data.items.length > 0 && (
           <div className="allocation-capacity-table-wrap">
             <table className="allocation-capacity-table">
-              <caption className="sr-only">Weekly allocation hours by person and operational state on {formatDate(loadDate)}</caption>
+              <caption className="sr-only">Weekly allocation hours by person and operational state on {formatCalendarDate(loadDate)}</caption>
               <thead>
                 <tr>
                   <th scope="col">Person</th>
@@ -595,7 +580,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
                     {historyQuery.data.items.map((event) => (
                       <li key={event.id}>
                         <strong>{event.action.replaceAll('_', ' ').toLowerCase()}</strong>
-                        <span>{new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }).format(new Date(event.occurredAt))}</span>
+                        <span>{formatBusinessTimestamp(event.occurredAt)}</span>
                         {event.reason && <p>{event.reason}</p>}
                       </li>
                     ))}

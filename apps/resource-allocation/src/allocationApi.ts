@@ -1,118 +1,29 @@
-import axios from 'axios';
+import { api, throwApiRequestError, ResourceAllocationApiError } from './apiClient';
+import type { ApiProblem, ApiQuery, ApiRequestBody, ApiResponse } from './apiContracts';
 
 const API_ROOT = '/api/resource-allocation/v1';
 
 export const ALLOCATIONS_QUERY_ROOT = ['resource-allocation-allocations'] as const;
 
-export type AllocationState =
-  | 'NOT_STARTED'
-  | 'IN_PROGRESS'
-  | 'SUSPENDED'
-  | 'ALLOCATED_WITHOUT_ACTION'
-  | 'DONE'
-  | 'CANCELED';
+export type AllocationRecord = ApiResponse<'/api/resource-allocation/v1/allocations', 'get'>['items'][number];
+export type AllocationState = AllocationRecord['state'];
+export type AllocationAction = AllocationRecord['availableActions'][number];
+export type AllocationFilters = Partial<ApiQuery<'/api/resource-allocation/v1/allocations', 'get'>>;
+export type AllocationCollection = ApiResponse<'/api/resource-allocation/v1/allocations', 'get'>;
+export type AllocationLoadCollection = ApiResponse<'/api/resource-allocation/v1/allocation-load', 'get'>;
+export type AllocationLoadItem = AllocationLoadCollection['items'][number];
+export type AllocationHistoryCollection = ApiResponse<'/api/resource-allocation/v1/allocations/{id}/history', 'get'>;
+export type AllocationHistoryEvent = AllocationHistoryCollection['items'][number];
+type AllocationCommand = ApiRequestBody<'/api/resource-allocation/v1/allocations/{id}/suspensions', 'post'>;
 
-export type AllocationAction = 'SUSPEND' | 'RESERVE' | 'RESUME' | 'ACTIVATE' | 'COMPLETE' | 'CANCEL';
-
-export interface AllocationRecord {
-  id: string;
-  requestId: string;
-  person: { personId: string; displayName: string };
-  group: { id: string; name: string };
-  initiative: { id: string; code: string; name: string };
-  resourceProfile: { id: string; name: string };
-  startDate: string;
-  endDate: string;
-  approvedPeriod: { startDate: string; endDate: string };
-  weeklyHours: number;
-  state: AllocationState;
-  approvedAt: string;
-  version: number;
-  availableActions: string[];
-}
-
-export interface AllocationFilters {
-  initiativeId?: string;
-  personId?: string;
-  groupId?: string;
-  resourceProfileId?: string;
-  operationalState?: AllocationState | '';
-  periodStart?: string;
-  periodEnd?: string;
-}
-
-export interface AllocationCollection {
-  items: AllocationRecord[];
-  page: { nextCursor: string | null; limit: number };
-}
-
-export interface AllocationLoadItem {
-  person: { personId: string; displayName: string };
-  weeklyHoursByState: Record<AllocationState, number>;
-  totalWeeklyHours: number;
-}
-
-export interface AllocationLoadCollection {
-  date: string;
-  items: AllocationLoadItem[];
-  page: { nextCursor: string | null; limit: number };
-}
-
-export interface AllocationHistoryEvent {
-  id: string;
-  actor: Record<string, unknown>;
-  action: string;
-  reason: string | null;
-  before: Record<string, unknown>;
-  after: Record<string, unknown>;
-  occurredAt: string;
-  correlationId: string;
-}
-
-export interface AllocationHistoryCollection {
-  items: AllocationHistoryEvent[];
-  page: { nextCursor: string | null; limit: number };
-}
-
-interface AllocationProblem {
-  code?: string;
-  detail?: string;
-  title?: string;
-}
-
-export class AllocationRequestError extends Error {
-  constructor(readonly status: number | null, readonly problem: AllocationProblem | null) {
-    super(problem?.detail ?? problem?.title ?? (status === null
-      ? 'The allocation service could not be reached.'
-      : `The allocation request failed with status ${status}.`));
-    this.name = 'AllocationRequestError';
+export class AllocationRequestError extends ResourceAllocationApiError {
+  constructor(status: number | null, problem: ApiProblem | null) {
+    super(status, problem, status === null ? 'The allocation service could not be reached.' : `The allocation request failed with status ${status}.`, 'AllocationRequestError');
   }
 }
-
-const api = axios.create({
-  baseURL: import.meta.env.VITE_RESOURCE_ALLOCATION_API_BASE_URL ?? '',
-  timeout: 10_000,
-});
 
 function headers(localUserId: string) {
   return { 'X-PMO-Local-User-ID': localUserId, 'Cache-Control': 'no-cache' };
-}
-
-function parseProblem(payload: unknown): AllocationProblem | null {
-  if (typeof payload !== 'object' || payload === null) return null;
-  const value = payload as Record<string, unknown>;
-  return {
-    code: typeof value.code === 'string' ? value.code : undefined,
-    detail: typeof value.detail === 'string' ? value.detail : undefined,
-    title: typeof value.title === 'string' ? value.title : undefined,
-  };
-}
-
-function throwAllocationError(error: unknown): never {
-  if (axios.isAxiosError(error)) {
-    throw new AllocationRequestError(error.response?.status ?? null, parseProblem(error.response?.data));
-  }
-  throw error;
 }
 
 export async function getAllocations(
@@ -127,7 +38,7 @@ export async function getAllocations(
     });
     return response.data;
   } catch (error) {
-    return throwAllocationError(error);
+    return throwApiRequestError(error, AllocationRequestError);
   }
 }
 
@@ -138,7 +49,7 @@ export async function getAllocation(localUserId: string, allocationId: string) {
     });
     return { allocation: response.data, etag: response.headers.etag as string | undefined };
   } catch (error) {
-    return throwAllocationError(error);
+    return throwApiRequestError(error, AllocationRequestError);
   }
 }
 
@@ -153,7 +64,7 @@ export async function getAllocationLoad(
     });
     return response.data;
   } catch (error) {
-    return throwAllocationError(error);
+    return throwApiRequestError(error, AllocationRequestError);
   }
 }
 
@@ -168,7 +79,7 @@ export async function getAllocationHistory(
     });
     return response.data;
   } catch (error) {
-    return throwAllocationError(error);
+    return throwApiRequestError(error, AllocationRequestError);
   }
 }
 
@@ -193,7 +104,7 @@ export async function changeAllocationState(
   try {
     const response = await api.post<AllocationRecord>(
       `${API_ROOT}/allocations/${encodeURIComponent(allocationId)}/${actionPaths[action]}`,
-      { reason },
+      { reason } satisfies AllocationCommand,
       {
         headers: {
           ...headers(localUserId),
@@ -205,7 +116,7 @@ export async function changeAllocationState(
     );
     return response.data;
   } catch (error) {
-    return throwAllocationError(error);
+    return throwApiRequestError(error, AllocationRequestError);
   }
 }
 

@@ -1,18 +1,26 @@
-import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
+import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath, PickType } from '@nestjs/swagger';
 import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import {
+  ApprovedRequestConditionsDto,
+  CursorPageInfoDto,
+  RequestResponsibleRoleDto,
+  ResourcePersonSnapshotDto,
+  ResourceRequestConditionsDto,
+} from '../common/resource-allocation-contract.dto';
 
+@ApiExtraModels(RequestResponsibleRoleDto, ResourcePersonSnapshotDto)
 export class RequestQueueItemDto {
   @ApiProperty({ type: String, format: 'uuid' })
   id!: string;
 
-  @ApiProperty({ type: Object })
-  requester!: Record<string, unknown>;
+  @ApiProperty({ type: () => ResourcePersonSnapshotDto })
+  requester!: ResourcePersonSnapshotDto;
 
-  @ApiProperty({ type: Object })
-  requestedConditions!: Record<string, unknown>;
+  @ApiProperty({ type: () => ResourceRequestConditionsDto })
+  requestedConditions!: ResourceRequestConditionsDto;
 
-  @ApiPropertyOptional({ type: Object, nullable: true })
-  approvedConditions!: Record<string, unknown> | null;
+  @ApiPropertyOptional({ type: () => ApprovedRequestConditionsDto, nullable: true })
+  approvedConditions!: ApprovedRequestConditionsDto | null;
 
   @ApiPropertyOptional({ type: String, nullable: true, enum: ['OUTSOURCE', 'WAIT_FOR_EMB_RESOURCE', 'DEPRIORITIZE_OTHER_DEMANDS'] })
   resolutionStrategy!: string | null;
@@ -42,23 +50,15 @@ export class RequestQueueItemDto {
   impediments!: string[];
 
   @ApiProperty({
-    type: Array,
     oneOf: [
-      { type: 'object', properties: { role: { type: 'string' } } },
+      { $ref: getSchemaPath(RequestResponsibleRoleDto) },
       {
         type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            personId: { type: 'string', format: 'uuid' },
-            displayName: { type: 'string' },
-            role: { type: 'string' },
-          },
-        },
+        items: { $ref: getSchemaPath(ResourcePersonSnapshotDto) },
       },
     ],
   })
-  nextResponsible!: Record<string, unknown> | Array<Record<string, unknown>>;
+  nextResponsible!: RequestResponsibleRoleDto | ResourcePersonSnapshotDto[];
 
   @ApiProperty({ type: [String], example: ['REFER', 'ADMINISTRATIVE_REMOVE'] })
   availableActions!: string[];
@@ -71,8 +71,8 @@ export class RequestQueueCollectionDto {
   @ApiProperty({ type: () => RequestQueueItemDto, isArray: true })
   items!: RequestQueueItemDto[];
 
-  @ApiProperty({ type: Object })
-  page!: { nextCursor: string | null; limit: number };
+  @ApiProperty({ type: () => CursorPageInfoDto })
+  page!: CursorPageInfoDto;
 }
 
 export class RequestChangeReceiptDto extends PickType(RequestQueueItemDto, [
@@ -83,22 +83,22 @@ export class RequestChangeReceiptDto extends PickType(RequestQueueItemDto, [
 export class ReferRequestDto {}
 
 export class CorrectRequestReferencesDto {
-  @ApiPropertyOptional({ format: 'uuid', description: 'Eligible person to use as the corrected exception assignee.' })
+  @ApiPropertyOptional({ type: String, format: 'uuid', description: 'Eligible person to use as the corrected exception assignee.' })
   @IsOptional()
   @IsUUID()
   personId?: string;
 
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
   @IsUUID()
   initiativeId?: string;
 
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
   @IsUUID()
   groupId?: string;
 
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
   @IsUUID()
   resourceProfileId?: string;

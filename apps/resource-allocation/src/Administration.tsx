@@ -173,7 +173,8 @@ function valuesFromRecord(collection: AdminCollection, record: AdminRecord): For
 function payloadFromValues(collection: AdminCollection, values: FormValues) {
   switch (collection) {
     case 'people': {
-      const payload: Record<string, unknown> = {
+      if (!values.role) throw new Error('Choose a module role before saving a person.');
+      return {
         localUserId: values.localUserId.trim(),
         displayName: values.displayName.trim(),
         email: values.email.trim(),
@@ -181,7 +182,6 @@ function payloadFromValues(collection: AdminCollection, values: FormValues) {
         groupId: values.groupId || null,
         active: values.active,
       };
-      return payload;
     }
     case 'groups':
       return {

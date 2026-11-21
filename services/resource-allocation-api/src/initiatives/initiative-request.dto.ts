@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsString, ValidateIf } from 'class-validator';
 import { IsTrimmedLength } from '../administration/trimmed-length.validator';
+import { CursorPageInfoDto } from '../common/resource-allocation-contract.dto';
 
 export class CreateInitiativeRequestDto {
   @ApiProperty({ maxLength: 100, example: 'ITDM-041' })
@@ -59,6 +60,6 @@ export class ResourceInitiativeCollectionResponseDto {
   @ApiProperty({ type: () => ResourceInitiativeResponseDto, isArray: true })
   items!: ResourceInitiativeResponseDto[];
 
-  @ApiProperty({ type: Object, example: { nextCursor: null, limit: 50 } })
-  page!: { nextCursor: string | null; limit: number };
+  @ApiProperty({ type: () => CursorPageInfoDto })
+  page!: CursorPageInfoDto;
 }

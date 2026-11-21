@@ -1,72 +1,23 @@
-import axios from 'axios';
+import { api, throwApiRequestError, ResourceAllocationApiError } from './apiClient';
+import type { ApiProblem, ApiResponse } from './apiContracts';
 
 export const NOTIFICATIONS_QUERY_ROOT = ['resource-allocation-notifications'] as const;
 const API_ROOT = '/api/resource-allocation/v1';
 
 export type NotificationReadFilter = 'all' | 'read' | 'unread';
 
-export interface ResourceNotification {
-  id: string;
-  eventCode: string;
-  title: string;
-  message: string;
-  createdAt: string;
-  readAt: string | null;
-  target: {
-    type: 'REQUEST';
-    requestId: string;
-    available: boolean;
-    destination: 'REQUEST_DETAIL' | 'PRESENTATION_QUEUE' | 'TEAM_DECISION_QUEUE' | 'ALLOCATION_DETAIL' | null;
-    allocationId?: string | null;
-  };
-  etag: string;
-}
+export type ResourceNotification = ApiResponse<'/api/resource-allocation/v1/notifications', 'get'>['items'][number];
+export type ResourceNotificationCollection = ApiResponse<'/api/resource-allocation/v1/notifications', 'get'>;
+export type NotificationReadAllResult = ApiResponse<'/api/resource-allocation/v1/notification-readings', 'post'>;
 
-export interface ResourceNotificationCollection {
-  items: ResourceNotification[];
-  page: { nextCursor: string | null; limit: number };
-}
-
-export interface NotificationReadAllResult {
-  cutoffAt: string;
-  markedCount: number;
-}
-
-interface NotificationProblem {
-  code?: string;
-  detail?: string;
-  title?: string;
-}
-
-export class NotificationRequestError extends Error {
-  constructor(readonly status: number | null, readonly problem: NotificationProblem | null) {
-    super(problem?.detail ?? problem?.title ?? (status === null
-      ? 'The notification service could not be reached.'
-      : `The notification request failed with status ${status}.`));
-    this.name = 'NotificationRequestError';
+export class NotificationRequestError extends ResourceAllocationApiError {
+  constructor(status: number | null, problem: ApiProblem | null) {
+    super(status, problem, status === null ? 'The notification service could not be reached.' : `The notification request failed with status ${status}.`, 'NotificationRequestError');
   }
-}
-
-const api = axios.create({
-  baseURL: import.meta.env.VITE_RESOURCE_ALLOCATION_API_BASE_URL ?? '',
-  timeout: 10_000,
-});
-
-function parseProblem(payload: unknown): NotificationProblem | null {
-  if (typeof payload !== 'object' || payload === null) return null;
-  const value = payload as Record<string, unknown>;
-  return {
-    code: typeof value.code === 'string' ? value.code : undefined,
-    detail: typeof value.detail === 'string' ? value.detail : undefined,
-    title: typeof value.title === 'string' ? value.title : undefined,
-  };
 }
 
 function throwRequestError(error: unknown): never {
-  if (axios.isAxiosError(error)) {
-    throw new NotificationRequestError(error.response?.status ?? null, parseProblem(error.response?.data));
-  }
-  throw error;
+  return throwApiRequestError(error, NotificationRequestError);
 }
 
 function headers(localUserId: string) {

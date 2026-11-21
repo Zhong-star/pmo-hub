@@ -2,15 +2,15 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Matches, Min } from 'class-validator';
 import { AllocationApprovalResponseDto } from '../approvals/approve-request.dto';
+import {
+  AllocationHoursByStateDto,
+  AllocationPeriodDto,
+  AllocationPersonSummaryDto,
+  CursorPageInfoDto,
+  allocationStateValues,
+} from '../common/resource-allocation-contract.dto';
 
-export const allocationStates = [
-  'NOT_STARTED',
-  'IN_PROGRESS',
-  'SUSPENDED',
-  'ALLOCATED_WITHOUT_ACTION',
-  'DONE',
-  'CANCELED',
-] as const;
+export const allocationStates = allocationStateValues;
 
 export class AllocationCollectionQueryDto {
   @ApiPropertyOptional({ type: String, format: 'uuid' })
@@ -115,20 +115,12 @@ export class AllocationCommandDto {
   reason!: string;
 }
 
-export class AllocationPageInfoDto {
-  @ApiProperty({ type: String, nullable: true })
-  nextCursor!: string | null;
-
-  @ApiProperty({ type: Number, minimum: 1, maximum: 100 })
-  limit!: number;
-}
-
 export class AllocationViewDto extends AllocationApprovalResponseDto {
   @ApiProperty({ type: String, format: 'uuid' })
   requestId!: string;
 
-  @ApiProperty({ type: Object, example: { startDate: '2027-01-05', endDate: '2027-01-19' } })
-  approvedPeriod!: { startDate: string; endDate: string };
+  @ApiProperty({ type: () => AllocationPeriodDto })
+  approvedPeriod!: AllocationPeriodDto;
 
   @ApiProperty({ enum: allocationStates })
   declare state: string;
@@ -141,16 +133,16 @@ export class AllocationCollectionResponseDto {
   @ApiProperty({ type: () => AllocationViewDto, isArray: true })
   items!: AllocationViewDto[];
 
-  @ApiProperty({ type: () => AllocationPageInfoDto })
-  page!: AllocationPageInfoDto;
+  @ApiProperty({ type: () => CursorPageInfoDto })
+  page!: CursorPageInfoDto;
 }
 
 export class AllocationLoadItemDto {
-  @ApiProperty({ type: Object })
-  person!: { personId: string; displayName: string };
+  @ApiProperty({ type: () => AllocationPersonSummaryDto })
+  person!: AllocationPersonSummaryDto;
 
-  @ApiProperty({ type: Object, description: 'Weekly hours summed by current operational state.' })
-  weeklyHoursByState!: Record<typeof allocationStates[number], number>;
+  @ApiProperty({ type: () => AllocationHoursByStateDto, description: 'Weekly hours summed by current operational state.' })
+  weeklyHoursByState!: AllocationHoursByStateDto;
 
   @ApiProperty({ type: Number })
   totalWeeklyHours!: number;
@@ -163,15 +155,15 @@ export class AllocationLoadResponseDto {
   @ApiProperty({ type: () => AllocationLoadItemDto, isArray: true })
   items!: AllocationLoadItemDto[];
 
-  @ApiProperty({ type: () => AllocationPageInfoDto })
-  page!: AllocationPageInfoDto;
+  @ApiProperty({ type: () => CursorPageInfoDto })
+  page!: CursorPageInfoDto;
 }
 
 export class AllocationHistoryEventDto {
   @ApiProperty({ type: String, format: 'uuid' })
   id!: string;
 
-  @ApiProperty({ type: Object })
+  @ApiProperty({ type: Object, additionalProperties: true })
   actor!: Record<string, unknown>;
 
   @ApiProperty({ type: String })
@@ -180,10 +172,10 @@ export class AllocationHistoryEventDto {
   @ApiProperty({ type: String, nullable: true })
   reason!: string | null;
 
-  @ApiProperty({ type: Object })
+  @ApiProperty({ type: Object, additionalProperties: true })
   before!: Record<string, unknown>;
 
-  @ApiProperty({ type: Object })
+  @ApiProperty({ type: Object, additionalProperties: true })
   after!: Record<string, unknown>;
 
   @ApiProperty({ type: String, format: 'date-time' })
@@ -197,6 +189,6 @@ export class AllocationHistoryCollectionResponseDto {
   @ApiProperty({ type: () => AllocationHistoryEventDto, isArray: true })
   items!: AllocationHistoryEventDto[];
 
-  @ApiProperty({ type: () => AllocationPageInfoDto })
-  page!: AllocationPageInfoDto;
+  @ApiProperty({ type: () => CursorPageInfoDto })
+  page!: CursorPageInfoDto;
 }

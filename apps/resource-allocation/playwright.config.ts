@@ -5,6 +5,7 @@ const port = process.env.PLAYWRIGHT_PORT ?? '5175';
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.spec.ts',
+  testIgnore: '**/real/**/*.spec.ts',
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     ...devices['Desktop Chrome'],

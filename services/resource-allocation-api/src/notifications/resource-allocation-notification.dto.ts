@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { CursorPageInfoDto } from '../common/resource-allocation-contract.dto';
 
 export class ResourceNotificationTargetDto {
   @ApiProperty({ type: String, enum: ['REQUEST'] })
@@ -48,20 +49,12 @@ export class ResourceNotificationDto {
   etag!: string;
 }
 
-export class ResourceNotificationPageInfoDto {
-  @ApiProperty({ type: String, nullable: true })
-  nextCursor!: string | null;
-
-  @ApiProperty({ type: Number, minimum: 1, maximum: 100 })
-  limit!: number;
-}
-
 export class ResourceNotificationPageDto {
   @ApiProperty({ type: () => ResourceNotificationDto, isArray: true })
   items!: ResourceNotificationDto[];
 
-  @ApiProperty({ type: () => ResourceNotificationPageInfoDto })
-  page!: ResourceNotificationPageInfoDto;
+  @ApiProperty({ type: () => CursorPageInfoDto })
+  page!: CursorPageInfoDto;
 }
 
 export class ResourceNotificationReadAllDto {

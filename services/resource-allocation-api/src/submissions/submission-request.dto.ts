@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiExtraModels, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -14,6 +14,12 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ResourceRequestCategory } from './submission-category';
+import {
+  CursorPageInfoDto,
+  SubmittedConditionsDto,
+  SubmissionLineProblemDto,
+  SubmissionRequestOutcomeDto,
+} from '../common/resource-allocation-contract.dto';
 
 export class CreateSubmissionLineRequestDto {
   @ApiProperty({ type: String, format: 'uuid' })
@@ -81,24 +87,26 @@ export class ResourceSubmissionResponseDto {
   @ApiProperty({ type: () => SubmissionCountsDto }) counts!: SubmissionCountsDto;
 }
 
+@ApiExtraModels(SubmissionRequestOutcomeDto)
 export class ResourceSubmissionLineResponseDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty({ type: String, format: 'uuid' }) attemptKey!: string;
-  @ApiProperty({ type: Object }) submittedConditions!: Record<string, unknown>;
+  @ApiProperty({ type: () => SubmittedConditionsDto }) submittedConditions!: SubmittedConditionsDto;
   @ApiProperty({ enum: ['RECEIVED', 'PROCESSING', 'SUCCEEDED', 'FAILED'] }) status!: string;
   @ApiPropertyOptional({ type: String, format: 'uuid' }) requestId?: string;
-  @ApiPropertyOptional({ type: Object }) problem?: { code: string; message: string; detail?: string; title?: string };
+  @ApiPropertyOptional({ type: () => SubmissionLineProblemDto }) problem?: SubmissionLineProblemDto;
   @ApiProperty({ type: String, format: 'date-time' }) receivedAt!: string;
   @ApiPropertyOptional({ type: String, format: 'date-time' }) completedAt?: string;
-  @ApiPropertyOptional({ type: Object }) requestOutcome?: Record<string, unknown>;
+  @ApiPropertyOptional({ oneOf: [{ type: 'string' }, { $ref: '#/components/schemas/SubmissionRequestOutcomeDto' }] })
+  requestOutcome?: string | SubmissionRequestOutcomeDto;
 }
 
 export class ResourceSubmissionCollectionResponseDto {
   @ApiProperty({ type: () => ResourceSubmissionResponseDto, isArray: true }) items!: ResourceSubmissionResponseDto[];
-  @ApiProperty({ type: Object, example: { nextCursor: null, limit: 50 } }) page!: { nextCursor: string | null; limit: number };
+  @ApiProperty({ type: () => CursorPageInfoDto }) page!: CursorPageInfoDto;
 }
 
 export class ResourceSubmissionLineCollectionResponseDto {
   @ApiProperty({ type: () => ResourceSubmissionLineResponseDto, isArray: true }) items!: ResourceSubmissionLineResponseDto[];
-  @ApiProperty({ type: Object, example: { nextCursor: null, limit: 50 } }) page!: { nextCursor: string | null; limit: number };
+  @ApiProperty({ type: () => CursorPageInfoDto }) page!: CursorPageInfoDto;
 }

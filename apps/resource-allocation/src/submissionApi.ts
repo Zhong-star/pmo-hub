@@ -1,170 +1,58 @@
-import axios from 'axios';
+import { api, throwApiRequestError, ResourceAllocationApiError } from './apiClient';
+import type { ApiProblem, ApiRequestBody, ApiResponse } from './apiContracts';
 
 export const SUBMISSIONS_QUERY_ROOT = ['resource-allocation-submissions'] as const;
 export const SELECTIONS_QUERY_ROOT = ['resource-allocation-selections'] as const;
 const API_ROOT = '/api/resource-allocation/v1';
 
-export type RequestCategory =
-  | 'DEMAND_ANALYSIS'
-  | 'POC_BBP'
-  | 'EXECUTION_PROJECT'
-  | 'EXECUTION_FAST_TRACK'
-  | 'EXECUTION_ENHANCEMENT';
+type SelectionPath = {
+  groups: '/api/resource-allocation/v1/groups';
+  'resource-profiles': '/api/resource-allocation/v1/resource-profiles';
+  initiatives: '/api/resource-allocation/v1/initiatives';
+};
+type SelectionCollectionName = keyof SelectionPath;
+type SelectionResponse<C extends SelectionCollectionName> = C extends SelectionCollectionName
+  ? ApiResponse<SelectionPath[C], 'get'>
+  : never;
 
-export interface SelectionItem {
-  id: string;
-  code?: string;
-  name?: string;
-  groupId?: string | null;
-}
+export type RequestCategory = ApiRequestBody<'/api/resource-allocation/v1/submissions', 'post'>['category'];
+export type SelectionCollection = SelectionResponse<SelectionCollectionName>;
+export type SelectionItem<C extends SelectionCollectionName = SelectionCollectionName> = SelectionResponse<C>['items'][number];
+export type SelectionCollectionPage<C extends SelectionCollectionName> = SelectionResponse<C>;
+export type SubmissionLineInput = ApiRequestBody<'/api/resource-allocation/v1/submissions', 'post'>['lines'][number];
+export type CreateSubmissionInput = ApiRequestBody<'/api/resource-allocation/v1/submissions', 'post'>;
+export type SubmissionCollection = ApiResponse<'/api/resource-allocation/v1/submissions', 'get'>;
+export type SubmissionSummary = SubmissionCollection['items'][number];
+export type SubmissionLineCollection = ApiResponse<'/api/resource-allocation/v1/submissions/{id}/lines', 'get'>;
+export type SubmissionLine = SubmissionLineCollection['items'][number];
+export type SubmissionCounts = SubmissionSummary['counts'];
+export type SubmissionProblem = NonNullable<SubmissionLine['problem']>;
+export type SubmissionLineStatus = SubmissionLine['status'];
+export type SubmittedConditions = SubmissionLine['submittedConditions'];
+export type SubmissionReceipt = ApiResponse<'/api/resource-allocation/v1/submissions', 'post'>;
 
-export interface SelectionCollection {
-  items: SelectionItem[];
-  page: { nextCursor: string | null; limit: number };
-}
-
-export interface SubmissionLineInput {
-  attemptKey: string;
-  groupId: string;
-  resourceProfileId: string;
-  startDate: string;
-  endDate: string;
-  weeklyHours: number;
-  comment?: string;
-}
-
-export interface CreateSubmissionInput {
-  initiativeId: string;
-  category: RequestCategory;
-  lines: SubmissionLineInput[];
-}
-
-export interface SubmissionCounts {
-  received: number;
-  processing: number;
-  succeeded: number;
-  failed: number;
-}
-
-export interface SubmissionSummary {
-  id: string;
-  initiativeId?: string;
-  initiative?: SelectionItem;
-  category?: RequestCategory;
-  receivedAt: string;
-  lineCount: number;
-  counts: SubmissionCounts;
-}
-
-export interface SubmissionCollection {
-  items: SubmissionSummary[];
-  page: { nextCursor: string | null; limit: number };
-}
-
-export interface SubmissionProblem {
-  code?: string;
-  message?: string;
-  detail?: string;
-  title?: string;
-  errors?: Array<{ path?: string; message?: string }>;
-}
-
-export type SubmissionLineStatus = 'RECEIVED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | string;
-
-export interface SubmittedConditions {
-  initiativeId?: string;
-  category?: RequestCategory;
-  attemptKey?: string;
-  groupId: string;
-  resourceProfileId: string;
-  startDate: string;
-  endDate: string;
-  weeklyHours: number;
-  comment?: string;
-}
-
-export interface SubmissionLine {
-  id: string;
-  attemptKey: string;
-  submittedConditions: SubmittedConditions;
-  status: SubmissionLineStatus;
-  requestId?: string;
-  problem?: SubmissionProblem;
-  receivedAt: string;
-  completedAt?: string;
-  requestOutcome?: string | {
-    status?: string;
-    action?: string;
-    reason?: string;
-    removedAt?: string;
-    decisionState?: string;
-    requestedConditions?: Partial<SubmittedConditions>;
-  };
-}
-
-export interface SubmissionLineCollection {
-  items: SubmissionLine[];
-  page: { nextCursor: string | null; limit: number };
-}
-
-export interface SubmissionReceipt {
-  id: string;
-  receivedAt: string;
-  lineCount: number;
-  counts: SubmissionCounts;
-}
-
-export class SubmissionRequestError extends Error {
-  constructor(readonly status: number | null, readonly problem: SubmissionProblem | null) {
-    super(problem?.detail ?? problem?.message ?? problem?.title ?? (status === null
-      ? 'The submission service could not be reached.'
-      : `The submission request failed with status ${status}.`));
-    this.name = 'SubmissionRequestError';
+export class SubmissionRequestError extends ResourceAllocationApiError {
+  constructor(status: number | null, problem: ApiProblem | null) {
+    super(status, problem, status === null ? 'The submission service could not be reached.' : `The submission request failed with status ${status}.`, 'SubmissionRequestError');
   }
-}
-
-const api = axios.create({
-  baseURL: import.meta.env.VITE_RESOURCE_ALLOCATION_API_BASE_URL ?? '',
-  timeout: 10_000,
-});
-
-function parseProblem(payload: unknown): SubmissionProblem | null {
-  if (typeof payload !== 'object' || payload === null) return null;
-  const value = payload as Record<string, unknown>;
-  const errors = Array.isArray(value.errors)
-    ? value.errors.filter((item): item is { path?: string; message?: string } =>
-      typeof item === 'object' && item !== null &&
-      (!('path' in item) || typeof item.path === 'string') &&
-      (!('message' in item) || typeof item.message === 'string'))
-    : undefined;
-  return {
-    code: typeof value.code === 'string' ? value.code : undefined,
-    message: typeof value.message === 'string' ? value.message : undefined,
-    detail: typeof value.detail === 'string' ? value.detail : undefined,
-    title: typeof value.title === 'string' ? value.title : undefined,
-    errors,
-  };
 }
 
 function throwRequestError(error: unknown): never {
-  if (axios.isAxiosError(error)) {
-    throw new SubmissionRequestError(error.response?.status ?? null, parseProblem(error.response?.data));
-  }
-  throw error;
+  return throwApiRequestError(error, SubmissionRequestError);
 }
 
 function headers(localUserId: string) {
   return { 'X-PMO-Local-User-ID': localUserId, 'Cache-Control': 'no-cache' };
 }
 
-export async function getSelectionCollection(
-  collection: 'groups' | 'resource-profiles' | 'initiatives',
+export async function getSelectionCollection<C extends SelectionCollectionName>(
+  collection: C,
   localUserId: string,
   cursor: string | null,
   groupId?: string,
-): Promise<SelectionCollection> {
+): Promise<SelectionResponse<C>> {
   try {
-    const response = await api.get<SelectionCollection>(`${API_ROOT}/${collection}`, {
+    const response = await api.get<SelectionResponse<C>>(`${API_ROOT}/${collection}`, {
       headers: headers(localUserId),
       params: { limit: 100, ...(cursor ? { cursor } : {}), ...(groupId ? { groupId } : {}) },
     });

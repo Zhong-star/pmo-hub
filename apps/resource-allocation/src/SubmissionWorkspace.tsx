@@ -4,6 +4,7 @@ import { useFieldArray, useForm, useWatch, type Control, type FieldErrors, type 
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
 import { REQUESTS_QUERY_ROOT } from './requestApi';
 import { REQUEST_QUEUES_QUERY_ROOT } from './requestQueueApi';
+import { businessDate, formatBusinessTimestamp, normalizeWeeklyHours } from './timeAndHours';
 import {
   createSubmission,
   getSelectionCollection,
@@ -97,27 +98,8 @@ function clearOutbox(localUserId: string) {
   }
 }
 
-export function normalizeWeeklyHours(raw: string): { value: number | null; error?: string } {
-  const value = raw.trim();
-  const match = /^(\d+)(?:[.,](\d+))?$/.exec(value);
-  if (!match) return { value: null, error: 'Enter a positive number using a decimal point or comma.' };
-
-  const whole = BigInt(match[1]);
-  const fraction = match[2] ?? '';
-  if (whole > 40n || (whole === 40n && /[1-9]/.test(fraction))) {
-    return { value: null, error: 'Weekly hours cannot exceed 40 hours.' };
-  }
-
-  const tenthsFromText = Number(fraction[0] ?? '0');
-  const roundsUp = Number(fraction[1] ?? '0') >= 5;
-  const tenths = Number(whole) * 10 + tenthsFromText + (roundsUp ? 1 : 0);
-  if (tenths === 0) return { value: null, error: 'Hours must round to at least 0.1 hours.' };
-  return { value: tenths / 10 };
-}
-
 function todayLocalDate() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return businessDate();
 }
 
 function createUuid() {
@@ -128,7 +110,7 @@ function rowsFromPages<T>(data: { pages: Array<{ items: T[] }> } | undefined): T
   return data?.pages.flatMap((page) => page.items) ?? [];
 }
 
-function useSelectionQuery(localUserId: string, collection: 'groups' | 'resource-profiles' | 'initiatives') {
+function useSelectionQuery<C extends 'groups' | 'resource-profiles' | 'initiatives'>(localUserId: string, collection: C) {
   return useInfiniteQuery({
     queryKey: [...SELECTIONS_QUERY_ROOT, localUserId, collection],
     queryFn: ({ pageParam }) => getSelectionCollection(collection, localUserId, pageParam),
@@ -171,8 +153,8 @@ function LineEditor({
 }: {
   control: Control<SubmissionFormValues>;
   index: number;
-  groups: SelectionItem[];
-  profiles: SelectionItem[];
+  groups: SelectionItem<'groups'>[];
+  profiles: SelectionItem<'resource-profiles'>[];
   register: UseFormRegister<SubmissionFormValues>;
   setValue: UseFormSetValue<SubmissionFormValues>;
   getValues: UseFormGetValues<SubmissionFormValues>;
@@ -323,8 +305,8 @@ function SubmissionResults({
   submissionId: string;
   onRetryLine: (submission: SubmissionSummary, line: SubmissionLine) => void;
   onAccessDenied: () => void;
-  groups: SelectionItem[];
-  profiles: SelectionItem[];
+  groups: SelectionItem<'groups'>[];
+  profiles: SelectionItem<'resource-profiles'>[];
 }) {
   const detailQuery = useQuery({
     queryKey: [...SUBMISSIONS_QUERY_ROOT, localUserId, submissionId],
@@ -375,7 +357,7 @@ function SubmissionResults({
       )}
       {detailQuery.data && (
         <div className="submission-summary-strip">
-          <span>Received {new Date(detailQuery.data.receivedAt).toLocaleString()}</span>
+          <span>Received {formatBusinessTimestamp(detailQuery.data.receivedAt)}</span>
           <span>{detailQuery.data.counts.succeeded} succeeded</span>
           <span>{detailQuery.data.counts.failed} failed</span>
           <span>{detailQuery.data.counts.received + detailQuery.data.counts.processing} pending</span>
@@ -483,9 +465,9 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
     retry: false,
   });
 
-  const groups = useMemo(() => rowsFromPages<SelectionItem>(groupsQuery.data), [groupsQuery.data]);
-  const profiles = useMemo(() => rowsFromPages<SelectionItem>(profilesQuery.data), [profilesQuery.data]);
-  const initiatives = useMemo(() => rowsFromPages<SelectionItem>(initiativesQuery.data), [initiativesQuery.data]);
+  const groups = useMemo(() => rowsFromPages<SelectionItem<'groups'>>(groupsQuery.data), [groupsQuery.data]);
+  const profiles = useMemo(() => rowsFromPages<SelectionItem<'resource-profiles'>>(profilesQuery.data), [profilesQuery.data]);
+  const initiatives = useMemo(() => rowsFromPages<SelectionItem<'initiatives'>>(initiativesQuery.data), [initiativesQuery.data]);
   const submissions = useMemo(() => rowsFromPages<SubmissionSummary>(submissionsQuery.data), [submissionsQuery.data]);
 
   const createMutation = useMutation({
@@ -581,9 +563,9 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
     await submitStoredEnvelope(envelope);
   });
 
-  function retryFailedLine(submission: SubmissionSummary, line: SubmissionLine) {
-    const initiativeId = submission.initiativeId ?? line.submittedConditions.initiativeId;
-    const category = submission.category ?? line.submittedConditions.category;
+  function retryFailedLine(_submission: SubmissionSummary, line: SubmissionLine) {
+    const initiativeId = line.submittedConditions.initiativeId;
+    const category = line.submittedConditions.category;
     if (outbox || line.status !== 'FAILED' || !initiativeId || !category) return;
     setSendError('');
     setNotice('');
@@ -848,10 +830,10 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
                   onClick={() => setSelectedSubmissionId(submission.id)}
                 >
                   <span className="submission-list-title">
-                    <strong>{submission.initiative?.code ?? submission.initiativeId ?? 'Request batch'}</strong>
+                    <strong>Request batch</strong>
                     <small>{submission.id}</small>
                   </span>
-                  <span>{new Date(submission.receivedAt).toLocaleString()}</span>
+                  <span>{formatBusinessTimestamp(submission.receivedAt)}</span>
                   <span>{submission.counts.succeeded} succeeded · {submission.counts.failed} failed</span>
                   <span>{submission.counts.received + submission.counts.processing} pending</span>
                 </button>

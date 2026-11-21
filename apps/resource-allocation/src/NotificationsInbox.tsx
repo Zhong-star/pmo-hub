@@ -9,6 +9,7 @@ import {
   type NotificationReadFilter,
   type ResourceNotification,
 } from './notificationsApi';
+import { formatBusinessTimestamp } from './timeAndHours';
 
 interface NotificationsInboxProps {
   localUserId: string;
@@ -17,10 +18,6 @@ interface NotificationsInboxProps {
 
 function isAccessDenied(error: unknown): error is NotificationRequestError {
   return error instanceof NotificationRequestError && (error.status === 401 || error.status === 403);
-}
-
-function formatTimestamp(value: string) {
-  return new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
 function errorMessage(error: unknown) {
@@ -259,7 +256,7 @@ function NotificationCard({
           </span>
         </div>
         <p className="notification-message">{notification.message}</p>
-        <p className="notification-date">{formatTimestamp(notification.createdAt)}</p>
+        <p className="notification-date">{formatBusinessTimestamp(notification.createdAt)}</p>
         {notification.target.available && notification.target.destination ? (
           <a className="notification-target-link" href={notificationTargetHref(notification)}>
             {notification.target.destination === 'ALLOCATION_DETAIL' ? 'Open related allocation' : 'Open related request'}
@@ -277,7 +274,7 @@ function NotificationCard({
           Mark as read
         </button>
       ) : (
-        <span className="notification-read-time">Read {formatTimestamp(notification.readAt)}</span>
+        <span className="notification-read-time">Read {formatBusinessTimestamp(notification.readAt)}</span>
       )}
     </li>
   );

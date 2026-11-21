@@ -2,17 +2,18 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
-import { cancelRequest, contestRequest, getRequestHistory, RequestDecisionApiError } from './requestDecisionApi';
+import { cancelRequest, contestRequest, getRequestHistory, RequestDecisionApiError, type RequestDecisionResult } from './requestDecisionApi';
 import { REQUESTS_QUERY_ROOT, type ResourceRequestItem } from './requestApi';
 import { REQUEST_QUEUES_QUERY_ROOT } from './requestQueueApi';
 import { SUBMISSIONS_QUERY_ROOT } from './submissionApi';
+import { formatBusinessTimestamp } from './timeAndHours';
 
 interface DeniedRequestResponseProps {
   localUserId: string;
   item: ResourceRequestItem;
   readOnly?: boolean;
   disabled: boolean;
-  onChanged: (item: ResourceRequestItem) => void;
+  onChanged: (item: RequestDecisionResult) => void;
   onAccessDenied: () => void;
 }
 
@@ -124,20 +125,20 @@ export function DeniedRequestResponse({ localUserId, item, readOnly = false, dis
         <article className="request-denial-response-event" key={event.id}>
           <p><strong>{event.action.replaceAll('_', ' ')}:</strong> {event.reason ?? 'No reason was recorded.'}</p>
           <p><strong>By:</strong> {String(event.actorSnapshot.displayName ?? 'System')}</p>
-          <p><strong>When:</strong> {new Date(event.occurredAt).toLocaleString()}</p>
+          <p><strong>When:</strong> {formatBusinessTimestamp(event.occurredAt)}</p>
         </article>
       ))}
       {!readOnly && needsHistory && denialEvent && (
         <article className="request-denial-explanation">
           <p><strong>Denied by:</strong> {String(denialEvent.actorSnapshot.displayName ?? 'Decision maker')}</p>
-          <p><strong>When:</strong> {new Date(denialEvent.occurredAt).toLocaleString()}</p>
+          <p><strong>When:</strong> {formatBusinessTimestamp(denialEvent.occurredAt)}</p>
           <p><strong>Explanation:</strong> {denialEvent.reason ?? 'No explanation was recorded.'}</p>
         </article>
       )}
       {!readOnly && needsHistory && responseEvents.map((event) => (
         <article className="request-denial-response-event" key={event.id}>
           <p><strong>{event.action.replaceAll('_', ' ')}:</strong> {event.reason ?? 'No reason was recorded.'}</p>
-          <p><strong>When:</strong> {new Date(event.occurredAt).toLocaleString()}</p>
+          <p><strong>When:</strong> {formatBusinessTimestamp(event.occurredAt)}</p>
         </article>
       ))}
 

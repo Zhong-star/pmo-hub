@@ -1,6 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsDateString, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
+import {
+  AllocationGroupSummaryDto,
+  AllocationInitiativeSummaryDto,
+  AllocationPersonSummaryDto,
+  AllocationResourceProfileSummaryDto,
+  ApprovedRequestConditionsDto,
+  CursorPageInfoDto,
+  ResourcePersonSnapshotDto,
+  ResourceRequestConditionsDto,
+} from '../common/resource-allocation-contract.dto';
 
 export class ApproveRequestDto {
   @ApiProperty({ type: String, format: 'uuid' })
@@ -44,17 +54,17 @@ export class AllocationApprovalResponseDto {
   @ApiProperty({ type: String, format: 'uuid' })
   id!: string;
 
-  @ApiProperty({ type: Object })
-  person!: { personId: string; displayName: string };
+  @ApiProperty({ type: () => AllocationPersonSummaryDto })
+  person!: AllocationPersonSummaryDto;
 
-  @ApiProperty({ type: Object })
-  group!: { id: string; name: string };
+  @ApiProperty({ type: () => AllocationGroupSummaryDto })
+  group!: AllocationGroupSummaryDto;
 
-  @ApiProperty({ type: Object })
-  initiative!: { id: string; code: string; name: string };
+  @ApiProperty({ type: () => AllocationInitiativeSummaryDto })
+  initiative!: AllocationInitiativeSummaryDto;
 
-  @ApiProperty({ type: Object })
-  resourceProfile!: { id: string; name: string };
+  @ApiProperty({ type: () => AllocationResourceProfileSummaryDto })
+  resourceProfile!: AllocationResourceProfileSummaryDto;
 
   @ApiProperty({ type: String, format: 'date' })
   startDate!: string;
@@ -79,14 +89,14 @@ export class ApproveRequestResponseDto {
   @ApiProperty({ type: String, format: 'uuid' })
   id!: string;
 
-  @ApiProperty({ type: Object })
-  requester!: Record<string, unknown>;
+  @ApiProperty({ type: () => ResourcePersonSnapshotDto })
+  requester!: ResourcePersonSnapshotDto;
 
-  @ApiProperty({ type: Object })
-  requestedConditions!: Record<string, unknown>;
+  @ApiProperty({ type: () => ResourceRequestConditionsDto })
+  requestedConditions!: ResourceRequestConditionsDto;
 
-  @ApiProperty({ type: Object })
-  approvedConditions!: Record<string, unknown>;
+  @ApiProperty({ type: () => ApprovedRequestConditionsDto })
+  approvedConditions!: ApprovedRequestConditionsDto;
 
   @ApiProperty({ type: () => AllocationApprovalResponseDto, nullable: true, description: 'Null while a changed proposal awaits requester acceptance.' })
   allocation!: AllocationApprovalResponseDto | null;
@@ -140,6 +150,6 @@ export class ApprovalCandidateCollectionDto {
   @ApiProperty({ type: () => ApprovalCandidateDto, isArray: true })
   items!: ApprovalCandidateDto[];
 
-  @ApiProperty({ type: Object, example: { nextCursor: null, limit: 50 } })
-  page!: { nextCursor: string | null; limit: number };
+  @ApiProperty({ type: () => CursorPageInfoDto })
+  page!: CursorPageInfoDto;
 }

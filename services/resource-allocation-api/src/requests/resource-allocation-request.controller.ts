@@ -36,6 +36,7 @@ import {
   ResourceRequestAuditEventResponseDto,
   ResourceRequestAuditResponseDto,
   ResourceRequestCollectionResponseDto,
+  ResourceRequestCollectionItemDto,
   ResourceRequestResponseDto,
   UpdateRequestedConditionsDto,
   WithdrawResourceRequestDto,
@@ -111,7 +112,7 @@ export class ResourceAllocationRequestController {
   @ApiSecurity('localProfile')
   @ApiConsumes('application/merge-patch+json')
   @ApiHeader({ name: 'If-Match', required: true, description: 'Strong ETag version from the latest request response.' })
-  @ApiOkResponse({ type: ResourceRequestResponseDto, headers: { ETag: { schema: { type: 'string', example: '"2"' } } } })
+  @ApiOkResponse({ type: ResourceRequestCollectionItemDto, headers: { ETag: { schema: { type: 'string', example: '"2"' } } } })
   @ApiBadRequestResponse({ description: 'If-Match or requested conditions are invalid.' })
   @ApiForbiddenResponse({ description: 'The current profile is not active.' })
   @ApiNotFoundResponse({ description: 'The request is not operational or does not belong to this requester.' })

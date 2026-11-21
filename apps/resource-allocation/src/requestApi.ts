@@ -1,168 +1,35 @@
-import axios from 'axios';
-import type { RequestCategory } from './submissionApi';
-import type { RevalidationOriginState, RevalidationResponsible } from './revalidation';
+import { api, throwApiRequestError, ResourceAllocationApiError } from './apiClient';
+import type { ApiProblem, ApiQuery, ApiRequestBody, ApiResponse } from './apiContracts';
 
 export const REQUESTS_QUERY_ROOT = ['resource-allocation-requests'] as const;
 const API_ROOT = '/api/resource-allocation/v1';
 
-export type RequestDecisionState =
-  | 'WAITING_FOR_PRESENTATION'
-  | 'PENDING_TEAM_DECISION'
-  | 'APPROVED_WITH_CHANGES'
-  | 'APPROVED'
-  | 'DENIED'
-  | 'PRE_N3'
-  | 'ESCALATION'
-  | 'REQUIRES_REVALIDATION'
-  | 'CANCELLED';
+export type ResourceRequestItem = ApiResponse<'/api/resource-allocation/v1/requests/{id}', 'get'>;
+export type RequestDecisionState = ResourceRequestItem['decisionState'];
+export type RequestConfirmationSource = NonNullable<RequestAcceptanceResult['confirmationSource']> | null;
+export type RequestedConditions = ResourceRequestItem['requestedConditions'];
+export type ApprovedRequestConditions = NonNullable<ResourceRequestItem['approvedConditions']>;
+export type RequestAllocation = NonNullable<ResourceRequestItem['allocation']>;
+export type RequestRevalidation = NonNullable<ResourceRequestItem['revalidation']>;
+export type RequestAcceptanceResult = ApiResponse<'/api/resource-allocation/v1/requests/{id}/acceptances', 'post'>;
+export type ResourceRequestCollection = ApiResponse<'/api/resource-allocation/v1/requests', 'get'>;
+export type ResourceRequestUpdateResult = ApiResponse<'/api/resource-allocation/v1/requests/{id}', 'patch'>;
+export type ResourceRequestUpdateInput = ApiRequestBody<'/api/resource-allocation/v1/requests/{id}', 'patch'>;
+type RequestFilterQuery = ApiQuery<'/api/resource-allocation/v1/requests', 'get'>;
+export type RequestFilters = Partial<Pick<RequestFilterQuery, 'initiativeId' | 'decisionState' | 'groupId' | 'resourceProfileId'>>;
+export type RequestScope = NonNullable<RequestFilterQuery['scope']> | 'mine';
+export type RequestAudit = ApiResponse<'/api/resource-allocation/v1/request-audits/{id}', 'get'>;
+export type RequestAuditEvent = ApiResponse<'/api/resource-allocation/v1/request-audits/{id}/events', 'get'>['items'][number];
+export type RequestProblem = ApiProblem;
 
-export type RequestConfirmationSource = 'REQUESTER_ACCEPTANCE' | 'SYSTEM_DEADLINE' | null;
-
-export interface RequestedConditions {
-  initiativeId: string;
-  initiativeCode: string;
-  initiativeName: string;
-  category: RequestCategory;
-  groupId: string;
-  groupName: string;
-  resourceProfileId: string;
-  resourceProfileName: string;
-  startDate: string;
-  endDate: string;
-  weeklyHours: number;
-  comment?: string;
-}
-
-export interface ApprovedRequestConditions {
-  personId: string;
-  personName: string;
-  resourceProfileId: string;
-  resourceProfileName: string;
-  groupId: string;
-  groupName: string;
-  initiativeId: string;
-  initiativeCode: string;
-  initiativeName: string;
-  startDate: string;
-  endDate: string;
-  weeklyHours: number;
-  explanation?: string;
-}
-
-export interface RequestAllocation {
-  id: string;
-  person: { personId: string; displayName: string };
-  group: { id: string; name: string };
-  initiative: { id: string; code: string; name: string };
-  resourceProfile: { id: string; name: string };
-  startDate: string;
-  endDate: string;
-  weeklyHours: number;
-  state: string;
-  approvedAt: string;
-  version: number;
-}
-
-export interface RequestRevalidation {
-  originState: RevalidationOriginState;
-  impediments: string[];
-  nextResponsible: RevalidationResponsible;
-}
-
-export interface ResourceRequestItem {
-  id: string;
-  requesterSnapshot: { personId: string; displayName: string; role: string };
-  requestedConditions: RequestedConditions;
-  decisionState: RequestDecisionState;
-  receivedAt: string;
-  stageEnteredAt: string;
-  expirationDueAt: string;
-  dueAt?: string | null;
-  availableActions?: string[];
-  confirmationSource?: RequestConfirmationSource;
-  approvedConditions?: ApprovedRequestConditions;
-  revalidation?: RequestRevalidation | null;
-  allocation?: RequestAllocation;
-  version: number;
-}
-
-export interface RequestAcceptanceResult {
-  id: string;
-  decisionState: RequestDecisionState;
-  version: number;
-  confirmationSource?: RequestConfirmationSource;
-}
-
-export interface ResourceRequestCollection {
-  items: ResourceRequestItem[];
-  page: { nextCursor: string | null; limit: number };
-}
-
-export interface RequestFilters {
-  initiativeId?: string;
-  decisionState?: RequestDecisionState;
-  groupId?: string;
-  resourceProfileId?: string;
-}
-
-export type RequestScope = 'mine' | 'visible';
-
-export interface RequestAuditEvent {
-  id: string;
-  requestId: string;
-  action: 'WITHDRAWN' | 'ADMIN_REMOVED' | 'EXPIRED';
-  requesterSnapshot: Record<string, unknown>;
-  actorSnapshot: Record<string, unknown>;
-  requestSnapshot: Record<string, unknown>;
-  reason: string;
-  occurredAt: string;
-  correlationId: string;
-}
-
-export interface RequestAudit {
-  requestId: string;
-  events: RequestAuditEvent[];
-}
-
-export interface RequestProblem {
-  code?: string;
-  detail?: string;
-  title?: string;
-}
-
-export class RequestApiError extends Error {
-  constructor(readonly status: number | null, readonly problem: RequestProblem | null) {
-    super(problem?.detail ?? problem?.title ?? (status === null
-      ? 'The request service could not be reached.'
-      : `The request failed with status ${status}.`));
-    this.name = 'RequestApiError';
+export class RequestApiError extends ResourceAllocationApiError {
+  constructor(status: number | null, problem: RequestProblem | null) {
+    super(status, problem, status === null ? 'The request service could not be reached.' : `The request failed with status ${status}.`, 'RequestApiError');
   }
 }
-
-const api = axios.create({
-  baseURL: import.meta.env.VITE_RESOURCE_ALLOCATION_API_BASE_URL ?? '',
-  timeout: 10_000,
-});
 
 function headers(localUserId: string) {
   return { 'X-PMO-Local-User-ID': localUserId, 'Cache-Control': 'no-cache' };
-}
-
-function parseProblem(payload: unknown): RequestProblem | null {
-  if (typeof payload !== 'object' || payload === null) return null;
-  const value = payload as Record<string, unknown>;
-  return {
-    code: typeof value.code === 'string' ? value.code : undefined,
-    detail: typeof value.detail === 'string' ? value.detail : undefined,
-    title: typeof value.title === 'string' ? value.title : undefined,
-  };
-}
-
-function throwRequestError(error: unknown): never {
-  if (axios.isAxiosError(error)) {
-    throw new RequestApiError(error.response?.status ?? null, parseProblem(error.response?.data));
-  }
-  throw error;
 }
 
 export async function getRequestCollection(
@@ -178,7 +45,7 @@ export async function getRequestCollection(
     });
     return response.data;
   } catch (error) {
-    return throwRequestError(error);
+    return throwApiRequestError(error, RequestApiError);
   }
 }
 
@@ -189,7 +56,7 @@ export async function getRequest(localUserId: string, requestId: string): Promis
     });
     return response.data;
   } catch (error) {
-    return throwRequestError(error);
+    return throwApiRequestError(error, RequestApiError);
   }
 }
 
@@ -197,15 +64,15 @@ export async function updateRequest(
   localUserId: string,
   requestId: string,
   version: number,
-  conditions: Partial<RequestedConditions>,
-): Promise<ResourceRequestItem> {
+  conditions: ResourceRequestUpdateInput,
+): Promise<ResourceRequestUpdateResult> {
   try {
-    const response = await api.patch<ResourceRequestItem>(`${API_ROOT}/requests/${encodeURIComponent(requestId)}`, conditions, {
+    const response = await api.patch<ResourceRequestUpdateResult>(`${API_ROOT}/requests/${encodeURIComponent(requestId)}`, conditions, {
       headers: { ...headers(localUserId), 'If-Match': `"${version}"`, 'Content-Type': 'application/merge-patch+json' },
     });
     return response.data;
   } catch (error) {
-    return throwRequestError(error);
+    return throwApiRequestError(error, RequestApiError);
   }
 }
 
@@ -222,7 +89,7 @@ export async function withdrawRequest(
     });
     return response.data;
   } catch (error) {
-    return throwRequestError(error);
+    return throwApiRequestError(error, RequestApiError);
   }
 }
 
@@ -243,7 +110,7 @@ export async function acceptRequest(
     });
     return response.data;
   } catch (error) {
-    return throwRequestError(error);
+    return throwApiRequestError(error, RequestApiError);
   }
 }
 
@@ -254,6 +121,6 @@ export async function getRequestAudit(localUserId: string, requestId: string): P
     });
     return response.data;
   } catch (error) {
-    return throwRequestError(error);
+    return throwApiRequestError(error, RequestApiError);
   }
 }
