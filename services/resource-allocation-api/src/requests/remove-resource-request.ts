@@ -48,7 +48,13 @@ export async function removeResourceRequest(
   };
 
   const updated = await manager.query(
-    'UPDATE resource_requests SET removed_at = $1, version = version + 1 WHERE id = $2 AND removed_at IS NULL RETURNING version',
+    `WITH changed AS (
+       UPDATE resource_requests
+       SET removed_at = $1, version = version + 1
+       WHERE id = $2 AND removed_at IS NULL
+       RETURNING version
+     )
+     SELECT version FROM changed`,
     [removedAt, input.request.id],
   ) as Array<{ version: number }>;
   if (updated.length === 0) {
