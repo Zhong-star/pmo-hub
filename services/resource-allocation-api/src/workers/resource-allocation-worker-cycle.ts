@@ -7,7 +7,7 @@ export interface ResourceAllocationWorkerActions {
   processSubmissions(): Promise<unknown>;
   processWaitingDeadlines(): Promise<unknown>;
   expireDeniedRequests(): Promise<unknown>;
-  processProposalDeadlines?(): Promise<unknown>;
+  processProposalDeadlines(): Promise<unknown>;
   processAllocationStates?(): Promise<unknown>;
 }
 
@@ -18,10 +18,8 @@ export function createResourceAllocationWorkerJobs(actions: ResourceAllocationWo
     { name: 'submission', runBatch: actions.processSubmissions },
     { name: 'waiting deadline', runBatch: actions.processWaitingDeadlines },
     { name: 'denied response deadline', runBatch: actions.expireDeniedRequests },
+    { name: 'changed proposal deadline', runBatch: actions.processProposalDeadlines },
   ];
-  if (actions.processProposalDeadlines) {
-    jobs.push({ name: 'proposal response deadline', runBatch: actions.processProposalDeadlines });
-  }
   if (actions.processAllocationStates) {
     jobs.push({ name: 'allocation lifecycle', runBatch: actions.processAllocationStates });
   }

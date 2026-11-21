@@ -27,7 +27,7 @@ import {
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import { localProfileHeader } from '../access/resource-allocation-problem';
-import { ApprovalCandidateCollectionDto, ApprovalCandidateQueryDto, ApproveRequestDto, ApproveRequestResponseDto } from './approve-request.dto';
+import { AcceptRequestChangesDto, ApprovalCandidateCollectionDto, ApprovalCandidateQueryDto, ApproveRequestDto, ApproveRequestResponseDto } from './approve-request.dto';
 import { ResourceAllocationApprovalService } from './resource-allocation-approval.service';
 
 interface ResponseWithHeaders {
@@ -86,6 +86,34 @@ export class ResourceAllocationApprovalController {
     } else {
       response.setHeader('ETag', `"${operation.result.version}"`);
     }
+    return operation.result;
+  }
+
+  @Post(':id/acceptances')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Accept a changed proposal before its deadline, or apply the automatic deadline transition' })
+  @ApiHeader({ name: 'If-Match', required: true, description: 'Current strong request ETag.' })
+  @ApiHeader({ name: 'Idempotency-Key', required: true, description: 'UUID for this exact acceptance action.' })
+  @ApiOkResponse({ type: ApproveRequestResponseDto, headers: { ETag: { schema: { type: 'string', example: '"3"' } }, 'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } } } })
+  @ApiBadRequestResponse({ description: 'If-Match, Idempotency-Key, correlation ID, or body is invalid.' })
+  @ApiForbiddenResponse({ description: 'Only the requester may accept this proposal.' })
+  @ApiNotFoundResponse({ description: 'The current request was not found.' })
+  @ApiResponse({ status: 409, description: 'The idempotency key was reused with different content.' })
+  @ApiResponse({ status: 412, description: 'The request version changed.' })
+  @ApiUnprocessableEntityResponse({ description: 'The request has no pending proposal. At the deadline the automatic transition takes precedence.' })
+  async acceptChanges(
+    @Headers(localProfileHeader) localUserId: string | undefined,
+    @Param('id', new ParseUUIDPipe()) requestId: string,
+    @Headers('if-match') ifMatch: string | undefined,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined,
+    @Body(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true, expectedType: AcceptRequestChangesDto })) _input: AcceptRequestChangesDto,
+    @Res({ passthrough: true }) response: ResponseWithHeaders,
+  ) {
+    void _input;
+    const operation = await this.approvalService.acceptChanges(localUserId, requestId, ifMatch, idempotencyKey, correlationId);
+    if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
   }
 }

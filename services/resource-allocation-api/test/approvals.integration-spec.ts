@@ -18,8 +18,10 @@ import { ResourceRequest } from '../src/requests/resource-request.entity';
 import { ResourceRequestHistory } from '../src/requests/resource-request-history.entity';
 import { ResourceSubmission } from '../src/submissions/resource-submission.entity';
 import { ResourceSubmissionLine } from '../src/submissions/resource-submission-line.entity';
+import { ResourceAllocationProposalWorker } from '../src/deadlines/resource-allocation-proposal.worker';
+import { ResourceAllocationApprovalService } from '../src/approvals/resource-allocation-approval.service';
 
-describe('Tech Resource Allocation approvals (#63)', () => {
+describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
   let container: StartedPostgreSqlContainer | undefined;
   let app: INestApplication | undefined;
   let dataSource: DataSource | undefined;
@@ -218,6 +220,315 @@ describe('Tech Resource Allocation approvals (#63)', () => {
     expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(1);
     expect(await dataSource!.query("SELECT id FROM resource_request_history WHERE request_id = $1 AND action = 'APPROVED'", [resourceRequest.id])).toHaveLength(1);
     expect(await dataSource!.query("SELECT id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code LIKE 'REQUEST_APPROVED_%'", [resourceRequest.id])).toHaveLength(1);
+  });
+
+  it('requires an explanation for changed dates or hours and creates no allocation until acceptance', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+    const path = `/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`;
+    const proposal = {
+      personId: fixture.assignee.id,
+      startDate: '2027-02-01',
+      endDate: '2027-02-19',
+      weeklyHours: 15,
+    };
+
+    await request(app!.getHttpServer())
+      .post(path)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send(proposal)
+      .expect(400);
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(0);
+
+    const decision = await request(app!.getHttpServer())
+      .post(path)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ ...proposal, explanation: 'The initiative schedule and weekly capacity changed.' })
+      .expect(200);
+
+    expect(decision.body).toMatchObject({
+      decisionState: 'APPROVED_WITH_CHANGES',
+      approvedConditions: {
+        personId: fixture.assignee.id,
+        startDate: '2027-02-01',
+        endDate: '2027-02-19',
+        weeklyHours: 15,
+        explanation: 'The initiative schedule and weekly capacity changed.',
+      },
+      allocation: null,
+      dueAt: expect.any(String),
+      version: 2,
+    });
+    expect(Date.parse(decision.body.dueAt)).toBeGreaterThan(Date.now());
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(0);
+
+    const detail = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/requests/${resourceRequest.id}`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(200);
+    expect(detail.body).toMatchObject({
+      dueAt: decision.body.dueAt,
+      availableActions: ['ACCEPT'],
+      allocation: null,
+      decisionState: 'APPROVED_WITH_CHANGES',
+      approvedConditions: decision.body.approvedConditions,
+    });
+
+    const acceptancePath = `/api/resource-allocation/v1/requests/${resourceRequest.id}/acceptances`;
+    const headers = {
+      'X-PMO-Local-User-ID': fixture.requester.localUserId,
+      'If-Match': '"2"',
+      'Idempotency-Key': randomUUID(),
+      'X-Correlation-ID': randomUUID(),
+    };
+    const accepted = await request(app!.getHttpServer()).post(acceptancePath).set(headers).send({}).expect(200);
+    expect(accepted.body).toMatchObject({
+      decisionState: 'APPROVED',
+      confirmationSource: 'REQUESTER_ACCEPTANCE',
+      allocation: {
+        startDate: '2027-02-01',
+        endDate: '2027-02-19',
+        weeklyHours: 15,
+      },
+    });
+    const replay = await request(app!.getHttpServer())
+      .post(acceptancePath)
+      .set(headers)
+      .send({})
+      .expect('Idempotency-Replayed', 'true')
+      .expect(200);
+    expect(replay.body).toEqual(accepted.body);
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(1);
+    expect(await dataSource!.query("SELECT id FROM resource_request_history WHERE request_id = $1 AND action = 'CHANGES_ACCEPTED'", [resourceRequest.id])).toHaveLength(1);
+  });
+
+  it('automatically confirms an eligible proposal at its deadline and suppresses the overdue reminder', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+    const decision = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        personId: fixture.assignee.id,
+        startDate: '2027-02-01',
+        endDate: '2027-02-19',
+        weeklyHours: 15,
+        explanation: 'The initiative schedule and weekly capacity changed.',
+      })
+      .expect(200);
+    expect(decision.body.decisionState).toBe('APPROVED_WITH_CHANGES');
+
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET decision_response_due_at = clock_timestamp(), stage_entered_at = clock_timestamp() - INTERVAL '72 hours'
+      WHERE id = $1
+    `, [resourceRequest.id]);
+    const worker = new ResourceAllocationProposalWorker(app!.get(ResourceAllocationApprovalService));
+    await worker.processBatch();
+    await worker.processBatch();
+
+    const saved = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id });
+    expect(saved.decisionState).toBe('APPROVED');
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(1);
+    expect(await dataSource!.query("SELECT id FROM resource_request_history WHERE request_id = $1 AND action = 'AUTO_ACCEPTED_CHANGES'", [resourceRequest.id])).toHaveLength(1);
+    expect(await dataSource!.query("SELECT id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code LIKE 'REQUEST_CHANGES_REMINDER_48H_%'", [resourceRequest.id])).toHaveLength(0);
+  });
+
+  it('rolls back the proposal, history, notice, and idempotency receipt when notice persistence fails', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+    const key = randomUUID();
+    await dataSource!.query(`
+      CREATE FUNCTION fail_changed_proposal_notice() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.event_code LIKE 'REQUEST_CHANGES_PROPOSED_%' THEN
+          RAISE EXCEPTION 'test proposal notification failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+    await dataSource!.query(`
+      CREATE TRIGGER fail_changed_proposal_notice_trigger
+      BEFORE INSERT ON resource_allocation_notifications
+      FOR EACH ROW EXECUTE FUNCTION fail_changed_proposal_notice()
+    `);
+    try {
+      await request(app!.getHttpServer())
+        .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`)
+        .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+        .set('If-Match', '"1"')
+        .set('Idempotency-Key', key)
+        .send({
+          personId: fixture.assignee.id,
+          startDate: '2027-02-01',
+          endDate: '2027-02-19',
+          weeklyHours: 15,
+          explanation: 'The initiative schedule and weekly capacity changed.',
+        })
+        .expect(500);
+    } finally {
+      await dataSource!.query('DROP TRIGGER IF EXISTS fail_changed_proposal_notice_trigger ON resource_allocation_notifications');
+      await dataSource!.query('DROP FUNCTION IF EXISTS fail_changed_proposal_notice()');
+    }
+    const saved = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id });
+    expect(saved.decisionState).toBe('WAITING_FOR_PRESENTATION');
+    expect(saved.approvedConditions).toBeNull();
+    expect(saved.decisionResponseDueAt).toBeNull();
+    expect(await dataSource!.query("SELECT id FROM resource_request_history WHERE request_id = $1 AND action = 'APPROVAL_CHANGES_PROPOSED'", [resourceRequest.id])).toHaveLength(0);
+    expect(await dataSource!.query("SELECT id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code LIKE 'REQUEST_CHANGES_PROPOSED_%'", [resourceRequest.id])).toHaveLength(0);
+    expect(await dataSource!.query('SELECT id FROM resource_allocation_operation_receipts WHERE idempotency_key = $1', [key])).toHaveLength(0);
+  });
+
+  it('lets a past requested start date be reviewed and requires a future proposal start at the response deadline', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+    const expiredConditions = {
+      ...resourceRequest.requestedConditions,
+      startDate: '2025-01-01',
+      endDate: '2025-01-31',
+    };
+    await dataSource!.getRepository(ResourceRequest).update(resourceRequest.id, { requestedConditions: expiredConditions });
+    const editedRequest = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id });
+
+    const candidates = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/requests/${resourceRequest.id}/approval-candidates`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(candidates.body.items).toEqual(expect.arrayContaining([
+      { id: fixture.assignee.id, displayName: fixture.assignee.displayName, groupId: fixture.group.id },
+    ]));
+
+    const dateRows = await dataSource!.query(`
+      SELECT ((clock_timestamp() + INTERVAL '72 hours') AT TIME ZONE 'America/Sao_Paulo')::date::text AS due_date
+    `) as Array<{ due_date: string }>;
+    const deadlineDate = new Date(`${dateRows[0].due_date}T00:00:00.000Z`);
+    const priorDate = new Date(deadlineDate.getTime() - 86_400_000).toISOString().slice(0, 10);
+    const proposedDate = new Date(deadlineDate.getTime() + 86_400_000).toISOString().slice(0, 10);
+    const proposedEnd = new Date(new Date(`${proposedDate}T00:00:00.000Z`).getTime() + 18 * 86_400_000).toISOString().slice(0, 10);
+    const path = `/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`;
+    const headers = {
+      'X-PMO-Local-User-ID': fixture.admin.localUserId,
+      'If-Match': `"${editedRequest.version}"`,
+    };
+    await request(app!.getHttpServer())
+      .post(path)
+      .set({ ...headers, 'Idempotency-Key': randomUUID() })
+      .send({ personId: fixture.assignee.id, startDate: priorDate, endDate: proposedEnd, weeklyHours: 15, explanation: 'The requested start date has passed.' })
+      .expect(422);
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(0);
+
+    const proposal = await request(app!.getHttpServer())
+      .post(path)
+      .set({ ...headers, 'Idempotency-Key': randomUUID() })
+      .send({ personId: fixture.assignee.id, startDate: proposedDate, endDate: proposedEnd, weeklyHours: 15, explanation: 'The requested start date has passed.' })
+      .expect(200);
+    expect(proposal.body).toMatchObject({ decisionState: 'APPROVED_WITH_CHANGES', allocation: null });
+  });
+
+  it('sends the 48-hour proposal reminder once and lets the automatic deadline win an acceptance race', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        personId: fixture.assignee.id,
+        startDate: '2027-02-01',
+        endDate: '2027-02-19',
+        weeklyHours: 15,
+        explanation: 'The initiative schedule and weekly capacity changed.',
+      })
+      .expect(200);
+    const worker = new ResourceAllocationProposalWorker(app!.get(ResourceAllocationApprovalService));
+
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET decision_response_due_at = clock_timestamp() + INTERVAL '24 hours'
+      WHERE id = $1
+    `, [resourceRequest.id]);
+    await worker.processBatch();
+    await worker.processBatch();
+    expect(await dataSource!.query("SELECT id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code LIKE 'REQUEST_CHANGES_REMINDER_48H_%'", [resourceRequest.id])).toHaveLength(1);
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(0);
+
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET decision_response_due_at = clock_timestamp()
+      WHERE id = $1
+    `, [resourceRequest.id]);
+    const expiredDetail = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/requests/${resourceRequest.id}`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(200);
+    expect(expiredDetail.body.availableActions).not.toContain('ACCEPT');
+    const response = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/acceptances`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('If-Match', '"2"')
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Correlation-ID', randomUUID())
+      .send({});
+    await worker.processBatch();
+
+    expect([200, 422]).toContain(response.status);
+    if (response.status === 200) expect(response.body.confirmationSource).toBe('SYSTEM_DEADLINE');
+    const saved = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id });
+    expect(saved.decisionState).toBe('APPROVED');
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(1);
+    expect(await dataSource!.query("SELECT id FROM resource_request_history WHERE request_id = $1 AND action = 'AUTO_ACCEPTED_CHANGES'", [resourceRequest.id])).toHaveLength(1);
+  });
+
+  it('moves an expired proposal to durable revalidation instead of retroactively allocating when eligibility was lost', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        personId: fixture.assignee.id,
+        startDate: '2027-02-01',
+        endDate: '2027-02-19',
+        weeklyHours: 15,
+        explanation: 'The initiative schedule and weekly capacity changed.',
+      })
+      .expect(200);
+    await dataSource!.getRepository(ResourcePerson).update(fixture.assignee.id, { active: false });
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET decision_response_due_at = clock_timestamp() - INTERVAL '1 second'
+      WHERE id = $1
+    `, [resourceRequest.id]);
+
+    const worker = new ResourceAllocationProposalWorker(app!.get(ResourceAllocationApprovalService));
+    await worker.processBatch();
+
+    const saved = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id });
+    expect(saved.decisionState).toBe('REQUIRES_REVALIDATION');
+    expect(saved.approvedConditions).toMatchObject({ personId: fixture.assignee.id });
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(0);
+    expect(await dataSource!.query("SELECT id FROM resource_request_history WHERE request_id = $1 AND action = 'PROPOSAL_REQUIRES_REVALIDATION'", [resourceRequest.id])).toHaveLength(1);
+    const revalidationNotices = await dataSource!.query(
+      "SELECT recipient_id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code LIKE 'REQUEST_REVALIDATION_REQUIRED_%' ORDER BY recipient_id",
+      [resourceRequest.id],
+    ) as Array<{ recipient_id: string }>;
+    expect(revalidationNotices.map((notice) => notice.recipient_id).sort()).toEqual([
+      fixture.requester.id,
+      fixture.admin.id,
+      fixture.groupAdmin.id,
+      fixture.supervisor.id,
+      fixture.manager.id,
+    ].sort());
   });
 
   it('corrects only the approved profile with an explanation and preserves the requested profile', async () => {

@@ -93,7 +93,7 @@ export class ResourceAllocationRequestController {
     @Param('id', new ParseUUIDPipe()) id: string,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
-    const { request: item, allocation } = await this.requestService.get(localUserId, id);
+    const { request: item, allocation, dueAt, availableActions } = await this.requestService.get(localUserId, id);
     response.setHeader('ETag', `"${item.version}"`);
     return {
       id: item.id,
@@ -105,6 +105,8 @@ export class ResourceAllocationRequestController {
       receivedAt: item.receivedAt.toISOString(),
       stageEnteredAt: item.stageEnteredAt.toISOString(),
       expirationDueAt: item.expirationDueAt.toISOString(),
+      dueAt,
+      availableActions,
       version: item.version,
     };
   }

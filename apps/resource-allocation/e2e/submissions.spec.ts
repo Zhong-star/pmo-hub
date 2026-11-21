@@ -76,7 +76,7 @@ test('reviews a batch, normalizes decimal commas, and rejects invalid hours befo
   await openAsUser(page);
 
   await expect(page.getByRole('heading', { name: 'New request batch' })).toBeVisible();
-  await page.getByLabel('Initiative').selectOption(initiative.id);
+  await page.getByRole('combobox', { name: 'Initiative', exact: true }).selectOption(initiative.id);
   await page.getByLabel('Category').selectOption('EXECUTION_PROJECT');
   await page.getByLabel('Group for line 1').selectOption(group.id);
   await page.getByLabel('Resource profile for line 1').selectOption(profile.id);
@@ -169,7 +169,7 @@ test('recovers a durable submission after reload and offers correction only for 
 
   await page.getByRole('button', { name: /Correct and retry failed line/ }).click();
   await expect(page.getByRole('heading', { name: 'New request batch' })).toBeVisible();
-  await expect(page.getByLabel('Initiative')).toHaveValue(initiative.id);
+  await expect(page.getByRole('combobox', { name: 'Initiative', exact: true })).toHaveValue(initiative.id);
   await expect(page.getByLabel('Category')).toHaveValue('EXECUTION_PROJECT');
   await expect(page.getByLabel('Weekly hours for line 1')).toHaveValue('0.04');
   await page.getByLabel('Weekly hours for line 1').fill('4,5');
@@ -302,7 +302,7 @@ test('retries an unconfirmed envelope after reload with the same durable keys an
   });
 
   await openAsUser(page);
-  await page.getByLabel('Initiative').selectOption(initiative.id);
+  await page.getByRole('combobox', { name: 'Initiative', exact: true }).selectOption(initiative.id);
   await page.getByLabel('Category').selectOption('EXECUTION_PROJECT');
   await page.getByLabel('Group for line 1').selectOption(group.id);
   await page.getByLabel('Resource profile for line 1').selectOption(profile.id);

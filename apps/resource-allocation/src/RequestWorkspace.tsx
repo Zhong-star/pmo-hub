@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useForm, useWatch } from 'react-hook-form';
 import { getSelectionCollection, type RequestCategory, type SelectionItem, SubmissionRequestError } from './submissionApi';
 import {
+  acceptRequest,
   getRequest,
   getRequestAudit,
   getRequestCollection,
@@ -88,6 +89,43 @@ function createUuid() {
   return window.crypto.randomUUID();
 }
 
+const pendingAcceptanceKeys = new Map<string, Promise<string>>();
+
+async function acceptanceIdempotencyKey(localUserId: string, requestId: string, version: number): Promise<string> {
+  const identity = JSON.stringify([localUserId, requestId, version, 'acceptance']);
+  const pending = pendingAcceptanceKeys.get(identity);
+  if (pending) return pending;
+
+  const keyPromise = (async () => {
+    let slot = identity;
+    try {
+      const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity));
+      slot = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    } catch {
+      // Keep retries stable for this page session if Web Crypto is unavailable.
+    }
+
+    const storageKey = `pmo-hub.resource-allocation.acceptance.${slot}`;
+    try {
+      const existing = window.sessionStorage.getItem(storageKey);
+      if (existing) return existing;
+    } catch {
+      // Some embedded browsers disable storage; use the in-memory cache below.
+    }
+
+    const idempotencyKey = createUuid();
+    try {
+      window.sessionStorage.setItem(storageKey, idempotencyKey);
+    } catch {
+      // The in-memory promise cache still keeps retries stable for this page.
+    }
+    return idempotencyKey;
+  })();
+
+  pendingAcceptanceKeys.set(identity, keyPromise);
+  return keyPromise;
+}
+
 function normalizeWeeklyHours(raw: string): { value: number | null; error?: string } {
   const value = raw.trim();
   const match = /^(\d+)(?:[.,](\d+))?$/.exec(value);
@@ -124,7 +162,11 @@ function issueMutationError(error: unknown): string {
 }
 
 function formatTimestamp(value: string): string {
-  return new Date(value).toLocaleString();
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'America/Sao_Paulo',
+  }).format(new Date(value));
 }
 
 function useSelectionQuery(localUserId: string, collection: 'groups' | 'resource-profiles' | 'initiatives') {
@@ -150,6 +192,7 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
   const [formVersion, setFormVersion] = useState<number | null>(null);
   const [editError, setEditError] = useState('');
   const [withdrawalError, setWithdrawalError] = useState('');
+  const [acceptError, setAcceptError] = useState('');
   const [withdrawalAttempt, setWithdrawalAttempt] = useState<{ requestId: string; version: number; reason: string; key: string } | null>(null);
   const lastFormRequestId = useRef<string | null>(null);
   const withdrawButtonRef = useRef<HTMLButtonElement>(null);
@@ -197,6 +240,16 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
   const isDetailNotFound = selectedRequest.error instanceof RequestApiError && selectedRequest.error.status === 404;
   const currentItem = isDetailNotFound ? undefined : selectedRequest.data;
   const formVersionChanged = currentItem !== undefined && formVersion !== null && currentItem.version !== formVersion;
+  const canAcceptProposal = currentItem?.decisionState === 'APPROVED_WITH_CHANGES'
+    && currentItem.availableActions?.includes('ACCEPT') === true
+    && currentItem.dueAt !== null
+    && currentItem.dueAt !== undefined;
+  const acceptDisabled = !canAcceptProposal
+    || formVersion === null
+    || formVersionChanged
+    || selectedRequest.isFetching
+    || selectedRequest.isError
+    || requestsQuery.isError;
   const canEdit = currentItem?.decisionState === 'WAITING_FOR_PRESENTATION'
     && !selectedRequest.isFetching
     && !selectedRequest.isError
@@ -210,6 +263,10 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
   const withdrawMutation = useMutation({
     mutationFn: (input: { requestId: string; version: number; reason: string; idempotencyKey: string }) =>
       withdrawRequest(localUserId, input.requestId, input.version, input.reason, input.idempotencyKey),
+  });
+  const acceptMutation = useMutation({
+    mutationFn: (input: { requestId: string; version: number; idempotencyKey: string }) =>
+      acceptRequest(localUserId, input.requestId, input.version, input.idempotencyKey),
   });
 
   useEffect(() => {
@@ -259,6 +316,7 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
     setSelectedRequestId(requestId);
     setAuditRequestId(null);
     setNotice('');
+    setAcceptError('');
     updateRequestUrl(requestId);
     updateAuditUrl(null);
   }
@@ -266,17 +324,20 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
   function closeRequest() {
     setSelectedRequestId(null);
     setFormVersion(null);
+    setAcceptError('');
     lastFormRequestId.current = null;
     updateRequestUrl(null);
   }
 
-  async function invalidateRequestSurfaces(requestId: string) {
+  async function invalidateRequestSurfaces(requestId: string, preserveDetail = false) {
     await queryClient.invalidateQueries({ queryKey: REQUESTS_QUERY_ROOT });
     await queryClient.invalidateQueries({ queryKey: ['resource-allocation-submissions', localUserId] });
     await queryClient.invalidateQueries({
       predicate: (query) => query.queryKey[0] === 'resource-allocation-notifications',
     });
-    await queryClient.removeQueries({ queryKey: [...REQUESTS_QUERY_ROOT, localUserId, 'detail', requestId] });
+    if (!preserveDetail) {
+      await queryClient.removeQueries({ queryKey: [...REQUESTS_QUERY_ROOT, localUserId, 'detail', requestId] });
+    }
   }
 
   async function onEdit(valuesToSave: RequestFormValues) {
@@ -367,6 +428,49 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
     }
   }
 
+  async function onAcceptProposal() {
+    if (!currentItem || !canAcceptProposal || acceptDisabled || acceptMutation.isPending) return;
+    setAcceptError('');
+    const idempotencyKey = await acceptanceIdempotencyKey(localUserId, currentItem.id, currentItem.version);
+    try {
+      const accepted = await acceptMutation.mutateAsync({
+        requestId: currentItem.id,
+        version: currentItem.version,
+        idempotencyKey,
+      });
+      setFormVersion(accepted.version);
+      setNotice(accepted.confirmationSource === 'SYSTEM_DEADLINE'
+        ? 'The proposal was automatically confirmed when the 72-hour response deadline was reached.'
+        : accepted.confirmationSource === 'REQUESTER_ACCEPTANCE'
+          ? 'You accepted the proposed conditions.'
+          : 'The request status was updated.');
+      await invalidateRequestSurfaces(currentItem.id, true);
+    } catch (error) {
+      if (hasAccessError(error)) {
+        onAccessDenied();
+        return;
+      }
+      if (error instanceof RequestApiError && error.status === 412) {
+        setAcceptError('This proposal changed before it could be accepted. Your view is preserved; reload the latest request before acting again.');
+        void selectedRequest.refetch();
+        return;
+      }
+      if (error instanceof RequestApiError && error.status === 422 && error.problem?.code === 'INVALID_REQUEST_TRANSITION') {
+        const latest = await selectedRequest.refetch();
+        if (latest.isError || !latest.data
+          || (latest.data.decisionState === 'APPROVED_WITH_CHANGES' && latest.data.availableActions?.includes('ACCEPT'))) {
+          setAcceptError(issueMutationError(error));
+        } else {
+          setAcceptError('');
+          setNotice('This proposal is no longer awaiting acceptance. The current request status has been loaded.');
+        }
+        await invalidateRequestSurfaces(currentItem.id, true);
+        return;
+      }
+      setAcceptError(issueMutationError(error));
+    }
+  }
+
   async function reloadLatestRequest() {
     const result = await selectedRequest.refetch();
     if (result.data) {
@@ -374,6 +478,7 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
       setFormVersion(result.data.version);
       setEditError('');
       setWithdrawalError('');
+      setAcceptError('');
     }
   }
 
@@ -383,6 +488,9 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
 
   const selectedListItem = requests.find((item) => item.id === selectedRequestId);
   const currentConditions = currentItem?.requestedConditions;
+  const confirmationLabel = currentItem?.confirmationSource === 'SYSTEM_DEADLINE'
+    ? 'Automatically confirmed at deadline'
+    : currentItem?.confirmationSource === 'REQUESTER_ACCEPTANCE' ? 'Accepted by requester' : null;
   const submitWithdrawal = handleWithdrawalSubmit(onWithdraw);
 
   return (
@@ -496,8 +604,37 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
                   <span><strong>Decision</strong>{decisionStates.find((state) => state.value === currentItem.decisionState)?.label ?? currentItem.decisionState}</span>
                   <span><strong>Submitted</strong>{formatTimestamp(currentItem.receivedAt)}</span>
                   <span><strong>Waiting expiry</strong>{formatTimestamp(currentItem.expirationDueAt)}</span>
+                  {currentItem.decisionState === 'APPROVED_WITH_CHANGES' && currentItem.dueAt && (
+                    <span><strong>Response deadline (São Paulo)</strong>{formatTimestamp(currentItem.dueAt)}</span>
+                  )}
+                  {confirmationLabel && <span><strong>Confirmation</strong>{confirmationLabel}</span>}
                   <span><strong>Version</strong>{currentItem.version}</span>
                 </div>
+                {currentItem.decisionState === 'APPROVED_WITH_CHANGES' && (
+                  <section className="request-detail-outcome request-proposal-status" aria-label="Proposal response">
+                    <h4>Respond to proposed conditions</h4>
+                    <p>No allocation exists until you accept the proposal or the 72-hour response window ends.</p>
+                    {acceptError && <p className="form-error" role="alert">{acceptError}</p>}
+                    {canAcceptProposal ? (
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => void onAcceptProposal()}
+                        disabled={acceptDisabled || acceptMutation.isPending}
+                      >
+                        {acceptMutation.isPending ? 'Accepting proposal…' : 'Accept proposed conditions'}
+                      </button>
+                    ) : (
+                      <p className="request-proposal-pending" role="status">Acceptance is unavailable. The system confirms eligible proposals automatically when the 72-hour response deadline is reached.</p>
+                    )}
+                  </section>
+                )}
+                {currentItem.decisionState === 'REQUIRES_REVALIDATION' && (
+                  <section className="request-detail-outcome request-proposal-status" aria-label="Revalidation status">
+                    <h4>Requires revalidation</h4>
+                    <p>This request requires revalidation. The previous proposal cannot be accepted. A decision maker must review eligible conditions before a new decision is issued.</p>
+                  </section>
+                )}
                 {(currentItem.decisionState === 'DENIED' || currentItem.decisionState === 'PRE_N3' || currentItem.decisionState === 'CANCELLED') && (
                   <DeniedRequestResponse
                     localUserId={localUserId}
@@ -521,8 +658,11 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
                   </dl>
                 </section>
                 {currentItem.approvedConditions && (
-                  <section className="request-detail-outcome" aria-label="Approved conditions">
-                    <h4>Approved conditions</h4>
+                  <section
+                    className="request-detail-outcome"
+                    aria-label={currentItem.decisionState === 'APPROVED_WITH_CHANGES' ? 'Proposed conditions' : 'Approved conditions'}
+                  >
+                    <h4>{currentItem.decisionState === 'APPROVED_WITH_CHANGES' ? 'Proposed conditions' : 'Approved conditions'}</h4>
                     <dl className="request-queue-details">
                       <div><dt>Approved person</dt><dd>{currentItem.approvedConditions.personName}</dd></div>
                       <div><dt>Approved resource profile</dt><dd>{currentItem.approvedConditions.resourceProfileName}</dd></div>

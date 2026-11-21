@@ -3,6 +3,8 @@ import { DataSource } from 'typeorm';
 import { createResourceAllocationDataSourceOptions, getResourceAllocationDatabaseUrl, RESOURCE_ALLOCATION_DATABASE_URL_ENV } from '../database/database-options';
 import { ResourceAllocationSubmissionWorker } from './resource-allocation-submission.worker';
 import { ResourceAllocationDeadlineWorker } from '../deadlines/resource-allocation-deadline.worker';
+import { ResourceAllocationProposalWorker } from '../deadlines/resource-allocation-proposal.worker';
+import { ResourceAllocationApprovalService } from '../approvals/resource-allocation-approval.service';
 import { ResourceAllocationDecisionService } from '../decisions/resource-allocation-decision.service';
 import { ResourceAllocationAccessService } from '../access/resource-allocation-access.service';
 import { ResourceAllocationService } from '../allocations/resource-allocation.service';
@@ -24,10 +26,12 @@ async function main() {
   const decisions = new ResourceAllocationDecisionService(dataSource, true);
   const allocationService = new ResourceAllocationService(dataSource, new ResourceAllocationAccessService(dataSource, true));
   const allocationLifecycle = new ResourceAllocationLifecycleWorker(allocationService);
+  const proposalWorker = new ResourceAllocationProposalWorker(new ResourceAllocationApprovalService(dataSource, true));
   const jobs = createResourceAllocationWorkerJobs({
     processSubmissions: () => submissionWorker.processBatch(),
     processWaitingDeadlines: () => deadlineWorker.processBatch(),
     expireDeniedRequests: () => decisions.expireDeniedRequests(),
+    processProposalDeadlines: () => proposalWorker.processBatch(),
     processAllocationStates: () => allocationLifecycle.processBatch(),
   });
   const once = process.argv.includes('--once');

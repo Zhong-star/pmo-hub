@@ -4259,6 +4259,144 @@
         ]
       }
     },
+    "/api/resource-allocation/v1/requests/{id}/acceptances": {
+      "post": {
+        "operationId": "ResourceAllocationApprovalController_acceptChanges",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "UUID for this exact acceptance action.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Current strong request ETag.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptRequestChangesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"3\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApproveRequestResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match, Idempotency-Key, correlation ID, or body is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the requester may accept this proposal.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The current request was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The idempotency key was reused with different content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The request version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request has no pending proposal. At the deadline the automatic transition takes precedence.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Accept a changed proposal before its deadline, or apply the automatic deadline transition",
+        "tags": [
+          "Tech Resource Allocation approvals"
+        ]
+      }
+    },
     "/api/resource-allocation/v1/allocations": {
       "get": {
         "operationId": "ResourceAllocationController_list",
@@ -4365,10 +4503,52 @@
             }
           },
           "400": {
-            "description": "A filter, limit, or cursor is invalid."
+            "description": "A filter, limit, or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Select an active local profile.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
           },
           "403": {
-            "description": "An active Resource Allocation profile is required."
+            "description": "An active Resource Allocation profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4405,13 +4585,62 @@
                 }
               }
             },
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationViewDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Select an active local profile.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
           },
           "403": {
-            "description": "The current profile is outside the allocation scope."
+            "description": "The current profile is outside the allocation scope.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The allocation does not exist."
+            "description": "The allocation does not exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4506,10 +4735,52 @@
             }
           },
           "400": {
-            "description": "The date, filter, limit, or cursor is invalid."
+            "description": "The date, filter, limit, or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Select an active local profile.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
           },
           "403": {
-            "description": "An active Resource Allocation profile is required."
+            "description": "An active Resource Allocation profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4564,11 +4835,53 @@
               }
             }
           },
+          "401": {
+            "description": "Select an active local profile.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
           "403": {
-            "description": "The current profile is outside the allocation scope."
+            "description": "The current profile is outside the allocation scope.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The allocation does not exist."
+            "description": "The allocation does not exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4597,7 +4910,7 @@
           {
             "name": "X-Correlation-ID",
             "in": "header",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -4646,19 +4959,82 @@
                 }
               }
             },
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationViewDto"
+                }
+              }
+            }
           },
           "400": {
-            "description": "A required header or reason is invalid."
+            "description": "A required header or reason is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Select an active local profile.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
           },
           "409": {
-            "description": "The idempotency key was reused with different content."
+            "description": "The idempotency key was reused with different content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "412": {
-            "description": "The allocation version changed."
+            "description": "The allocation version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "422": {
-            "description": "The allocation cannot be suspended from its current state."
+            "description": "The allocation cannot be suspended from its current state.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4687,7 +5063,7 @@
           {
             "name": "X-Correlation-ID",
             "in": "header",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -4733,19 +5109,82 @@
                 }
               }
             },
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationViewDto"
+                }
+              }
+            }
           },
           "400": {
-            "description": "A required header or reason is invalid."
+            "description": "A required header or reason is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Select an active local profile.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
           },
           "409": {
-            "description": "The idempotency key was reused with different content."
+            "description": "The idempotency key was reused with different content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "412": {
-            "description": "The allocation version changed."
+            "description": "The allocation version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "422": {
-            "description": "The allocation cannot be reserved from its current state."
+            "description": "The allocation cannot be reserved from its current state.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4774,7 +5213,7 @@
           {
             "name": "X-Correlation-ID",
             "in": "header",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -4820,19 +5259,82 @@
                 }
               }
             },
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationViewDto"
+                }
+              }
+            }
           },
           "400": {
-            "description": "A required header or reason is invalid."
+            "description": "A required header or reason is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Select an active local profile.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
           },
           "409": {
-            "description": "The idempotency key was reused with different content."
+            "description": "The idempotency key was reused with different content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "412": {
-            "description": "The allocation version changed."
+            "description": "The allocation version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "422": {
-            "description": "Only a suspended allocation can be resumed."
+            "description": "Only a suspended allocation can be resumed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4861,7 +5363,7 @@
           {
             "name": "X-Correlation-ID",
             "in": "header",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -4907,19 +5409,82 @@
                 }
               }
             },
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationViewDto"
+                }
+              }
+            }
           },
           "400": {
-            "description": "A required header or reason is invalid."
+            "description": "A required header or reason is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Select an active local profile.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
           },
           "409": {
-            "description": "The idempotency key was reused with different content."
+            "description": "The idempotency key was reused with different content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "412": {
-            "description": "The allocation version changed."
+            "description": "The allocation version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "422": {
-            "description": "Only a reserved allocation can be activated."
+            "description": "Only a reserved allocation can be activated.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4948,7 +5513,7 @@
           {
             "name": "X-Correlation-ID",
             "in": "header",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -4994,19 +5559,82 @@
                 }
               }
             },
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationViewDto"
+                }
+              }
+            }
           },
           "400": {
-            "description": "A required header or reason is invalid."
+            "description": "A required header or reason is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Select an active local profile.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
           },
           "409": {
-            "description": "The idempotency key was reused with different content."
+            "description": "The idempotency key was reused with different content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "412": {
-            "description": "The allocation version changed."
+            "description": "The allocation version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "422": {
-            "description": "A future or closed allocation cannot be completed."
+            "description": "A future or closed allocation cannot be completed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5035,7 +5663,7 @@
           {
             "name": "X-Correlation-ID",
             "in": "header",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -5081,19 +5709,82 @@
                 }
               }
             },
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationViewDto"
+                }
+              }
+            }
           },
           "400": {
-            "description": "A required header or reason is invalid."
+            "description": "A required header or reason is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Select an active local profile.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
           },
           "409": {
-            "description": "The idempotency key was reused with different content."
+            "description": "The idempotency key was reused with different content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "412": {
-            "description": "The allocation version changed."
+            "description": "The allocation version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           },
           "422": {
-            "description": "A closed allocation cannot be canceled."
+            "description": "A closed allocation cannot be canceled.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6449,6 +7140,21 @@
             "type": "string",
             "format": "date-time"
           },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "72-hour requester response deadline when a date or hours proposal is awaiting acceptance."
+          },
+          "availableActions": {
+            "example": [
+              "ACCEPT"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "version": {
             "type": "number"
           }
@@ -6461,6 +7167,8 @@
           "receivedAt",
           "stageEnteredAt",
           "expirationDueAt",
+          "dueAt",
+          "availableActions",
           "version"
         ]
       },
@@ -6856,10 +7564,26 @@
             "format": "uuid",
             "description": "Defaults to the requested profile. Choose a different profile only to correct it."
           },
+          "startDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Proposed start date. An acceptance-pending proposal must start on or after its 72-hour deadline in the business calendar."
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Proposed inclusive end date."
+          },
+          "weeklyHours": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 40,
+            "description": "Proposed weekly hours, rounded to one decimal place."
+          },
           "explanation": {
             "type": "string",
             "maxLength": 2000,
-            "description": "Required when the approved profile differs from the requested profile."
+            "description": "Required when proposed dates or weekly hours differ from the request, or when correcting the approved profile."
           }
         },
         "required": [
@@ -6942,13 +7666,30 @@
             "type": "object"
           },
           "allocation": {
-            "$ref": "#/components/schemas/AllocationApprovalResponseDto"
+            "nullable": true,
+            "description": "Null while a changed proposal awaits requester acceptance.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AllocationApprovalResponseDto"
+              }
+            ]
           },
           "decisionState": {
             "type": "string",
             "enum": [
-              "APPROVED"
+              "APPROVED",
+              "APPROVED_WITH_CHANGES"
             ]
+          },
+          "confirmationSource": {
+            "type": "string",
+            "enum": [
+              "REQUESTER_ACCEPTANCE",
+              "SYSTEM_DEADLINE"
+            ],
+            "nullable": true,
+            "description": "Identifies whether a proposal was confirmed explicitly by the requester or automatically at its deadline."
           },
           "receivedAt": {
             "type": "string",
@@ -6957,6 +7698,12 @@
           "stageEnteredAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Acceptance deadline for a changed proposal."
           },
           "version": {
             "type": "number"
@@ -6971,7 +7718,103 @@
           "decisionState",
           "receivedAt",
           "stageEnteredAt",
+          "dueAt",
           "version"
+        ]
+      },
+      "AcceptRequestChangesDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "AllocationViewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "person": {
+            "type": "object"
+          },
+          "group": {
+            "type": "object"
+          },
+          "initiative": {
+            "type": "object"
+          },
+          "resourceProfile": {
+            "type": "object"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "weeklyHours": {
+            "type": "number"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "NOT_STARTED",
+              "IN_PROGRESS",
+              "SUSPENDED",
+              "ALLOCATED_WITHOUT_ACTION",
+              "DONE",
+              "CANCELED"
+            ]
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "number"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approvedPeriod": {
+            "type": "object",
+            "example": {
+              "startDate": "2027-01-05",
+              "endDate": "2027-01-19"
+            }
+          },
+          "availableActions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "SUSPEND",
+                "RESERVE",
+                "RESUME",
+                "ACTIVATE",
+                "COMPLETE",
+                "CANCEL"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "person",
+          "group",
+          "initiative",
+          "resourceProfile",
+          "startDate",
+          "endDate",
+          "weeklyHours",
+          "state",
+          "approvedAt",
+          "version",
+          "requestId",
+          "approvedPeriod",
+          "availableActions"
         ]
       },
       "AllocationPageInfoDto": {
@@ -6998,7 +7841,7 @@
           "items": {
             "type": "array",
             "items": {
-              "type": "object"
+              "$ref": "#/components/schemas/AllocationViewDto"
             }
           },
           "page": {

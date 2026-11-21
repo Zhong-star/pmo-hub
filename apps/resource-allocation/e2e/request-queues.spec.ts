@@ -74,6 +74,7 @@ async function installCommonRoutes(page: Page, profileId: string, person: typeof
     });
   }
   await page.route(`${apiRoot}/submissions**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
+  await page.route(`${apiRoot}/notifications**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(/\/api\/resource-allocation\/v1\/requests(?:\?|$)/, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/admin/**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), {
@@ -324,11 +325,12 @@ test('approves the requested period for an eligible person from the queue action
   await card.getByRole('button', { name: 'Approve request' }).click();
   const form = card.getByRole('form', { name: 'Approve request request-a' });
   await expect(form.getByText('This approval keeps the requested period and weekly hours.')).toBeVisible();
-  await expect(form.getByText('2027-01-11 to 2027-01-29')).toBeVisible();
-  await expect(form.getByText('20 hours per week')).toBeVisible();
-  await expect(form.getByLabel('Start date')).toHaveCount(0);
-  await expect(form.getByLabel('End date')).toHaveCount(0);
-  await expect(form.getByLabel('Weekly hours')).toHaveCount(0);
+  await expect(form.getByRole('region', { name: 'Requested conditions' })).toContainText('2027-01-11 to 2027-01-29');
+  await expect(form.getByRole('region', { name: 'Requested conditions' })).toContainText('20 hours per week');
+  await expect(form.getByRole('region', { name: 'Proposed conditions' })).toContainText('2027-01-11 to 2027-01-29');
+  await expect(form.getByLabel('Approved start date')).toHaveValue('2027-01-11');
+  await expect(form.getByLabel('Approved end date')).toHaveValue('2027-01-29');
+  await expect(form.getByLabel('Approved weekly hours')).toHaveValue('20');
   await form.getByLabel('Eligible person').selectOption('person-a');
   await form.getByRole('button', { name: 'Approve request' }).click();
 
@@ -445,12 +447,18 @@ test('preserves approval input after a stale-version response', async ({ page })
   await card.getByRole('button', { name: 'Approve request' }).click();
   const form = card.getByRole('form', { name: 'Approve request request-a' });
   await form.getByLabel('Eligible person').selectOption('person-a');
+  await form.getByLabel('Approved start date').fill('2027-01-15');
+  await form.getByLabel('Approved end date').fill('2027-02-01');
+  await form.getByLabel('Approved weekly hours').fill('24');
   await form.getByLabel('Approved resource profile').selectOption('profile-c');
   await form.getByLabel('Explanation').fill('Keep this explanation visible.');
   await form.getByRole('button', { name: 'Approve request' }).click();
 
   await expect(page.getByRole('alert').filter({ hasText: 'This request changed after you opened it.' })).toBeVisible();
   await expect(form.getByLabel('Eligible person')).toHaveValue('person-a');
+  await expect(form.getByLabel('Approved start date')).toHaveValue('2027-01-15');
+  await expect(form.getByLabel('Approved end date')).toHaveValue('2027-02-01');
+  await expect(form.getByLabel('Approved weekly hours')).toHaveValue('24');
   await expect(form.getByLabel('Explanation')).toHaveValue('Keep this explanation visible.');
 });
 
@@ -497,4 +505,97 @@ test('reuses the approval attempt key after a lost response and page reload', as
   await expect.poll(() => attempts).toBe(2);
   expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/i);
   expect(keys[1]).toBe(keys[0]);
+});
+
+test('requires an explanation and proposes changed dates and hours for requester acceptance', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-21T12:00:00.000Z') });
+  await installCommonRoutes(page, moderator.localUserId, moderator);
+  let queueItem: ReturnType<typeof requestItem> | null = requestItem({
+    decisionState: 'PENDING_TEAM_DECISION',
+    dueAt: null,
+    availableActions: ['APPROVE'],
+    requestedConditions: {
+      ...requestItem().requestedConditions,
+      startDate: '2026-11-18',
+      endDate: '2026-11-29',
+    },
+  });
+  let approval: { body: Record<string, unknown>; headers: Record<string, string> } | null = null;
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: { items: path.endsWith('/team-decision') && queueItem ? [queueItem] : [], page: emptyPage } });
+  });
+  await page.route(`${apiRoot}/requests/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() !== 'POST') {
+      if (path.endsWith('/approval-candidates')) {
+        await route.fulfill({ json: { items: [{ id: 'person-a', displayName: 'Alex Resource', groupId: 'group-a' }], page: emptyPage } });
+        return;
+      }
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+
+    approval = {
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: route.request().headers(),
+    };
+    queueItem = null;
+    await route.fulfill({
+      json: requestItem({
+        decisionState: 'APPROVED_WITH_CHANGES',
+        dueAt: '2026-11-24T15:00:00.000Z',
+        approvedConditions: {
+          personId: 'person-a',
+          personName: 'Alex Resource',
+          resourceProfileId: 'profile-a',
+          resourceProfileName: 'API Engineering',
+          groupId: 'group-a',
+          groupName: 'Platform Engineering',
+          initiativeId: 'initiative-a',
+          initiativeCode: 'ITDM-62',
+          initiativeName: 'Resource allocation',
+          startDate: '2026-11-27',
+          endDate: '2026-12-05',
+          weeklyHours: 24,
+          explanation: 'The team can start later and provide additional weekly capacity.',
+        },
+        allocation: null,
+        availableActions: [],
+        version: 2,
+      }),
+    });
+  });
+
+  await page.goto('/resource-allocation/');
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await card.getByRole('button', { name: 'Approve request' }).click();
+  const form = card.getByRole('form', { name: 'Approve request request-a' });
+  await expect(form.getByRole('region', { name: 'Requested conditions' })).toContainText('2026-11-18 to 2026-11-29');
+  await expect(form.getByRole('region', { name: 'Proposed conditions' })).toContainText('2026-11-18 to 2026-11-29');
+  await form.getByLabel('Eligible person').selectOption('person-a');
+  await form.getByLabel('Approved weekly hours').fill('24');
+  await expect(form.getByLabel('Approved start date')).toHaveAttribute('min', '2026-11-24');
+  await form.getByLabel('Approved start date').fill('2026-11-27');
+  await form.getByLabel('Approved end date').fill('2026-12-05');
+  await expect(form.getByRole('region', { name: 'Proposed conditions' })).toContainText('2026-11-27 to 2026-12-05');
+  await expect(form.getByRole('region', { name: 'Proposed conditions' })).toContainText('24 hours per week');
+  await expect(form.getByText('The date or hours differ from the request. An explanation is required, and no allocation is created until the requester accepts.')).toBeVisible();
+  await form.getByRole('button', { name: 'Approve request' }).click();
+  await expect(form.getByText('Explain the proposed date or hours changes.')).toBeVisible();
+  expect(approval).toBeNull();
+
+  await form.getByLabel('Explanation').fill('The team can start later and provide additional weekly capacity.');
+  await form.getByRole('button', { name: 'Approve request' }).click();
+
+  await expect(page.getByText('There are no requests in this queue.')).toBeVisible();
+  expect(approval?.body).toEqual({
+    personId: 'person-a',
+    startDate: '2026-11-27',
+    endDate: '2026-12-05',
+    weeklyHours: 24,
+    explanation: 'The team can start later and provide additional weekly capacity.',
+  });
+  expect(approval?.headers['if-match']).toBe('"1"');
+  expect(approval?.headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i);
 });

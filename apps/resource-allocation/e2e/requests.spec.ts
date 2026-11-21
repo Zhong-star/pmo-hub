@@ -233,6 +233,269 @@ test('shows requested conditions, corrected approval conditions, and the resulti
   await expect(allocation.getByText('12 hours per week')).toBeVisible();
 });
 
+test('shows a pending proposal and accepts it only through the versioned acceptance action', async ({ page }) => {
+  await installAccessAndSelections(page);
+  const proposal = {
+    ...record(),
+    decisionState: 'APPROVED_WITH_CHANGES',
+    availableActions: ['ACCEPT'],
+    dueAt: '2026-11-24T15:00:00.000Z',
+    confirmationSource: null,
+    approvedConditions: {
+      personId: 'person-resource',
+      personName: 'Alex Resource',
+      resourceProfileId: profileId,
+      resourceProfileName: 'API Engineering',
+      groupId,
+      groupName: 'Platform Engineering',
+      initiativeId,
+      initiativeCode: 'ITDM-61',
+      initiativeName: 'Resource planning',
+      startDate: '2027-01-12',
+      endDate: '2027-02-04',
+      weeklyHours: 18,
+      explanation: 'The team can start later and provide additional weekly capacity.',
+    },
+    allocation: null,
+  };
+  const accepted = {
+    ...proposal,
+    decisionState: 'APPROVED',
+    availableActions: [],
+    confirmationSource: 'REQUESTER_ACCEPTANCE',
+    version: 2,
+    allocation: {
+      id: 'allocation-1',
+      person: { personId: 'person-resource', displayName: 'Alex Resource' },
+      group: { id: groupId, name: 'Platform Engineering' },
+      initiative: { id: initiativeId, code: 'ITDM-61', name: 'Resource planning' },
+      resourceProfile: { id: profileId, name: 'API Engineering' },
+      startDate: '2027-01-12',
+      endDate: '2027-02-04',
+      weeklyHours: 18,
+      state: 'NOT_STARTED',
+      approvedAt: '2026-11-21T12:00:00.000Z',
+      version: 1,
+    },
+  };
+  let currentRequest: Record<string, unknown> = proposal;
+  const acceptanceBodies: Array<Record<string, unknown>> = [];
+  const acceptanceHeaders: Array<Record<string, string>> = [];
+  let acceptanceCount = 0;
+  await page.route(`${apiRoot}/requests**`, async (route: Route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === 'GET' && url.pathname.endsWith('/requests')) {
+      await route.fulfill({ json: { items: [currentRequest], page: emptyPage } });
+      return;
+    }
+    if (request.method() === 'GET' && url.pathname.endsWith(`/requests/${requestId}`)) {
+      await route.fulfill({ headers: { etag: `"${String(currentRequest.version)}"` }, json: currentRequest });
+      return;
+    }
+    if (request.method() === 'POST' && url.pathname.endsWith(`/requests/${requestId}/acceptances`)) {
+      acceptanceCount += 1;
+      acceptanceBodies.push(request.postDataJSON() as Record<string, unknown>);
+      acceptanceHeaders.push(request.headers());
+      if (acceptanceCount === 1) {
+        // The server commits the acceptance, but the response is lost.
+        currentRequest = accepted;
+        await route.abort('connectionreset');
+        return;
+      }
+      await route.fulfill({ headers: { etag: '"2"' }, json: currentRequest });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`/resource-allocation/?requestId=${requestId}`);
+  const detail = page.getByRole('region', { name: 'ITDM-61' });
+  await expect(detail.getByRole('region', { name: 'Requested conditions' })).toContainText('2027-01-05 to 2027-01-28');
+  const proposed = detail.getByRole('region', { name: 'Proposed conditions' });
+  await expect(proposed).toContainText('2027-01-12 to 2027-02-04');
+  await expect(proposed).toContainText('18 hours per week');
+  await expect(proposed).toContainText('The team can start later and provide additional weekly capacity.');
+  await expect(detail.getByText('Response deadline')).toBeVisible();
+  await expect(detail.getByRole('region', { name: 'Approved allocation' })).toHaveCount(0);
+
+  const acceptButton = detail.getByRole('button', { name: 'Accept proposed conditions' });
+  await expect(acceptButton).toBeEnabled();
+  await acceptButton.click();
+  await expect(detail.getByRole('alert')).toContainText('could not be reached');
+  await expect(acceptButton).toBeEnabled();
+  await acceptButton.click();
+
+  await expect(page.getByText('You accepted the proposed conditions.')).toBeVisible();
+  await expect(detail.getByText('Accepted by requester')).toBeVisible();
+  await expect(detail.getByRole('region', { name: 'Approved allocation' })).toBeVisible();
+  expect(acceptanceBodies).toEqual([{}, {}]);
+  expect(acceptanceHeaders[0]['if-match']).toBe('"1"');
+  expect(acceptanceHeaders[0]['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i);
+  expect(acceptanceHeaders[1]['if-match']).toBe('"1"');
+  expect(acceptanceHeaders[1]['idempotency-key']).toBe(acceptanceHeaders[0]['idempotency-key']);
+  expect(acceptanceHeaders[0]['x-correlation-id']).toMatch(/^[0-9a-f-]{36}$/i);
+});
+
+test('does not offer acceptance when the API has closed the window', async ({ page }) => {
+  await installAccessAndSelections(page);
+  const pendingWithoutAcceptance = {
+    ...record(),
+    decisionState: 'APPROVED_WITH_CHANGES',
+    availableActions: [],
+    dueAt: '2026-11-20T15:00:00.000Z',
+    approvedConditions: {
+      personId: 'person-resource',
+      personName: 'Alex Resource',
+      resourceProfileId: profileId,
+      resourceProfileName: 'API Engineering',
+      groupId,
+      groupName: 'Platform Engineering',
+      initiativeId,
+      initiativeCode: 'ITDM-61',
+      initiativeName: 'Resource planning',
+      startDate: '2027-01-05',
+      endDate: '2027-01-28',
+      weeklyHours: 12,
+      explanation: 'The approved conditions changed.',
+    },
+    allocation: null,
+  };
+  await page.route(`${apiRoot}/requests**`, async (route: Route) => {
+    const url = new URL(route.request().url());
+    await route.fulfill({
+      json: url.pathname.endsWith(`/requests/${requestId}`)
+        ? pendingWithoutAcceptance
+        : { items: [pendingWithoutAcceptance], page: emptyPage },
+    });
+  });
+
+  await page.goto(`/resource-allocation/?requestId=${requestId}`);
+  const detail = page.getByRole('region', { name: 'ITDM-61' });
+  await expect(detail.getByRole('button', { name: 'Accept proposed conditions' })).toHaveCount(0);
+  await expect(detail.getByText(/acceptance is unavailable/i)).toBeVisible();
+  await expect(detail).toContainText('The system confirms eligible proposals automatically when the 72-hour response deadline is reached.');
+});
+
+test('reports automatic confirmation when the acceptance reaches the deadline', async ({ page }) => {
+  await installAccessAndSelections(page);
+  const proposal = {
+    ...record(),
+    decisionState: 'APPROVED_WITH_CHANGES',
+    availableActions: ['ACCEPT'],
+    dueAt: '2026-11-24T15:00:00.000Z',
+    confirmationSource: null,
+    approvedConditions: {
+      personId: 'person-resource',
+      personName: 'Alex Resource',
+      resourceProfileId: profileId,
+      resourceProfileName: 'API Engineering',
+      groupId,
+      groupName: 'Platform Engineering',
+      initiativeId,
+      initiativeCode: 'ITDM-61',
+      initiativeName: 'Resource planning',
+      startDate: '2027-01-12',
+      endDate: '2027-02-04',
+      weeklyHours: 18,
+      explanation: 'The approved conditions changed.',
+    },
+    allocation: null,
+  };
+  const automaticConfirmation = {
+    ...proposal,
+    decisionState: 'APPROVED',
+    availableActions: [],
+    confirmationSource: 'SYSTEM_DEADLINE',
+    version: 2,
+    allocation: {
+      id: 'allocation-1',
+      person: { personId: 'person-resource', displayName: 'Alex Resource' },
+      group: { id: groupId, name: 'Platform Engineering' },
+      initiative: { id: initiativeId, code: 'ITDM-61', name: 'Resource planning' },
+      resourceProfile: { id: profileId, name: 'API Engineering' },
+      startDate: '2027-01-12',
+      endDate: '2027-02-04',
+      weeklyHours: 18,
+      state: 'NOT_STARTED',
+      approvedAt: '2026-11-24T15:00:00.000Z',
+      version: 1,
+    },
+  };
+  let currentRequest: Record<string, unknown> = proposal;
+  await page.route(`${apiRoot}/requests**`, async (route: Route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === 'GET' && url.pathname.endsWith('/requests')) {
+      await route.fulfill({ json: { items: [currentRequest], page: emptyPage } });
+      return;
+    }
+    if (request.method() === 'GET' && url.pathname.endsWith(`/requests/${requestId}`)) {
+      await route.fulfill({ headers: { etag: `"${String(currentRequest.version)}"` }, json: currentRequest });
+      return;
+    }
+    if (request.method() === 'POST' && url.pathname.endsWith(`/requests/${requestId}/acceptances`)) {
+      currentRequest = automaticConfirmation;
+      await route.fulfill({ json: {
+        id: requestId,
+        decisionState: 'APPROVED',
+        version: 2,
+        confirmationSource: 'SYSTEM_DEADLINE',
+      } });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`/resource-allocation/?requestId=${requestId}`);
+  const detail = page.getByRole('region', { name: 'ITDM-61' });
+  await detail.getByRole('button', { name: 'Accept proposed conditions' }).click();
+
+  await expect(page.getByText('The proposal was automatically confirmed when the 72-hour response deadline was reached.')).toBeVisible();
+  await expect(page.getByText('You accepted the proposed conditions.')).toHaveCount(0);
+  await expect(detail.getByText('Automatically confirmed at deadline')).toBeVisible();
+});
+
+test('explains that a proposal in revalidation cannot be accepted', async ({ page }) => {
+  await installAccessAndSelections(page);
+  const revalidation = {
+    ...record(),
+    decisionState: 'REQUIRES_REVALIDATION',
+    availableActions: [],
+    dueAt: null,
+    approvedConditions: {
+      personId: 'person-resource',
+      personName: 'Alex Resource',
+      resourceProfileId: profileId,
+      resourceProfileName: 'API Engineering',
+      groupId,
+      groupName: 'Platform Engineering',
+      initiativeId,
+      initiativeCode: 'ITDM-61',
+      initiativeName: 'Resource planning',
+      startDate: '2027-01-05',
+      endDate: '2027-01-28',
+      weeklyHours: 12,
+      explanation: 'The originally selected person is no longer eligible.',
+    },
+    allocation: null,
+  };
+  await page.route(`${apiRoot}/requests**`, async (route: Route) => {
+    const url = new URL(route.request().url());
+    await route.fulfill({
+      json: url.pathname.endsWith(`/requests/${requestId}`)
+        ? revalidation
+        : { items: [revalidation], page: emptyPage },
+    });
+  });
+
+  await page.goto(`/resource-allocation/?requestId=${requestId}`);
+  const detail = page.getByRole('region', { name: 'ITDM-61' });
+  await expect(detail.getByRole('button', { name: 'Accept proposed conditions' })).toHaveCount(0);
+  await expect(detail.getByRole('heading', { name: 'Requires revalidation' })).toBeVisible();
+  await expect(detail).toContainText('The previous proposal cannot be accepted.');
+});
+
 test('preserves edited text after temporary and version-conflict failures until the user reloads', async ({ page }) => {
   await installAccessAndSelections(page);
   let currentRequest = record();
@@ -269,7 +532,7 @@ test('preserves edited text after temporary and version-conflict failures until 
   await expect(comment).toBeEnabled();
   await comment.fill('Unsaved text must stay visible.');
   await page.getByRole('button', { name: 'Save request changes' }).click();
-  await expect(page.getByRole('alert')).toContainText('The database is temporarily unavailable.');
+  await expect(detail.getByRole('alert')).toContainText('The database is temporarily unavailable.');
   await expect(comment).toHaveValue('Unsaved text must stay visible.');
 
   await page.getByRole('button', { name: 'Save request changes' }).click();

@@ -14,19 +14,22 @@ describe('Resource Allocation worker cycle', () => {
   it('continues to deadline jobs when a submission batch fails', async () => {
     const deadlineBatch = vi.fn(async () => 1);
     const deniedBatch = vi.fn(async () => 1);
+    const proposalBatch = vi.fn(async () => 1);
     const reportFailure = vi.fn();
 
     const jobs = createResourceAllocationWorkerJobs({
       processSubmissions: async () => { throw new Error('database timeout'); },
       processWaitingDeadlines: deadlineBatch,
       expireDeniedRequests: deniedBatch,
+      processProposalDeadlines: proposalBatch,
     });
     const failures = await runResourceAllocationWorkerCycle(jobs, reportFailure);
 
     expect(failures).toBe(1);
     expect(deadlineBatch).toHaveBeenCalledOnce();
     expect(deniedBatch).toHaveBeenCalledOnce();
-    expect(jobs.map((job) => job.name)).toEqual(['submission', 'waiting deadline', 'denied response deadline']);
+    expect(proposalBatch).toHaveBeenCalledOnce();
+    expect(jobs.map((job) => job.name)).toEqual(['submission', 'waiting deadline', 'denied response deadline', 'changed proposal deadline']);
     expect(reportFailure).toHaveBeenCalledWith('submission', expect.any(Error));
   });
 
@@ -47,7 +50,7 @@ describe('Resource Allocation worker cycle', () => {
       'submission',
       'waiting deadline',
       'denied response deadline',
-      'proposal response deadline',
+      'changed proposal deadline',
       'allocation lifecycle',
     ]);
     expect(proposalBatch).toHaveBeenCalledOnce();

@@ -84,11 +84,12 @@ export class ResourceAllocationRequestService {
       .addOrderBy('request.id', 'DESC')
       .take(page.limit + 1)
       .getMany();
+    const now = await this.databaseNow();
     const hasNext = found.length > page.limit;
     const items = found.slice(0, page.limit);
     const lastItem = items[items.length - 1];
     return {
-      items: items.map((item) => this.toRequestResponse(item)),
+      items: items.map((item) => this.toRequestResponse(item, now)),
       page: {
         nextCursor: hasNext && lastItem
           ? this.encodeCursor({
@@ -110,9 +111,13 @@ export class ResourceAllocationRequestService {
       .getOne();
     if (!request) throw this.notFound('Request');
     const allocation = await this.dataSource.getRepository(ResourceAllocation).findOne({ where: { sourceRequestId: request.id } });
+    const now = await this.databaseNow();
     return {
       request,
       allocation: allocation ? allocationResponse(allocation) : null,
+      dueAt: this.actionableDeadline(request)?.toISOString() ?? null,
+      availableActions: request.decisionState === ResourceRequestDecisionState.ApprovedWithChanges &&
+        request.decisionResponseDueAt && now < request.decisionResponseDueAt ? ['ACCEPT'] : [],
     };
   }
 
@@ -441,7 +446,7 @@ export class ResourceAllocationRequestService {
     return { personId: person.id, displayName: person.displayName, role: person.role };
   }
 
-  private toRequestResponse(request: ResourceRequest) {
+  private toRequestResponse(request: ResourceRequest, now: Date) {
     return {
       id: request.id,
       requesterSnapshot: request.requesterSnapshot,
@@ -451,8 +456,22 @@ export class ResourceAllocationRequestService {
       receivedAt: request.receivedAt.toISOString(),
       stageEnteredAt: request.stageEnteredAt.toISOString(),
       expirationDueAt: request.expirationDueAt.toISOString(),
+      dueAt: this.actionableDeadline(request)?.toISOString() ?? null,
+      availableActions: request.decisionState === ResourceRequestDecisionState.ApprovedWithChanges &&
+        request.decisionResponseDueAt && now < request.decisionResponseDueAt ? ['ACCEPT'] : [],
       version: request.version,
     };
+  }
+
+  private actionableDeadline(request: ResourceRequest): Date | null {
+    if (request.decisionState === ResourceRequestDecisionState.ApprovedWithChanges) return request.decisionResponseDueAt;
+    if (request.decisionState === ResourceRequestDecisionState.WaitingForPresentation || request.decisionState === ResourceRequestDecisionState.Denied) return request.expirationDueAt;
+    return null;
+  }
+
+  private async databaseNow(): Promise<Date> {
+    const rows = await this.dataSource.query('SELECT clock_timestamp() AS now') as Array<{ now: Date }>;
+    return new Date(rows[0].now);
   }
 
   private toAuditEventResponse(event: ResourceRequestAudit) {

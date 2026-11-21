@@ -28,8 +28,20 @@ interface RemovalValues {
 interface ApprovalValues {
   personId: string;
   resourceProfileId: string;
+  startDate: string;
+  endDate: string;
+  weeklyHours: string;
   explanation: string;
 }
+
+type ApprovalDecision = {
+  personId: string;
+  resourceProfileId?: string;
+  startDate?: string;
+  endDate?: string;
+  weeklyHours?: number;
+  explanation?: string;
+};
 
 const queueLabels: Record<RequestQueueCode, string> = {
   presentation: 'Presentation queue',
@@ -64,6 +76,27 @@ function dateLabel(value: string): string {
     timeStyle: 'short',
     timeZone: 'America/Sao_Paulo',
   }).format(new Date(value));
+}
+
+function saoPauloDate(value: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(value);
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function normalizedHours(raw: string): number | null {
+  const match = /^(\d+)(?:[.,](\d+))?$/.exec(raw.trim());
+  if (!match) return null;
+  const whole = BigInt(match[1]);
+  const fraction = match[2] ?? '';
+  if (whole > 40n || (whole === 40n && /[1-9]/.test(fraction))) return null;
+  const tenths = Number(whole) * 10 + Number(fraction[0] ?? '0') + (Number(fraction[1] ?? '0') >= 5 ? 1 : 0);
+  return tenths > 0 ? tenths / 10 : null;
 }
 
 function readValue(item: RequestQueueItem, key: keyof RequestQueueItem['requestedConditions']): string {
@@ -120,7 +153,7 @@ function actionIdentity(
   requestId: string,
   version: number,
   operation: string,
-  payload: Record<string, string | undefined>,
+  payload: Record<string, string | number | undefined>,
 ): string {
   const canonicalPayload = Object.fromEntries(Object.entries(payload).sort(([left], [right]) => left.localeCompare(right)));
   return JSON.stringify([localUserId, requestId, version, operation, canonicalPayload]);
@@ -212,7 +245,7 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
     requestId: string,
     version: number,
     operation: string,
-    payload: Record<string, string | undefined>,
+    payload: Record<string, string | number | undefined>,
   ) {
     const identity = actionIdentity(userId, requestId, version, operation, payload);
     return getActionIdempotencyKey(identity);
@@ -423,7 +456,7 @@ interface RequestQueueCardProps {
   onCorrect: (input: { initiativeId?: string; groupId?: string; resourceProfileId?: string; reason: string }) => Promise<void>;
   onRemove: (reason: string) => Promise<void>;
   onDeny: (explanation: string) => Promise<void>;
-  onApprove: (approval: { personId: string; resourceProfileId?: string; explanation?: string }) => Promise<void>;
+  onApprove: (approval: ApprovalDecision) => Promise<void>;
 }
 
 function RequestQueueCard({
@@ -540,16 +573,36 @@ function ApprovalForm({
   disabled: boolean;
   onSubmit: RequestQueueCardProps['onApprove'];
 }) {
+  const conditions = item.requestedConditions;
   const { register, handleSubmit, control, formState: { errors } } = useForm<ApprovalValues>({
     defaultValues: {
       personId: '',
       resourceProfileId: readValue(item, 'resourceProfileId'),
+      startDate: readValue(item, 'startDate'),
+      endDate: readValue(item, 'endDate'),
+      weeklyHours: String(conditions.weeklyHours ?? ''),
       explanation: '',
     },
   });
   const selectedProfileId = useWatch({ control, name: 'resourceProfileId' });
-  const conditions = item.requestedConditions;
+  const selectedStartDate = useWatch({ control, name: 'startDate' });
+  const selectedEndDate = useWatch({ control, name: 'endDate' });
+  const selectedWeeklyHours = useWatch({ control, name: 'weeklyHours' });
+  const [startDates] = useState(() => ({
+    today: saoPauloDate(new Date()),
+    afterAcceptanceWindow: saoPauloDate(new Date(Date.now() + 72 * 60 * 60 * 1000)),
+  }));
   const profileChanged = selectedProfileId !== conditions.resourceProfileId;
+  const startDateChanged = selectedStartDate !== conditions.startDate;
+  const endDateChanged = selectedEndDate !== conditions.endDate;
+  const weeklyHours = normalizedHours(selectedWeeklyHours ?? '');
+  const weeklyHoursChanged = weeklyHours !== conditions.weeklyHours;
+  const periodOrHoursChanged = startDateChanged || endDateChanged || weeklyHoursChanged;
+  const explanationRequired = profileChanged || periodOrHoursChanged;
+  const minimumStartDate = periodOrHoursChanged ? startDates.afterAcceptanceWindow : startDates.today;
+  const startDateValidationMessage = periodOrHoursChanged
+    ? 'The proposed start date must be on or after the 72-hour acceptance deadline.'
+    : 'The start date must be today or later.';
   const eligiblePeople = selections.people.filter((person) => person.groupId === conditions.groupId);
   const eligibleProfiles = selections.profiles.filter((profile) => profile.groupId === conditions.groupId);
 
@@ -557,19 +610,42 @@ function ApprovalForm({
     <form
       className="request-queue-action-form"
       aria-label={`Approve request ${item.id}`}
+      noValidate
       onSubmit={handleSubmit((values) => onSubmit({
         personId: values.personId,
         ...(profileChanged ? { resourceProfileId: values.resourceProfileId } : {}),
+        ...(startDateChanged ? { startDate: values.startDate } : {}),
+        ...(endDateChanged ? { endDate: values.endDate } : {}),
+        ...(weeklyHoursChanged && weeklyHours !== null ? { weeklyHours } : {}),
         ...(values.explanation.trim() ? { explanation: values.explanation.trim() } : {}),
       }))}
     >
       <h4>Approve request</h4>
-      <p>This approval keeps the requested period and weekly hours.</p>
-      <dl className="request-queue-details">
-        <div><dt>Requested profile</dt><dd>{conditions.resourceProfileName ?? 'Profile unavailable'}</dd></div>
-        <div><dt>Period</dt><dd>{conditions.startDate ?? '—'} to {conditions.endDate ?? '—'}</dd></div>
-        <div><dt>Weekly hours</dt><dd>{conditions.weeklyHours ?? '—'} hours per week</dd></div>
-      </dl>
+      {periodOrHoursChanged ? (
+        <p>The date or hours differ from the request. An explanation is required, and no allocation is created until the requester accepts.</p>
+      ) : profileChanged ? (
+        <p>This approval keeps the requested period and weekly hours but changes the resource profile. An explanation is required.</p>
+      ) : (
+        <p>This approval keeps the requested period and weekly hours.</p>
+      )}
+      <div className="request-approval-comparison">
+        <section aria-label="Requested conditions">
+          <h5>Requested conditions</h5>
+          <dl className="request-queue-details">
+            <div><dt>Resource profile</dt><dd>{conditions.resourceProfileName ?? 'Profile unavailable'}</dd></div>
+            <div><dt>Period</dt><dd>{conditions.startDate ?? '—'} to {conditions.endDate ?? '—'}</dd></div>
+            <div><dt>Weekly hours</dt><dd>{conditions.weeklyHours ?? '—'} hours per week</dd></div>
+          </dl>
+        </section>
+        <section aria-label="Proposed conditions">
+          <h5>Proposed conditions</h5>
+          <dl className="request-queue-details">
+            <div><dt>Resource profile</dt><dd>{selections.profiles.find((profile) => profile.id === selectedProfileId)?.name ?? conditions.resourceProfileName ?? 'Profile unavailable'}</dd></div>
+            <div><dt>Period</dt><dd>{selectedStartDate || '—'} to {selectedEndDate || '—'}</dd></div>
+            <div><dt>Weekly hours</dt><dd>{weeklyHours ?? (selectedWeeklyHours || '—')} hours per week</dd></div>
+          </dl>
+        </section>
+      </div>
       <label className="form-field">
         <span>Eligible person</span>
         <select {...register('personId', { required: 'Select an eligible person.' })} disabled={disabled || eligiblePeople.length === 0}>
@@ -592,16 +668,64 @@ function ApprovalForm({
         </select>
         {errors.resourceProfileId && <span className="field-error">{errors.resourceProfileId.message}</span>}
       </label>
+      <label className="form-field">
+        <span>Approved start date</span>
+        <input
+          type="date"
+          min={minimumStartDate}
+          {...register('startDate', {
+            required: 'Enter a proposed start date.',
+            validate: (value) => value >= minimumStartDate || startDateValidationMessage,
+          })}
+          aria-invalid={errors.startDate ? 'true' : 'false'}
+          disabled={disabled}
+        />
+        {errors.startDate && <span className="field-error">{errors.startDate.message}</span>}
+        <span className="field-help">{periodOrHoursChanged
+          ? 'A proposal that needs acceptance must start on or after its 72-hour response deadline.'
+          : 'A final approval cannot start in the past.'}</span>
+      </label>
+      <label className="form-field">
+        <span>Approved end date</span>
+        <input
+          type="date"
+          min={selectedStartDate || minimumStartDate}
+          {...register('endDate', {
+            required: 'Enter a proposed end date.',
+            validate: (value) => value >= (selectedStartDate || minimumStartDate) || 'The end date cannot be before the start date.',
+          })}
+          aria-invalid={errors.endDate ? 'true' : 'false'}
+          disabled={disabled}
+        />
+        {errors.endDate && <span className="field-error">{errors.endDate.message}</span>}
+      </label>
+      <label className="form-field">
+        <span>Approved weekly hours</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          {...register('weeklyHours', {
+            required: 'Enter proposed weekly hours.',
+            validate: (value) => normalizedHours(value) !== null || 'Enter hours above 0 and no more than 40, to one decimal place.',
+          })}
+          aria-invalid={errors.weeklyHours ? 'true' : 'false'}
+          disabled={disabled}
+        />
+        {errors.weeklyHours && <span className="field-error">{errors.weeklyHours.message}</span>}
+      </label>
       <label className="form-field request-queue-reason-field">
-        <span>Explanation <span className="optional-label">{profileChanged ? '(required for a profile correction)' : '(optional)'}</span></span>
+        <span>Explanation <span className="optional-label">{explanationRequired ? '(required for changed conditions)' : '(optional)'}</span></span>
         <textarea
           {...register('explanation', {
             maxLength: { value: 2000, message: 'Use no more than 2,000 characters.' },
-            validate: (value) => !profileChanged || Boolean(value.trim()) || 'Provide an explanation when correcting the resource profile.',
+            validate: (value) => !explanationRequired || Boolean(value.trim()) || (periodOrHoursChanged
+              ? 'Explain the proposed date or hours changes.'
+              : 'Provide an explanation when correcting the resource profile.'),
           })}
           maxLength={2000}
+          aria-invalid={errors.explanation ? 'true' : 'false'}
           disabled={disabled}
-          aria-required={profileChanged}
+          aria-required={explanationRequired}
         />
         {errors.explanation && <span className="field-error">{errors.explanation.message}</span>}
       </label>

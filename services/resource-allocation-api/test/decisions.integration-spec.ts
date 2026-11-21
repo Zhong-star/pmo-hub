@@ -339,6 +339,7 @@ describe('Tech Resource Allocation denials and responses (#65)', () => {
       processSubmissions: async () => 0,
       processWaitingDeadlines: async () => 0,
       expireDeniedRequests: () => decisions.expireDeniedRequests(),
+      processProposalDeadlines: async () => 0,
     });
     const deniedDeadlineJob = jobs.find((job) => job.name === 'denied response deadline');
     expect(deniedDeadlineJob).toBeDefined();
