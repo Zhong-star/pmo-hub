@@ -179,25 +179,23 @@ const WORKER_OPERATION_STATUS_SQL = `
     FROM resource_requests AS request CROSS JOIN operation_clock AS clock
     CROSS JOIN LATERAL (
       SELECT CASE WHEN request.expiration_due_at < clock.now THEN request.expiration_due_at
-        ELSE LEAST(
-          CASE WHEN request.received_at <= clock.now - INTERVAL '168 hours'
-            AND NOT EXISTS (SELECT 1 FROM resource_allocation_notifications AS notice WHERE notice.source_request_id = request.id AND notice.event_code = 'REQUEST_WAITING_REMINDER_7D')
-            THEN request.received_at + INTERVAL '168 hours' END,
-          CASE WHEN request.received_at <= clock.now - INTERVAL '336 hours'
-            AND NOT EXISTS (SELECT 1 FROM resource_allocation_notifications AS notice WHERE notice.source_request_id = request.id AND notice.event_code = 'REQUEST_WAITING_REMINDER_14D')
-            THEN request.received_at + INTERVAL '336 hours' END
-        )
+        WHEN request.received_at <= clock.now - INTERVAL '336 hours' THEN request.received_at + INTERVAL '336 hours'
+        ELSE request.received_at + INTERVAL '168 hours'
       END AS due_at
     ) AS due
     WHERE request.decision_state = 'WAITING_FOR_PRESENTATION' AND request.removed_at IS NULL
       AND (
         request.expiration_due_at < clock.now
-        OR (request.received_at <= clock.now - INTERVAL '168 hours' AND NOT EXISTS (
-          SELECT 1 FROM resource_allocation_notifications AS notice WHERE notice.source_request_id = request.id AND notice.event_code = 'REQUEST_WAITING_REMINDER_7D'
-        ))
         OR (request.received_at <= clock.now - INTERVAL '336 hours' AND NOT EXISTS (
           SELECT 1 FROM resource_allocation_notifications AS notice WHERE notice.source_request_id = request.id AND notice.event_code = 'REQUEST_WAITING_REMINDER_14D'
         ))
+        OR (
+          request.received_at > clock.now - INTERVAL '336 hours'
+          AND request.received_at <= clock.now - INTERVAL '168 hours'
+          AND NOT EXISTS (
+            SELECT 1 FROM resource_allocation_notifications AS notice WHERE notice.source_request_id = request.id AND notice.event_code = 'REQUEST_WAITING_REMINDER_7D'
+          )
+        )
       )
 
     UNION ALL

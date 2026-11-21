@@ -505,4 +505,31 @@ describe('Tech Resource Allocation allocations (#69)', () => {
     expect(await dataSource!.getRepository(ResourceAllocationHistory).countBy({ allocationId: starting.allocation.id })).toBe(1);
     expect(await dataSource!.getRepository(ResourceAllocationHistory).countBy({ allocationId: ending.allocation.id })).toBe(1);
   });
+
+  it('serializes DTO query and body validation field errors into RFC 9457 errors[]', async () => {
+    const fixture = await setup();
+    const today = await businessDate();
+    const created = await createAllocation(fixture, { startDate: today, endDate: addDays(today, 7), state: 'IN_PROGRESS' });
+
+    const invalidQuery = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/allocations?limit=101')
+      .set('X-PMO-Local-User-ID', fixture.assignee.localUserId)
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(400);
+    expect(invalidQuery.body.errors).toEqual([{ path: 'limit', code: 'MAX', message: expect.any(String) }]);
+
+    const invalidBody = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/allocations/${created.allocation.id}/suspensions`)
+      .set({
+        'X-PMO-Local-User-ID': fixture.assignee.localUserId,
+        'If-Match': '"1"',
+        'Idempotency-Key': randomUUID(),
+      })
+      .send({ reason: '   ' })
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(400);
+    expect(invalidBody.body.errors).toEqual(expect.arrayContaining([
+      { path: 'reason', code: 'MATCHES', message: expect.any(String) },
+    ]));
+  });
 });

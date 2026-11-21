@@ -537,6 +537,18 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
       .set('Idempotency-Key', randomUUID())
       .send({ reason: 'I cannot remove my own request.' })
       .expect(403);
+
+    const unexpectedReferralField = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${ownRequest.id}/referrals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ unexpectedField: 'not-allowed' })
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(400);
+    expect(unexpectedReferralField.body.errors).toEqual([
+      { path: 'unexpectedField', code: 'WHITELIST_VALIDATION', message: expect.any(String) },
+    ]);
   });
 
   it('keeps APPROVE available for eligible requests with a past requested start date across queues so deciders can propose future dates', async () => {

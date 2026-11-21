@@ -10,8 +10,6 @@ import {
   Post,
   Query,
   Res,
-  type Type,
-  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiConsumes,
@@ -26,7 +24,8 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { localProfileHeader } from '../access/resource-allocation-problem';
+import { ProtectedResourceProblems } from '../access/problem-response.decorator';
+import { createValidationPipe, localProfileHeader } from '../access/resource-allocation-problem';
 import { CreateInitiativeRequestDto, ResourceInitiativeCollectionResponseDto, ResourceInitiativeResponseDto, UpdateInitiativeRequestDto } from '../initiatives/initiative-request.dto';
 import {
   CreateResourceGroupRequestDto,
@@ -48,16 +47,10 @@ interface ResponseWithHeaders {
   setHeader(name: string, value: string): void;
 }
 
-function validatedBody(expectedType: Type<unknown>): ValidationPipe {
-  return new ValidationPipe({
-    transform: true,
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    expectedType,
-  });
-}
+const validatedBody = createValidationPipe;
 
 @ApiTags('Tech Resource Allocation administration')
+@ProtectedResourceProblems()
 @Controller('admin')
 export class ResourceAllocationAdministrationController {
   constructor(
@@ -73,8 +66,6 @@ export class ResourceAllocationAdministrationController {
   @ApiQuery({ name: 'cursor', required: false, type: String })
   @ApiQuery({ name: 'active', required: false, enum: ['true', 'false'] })
   @ApiForbiddenResponse({ description: 'Only an active Admin may manage administrative records.' })
-  @ApiResponse({ status: 401, description: 'A local Hub profile is required.' })
-  @ApiResponse({ status: 503, description: 'The Resource Allocation database is unavailable.' })
   async listInitiatives(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Query('limit') limit?: string,
@@ -335,9 +326,7 @@ export class ResourceAllocationAdministrationController {
     'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } },
   } })
   @ApiForbiddenResponse({ description: 'Only an active Admin may manage administrative records.' })
-  @ApiResponse({ status: 401, description: 'A local Hub profile is required.' })
   @ApiResponse({ status: 409, description: 'Another ITDM uses this normalized code.' })
-  @ApiResponse({ status: 503, description: 'The Resource Allocation database is unavailable.' })
   async createInitiative(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,

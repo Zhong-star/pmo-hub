@@ -12,8 +12,6 @@ import {
   Post,
   Query,
   Res,
-  ValidationPipe,
-  type Type,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -29,7 +27,8 @@ import {
   ApiTags,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
-import { localProfileHeader } from '../access/resource-allocation-problem';
+import { ProtectedResourceProblems } from '../access/problem-response.decorator';
+import { createValidationPipe, localProfileHeader } from '../access/resource-allocation-problem';
 import { ResourceAllocationRequestService } from './resource-allocation-request.service';
 import {
   RequestCollectionQueryDto,
@@ -46,16 +45,10 @@ interface ResponseWithHeaders {
   setHeader(name: string, value: string): void;
 }
 
-function validatedBody(expectedType: Type<unknown>): ValidationPipe {
-  return new ValidationPipe({
-    transform: true,
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    expectedType,
-  });
-}
+const validatedBody = createValidationPipe;
 
 @ApiTags('Tech Resource Allocation requests')
+@ProtectedResourceProblems()
 @Controller('requests')
 export class ResourceAllocationRequestController {
   constructor(
@@ -78,7 +71,7 @@ export class ResourceAllocationRequestController {
   @ApiBadRequestResponse({ description: 'A filter, limit, or cursor is invalid.' })
   list(
     @Headers(localProfileHeader) localUserId: string | undefined,
-    @Query(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true })) query: RequestCollectionQueryDto,
+    @Query(createValidationPipe(RequestCollectionQueryDto)) query: RequestCollectionQueryDto,
   ) {
     return this.requestService.list(localUserId, query);
   }
@@ -132,18 +125,9 @@ export class ResourceAllocationRequestController {
     @Body(validatedBody(UpdateRequestedConditionsDto)) input: UpdateRequestedConditionsDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
-    const item = await this.requestService.update(localUserId, id, ifMatch, correlationId, input);
-    response.setHeader('ETag', `"${item.version}"`);
-    return {
-      id: item.id,
-      requesterSnapshot: item.requesterSnapshot,
-      requestedConditions: item.requestedConditions,
-      decisionState: item.decisionState,
-      receivedAt: item.receivedAt.toISOString(),
-      stageEnteredAt: item.stageEnteredAt.toISOString(),
-      expirationDueAt: item.expirationDueAt.toISOString(),
-      version: item.version,
-    };
+    const updated = await this.requestService.update(localUserId, id, ifMatch, correlationId, input);
+    response.setHeader('ETag', `"${updated.version}"`);
+    return updated;
   }
 
   @Post(':id/withdrawals')
@@ -176,6 +160,7 @@ export class ResourceAllocationRequestController {
 
 @ApiTags('Tech Resource Allocation request audits')
 @ApiSecurity('localProfile')
+@ProtectedResourceProblems()
 @Controller('request-audits')
 export class ResourceAllocationRequestAuditController {
   constructor(

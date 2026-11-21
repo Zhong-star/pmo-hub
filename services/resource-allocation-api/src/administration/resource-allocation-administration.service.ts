@@ -682,7 +682,8 @@ export class ResourceAllocationAdministrationService {
         INNER JOIN resource_people AS recipient ON recipient.active = TRUE
         WHERE recipient.id <> $2
           AND (
-            (recipient.role IN ('ALLOCATION_MODERATOR', 'ALLOCATION_ADMIN') AND recipient.group_id = commitment.group_id)
+            recipient.role = 'ALLOCATION_ADMIN'
+            OR (recipient.role = 'ALLOCATION_MODERATOR' AND recipient.group_id = commitment.group_id)
             OR recipient.id = commitment.supervisor_id
             OR recipient.id = commitment.manager_id
           )

@@ -12,7 +12,17 @@ type OpenApiDocument = {
       headers?: Record<string, unknown>;
     }>;
   }>>;
-  components: { schemas: Record<string, { properties?: Record<string, { enum?: string[]; $ref?: string }> }> };
+  components: {
+    schemas: Record<string, {
+      required?: string[];
+      properties?: Record<string, {
+        enum?: string[];
+        $ref?: string;
+        type?: string;
+        items?: { $ref?: string };
+      }>;
+    }>;
+  };
 };
 
 const contract = JSON.parse(
@@ -141,5 +151,51 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
       expect(command.responses['412'].content).toHaveProperty('application/problem+json');
     }
     expect(contract.components.schemas.RequestChangeReceiptDto.properties).toHaveProperty('version');
+  });
+
+  it('documents receipt schema on GET /submissions/{id} and line schema on GET /operation-results/{attemptKey}', () => {
+    const root = '/api/resource-allocation/v1';
+    const submission = contract.paths[`${root}/submissions/{id}`].get;
+    expect(submission.responses['200'].content).toMatchObject({
+      'application/json': { schema: { $ref: '#/components/schemas/ResourceSubmissionResponseDto' } },
+    });
+
+    const operationResult = contract.paths[`${root}/operation-results/{attemptKey}`].get;
+    expect(operationResult.responses['200'].content).toMatchObject({
+      'application/json': { schema: { $ref: '#/components/schemas/ResourceSubmissionLineResponseDto' } },
+    });
+  });
+
+  it('documents problem+json errors[], protected error statuses, and 401 WWW-Authenticate across every versioned API route', () => {
+    const problemSchema = contract.components.schemas.ResourceAllocationProblemDto;
+    expect(problemSchema.properties?.errors).toMatchObject({
+      type: 'array',
+      items: { $ref: '#/components/schemas/ResourceAllocationFieldErrorDto' },
+    });
+    expect(problemSchema.required ?? []).not.toContain('errors');
+
+    const fieldErrorSchema = contract.components.schemas.ResourceAllocationFieldErrorDto;
+    expect(fieldErrorSchema.properties).toHaveProperty('path');
+    expect(fieldErrorSchema.properties).toHaveProperty('code');
+    expect(fieldErrorSchema.properties).toHaveProperty('message');
+
+    const apiPaths = Object.entries(contract.paths).filter(([path]) => path.startsWith('/api/resource-allocation/v1/'));
+    expect(apiPaths.length).toBeGreaterThan(0);
+
+    for (const [path, pathItem] of apiPaths) {
+      for (const [method, operation] of Object.entries(pathItem)) {
+        for (const status of ['401', '403', '500', '503']) {
+          expect(operation.responses, `${method.toUpperCase()} ${path} missing ${status}`).toHaveProperty(status);
+        }
+        expect(operation.responses['401'].headers, `${method.toUpperCase()} ${path} missing WWW-Authenticate`).toHaveProperty('WWW-Authenticate');
+        for (const [status, response] of Object.entries(operation.responses)) {
+          const code = Number(status);
+          if (code < 400 || code > 599) continue;
+          expect(response.content, `${method.toUpperCase()} ${path} ${status} missing problem+json`).toMatchObject({
+            'application/problem+json': { schema: { $ref: '#/components/schemas/ResourceAllocationProblemDto' } },
+          });
+        }
+      }
+    }
   });
 });

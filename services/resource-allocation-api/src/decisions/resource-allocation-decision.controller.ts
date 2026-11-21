@@ -11,8 +11,6 @@ import {
   Post,
   Query,
   Res,
-  ValidationPipe,
-  type Type,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -27,7 +25,8 @@ import {
   ApiTags,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
-import { localProfileHeader } from '../access/resource-allocation-problem';
+import { ProtectedResourceProblems } from '../access/problem-response.decorator';
+import { createValidationPipe, localProfileHeader } from '../access/resource-allocation-problem';
 import {
   CancelDeniedRequestDto,
   ContestRequestDto,
@@ -43,17 +42,11 @@ interface ResponseWithHeaders {
   setHeader(name: string, value: string): void;
 }
 
-function validatedBody(expectedType: Type<unknown>): ValidationPipe {
-  return new ValidationPipe({
-    transform: true,
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    expectedType,
-  });
-}
+const validatedBody = createValidationPipe;
 
 @ApiTags('Tech Resource Allocation decisions')
 @ApiSecurity('localProfile')
+@ProtectedResourceProblems()
 @Controller()
 export class ResourceAllocationDecisionController {
   constructor(
@@ -234,7 +227,7 @@ export class ResourceAllocationDecisionController {
   getHistory(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Param('id', new ParseUUIDPipe()) id: string,
-    @Query(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true })) query: RequestHistoryQueryDto,
+    @Query(createValidationPipe(RequestHistoryQueryDto)) query: RequestHistoryQueryDto,
   ) {
     return this.decisions.getHistory(localUserId, id, query);
   }
