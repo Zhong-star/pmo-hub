@@ -10,6 +10,7 @@ import { ResourceAllocationOperationResultService } from './administration/idemp
 import { ResourceAllocationSelectionController } from './administration/resource-allocation-selection.controller';
 import { ResourceAllocationApprovalController } from './approvals/resource-allocation-approval.controller';
 import { ResourceAllocationApprovalService } from './approvals/resource-allocation-approval.service';
+import { ResourceAllocationProposalResponseService } from './approvals/resource-allocation-proposal-response.service';
 import { ResourceAllocationDeadlineWorker } from './deadlines/resource-allocation-deadline.worker';
 import { ResourceAllocationSubmissionController, ResourceAllocationOperationResultController } from './submissions/resource-allocation-submission.controller';
 import { ResourceAllocationSubmissionService } from './submissions/resource-allocation-submission.service';
@@ -18,13 +19,17 @@ import { ResourceAllocationNotificationController } from './notifications/resour
 import { ResourceAllocationNotificationService } from './notifications/resource-allocation-notification.service';
 import { ResourceAllocationController } from './allocations/resource-allocation.controller';
 import { ResourceAllocationService } from './allocations/resource-allocation.service';
-import { ResourceAllocationLifecycleWorker } from './allocations/resource-allocation-lifecycle.worker';
 import { ResourceAllocationRequestQueueController } from './requests/resource-allocation-request-queue.controller';
-import { ResourceAllocationRequestQueueService } from './requests/resource-allocation-request-queue.service';
+import { ResourceAllocationRequestQueueReadService } from './requests/resource-allocation-request-queue-read.service';
+import { ResourceAllocationPresentationService } from './requests/resource-allocation-presentation.service';
+import { ResourceAllocationRequestRevalidationService } from './requests/resource-allocation-request-revalidation.service';
 import { ResourceAllocationRequestAuditController, ResourceAllocationRequestController } from './requests/resource-allocation-request.controller';
 import { ResourceAllocationRequestService } from './requests/resource-allocation-request.service';
 import { ResourceAllocationDecisionController } from './decisions/resource-allocation-decision.controller';
-import { ResourceAllocationDecisionService } from './decisions/resource-allocation-decision.service';
+import { ResourceAllocationTeamDecisionService } from './decisions/resource-allocation-team-decision.service';
+import { ResourceAllocationRequesterResponseService } from './decisions/resource-allocation-requester-response.service';
+import { ResourceAllocationExceptionResolutionService } from './decisions/resource-allocation-exception-resolution.service';
+import { ResourceAllocationRequestHistoryService } from './decisions/resource-allocation-request-history.service';
 
 @Module({
   controllers: [
@@ -49,13 +54,18 @@ import { ResourceAllocationDecisionService } from './decisions/resource-allocati
     ResourceAllocationSubmissionService,
     ResourceAllocationSubmissionWorker,
     ResourceAllocationNotificationService,
-    ResourceAllocationRequestQueueService,
+    ResourceAllocationRequestQueueReadService,
+    ResourceAllocationPresentationService,
+    ResourceAllocationRequestRevalidationService,
     ResourceAllocationRequestService,
     ResourceAllocationApprovalService,
+    ResourceAllocationProposalResponseService,
     ResourceAllocationService,
-    ResourceAllocationLifecycleWorker,
     ResourceAllocationDeadlineWorker,
-    ResourceAllocationDecisionService,
+    ResourceAllocationTeamDecisionService,
+    ResourceAllocationRequesterResponseService,
+    ResourceAllocationExceptionResolutionService,
+    ResourceAllocationRequestHistoryService,
   ],
 })
 export class AppModule {

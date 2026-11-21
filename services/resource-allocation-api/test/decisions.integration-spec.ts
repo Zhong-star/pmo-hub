@@ -19,7 +19,7 @@ import { ResourceRequestHistory } from '../src/requests/resource-request-history
 import { ResourceAllocation } from '../src/allocations/resource-allocation.entity';
 import { ResourceSubmission } from '../src/submissions/resource-submission.entity';
 import { ResourceSubmissionLine } from '../src/submissions/resource-submission-line.entity';
-import { ResourceAllocationDecisionService } from '../src/decisions/resource-allocation-decision.service';
+import { ResourceAllocationTeamDecisionService } from '../src/decisions/resource-allocation-team-decision.service';
 import { createResourceAllocationWorkerJobs } from '../src/workers/resource-allocation-worker-cycle';
 
 describe('Tech Resource Allocation denials and exception resolution (#65/#66)', () => {
@@ -740,7 +740,7 @@ describe('Tech Resource Allocation denials and exception resolution (#65/#66)', 
     const fixture = await setup();
     const requestNearDeadline = await createRequest(fixture, { state: 'DENIED', deniedDaysAgo: 13 });
     await dataSource!.query('UPDATE resource_requests SET expiration_due_at = clock_timestamp() + INTERVAL \'1 second\' WHERE id = $1', [requestNearDeadline.id]);
-    const decisions = app!.get(ResourceAllocationDecisionService);
+    const decisions = app!.get(ResourceAllocationTeamDecisionService);
     const jobs = createResourceAllocationWorkerJobs({
       processSubmissions: async () => 0,
       processWaitingDeadlines: async () => 0,
@@ -773,7 +773,7 @@ describe('Tech Resource Allocation denials and exception resolution (#65/#66)', 
     const contested = await createRequest(fixture, { state: 'PRE_N3' });
     await dataSource!.query("UPDATE resource_requests SET expiration_due_at = clock_timestamp() - INTERVAL '30 days' WHERE id = ANY($1::uuid[])", [[pending.id, contested.id]]);
 
-    const decisions = app!.get(ResourceAllocationDecisionService);
+    const decisions = app!.get(ResourceAllocationTeamDecisionService);
     expect(await decisions.expireDeniedRequests()).toBe(0);
     expect(await dataSource!.getRepository(ResourceRequest).findBy({ id: pending.id })).toMatchObject([{ decisionState: 'PENDING_TEAM_DECISION' }]);
     expect(await dataSource!.getRepository(ResourceRequest).findBy({ id: contested.id })).toMatchObject([{ decisionState: 'PRE_N3' }]);

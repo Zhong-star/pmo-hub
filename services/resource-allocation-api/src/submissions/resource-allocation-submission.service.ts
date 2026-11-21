@@ -2,8 +2,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { DataSource, type EntityManager } from 'typeorm';
 import { RESOURCE_ALLOCATION_DATA_SOURCE, RESOURCE_ALLOCATION_DATABASE_CONFIGURED } from '../database/database.module';
-import { isDatabaseUnavailable } from '../database/database-errors';
-import { ResourceAllocationException } from '../access/resource-allocation-problem';
+import { ResourceAllocationException, translateResourceAllocationDatabaseError } from '../access/resource-allocation-problem';
+import { parseUuidHeader } from '../access/request-headers';
+import { decodeOpaqueCursor, encodeOpaqueCursor } from '../common/opaque-cursor';
 import { ResourcePerson } from '../people/resource-person.entity';
 import { ResourceSubmission } from './resource-submission.entity';
 import { ResourceSubmissionLine } from './resource-submission-line.entity';
@@ -47,7 +48,7 @@ export class ResourceAllocationSubmissionService {
     input: CreateResourceSubmissionRequestDto,
   ) {
     this.ensureDatabaseAvailable();
-    const correlation = this.requireCorrelationId(correlationId);
+    const correlation = parseUuidHeader(correlationId, 'X-Correlation-ID');
     const attemptKeys = input.lines.map((line) => line.attemptKey.toLowerCase());
     if (new Set(attemptKeys).size !== attemptKeys.length) {
       throw this.validationError('Each line in an envelope must have a distinct attemptKey.');
@@ -120,7 +121,7 @@ export class ResourceAllocationSubmissionService {
       if (this.isUniqueViolation(error)) {
         throw new ResourceAllocationException('RESOURCE_CONFLICT', 'Attempt key already used', 409, 'An attemptKey was already used for another submission.');
       }
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error);
     }
   }
 
@@ -224,7 +225,7 @@ export class ResourceAllocationSubmissionService {
     try {
       return await this.requireActiveRequester(this.dataSource.manager, localUserId);
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error);
     }
   }
 
@@ -328,7 +329,7 @@ export class ResourceAllocationSubmissionService {
 
   private decodeCursor(value: string, kind: CursorValue['kind'], submissionId?: string): CursorValue {
     try {
-      const decoded = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as CursorValue;
+      const decoded = decodeOpaqueCursor<CursorValue>(value);
       if (!decoded || decoded.version !== cursorVersion || decoded.kind !== kind ||
         !/^[0-9a-f-]{36}$/i.test(decoded.id) ||
         (kind === 'submissions' && (!decoded.receivedAt || Number.isNaN(Date.parse(decoded.receivedAt)))) ||
@@ -342,15 +343,9 @@ export class ResourceAllocationSubmissionService {
   }
 
   private encodeCursor(value: CursorValue): string {
-    return Buffer.from(JSON.stringify(value)).toString('base64url');
+    return encodeOpaqueCursor(value);
   }
 
-  private requireCorrelationId(value: string | undefined): string {
-    if (!value || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)) {
-      throw this.validationError('A valid X-Correlation-ID is required.');
-    }
-    return value.toLowerCase();
-  }
 
   private ensureDatabaseAvailable(): void {
     if (!this.databaseConfigured || !this.dataSource.isInitialized) {
@@ -377,13 +372,6 @@ export class ResourceAllocationSubmissionService {
     return false;
   }
 
-  private translateDatabaseError(error: unknown): never {
-    if (error instanceof ResourceAllocationException) throw error;
-    if (isDatabaseUnavailable(error)) {
-      throw new ResourceAllocationException('DEPENDENCY_UNAVAILABLE', 'Dependency unavailable', 503, 'The Resource Allocation database is unavailable or not prepared.', undefined, error);
-    }
-    throw new ResourceAllocationException('INTERNAL_ERROR', 'Internal Server Error', 500, 'Internal Server Error', undefined, error);
-  }
 }
 
 function canonicalJson(value: unknown): string {

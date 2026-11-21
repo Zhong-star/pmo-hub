@@ -4,10 +4,7 @@ import { RESOURCE_ALLOCATION_DATA_SOURCE, RESOURCE_ALLOCATION_DATABASE_CONFIGURE
 import { ResourceAllocationRole } from '../people/resource-allocation-role';
 import { ResourcePerson } from '../people/resource-person.entity';
 import { ResourceAccessResponseDto, ResourcePersonAccessDto } from './access-response.dto';
-import { ResourceAllocationException } from './resource-allocation-problem';
-import { isDatabaseUnavailable } from '../database/database-errors';
-
-export { isDatabaseUnavailable } from '../database/database-errors';
+import { ResourceAllocationException, translateResourceAllocationDatabaseError } from './resource-allocation-problem';
 
 @Injectable()
 export class ResourceAllocationAccessService {
@@ -50,16 +47,7 @@ export class ResourceAllocationAccessService {
         administrators.map(({ displayName, email }) => ({ displayName, email })),
       );
     } catch (error) {
-      if (error instanceof ResourceAllocationException) throw error;
-      if (isDatabaseUnavailable(error)) {
-        throw new ResourceAllocationException(
-          'DEPENDENCY_UNAVAILABLE', 'Dependency unavailable', 503,
-          'The Resource Allocation database is unavailable or not prepared.', undefined, error,
-        );
-      }
-      throw new ResourceAllocationException(
-        'INTERNAL_ERROR', 'Internal Server Error', 500, 'Internal Server Error', undefined, error,
-      );
+      throw translateResourceAllocationDatabaseError(error);
     }
   }
 

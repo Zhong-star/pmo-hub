@@ -3,8 +3,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 import { runIdempotentOperation } from '../administration/idempotency/run-idempotent-operation';
 import { lockResourceAllocationAdministrationWrites } from '../administration/resource-allocation-write-lock';
-import { ResourceAllocationException } from '../access/resource-allocation-problem';
-import { isDatabaseUnavailable } from '../database/database-errors';
+import { ResourceAllocationException, translateResourceAllocationDatabaseError } from '../access/resource-allocation-problem';
+import { parseStrongVersionIfMatch, parseUuidHeader } from '../access/request-headers';
+import { decodeOpaqueCursor, encodeOpaqueCursor } from '../common/opaque-cursor';
 import { RESOURCE_ALLOCATION_DATA_SOURCE } from '../database/database.module';
 import { ResourceAllocation } from './resource-allocation.entity';
 import { ResourceAllocationHistory } from './resource-allocation-history.entity';
@@ -138,7 +139,7 @@ export class ResourceAllocationService {
         },
       };
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
     }
   }
 
@@ -172,7 +173,7 @@ export class ResourceAllocationService {
       if (!await this.canReadAllocation(actor, row.person_id, row.group_id)) throw this.accessDenied();
       return this.toResponse(row, actor);
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
     }
   }
 
@@ -271,7 +272,7 @@ export class ResourceAllocationService {
         },
       };
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
     }
   }
 
@@ -323,7 +324,7 @@ export class ResourceAllocationService {
         },
       };
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
     }
   }
 
@@ -336,10 +337,10 @@ export class ResourceAllocationService {
     correlationId: string | undefined,
     input: AllocationCommandDto,
   ) {
-    const expectedVersion = this.parseIfMatch(ifMatch);
+    const expectedVersion = parseStrongVersionIfMatch(ifMatch);
     const id = this.requireUuid(allocationId, 'allocationId');
-    const key = this.requireUuid(idempotencyKey, 'Idempotency-Key');
-    const correlation = this.requireUuid(correlationId, 'X-Correlation-ID');
+    const key = parseUuidHeader(idempotencyKey, 'Idempotency-Key');
+    const correlation = parseUuidHeader(correlationId, 'X-Correlation-ID', 'X-Correlation-ID must be a UUID.');
     const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
     if (!reason || reason.length > 2000) throw this.validationError('reason must contain between 1 and 2,000 characters.');
 
@@ -408,7 +409,7 @@ export class ResourceAllocationService {
       });
       return operation;
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
     }
   }
 
@@ -439,7 +440,7 @@ export class ResourceAllocationService {
       }
       return processed;
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
     }
   }
 
@@ -752,11 +753,6 @@ export class ResourceAllocationService {
     return actor;
   }
 
-  private parseIfMatch(value: string | undefined): number {
-    const match = value?.match(/^"([1-9][0-9]*)"$/);
-    if (!match || !Number.isSafeInteger(Number(match[1]))) throw this.validationError('A single strong If-Match version is required.');
-    return Number(match[1]);
-  }
 
   private parseLimit(value: number | undefined): number {
     const limit = value ?? defaultPageSize;
@@ -789,7 +785,7 @@ export class ResourceAllocationService {
 
   private decodeAllocationCursor(value: string): AllocationCursor {
     try {
-      const cursor = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Partial<AllocationCursor>;
+      const cursor = decodeOpaqueCursor<Partial<AllocationCursor>>(value);
       if (cursor.version !== 1 || cursor.kind !== 'allocations' || typeof cursor.filtersHash !== 'string' ||
         typeof cursor.effectiveStartDate !== 'string' || !uuidPattern.test(String(cursor.id))) throw new Error('Invalid cursor.');
       this.requireDate(cursor.effectiveStartDate, 'cursor date');
@@ -801,7 +797,7 @@ export class ResourceAllocationService {
 
   private decodeLoadCursor(value: string): LoadCursor {
     try {
-      const cursor = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Partial<LoadCursor>;
+      const cursor = decodeOpaqueCursor<Partial<LoadCursor>>(value);
       if (cursor.version !== 1 || cursor.kind !== 'allocation-load' || typeof cursor.filtersHash !== 'string' ||
         typeof cursor.displayName !== 'string' || !uuidPattern.test(String(cursor.personId))) throw new Error('Invalid cursor.');
       return cursor as LoadCursor;
@@ -812,7 +808,7 @@ export class ResourceAllocationService {
 
   private decodeHistoryCursor(value: string): { allocationId: string; occurredAt: string; id: string } {
     try {
-      const cursor = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Record<string, unknown>;
+      const cursor = decodeOpaqueCursor<Record<string, unknown>>(value);
       if (cursor.version !== 1 || cursor.kind !== 'allocation-history' || !uuidPattern.test(String(cursor.allocationId)) ||
         !uuidPattern.test(String(cursor.id)) || typeof cursor.occurredAt !== 'string' || Number.isNaN(Date.parse(cursor.occurredAt))) {
         throw new Error('Invalid cursor.');
@@ -824,7 +820,7 @@ export class ResourceAllocationService {
   }
 
   private encodeCursor(value: AllocationCursor | LoadCursor | { version: 1; kind: 'allocation-history'; allocationId: string; occurredAt: string; id: string }): string {
-    return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+    return encodeOpaqueCursor(value);
   }
 
   private stateLabel(state: AllocationState): string {
@@ -854,11 +850,4 @@ export class ResourceAllocationService {
     return new ResourceAllocationException('RESOURCE_NOT_FOUND', 'Resource not found', 404, `${resource} was not found.`);
   }
 
-  private translateDatabaseError(error: unknown): never {
-    if (error instanceof ResourceAllocationException) throw error;
-    if (isDatabaseUnavailable(error)) {
-      throw new ResourceAllocationException('DEPENDENCY_UNAVAILABLE', 'Dependency unavailable', 503, 'The Resource Allocation database is unavailable.', undefined, error);
-    }
-    throw new ResourceAllocationException('INTERNAL_ERROR', 'Internal Server Error', 500, 'Internal Server Error', undefined, error);
-  }
 }

@@ -3,8 +3,8 @@ import { DataSource, type EntityManager } from 'typeorm';
 import { RESOURCE_ALLOCATION_DATA_SOURCE, RESOURCE_ALLOCATION_DATABASE_CONFIGURED } from '../database/database.module';
 import { ResourceAllocationRole } from '../people/resource-allocation-role';
 import { ResourcePerson } from '../people/resource-person.entity';
-import { ResourceAllocationException } from '../access/resource-allocation-problem';
-import { isDatabaseUnavailable } from '../database/database-errors';
+import { ResourceAllocationException, translateResourceAllocationDatabaseError } from '../access/resource-allocation-problem';
+import { parseStrongVersionIfMatch } from '../access/request-headers';
 import { ResourceInitiative } from '../initiatives/resource-initiative.entity';
 import { CreateInitiativeRequestDto, UpdateInitiativeRequestDto } from '../initiatives/initiative-request.dto';
 import { nextAdminCollectionCursor, parseAdminCollectionQuery } from './admin-collection-page';
@@ -131,7 +131,7 @@ export class ResourceAllocationAdministrationService {
       if (this.isUniqueViolation(error)) {
         throw new ResourceAllocationException('RESOURCE_CONFLICT', 'Resource conflict', 409, 'A person with this local profile already exists.');
       }
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error);
     }
   }
 
@@ -141,7 +141,7 @@ export class ResourceAllocationAdministrationService {
     ifMatch: string | undefined,
     input: UpdateResourcePersonRequestDto,
   ) {
-    const expectedVersion = this.parseIfMatch(ifMatch);
+    const expectedVersion = parseStrongVersionIfMatch(ifMatch, undefined, false);
     if (Object.keys(input).length === 0) {
       throw new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, 'At least one editable field is required.');
     }
@@ -180,7 +180,7 @@ export class ResourceAllocationAdministrationService {
       if (this.isUniqueViolation(error)) {
         throw new ResourceAllocationException('RESOURCE_CONFLICT', 'Resource conflict', 409, 'A person with this local profile already exists.');
       }
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error);
     }
   }
 
@@ -242,7 +242,7 @@ export class ResourceAllocationAdministrationService {
     ifMatch: string | undefined,
     input: UpdateResourceGroupRequestDto,
   ) {
-    const expectedVersion = this.parseIfMatch(ifMatch);
+    const expectedVersion = parseStrongVersionIfMatch(ifMatch, undefined, false);
     if (Object.keys(input).length === 0) {
       throw new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, 'At least one editable field is required.');
     }
@@ -328,7 +328,7 @@ export class ResourceAllocationAdministrationService {
     ifMatch: string | undefined,
     input: UpdateResourceProfileRequestDto,
   ) {
-    const expectedVersion = this.parseIfMatch(ifMatch);
+    const expectedVersion = parseStrongVersionIfMatch(ifMatch, undefined, false);
     if (Object.keys(input).length === 0) {
       throw new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, 'At least one editable field is required.');
     }
@@ -592,7 +592,7 @@ export class ResourceAllocationAdministrationService {
       if (this.isUniqueViolation(error)) {
         throw new ResourceAllocationException('RESOURCE_CONFLICT', 'Resource conflict', 409, 'An ITDM with this code already exists.');
       }
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error);
     }
   }
 
@@ -602,7 +602,7 @@ export class ResourceAllocationAdministrationService {
     ifMatch: string | undefined,
     input: UpdateInitiativeRequestDto,
   ) {
-    const expectedVersion = this.parseIfMatch(ifMatch);
+    const expectedVersion = parseStrongVersionIfMatch(ifMatch, undefined, false);
     if (Object.keys(input).length === 0) {
       throw new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, 'At least one editable field is required.');
     }
@@ -641,7 +641,7 @@ export class ResourceAllocationAdministrationService {
       if (this.isUniqueViolation(error)) {
         throw new ResourceAllocationException('RESOURCE_CONFLICT', 'Resource conflict', 409, 'An ITDM with this code already exists.');
       }
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error);
     }
   }
 
@@ -724,13 +724,6 @@ export class ResourceAllocationAdministrationService {
     };
   }
 
-  private parseIfMatch(ifMatch: string | undefined): number {
-    const match = ifMatch?.match(/^"([1-9][0-9]*)"$/);
-    if (!match) {
-      throw new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, 'A single strong If-Match version is required.');
-    }
-    return Number(match[1]);
-  }
 
   private notFound(resource: string): ResourceAllocationException {
     return new ResourceAllocationException('RESOURCE_NOT_FOUND', 'Resource not found', 404, `${resource} was not found.`);
@@ -747,18 +740,6 @@ export class ResourceAllocationAdministrationService {
     return false;
   }
 
-  private translateDatabaseError(error: unknown): never {
-    if (error instanceof ResourceAllocationException) throw error;
-    if (isDatabaseUnavailable(error)) {
-      throw new ResourceAllocationException(
-        'DEPENDENCY_UNAVAILABLE', 'Dependency unavailable', 503,
-        'The Resource Allocation database is unavailable or not prepared.', undefined, error,
-      );
-    }
-    throw new ResourceAllocationException(
-      'INTERNAL_ERROR', 'Internal Server Error', 500, 'Internal Server Error', undefined, error,
-    );
-  }
 
   private async requireAdmin(localUserId: string | undefined, manager?: EntityManager): Promise<ResourcePerson> {
     const person = await this.requireActivePerson(localUserId, manager);
@@ -804,16 +785,7 @@ export class ResourceAllocationAdministrationService {
       }
       return person;
     } catch (error) {
-      if (error instanceof ResourceAllocationException) throw error;
-      if (isDatabaseUnavailable(error)) {
-        throw new ResourceAllocationException(
-          'DEPENDENCY_UNAVAILABLE', 'Dependency unavailable', 503,
-          'The Resource Allocation database is unavailable or not prepared.', undefined, error,
-        );
-      }
-      throw new ResourceAllocationException(
-        'INTERNAL_ERROR', 'Internal Server Error', 500, 'Internal Server Error', undefined, error,
-      );
+      throw translateResourceAllocationDatabaseError(error);
     }
   }
 

@@ -29,6 +29,7 @@ import { ProtectedResourceProblems } from '../access/problem-response.decorator'
 import { createValidationPipe, localProfileHeader } from '../access/resource-allocation-problem';
 import { AcceptRequestChangesDto, ApprovalCandidateCollectionDto, ApprovalCandidateQueryDto, ApproveRequestDto, ApproveRequestResponseDto } from './approve-request.dto';
 import { ResourceAllocationApprovalService } from './resource-allocation-approval.service';
+import { ResourceAllocationProposalResponseService } from './resource-allocation-proposal-response.service';
 
 interface ResponseWithHeaders {
   setHeader(name: string, value: string): void;
@@ -42,6 +43,8 @@ export class ResourceAllocationApprovalController {
   constructor(
     @Inject(ResourceAllocationApprovalService)
     private readonly approvalService: ResourceAllocationApprovalService,
+    @Inject(ResourceAllocationProposalResponseService)
+    private readonly proposalResponseService: ResourceAllocationProposalResponseService,
   ) {}
 
   @Get(':id/approval-candidates')
@@ -112,7 +115,7 @@ export class ResourceAllocationApprovalController {
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
     void _input;
-    const operation = await this.approvalService.acceptChanges(localUserId, requestId, ifMatch, idempotencyKey, correlationId);
+    const operation = await this.proposalResponseService.acceptChanges(localUserId, requestId, ifMatch, idempotencyKey, correlationId);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
     else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;

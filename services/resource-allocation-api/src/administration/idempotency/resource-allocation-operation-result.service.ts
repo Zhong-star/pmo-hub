@@ -1,8 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { ResourceAllocationException } from '../../access/resource-allocation-problem';
+import { ResourceAllocationException, translateResourceAllocationDatabaseError } from '../../access/resource-allocation-problem';
 import { ResourceAllocation } from '../../allocations/resource-allocation.entity';
-import { isDatabaseUnavailable } from '../../database/database-errors';
 import { RESOURCE_ALLOCATION_DATA_SOURCE, RESOURCE_ALLOCATION_DATABASE_CONFIGURED } from '../../database/database.module';
 import { ResourceAllocationNotification } from '../../notifications/resource-allocation-notification.entity';
 import { ResourceAllocationRole } from '../../people/resource-allocation-role';
@@ -121,7 +120,7 @@ export class ResourceAllocationOperationResultService {
       await this.authorizeOperationResult(actor, normalizedOperation as SupportedIdempotentOperation, result);
       return result;
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error);
     }
   }
 
@@ -343,11 +342,4 @@ export class ResourceAllocationOperationResultService {
     return new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, detail);
   }
 
-  private translateDatabaseError(error: unknown): never {
-    if (error instanceof ResourceAllocationException) throw error;
-    if (isDatabaseUnavailable(error)) {
-      throw new ResourceAllocationException('DEPENDENCY_UNAVAILABLE', 'Dependency unavailable', 503, 'The Resource Allocation database is unavailable or not prepared.', undefined, error);
-    }
-    throw new ResourceAllocationException('INTERNAL_ERROR', 'Internal Server Error', 500, 'Internal Server Error', undefined, error);
-  }
 }

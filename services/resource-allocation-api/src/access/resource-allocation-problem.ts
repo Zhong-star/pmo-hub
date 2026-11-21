@@ -34,6 +34,31 @@ export class ResourceAllocationException extends HttpException {
   }
 }
 
+export function translateResourceAllocationDatabaseError(
+  error: unknown,
+  unavailableDetail = 'The Resource Allocation database is unavailable or not prepared.',
+): ResourceAllocationException {
+  if (error instanceof ResourceAllocationException) return error;
+  if (isDatabaseUnavailable(error)) {
+    return new ResourceAllocationException(
+      'DEPENDENCY_UNAVAILABLE',
+      'Dependency unavailable',
+      503,
+      unavailableDetail,
+      undefined,
+      error,
+    );
+  }
+  return new ResourceAllocationException(
+    'INTERNAL_ERROR',
+    'Internal Server Error',
+    500,
+    'Internal Server Error',
+    undefined,
+    error,
+  );
+}
+
 function toFieldErrorCode(constraintKey: string): string {
   const normalized = constraintKey
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')

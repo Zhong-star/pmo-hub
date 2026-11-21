@@ -18,8 +18,7 @@ import { ResourceRequest } from '../src/requests/resource-request.entity';
 import { ResourceRequestHistory } from '../src/requests/resource-request-history.entity';
 import { ResourceSubmission } from '../src/submissions/resource-submission.entity';
 import { ResourceSubmissionLine } from '../src/submissions/resource-submission-line.entity';
-import { ResourceAllocationProposalWorker } from '../src/deadlines/resource-allocation-proposal.worker';
-import { ResourceAllocationApprovalService } from '../src/approvals/resource-allocation-approval.service';
+import { ResourceAllocationProposalResponseService } from '../src/approvals/resource-allocation-proposal-response.service';
 
 describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
   let container: StartedPostgreSqlContainer | undefined;
@@ -431,9 +430,9 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
       SET decision_response_due_at = clock_timestamp(), stage_entered_at = clock_timestamp() - INTERVAL '72 hours'
       WHERE id = $1
     `, [resourceRequest.id]);
-    const worker = new ResourceAllocationProposalWorker(app!.get(ResourceAllocationApprovalService));
-    await worker.processBatch();
-    await worker.processBatch();
+    const worker = app!.get(ResourceAllocationProposalResponseService);
+    await worker.processProposalDeadlineBatch();
+    await worker.processProposalDeadlineBatch();
 
     const saved = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id });
     expect(saved.decisionState).toBe('APPROVED');
@@ -444,7 +443,7 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
 
   it('notifies requester, allocated person, and decider deduplicated on automatic acceptance, with history fallback for legacy proposals', async () => {
     const fixture = await setup();
-    const worker = new ResourceAllocationProposalWorker(app!.get(ResourceAllocationApprovalService));
+    const worker = app!.get(ResourceAllocationProposalResponseService);
 
     // 1. Distinct requester, allocated person, and decider -> 3 notifications
     const distinctRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative, 'PENDING_TEAM_DECISION');
@@ -466,7 +465,7 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
       SET decision_response_due_at = clock_timestamp() - INTERVAL '1 second'
       WHERE id = $1
     `, [distinctRequest.id]);
-    expect(await worker.processBatch()).toBe(1);
+    expect(await worker.processProposalDeadlineBatch()).toBe(1);
     const savedDistinct = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: distinctRequest.id });
     const distinctNotices = await dataSource!.query(
       'SELECT recipient_id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code = $2 ORDER BY recipient_id',
@@ -498,7 +497,7 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
       SET decision_response_due_at = clock_timestamp() - INTERVAL '1 second'
       WHERE id = $1
     `, [overlapRequest.id]);
-    expect(await worker.processBatch()).toBe(1);
+    expect(await worker.processProposalDeadlineBatch()).toBe(1);
     const savedOverlap = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: overlapRequest.id });
     const overlapNotices = await dataSource!.query(
       'SELECT recipient_id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code = $2 ORDER BY recipient_id',
@@ -560,7 +559,7 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
           decision_response_due_at = clock_timestamp() - INTERVAL '1 second'
       WHERE id = $1
     `, [legacyRequest.id]);
-    expect(await worker.processBatch()).toBe(1);
+    expect(await worker.processProposalDeadlineBatch()).toBe(1);
     const savedLegacy = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: legacyRequest.id });
     const legacyNotices = await dataSource!.query(
       'SELECT recipient_id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code = $2 ORDER BY recipient_id',
@@ -681,15 +680,15 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
         explanation: 'The initiative schedule and weekly capacity changed.',
       })
       .expect(200);
-    const worker = new ResourceAllocationProposalWorker(app!.get(ResourceAllocationApprovalService));
+    const worker = app!.get(ResourceAllocationProposalResponseService);
 
     await dataSource!.query(`
       UPDATE resource_requests
       SET decision_response_due_at = clock_timestamp() + INTERVAL '24 hours'
       WHERE id = $1
     `, [resourceRequest.id]);
-    await worker.processBatch();
-    await worker.processBatch();
+    await worker.processProposalDeadlineBatch();
+    await worker.processProposalDeadlineBatch();
     expect(await dataSource!.query("SELECT id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code LIKE 'REQUEST_CHANGES_REMINDER_48H_%'", [resourceRequest.id])).toHaveLength(1);
     expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(0);
 
@@ -710,7 +709,7 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
       .set('Idempotency-Key', randomUUID())
       .set('X-Correlation-ID', randomUUID())
       .send({});
-    await worker.processBatch();
+    await worker.processProposalDeadlineBatch();
 
     expect([200, 422]).toContain(response.status);
     if (response.status === 200) expect(response.body.confirmationSource).toBe('SYSTEM_DEADLINE');
@@ -743,8 +742,8 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
       WHERE id = $1
     `, [resourceRequest.id]);
 
-    const worker = new ResourceAllocationProposalWorker(app!.get(ResourceAllocationApprovalService));
-    await worker.processBatch();
+    const worker = app!.get(ResourceAllocationProposalResponseService);
+    await worker.processProposalDeadlineBatch();
 
     const saved = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id });
     expect(saved.decisionState).toBe('REQUIRES_REVALIDATION');

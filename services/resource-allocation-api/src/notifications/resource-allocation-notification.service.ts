@@ -2,8 +2,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { DataSource, type EntityManager } from 'typeorm';
 import { ResourceAllocationAccessService } from '../access/resource-allocation-access.service';
-import { ResourceAllocationException } from '../access/resource-allocation-problem';
-import { isDatabaseUnavailable } from '../database/database-errors';
+import { ResourceAllocationException, translateResourceAllocationDatabaseError } from '../access/resource-allocation-problem';
+import { parseOpaqueIfMatch } from '../access/request-headers';
+import { decodeOpaqueCursor, encodeOpaqueCursor } from '../common/opaque-cursor';
 import { RESOURCE_ALLOCATION_DATA_SOURCE } from '../database/database.module';
 import { runIdempotentOperation } from '../administration/idempotency/run-idempotent-operation';
 import { ResourceNotificationDto } from './resource-allocation-notification.dto';
@@ -133,7 +134,7 @@ export class ResourceAllocationNotificationService {
         },
       };
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
     }
   }
 
@@ -144,7 +145,7 @@ export class ResourceAllocationNotificationService {
     idempotencyKey: string | undefined,
   ) {
     const access = await this.accessService.getAccess(localUserId);
-    const expectedEtag = this.parseIfMatch(ifMatch);
+    const expectedEtag = parseOpaqueIfMatch(ifMatch, /^"[a-f0-9]{24}"$/i, 'A single strong If-Match ETag from the current notification is required.');
     try {
       const result = await this.dataSource.transaction(async (manager) => {
         const operation = await runIdempotentOperation(manager, {
@@ -178,7 +179,7 @@ export class ResourceAllocationNotificationService {
       });
       return result;
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
     }
   }
 
@@ -222,7 +223,7 @@ export class ResourceAllocationNotificationService {
         return operation.result;
       });
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
     }
   }
 
@@ -305,7 +306,7 @@ export class ResourceAllocationNotificationService {
 
   private decodeCursor(value: string): NotificationCursor {
     try {
-      const parsed: unknown = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+      const parsed: unknown = decodeOpaqueCursor(value);
       if (typeof parsed !== 'object' || parsed === null) throw new Error('Not an object.');
       const candidate = parsed as Partial<NotificationCursor>;
       if (candidate.version !== cursorVersion || candidate.kind !== 'notifications' ||
@@ -321,7 +322,7 @@ export class ResourceAllocationNotificationService {
   }
 
   private encodeCursor(cursor: NotificationCursor): string {
-    return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+    return encodeOpaqueCursor(cursor);
   }
 
   private notFound(): ResourceAllocationException {
@@ -332,21 +333,5 @@ export class ResourceAllocationNotificationService {
     return new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, detail);
   }
 
-  private parseIfMatch(value: string | undefined): string {
-    if (!value || !/^"[a-f0-9]{24}"$/i.test(value)) {
-      throw this.validationError('A single strong If-Match ETag from the current notification is required.');
-    }
-    return value;
-  }
 
-  private translateDatabaseError(error: unknown): unknown {
-    if (error instanceof ResourceAllocationException) return error;
-    if (isDatabaseUnavailable(error)) {
-      return new ResourceAllocationException(
-        'DEPENDENCY_UNAVAILABLE', 'Dependency unavailable', 503,
-        'The Resource Allocation database is unavailable.', undefined, error,
-      );
-    }
-    return new ResourceAllocationException('INTERNAL_ERROR', 'Internal Server Error', 500, 'Internal Server Error', undefined, error);
-  }
 }
