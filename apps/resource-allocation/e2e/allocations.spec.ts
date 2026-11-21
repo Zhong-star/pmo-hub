@@ -92,10 +92,8 @@ test('opens an authorized allocation detail from a notification', async ({ page 
   await page.route(`${apiRoot}/allocation-load**`, (route) => route.fulfill({
     json: { date: '2026-11-20', items: [], page: emptyPage },
   }));
-  let detailRequests = 0;
   await page.route(`${apiRoot}/allocations**`, (route) => {
     if (new URL(route.request().url()).pathname.endsWith(`/allocations/${allocationId}`)) {
-      detailRequests += 1;
       return route.fulfill({ headers: { etag: '"7"' }, json: allocation() });
     }
     return route.fulfill({ json: { items: [], page: emptyPage } });
@@ -104,8 +102,8 @@ test('opens an authorized allocation detail from a notification', async ({ page 
   await page.goto('/resource-allocation/');
   await page.getByRole('link', { name: 'Open related allocation' }).click();
   await expect(page).toHaveURL(new RegExp(`allocationId=${allocationId}`));
-  await expect(page.getByRole('region', { name: 'Allocation details' })).toBeVisible();
-  expect(detailRequests).toBeGreaterThan(0);
+  const detail = page.getByRole('region', { name: 'Allocation details' });
+  await expect(detail.getByRole('heading', { name: 'ITDM-69 · Capacity planning' })).toBeVisible();
 });
 
 test('filters authorized allocations by inclusive effective overlap and shows weekly capacity for the São Paulo date', async ({ page }) => {
