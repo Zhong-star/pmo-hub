@@ -103,6 +103,8 @@ export class ResourceRequestResponseDto {
   @ApiProperty({ type: String, format: 'date-time' }) expirationDueAt!: string;
   @ApiProperty({ type: String, format: 'date-time', nullable: true, description: '72-hour requester response deadline when a date or hours proposal is awaiting acceptance.' }) dueAt!: string | null;
   @ApiProperty({ type: [String], example: ['ACCEPT'] }) availableActions!: string[];
+  @ApiPropertyOptional({ type: Object, nullable: true, description: 'Current eligibility blockers and responsible actor while the request requires revalidation.' })
+  revalidation!: { originState: string; impediments: string[]; nextResponsible: Record<string, unknown> | Array<Record<string, unknown>> } | null;
   @ApiProperty({ type: Number }) version!: number;
 }
 

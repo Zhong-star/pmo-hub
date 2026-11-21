@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { cancelDeniedRequest, contestRequest, getRequestHistory, RequestDecisionApiError } from './requestDecisionApi';
+import { cancelRequest, contestRequest, getRequestHistory, RequestDecisionApiError } from './requestDecisionApi';
 import { REQUESTS_QUERY_ROOT, type ResourceRequestItem } from './requestApi';
 
 interface DeniedRequestResponseProps {
@@ -44,13 +44,22 @@ function actionKey(localUserId: string, item: ResourceRequestItem, action: Respo
 export function DeniedRequestResponse({ localUserId, item, disabled, onChanged, onAccessDenied }: DeniedRequestResponseProps) {
   const queryClient = useQueryClient();
   const changedProposal = item.decisionState === 'APPROVED_WITH_CHANGES';
-  const canContestChangedProposal = changedProposal && item.availableActions?.includes('CONTEST') === true;
+  const requiresRevalidation = item.decisionState === 'REQUIRES_REVALIDATION';
+  const canContest = item.availableActions?.includes('CONTEST') === true;
+  const canCancel = item.availableActions?.includes('CANCEL') === true;
+  const canContestChangedProposal = changedProposal && canContest;
+  const canContestDenial = item.decisionState === 'DENIED' && canContest;
+  const canCancelDenial = item.decisionState === 'DENIED' && canCancel;
+  const canCancelRevalidation = requiresRevalidation && canCancel;
+  const showResponseActions = canContestChangedProposal || canContestDenial || canCancelDenial || canCancelRevalidation;
+  const needsHistory = !changedProposal && !requiresRevalidation;
   const [activeAction, setActiveAction] = useState<ResponseAction | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const form = useForm<ResponseValues>({ defaultValues: { explanation: '' }, mode: 'onSubmit', reValidateMode: 'onChange' });
   const historyQuery = useQuery({
     queryKey: [...REQUESTS_QUERY_ROOT, localUserId, 'history', item.id],
     queryFn: () => getRequestHistory(localUserId, item.id),
+    enabled: needsHistory,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
@@ -63,7 +72,7 @@ export function DeniedRequestResponse({ localUserId, item, disabled, onChanged, 
     ? [latestResponse]
     : historyQuery.data?.items.filter((event) =>
       event.action === 'CONTESTED' || event.action === 'DENIAL_CANCELLED' || event.action === 'DENIAL_AUTO_CANCELLED') ?? [];
-  const actionDisabled = disabled || (!changedProposal && historyQuery.isError);
+  const actionDisabled = disabled || (needsHistory && historyQuery.isError);
 
   async function submit(values: ResponseValues) {
     if (!activeAction || disabled) return;
@@ -73,7 +82,7 @@ export function DeniedRequestResponse({ localUserId, item, disabled, onChanged, 
       const key = actionKey(localUserId, item, activeAction, explanation);
       const updated = activeAction === 'contest'
         ? await contestRequest(localUserId, item.id, item.version, key, explanation)
-        : await cancelDeniedRequest(localUserId, item.id, item.version, key, explanation);
+        : await cancelRequest(localUserId, item.id, item.version, key, explanation);
       onChanged(updated);
       setActiveAction(null);
       form.reset({ explanation: '' });
@@ -97,39 +106,43 @@ export function DeniedRequestResponse({ localUserId, item, disabled, onChanged, 
 
   return (
     <section className="request-denial-response" aria-labelledby={`denial-response-title-${item.id}`}>
-      <h4 id={`denial-response-title-${item.id}`}>{changedProposal ? 'Respond to proposed conditions' : 'Decision history'}</h4>
-      {!changedProposal && historyQuery.isPending && <p role="status">Loading decision history…</p>}
-      {!changedProposal && historyQuery.isError && (
+      <h4 id={`denial-response-title-${item.id}`}>{requiresRevalidation ? 'Revalidation response' : changedProposal ? 'Respond to proposed conditions' : 'Decision history'}</h4>
+      {needsHistory && historyQuery.isPending && <p role="status">Loading decision history…</p>}
+      {needsHistory && historyQuery.isError && (
         <div className="form-error" role="alert">
           <p>The decision history could not be loaded. Protected details are not shown.</p>
           <button type="button" className="secondary-button" onClick={() => void historyQuery.refetch()} disabled={historyQuery.isFetching}>Try again</button>
         </div>
       )}
-      {!changedProposal && denialEvent && (
+      {needsHistory && denialEvent && (
         <article className="request-denial-explanation">
           <p><strong>Denied by:</strong> {String(denialEvent.actorSnapshot.displayName ?? 'Decision maker')}</p>
           <p><strong>When:</strong> {new Date(denialEvent.occurredAt).toLocaleString()}</p>
           <p><strong>Explanation:</strong> {denialEvent.reason ?? 'No explanation was recorded.'}</p>
         </article>
       )}
-      {!changedProposal && responseEvents.map((event) => (
+      {needsHistory && responseEvents.map((event) => (
         <article className="request-denial-response-event" key={event.id}>
           <p><strong>{event.action.replaceAll('_', ' ')}:</strong> {event.reason ?? 'No reason was recorded.'}</p>
           <p><strong>When:</strong> {new Date(event.occurredAt).toLocaleString()}</p>
         </article>
       ))}
 
-      {(item.decisionState === 'DENIED' || canContestChangedProposal) && (
+      {showResponseActions && (
         <>
-          <p className="field-help">{changedProposal
-            ? 'You may contest these changed conditions within the response window. Your explanation will start a Pre N3 review; no allocation exists yet.'
-            : 'You may contest this denial to start a Pre N3 review, or cancel the request. Respond within 14 days.'}</p>
+          <p className="field-help">{requiresRevalidation
+            ? 'You may cancel this request while the eligibility issue is reviewed. Revalidation does not expire automatically.'
+            : changedProposal
+              ? 'You may contest these changed conditions within the response window. Your explanation will start a Pre N3 review; no allocation exists yet.'
+              : 'You may contest this denial to start a Pre N3 review, or cancel the request. Respond within 14 days.'}</p>
           {!activeAction && (
             <div className="form-actions request-actions">
-              <button type="button" className="primary-button" disabled={actionDisabled} onClick={() => { setErrorMessage(''); setActiveAction('contest'); }}>
-                {changedProposal ? 'Contest proposed changes' : 'Contest denial'}
-              </button>
-              {item.decisionState === 'DENIED' && (
+              {(canContestChangedProposal || canContestDenial) && (
+                <button type="button" className="primary-button" disabled={actionDisabled} onClick={() => { setErrorMessage(''); setActiveAction('contest'); }}>
+                  {changedProposal ? 'Contest proposed changes' : 'Contest denial'}
+                </button>
+              )}
+              {(canCancelDenial || canCancelRevalidation) && (
                 <button type="button" className="secondary-button" disabled={actionDisabled} onClick={() => { setErrorMessage(''); setActiveAction('cancel'); }}>
                   Cancel request
                 </button>
@@ -141,7 +154,9 @@ export function DeniedRequestResponse({ localUserId, item, disabled, onChanged, 
               <h5>{activeAction === 'contest' ? changedProposal ? 'Contest these proposed conditions' : 'Contest this denial' : 'Cancel this request'}</h5>
               <p>{activeAction === 'contest'
                 ? 'Your explanation will move the request to Pre N3 for Admin review.'
-                : 'Cancellation is final. The denial and your reason remain in the request history.'}</p>
+                : requiresRevalidation
+                  ? 'Cancellation is final. Your reason remains in the request history.'
+                  : 'Cancellation is final. The denial and your reason remain in the request history.'}</p>
               <label className="form-field">
                 <span>{activeAction === 'contest' ? 'Reason for contesting' : 'Reason for cancellation'}</span>
                 <textarea

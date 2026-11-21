@@ -2467,7 +2467,8 @@
               "enum": [
                 "presentation",
                 "team-decision",
-                "exceptions"
+                "exceptions",
+                "revalidation"
               ],
               "type": "string"
             }
@@ -7397,6 +7398,15 @@
           "decisionState": {
             "type": "string"
           },
+          "originState": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "WAITING_FOR_PRESENTATION",
+              "PENDING_TEAM_DECISION",
+              "APPROVED_WITH_CHANGES"
+            ]
+          },
           "receivedAt": {
             "type": "string",
             "format": "date-time"
@@ -7473,6 +7483,11 @@
       "CorrectRequestReferencesDto": {
         "type": "object",
         "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Eligible person to use as the corrected exception assignee."
+          },
           "initiativeId": {
             "type": "string",
             "format": "uuid"
@@ -7593,6 +7608,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "revalidation": {
+            "type": "object",
+            "nullable": true,
+            "description": "Current eligibility blockers and responsible actor while the request requires revalidation."
           },
           "version": {
             "type": "number"

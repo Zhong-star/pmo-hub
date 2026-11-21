@@ -22,6 +22,18 @@ import type { ApprovalCandidateQueryDto, ApproveRequestDto } from './approve-req
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function authorizedDecisionStage(request: ResourceRequest, actor: ResourcePerson): 'WAITING_FOR_PRESENTATION' | 'PENDING_TEAM_DECISION' | null {
+  if (request.decisionState === 'WAITING_FOR_PRESENTATION' || request.decisionState === 'PENDING_TEAM_DECISION') return request.decisionState;
+  if (request.decisionState !== ResourceRequestDecisionState.RequiresRevalidation) return null;
+  if (request.revalidationOriginState === 'WAITING_FOR_PRESENTATION' || request.revalidationOriginState === 'PENDING_TEAM_DECISION') {
+    return actor.role === ResourceAllocationRole.Admin ? 'WAITING_FOR_PRESENTATION' : null;
+  }
+  if (request.revalidationOriginState === ResourceRequestDecisionState.ApprovedWithChanges) {
+    return request.revalidationDecisionStage === 'WAITING_FOR_PRESENTATION' ? 'WAITING_FOR_PRESENTATION' : 'PENDING_TEAM_DECISION';
+  }
+  return null;
+}
+
 interface ApprovalConditions {
   initiativeId: string;
   initiativeCode: string;
@@ -66,7 +78,8 @@ export class ResourceAllocationApprovalService {
         throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'A person cannot approve their own request.');
       }
       const exceptionResolution = ['PRE_N3', 'ESCALATION'].includes(request.decisionState);
-      if (!exceptionResolution && !['WAITING_FOR_PRESENTATION', 'PENDING_TEAM_DECISION'].includes(request.decisionState)) {
+      const effectiveState = authorizedDecisionStage(request, actor);
+      if (!exceptionResolution && !effectiveState) {
         throw new ResourceAllocationException('INVALID_REQUEST_TRANSITION', 'Request cannot be approved', 422, 'This request is not waiting for an approval.');
       }
       if (exceptionResolution && actor.role !== ResourceAllocationRole.Admin) {
@@ -76,7 +89,9 @@ export class ResourceAllocationApprovalService {
       const groupId = this.normalizeUuid(String(conditions.groupId ?? ''), 'request group');
       const group = await this.dataSource.getRepository(ResourceGroup).findOne({ where: { id: groupId, active: true } });
       if (!group) throw this.ineligibleReference();
-      if (!exceptionResolution) this.requireDeciderScope(actor, request, group.id);
+      if (!exceptionResolution) {
+        this.requireDeciderScope(actor, { ...request, decisionState: effectiveState ?? request.decisionState }, group.id);
+      }
       const clock = await this.dataSource.query(`
         WITH operation_clock AS (SELECT clock_timestamp() AS now)
         SELECT now, (now AT TIME ZONE 'America/Sao_Paulo')::date::text AS today
@@ -360,6 +375,8 @@ export class ResourceAllocationApprovalService {
 
     const before = this.requestSnapshot(request);
     request.decisionState = ResourceRequestDecisionState.Approved;
+    request.revalidationOriginState = null;
+    request.revalidationDecisionStage = null;
     request.stageEnteredAt = input.occurredAt;
     request.decisionResponseDueAt = null;
     const saved = await manager.getRepository(ResourceRequest).save(request);
@@ -410,6 +427,7 @@ export class ResourceAllocationApprovalService {
   ) {
     const before = this.requestSnapshot(request);
     request.decisionState = ResourceRequestDecisionState.RequiresRevalidation;
+    request.revalidationOriginState = ResourceRequestDecisionState.ApprovedWithChanges;
     request.stageEnteredAt = input.occurredAt;
     request.decisionResponseDueAt = null;
     const saved = await manager.getRepository(ResourceRequest).save(request);
@@ -525,7 +543,8 @@ export class ResourceAllocationApprovalService {
     if (request.requesterId === input.actor.id) {
       throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'A person cannot approve their own request.');
     }
-    if (!['WAITING_FOR_PRESENTATION', 'PENDING_TEAM_DECISION'].includes(request.decisionState)) {
+    const effectiveState = authorizedDecisionStage(request, input.actor);
+    if (!effectiveState) {
       throw new ResourceAllocationException('INVALID_REQUEST_TRANSITION', 'Request cannot be approved', 422, 'Only a request waiting for presentation or a group decision can be approved here.');
     }
 
@@ -536,7 +555,7 @@ export class ResourceAllocationApprovalService {
       .where('group.id = :id AND group.active = TRUE', { id: groupId })
       .getOne();
     if (!group) throw this.ineligibleReference();
-    this.requireDeciderScope(input.actor, request, group.id);
+    this.requireDeciderScope(input.actor, { ...request, decisionState: effectiveState }, group.id);
 
     const selectedPerson = await manager.getRepository(ResourcePerson).createQueryBuilder('person')
       .setLock('pessimistic_write')
@@ -619,8 +638,15 @@ export class ResourceAllocationApprovalService {
     };
 
     const previousSnapshot = this.requestSnapshot(request);
+    const proposalDecisionStage = request.decisionState === ResourceRequestDecisionState.RequiresRevalidation
+      ? request.revalidationOriginState === ResourceRequestDecisionState.ApprovedWithChanges
+        ? request.revalidationDecisionStage ?? 'PENDING_TEAM_DECISION'
+        : request.revalidationOriginState
+      : request.decisionState;
     request.approvedConditions = approvedConditions;
     request.stageEnteredAt = occurredAt;
+    request.revalidationOriginState = null;
+    request.revalidationDecisionStage = datesOrHoursChanged ? proposalDecisionStage : null;
     request.decisionState = datesOrHoursChanged
       ? ResourceRequestDecisionState.ApprovedWithChanges
       : ResourceRequestDecisionState.Approved;
@@ -771,6 +797,8 @@ export class ResourceAllocationApprovalService {
       requestedConditions: request.requestedConditions,
       approvedConditions: request.approvedConditions,
       decisionState: request.decisionState,
+      revalidationOriginState: request.revalidationOriginState,
+      revalidationDecisionStage: request.revalidationDecisionStage,
       receivedAt: request.receivedAt.toISOString(),
       stageEnteredAt: request.stageEnteredAt.toISOString(),
       decisionResponseDueAt: request.decisionResponseDueAt?.toISOString() ?? null,

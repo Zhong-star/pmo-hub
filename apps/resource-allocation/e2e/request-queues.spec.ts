@@ -166,6 +166,345 @@ test('corrects eligible references, preserves the deadline, and refers the reque
   await expect(page.getByText('Waiting for group decision')).toBeVisible();
 });
 
+test('shows revalidation origin, blocker, owner, and only server-authorized actions', async ({ page }) => {
+  await installCommonRoutes(page, moderator.localUserId, moderator);
+  const queueItem = requestItem({
+    decisionState: 'REQUIRES_REVALIDATION',
+    originState: 'APPROVED_WITH_CHANGES',
+    dueAt: null,
+    impediments: ['PERSON_INACTIVE'],
+    nextResponsible: [{ personId: moderator.id, displayName: moderator.displayName, role: moderator.role }],
+    availableActions: ['APPROVE'],
+    approvedConditions: {
+      personId: 'person-inactive',
+      personName: 'Alex Resource',
+      resourceProfileId: 'profile-a',
+      resourceProfileName: 'API Engineering',
+      groupId: 'group-a',
+      groupName: 'Platform Engineering',
+      initiativeId: 'initiative-a',
+      initiativeCode: 'ITDM-62',
+      initiativeName: 'Resource allocation',
+      startDate: '2027-01-11',
+      endDate: '2027-01-29',
+      weeklyHours: 20,
+      explanation: 'The original proposal can no longer be used.',
+    },
+  });
+  let requestedPath = '';
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    requestedPath = new URL(route.request().url()).pathname;
+    await route.fulfill({
+      json: { items: requestedPath.endsWith('/revalidation') ? [queueItem] : [], page: emptyPage },
+    });
+  });
+
+  await page.goto('/resource-allocation/?queue=revalidation');
+
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await expect(page.getByRole('tab', { name: 'Revalidation queue' })).toHaveAttribute('aria-selected', 'true');
+  await expect(card.getByText('Origin: Approved with changes')).toBeVisible();
+  await expect(card.getByText('The proposed person is inactive.')).toBeVisible();
+  await expect(card.getByText('Taylor Moderator (MODERATOR)')).toBeVisible();
+  await expect(card.getByText('The original proposal can no longer be used.')).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Approve request' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Deny request' })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: 'Refer to group decision' })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: 'Correct references' })).toHaveCount(0);
+  expect(requestedPath).toContain('/request-queues/revalidation');
+});
+
+test('applies group filters to the revalidation queue and keeps them in the deep link', async ({ page }) => {
+  await installCommonRoutes(page, admin.localUserId, admin);
+  const groupFilters: Array<string | null> = [];
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/revalidation')) groupFilters.push(url.searchParams.get('groupId'));
+    await route.fulfill({ json: { items: [], page: emptyPage } });
+  });
+
+  await page.goto('/resource-allocation/?queue=revalidation');
+  const filters = page.getByRole('group', { name: 'Filter revalidation requests' });
+  await filters.getByLabel('Group').selectOption('group-b');
+
+  await expect.poll(() => groupFilters.at(-1)).toBe('group-b');
+  await expect.poll(() => new URL(page.url()).searchParams.get('groupId')).toBe('group-b');
+});
+
+test('corrects references in revalidation with a reason, then offers the server-authorized referral', async ({ page }) => {
+  await installCommonRoutes(page, admin.localUserId, admin);
+  let queueItem = requestItem({
+    decisionState: 'REQUIRES_REVALIDATION',
+    originState: 'WAITING_FOR_PRESENTATION',
+    dueAt: null,
+    impediments: ['GROUP_INACTIVE'],
+    availableActions: ['REFERENCE_CORRECTION', 'REFER'],
+  });
+  const posted: Array<{ path: string; body: Record<string, string>; headers: Record<string, string> }> = [];
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({
+      json: { items: path.endsWith('/revalidation') ? [queueItem] : [], page: emptyPage },
+    });
+  });
+  await page.route(`${apiRoot}/requests/**`, async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+    const path = new URL(route.request().url()).pathname;
+    const body = route.request().postDataJSON() as Record<string, string>;
+    const headers = route.request().headers();
+    posted.push({ path, body, headers });
+    if (path.endsWith('/reference-corrections')) {
+      queueItem = requestItem({
+        decisionState: 'REQUIRES_REVALIDATION',
+        originState: 'WAITING_FOR_PRESENTATION',
+        dueAt: null,
+        version: 2,
+        availableActions: ['REFER'],
+        requestedConditions: {
+          ...queueItem.requestedConditions,
+          groupId: body.groupId,
+          groupName: 'Data Engineering',
+          resourceProfileId: body.resourceProfileId,
+          resourceProfileName: 'Data Platform',
+        },
+      });
+      await route.fulfill({ json: queueItem });
+      return;
+    }
+    if (path.endsWith('/referrals')) {
+      queueItem = requestItem({
+        decisionState: 'PENDING_TEAM_DECISION',
+        dueAt: null,
+        version: 3,
+        availableActions: [],
+      });
+      await route.fulfill({ json: queueItem });
+      return;
+    }
+    await route.fulfill({ status: 404, json: { status: 404, code: 'RESOURCE_NOT_FOUND' } });
+  });
+
+  await page.goto('/resource-allocation/?queue=revalidation');
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await expect(card.getByText('Origin: Waiting for presentation')).toBeVisible();
+  await expect(card.getByText('The request group is inactive.')).toBeVisible();
+  await card.getByRole('button', { name: 'Correct references' }).click();
+  const form = card.getByRole('form', { name: 'Correct references for request request-a' });
+  await form.locator('select[name="groupId"]').selectOption('group-b');
+  await form.locator('select[name="resourceProfileId"]').selectOption('profile-b');
+  await form.getByLabel('Reason').fill('The active data group now owns this request.');
+  await form.getByRole('button', { name: 'Save reference correction' }).click();
+
+  await expect(card.getByText('Requires revalidation')).toBeVisible();
+  await expect(card.getByText('Data Engineering')).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Correct references' })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: 'Refer to group decision' })).toBeEnabled();
+  expect(posted[0].path).toContain('/requests/request-a/reference-corrections');
+  expect(posted[0].body).toEqual({ groupId: 'group-b', resourceProfileId: 'profile-b', reason: 'The active data group now owns this request.' });
+  expect(posted[0].headers['if-match']).toBe('"1"');
+  expect(posted[0].headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i);
+
+  await card.getByRole('button', { name: 'Refer to group decision' }).click();
+  await expect.poll(() => posted.length).toBe(2);
+  expect(posted[1].path).toContain('/requests/request-a/referrals');
+  expect(posted[1].headers['if-match']).toBe('"2"');
+});
+
+for (const state of ['PRE_N3', 'ESCALATION'] as const) {
+  const stageLabel = state === 'PRE_N3' ? 'Pre N3' : 'Escalation';
+  test(`keeps a ${stageLabel} request in its current stage when Admin corrects an ineligible reference`, async ({ page }) => {
+  await installCommonRoutes(page, admin.localUserId, admin);
+  let queueItem = requestItem({
+    decisionState: state,
+    dueAt: null,
+    impediments: ['PROFILE_INACTIVE'],
+    availableActions: ['REFERENCE_CORRECTION'],
+  });
+  let correction: { body: Record<string, string>; headers: Record<string, string> } | null = null;
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: { items: path.endsWith('/exceptions') ? [queueItem] : [], page: emptyPage } });
+  });
+  await page.route(`${apiRoot}/requests/**`, async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+    correction = {
+      body: route.request().postDataJSON() as Record<string, string>,
+      headers: route.request().headers(),
+    };
+    queueItem = requestItem({ decisionState: state, dueAt: null, version: 2, availableActions: [] });
+    await route.fulfill({ json: queueItem });
+  });
+
+  await page.goto(`/resource-allocation/?queue=exceptions&decisionState=${state}`);
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await expect(card.getByText(state.replaceAll('_', ' '))).toBeVisible();
+  await card.getByRole('button', { name: 'Correct references' }).click();
+  const form = card.getByRole('form', { name: 'Correct references for request request-a' });
+  await form.getByLabel('Reason').fill('The active profile should be used for review.');
+  await form.getByRole('button', { name: 'Save reference correction' }).click();
+
+  await expect(card.getByText(state.replaceAll('_', ' '))).toBeVisible();
+  await expect(page.getByRole('tab', { name: stageLabel })).toHaveAttribute('aria-selected', 'true');
+  await expect(card.getByRole('button', { name: 'Correct references' })).toHaveCount(0);
+  expect(correction?.body).toEqual({ reason: 'The active profile should be used for review.' });
+  expect(correction?.headers['if-match']).toBe('"1"');
+  });
+}
+
+for (const { state, impediment, stageLabel } of [
+  { state: 'PRE_N3', impediment: 'PERSON_INACTIVE', stageLabel: 'Pre N3' },
+  { state: 'ESCALATION', impediment: 'PERSON_LEFT_GROUP', stageLabel: 'Escalation' },
+] as const) {
+  test(`replaces an ineligible proposed person during ${stageLabel} with a reasoned correction`, async ({ page }) => {
+  await installCommonRoutes(page, admin.localUserId, admin);
+  let queueItem = requestItem({
+    decisionState: state,
+    dueAt: null,
+    impediments: [impediment],
+    availableActions: ['REFERENCE_CORRECTION'],
+  });
+  let candidatePath = '';
+  let correction: { path: string; body: Record<string, string>; headers: Record<string, string> } | null = null;
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: { items: path.endsWith('/exceptions') ? [queueItem] : [], page: emptyPage } });
+  });
+  await page.route(`${apiRoot}/requests/**`, async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path.endsWith('/approval-candidates')) {
+      candidatePath = path;
+      await route.fulfill({ json: {
+        items: [
+          { id: 'person-current-group', displayName: 'Alex Current Group', groupId: 'group-a' },
+          { id: 'person-other-group', displayName: 'Jordan Other Group', groupId: 'group-b' },
+        ],
+        page: emptyPage,
+      } });
+      return;
+    }
+    if (request.method() === 'POST' && path.endsWith('/reference-corrections')) {
+      correction = {
+        path,
+        body: request.postDataJSON() as Record<string, string>,
+        headers: request.headers(),
+      };
+      queueItem = requestItem({ decisionState: state, dueAt: null, version: 2, impediments: [], availableActions: [] });
+      await route.fulfill({ json: queueItem });
+      return;
+    }
+    await route.fulfill({ json: { items: [], page: emptyPage } });
+  });
+
+  await page.goto(`/resource-allocation/?queue=exceptions&decisionState=${state}`);
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await card.getByRole('button', { name: 'Correct references' }).click();
+  const form = card.getByRole('form', { name: 'Correct references for request request-a' });
+  await expect(form.getByLabel('Replacement person')).toBeVisible();
+  await expect(form.getByLabel('Replacement person').locator('option', { hasText: 'Jordan Other Group' })).toHaveCount(0);
+  await form.getByLabel('Replacement person').selectOption('person-current-group');
+  await form.getByLabel('Reason').fill('Replace the inactive proposed resource.');
+  await form.getByRole('button', { name: 'Save reference correction' }).click();
+
+  await expect.poll(() => correction).not.toBeNull();
+  await expect(card.getByText(state.replaceAll('_', ' '))).toBeVisible();
+  expect(candidatePath).toContain('/requests/request-a/approval-candidates');
+  expect(correction?.path).toContain('/requests/request-a/reference-corrections');
+  expect(correction?.body).toEqual({ personId: 'person-current-group', reason: 'Replace the inactive proposed resource.' });
+  expect(correction?.headers['if-match']).toBe('"1"');
+  expect(correction?.headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+}
+
+test('allows an Admin to correct the target group first and select a replacement person afterward', async ({ page }) => {
+  await installCommonRoutes(page, admin.localUserId, admin);
+  let queueItem = requestItem({
+    decisionState: 'ESCALATION',
+    dueAt: null,
+    impediments: ['GROUP_INACTIVE', 'PERSON_LEFT_GROUP'],
+    availableActions: ['REFERENCE_CORRECTION'],
+  });
+  const candidateGroups: string[] = [];
+  const corrections: Array<{ body: Record<string, string>; headers: Record<string, string> }> = [];
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: { items: path.endsWith('/exceptions') ? [queueItem] : [], page: emptyPage } });
+  });
+  await page.route(`${apiRoot}/requests/**`, async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path.endsWith('/approval-candidates')) {
+      const currentGroupId = queueItem.requestedConditions.groupId;
+      candidateGroups.push(currentGroupId);
+      await route.fulfill({ json: {
+        items: currentGroupId === 'group-b'
+          ? [{ id: 'person-data-group', displayName: 'Alex Data Group', groupId: 'group-b' }]
+          : [],
+        page: emptyPage,
+      } });
+      return;
+    }
+    if (request.method() === 'POST' && path.endsWith('/reference-corrections')) {
+      const body = request.postDataJSON() as Record<string, string>;
+      corrections.push({ body, headers: request.headers() });
+      queueItem = requestItem({
+        decisionState: 'ESCALATION',
+        dueAt: null,
+        version: corrections.length + 1,
+        impediments: corrections.length === 1 ? ['PERSON_LEFT_GROUP'] : [],
+        availableActions: corrections.length === 1 ? ['REFERENCE_CORRECTION'] : [],
+        requestedConditions: {
+          ...queueItem.requestedConditions,
+          groupId: 'group-b',
+          groupName: 'Data Engineering',
+          resourceProfileId: 'profile-b',
+          resourceProfileName: 'Data Platform',
+        },
+      });
+      await route.fulfill({ json: queueItem });
+      return;
+    }
+    await route.fulfill({ json: { items: [], page: emptyPage } });
+  });
+
+  await page.goto('/resource-allocation/?queue=exceptions&decisionState=ESCALATION');
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await card.getByRole('button', { name: 'Correct references' }).click();
+  let form = card.getByRole('form', { name: 'Correct references for request request-a' });
+  await expect(form.getByLabel('Replacement person')).toBeVisible();
+  await expect(form.getByLabel('Replacement person')).toBeDisabled();
+  await form.locator('select[name="groupId"]').selectOption('group-b');
+  await form.locator('select[name="resourceProfileId"]').selectOption('profile-b');
+  await form.getByLabel('Reason').fill('Move the request to its active group first.');
+  await form.getByRole('button', { name: 'Save reference correction' }).click();
+  await expect.poll(() => corrections.length).toBe(1);
+  await expect(card.getByText('Data Engineering')).toBeVisible();
+
+  await card.getByRole('button', { name: 'Correct references' }).click();
+  form = card.getByRole('form', { name: 'Correct references for request request-a' });
+  await expect(form.getByLabel('Replacement person')).toBeEnabled();
+  await expect(form.getByLabel('Replacement person').locator('option', { hasText: 'Alex Data Group' })).toHaveCount(1);
+  await form.getByLabel('Replacement person').selectOption('person-data-group');
+  await form.getByLabel('Reason').fill('Replace the person who left the corrected group.');
+  await form.getByRole('button', { name: 'Save reference correction' }).click();
+
+  await expect.poll(() => corrections.length).toBe(2);
+  await expect(card.getByText('ESCALATION')).toBeVisible();
+  expect(candidateGroups[0]).toBe('group-a');
+  expect(candidateGroups.slice(1).length).toBeGreaterThan(0);
+  expect(candidateGroups.slice(1).every((groupId) => groupId === 'group-b')).toBe(true);
+  expect(corrections[0].body).toEqual({ groupId: 'group-b', resourceProfileId: 'profile-b', reason: 'Move the request to its active group first.' });
+  expect(corrections[0].headers['if-match']).toBe('"1"');
+  expect(corrections[1].body).toEqual({ personId: 'person-data-group', reason: 'Replace the person who left the corrected group.' });
+  expect(corrections[1].headers['if-match']).toBe('"2"');
+});
+
 test('confirms administrative removal and displays its required reason form', async ({ page }) => {
   await installCommonRoutes(page, admin.localUserId, admin);
   let queueItem: ReturnType<typeof requestItem> | null = requestItem();

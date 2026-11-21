@@ -26,6 +26,9 @@ export class RequestQueueItemDto {
   @ApiProperty({ type: String })
   decisionState!: string;
 
+  @ApiPropertyOptional({ type: String, nullable: true, enum: ['WAITING_FOR_PRESENTATION', 'PENDING_TEAM_DECISION', 'APPROVED_WITH_CHANGES'] })
+  originState!: string | null;
+
   @ApiProperty({ type: String, format: 'date-time' })
   receivedAt!: string;
 
@@ -60,6 +63,11 @@ export class RequestQueueCollectionDto {
 export class ReferRequestDto {}
 
 export class CorrectRequestReferencesDto {
+  @ApiPropertyOptional({ format: 'uuid', description: 'Eligible person to use as the corrected exception assignee.' })
+  @IsOptional()
+  @IsUUID()
+  personId?: string;
+
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
   @IsUUID()

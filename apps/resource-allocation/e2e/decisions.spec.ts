@@ -46,6 +46,7 @@ function deniedRequest(state = 'DENIED', version = 2) {
     receivedAt: '2026-11-20T12:00:00.000Z',
     stageEnteredAt: '2026-11-20T13:00:00.000Z',
     expirationDueAt: '2026-12-04T13:00:00.000Z',
+    availableActions: state === 'DENIED' ? ['CANCEL', 'CONTEST'] : state === 'APPROVED_WITH_CHANGES' ? ['ACCEPT', 'CONTEST'] : [],
     version,
   };
 }

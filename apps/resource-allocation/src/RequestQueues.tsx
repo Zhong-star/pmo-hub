@@ -7,6 +7,7 @@ import { denyRequest, RequestDecisionApiError } from './requestDecisionApi';
 import { DenialAction } from './DenialAction';
 import { ExceptionResolutionAction } from './ExceptionResolutionAction';
 import { ExceptionStageAction } from './ExceptionStageAction';
+import { requestResponsibleLabel, revalidationImpedimentLabel, revalidationOriginLabel } from './revalidation';
 import { SUBMISSIONS_QUERY_ROOT, type SelectionItem } from './submissionApi';
 
 interface RequestQueuesProps {
@@ -21,6 +22,7 @@ interface ReferenceCorrectionValues {
   initiativeId: string;
   groupId: string;
   resourceProfileId: string;
+  personId: string;
   reason: string;
 }
 
@@ -50,6 +52,7 @@ const queueLabels: Record<RequestQueueCode, string> = {
   presentation: 'Presentation queue',
   'team-decision': 'Group decision queue',
   exceptions: 'Admin exceptions',
+  revalidation: 'Revalidation queue',
 };
 
 const exceptionStrategyLabels: Record<ExceptionResolutionStrategy, string> = {
@@ -58,19 +61,10 @@ const exceptionStrategyLabels: Record<ExceptionResolutionStrategy, string> = {
   DEPRIORITIZE_OTHER_DEMANDS: 'Deprioritize other demands',
 };
 
-const exceptionImpedimentLabels: Record<string, string> = {
-  GROUP_INACTIVE: 'The request group is inactive.',
-  INITIATIVE_INACTIVE: 'The request ITDM is inactive.',
-  PROFILE_INACTIVE: 'The requested resource profile is inactive.',
-  PROFILE_GROUP_MISMATCH: 'The resource profile no longer belongs to the request group.',
-  PERSON_INACTIVE: 'The proposed person is inactive.',
-  PERSON_LEFT_GROUP: 'The proposed person has left the request group.',
-};
-
 function queuesFor(role: ResourceAllocationRole, groupId: string | null): RequestQueueCode[] {
-  if (role === 'ALLOCATION_ADMIN') return groupId ? ['presentation', 'team-decision', 'exceptions'] : ['presentation', 'exceptions'];
+  if (role === 'ALLOCATION_ADMIN') return groupId ? ['presentation', 'team-decision', 'exceptions', 'revalidation'] : ['presentation', 'exceptions', 'revalidation'];
   if (role === 'ALLOCATION_MODERATOR' || role === 'ALLOCATION_SUPERVISOR' || role === 'ALLOCATION_MANAGER') {
-    return ['team-decision'];
+    return ['team-decision', 'revalidation'];
   }
   return [];
 }
@@ -85,11 +79,13 @@ function updateQueueLocation(queue: RequestQueueCode) {
   const params = new URLSearchParams(window.location.search);
   params.set('queue', queue);
   params.delete('requestId');
-  if (queue !== 'exceptions') {
-    params.delete('decisionState');
+  if (queue !== 'exceptions' && queue !== 'revalidation') {
     params.delete('groupId');
     params.delete('initiativeId');
     params.delete('resourceProfileId');
+  }
+  if (queue !== 'exceptions') {
+    params.delete('decisionState');
   }
   const search = params.toString();
   window.history.replaceState(null, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
@@ -102,7 +98,7 @@ function initialExceptionState(): 'PRE_N3' | 'ESCALATION' | null {
 
 type ExceptionFilterValues = Omit<RequestQueueFilters, 'decisionState'>;
 
-function initialExceptionFilters(): ExceptionFilterValues {
+function initialQueueFilters(): ExceptionFilterValues {
   const params = new URLSearchParams(window.location.search);
   return {
     ...(params.get('groupId') ? { groupId: params.get('groupId')! } : {}),
@@ -116,6 +112,18 @@ function updateExceptionQueueLocation(filters: ExceptionFilterValues, state: 'PR
   params.set('queue', 'exceptions');
   if (state) params.set('decisionState', state);
   else params.delete('decisionState');
+  for (const name of ['groupId', 'initiativeId', 'resourceProfileId'] as const) {
+    if (filters[name]) params.set(name, filters[name]!);
+    else params.delete(name);
+  }
+  const search = params.toString();
+  window.history.replaceState(null, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
+}
+
+function updateRevalidationQueueLocation(filters: ExceptionFilterValues) {
+  const params = new URLSearchParams(window.location.search);
+  params.set('queue', 'revalidation');
+  params.delete('decisionState');
   for (const name of ['groupId', 'initiativeId', 'resourceProfileId'] as const) {
     if (filters[name]) params.set(name, filters[name]!);
     else params.delete(name);
@@ -160,10 +168,6 @@ function readValue(item: RequestQueueItem, key: keyof RequestQueueItem['requeste
 
 function optionLabel(item: SelectionItem): string {
   return item.code ? `${item.code} — ${item.name ?? ''}` : item.name ?? item.id;
-}
-
-function exceptionImpedimentLabel(code: string): string {
-  return exceptionImpedimentLabels[code] ?? code.replaceAll('_', ' ').toLowerCase();
 }
 
 function accessDenied(error: unknown): boolean {
@@ -222,7 +226,7 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
   const [selectedQueue, setSelectedQueue] = useState<RequestQueueCode>(() => initialQueue(queues));
   const activeQueue = queues.includes(selectedQueue) ? selectedQueue : initialQueue(queues);
   const [exceptionState, setExceptionState] = useState<'PRE_N3' | 'ESCALATION' | null>(initialExceptionState);
-  const [exceptionFilters, setExceptionFilters] = useState<ExceptionFilterValues>(initialExceptionFilters);
+  const [exceptionFilters, setExceptionFilters] = useState<ExceptionFilterValues>(initialQueueFilters);
   const [openCorrectionId, setOpenCorrectionId] = useState<string | null>(null);
   const [openRemovalId, setOpenRemovalId] = useState<string | null>(null);
   const [openDenialId, setOpenDenialId] = useState<string | null>(null);
@@ -238,7 +242,7 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
 
   const queueFilters: RequestQueueFilters = activeQueue === 'exceptions'
     ? { ...exceptionFilters, ...(exceptionState ? { decisionState: exceptionState } : {}) }
-    : {};
+    : activeQueue === 'revalidation' ? exceptionFilters : {};
   const queueQuery = useInfiniteQuery({
     queryKey: [...REQUEST_QUEUES_QUERY_ROOT, localUserId, activeQueue, queueFilters],
     queryFn: ({ pageParam }) => getRequestQueue(localUserId, activeQueue, pageParam, queueFilters),
@@ -255,11 +259,17 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
   const activeFormRequestId = openApprovalId ?? (role === 'ALLOCATION_ADMIN' ? openCorrectionId ?? openExceptionId : null);
   const activeFormItem = items.find((item) => item.id === activeFormRequestId);
   const activeFormGroupId = activeFormItem ? readValue(activeFormItem, 'groupId') : null;
-  const candidateRequestId = openApprovalId ?? openExceptionId ?? undefined;
+  const correctionNeedsPerson = activeFormItem !== undefined
+    && (activeFormItem.decisionState === 'PRE_N3' || activeFormItem.decisionState === 'ESCALATION')
+    && (activeFormItem.impediments?.includes('PERSON_INACTIVE') === true || activeFormItem.impediments?.includes('PERSON_LEFT_GROUP') === true);
+  const correctionCandidateRequestId = role === 'ALLOCATION_ADMIN' && activeQueue === 'exceptions' && correctionNeedsPerson
+    ? openCorrectionId ?? undefined
+    : undefined;
+  const candidateRequestId = openApprovalId ?? openExceptionId ?? correctionCandidateRequestId;
   const selectionsQuery = useQuery<QueueSelections>({
     queryKey: [...REQUEST_QUEUES_QUERY_ROOT, localUserId, 'reference-selections', activeFormGroupId, candidateRequestId],
     queryFn: () => getQueueSelections(localUserId, candidateRequestId),
-    enabled: activeQueue === 'exceptions' || activeFormGroupId !== null,
+    enabled: activeQueue === 'exceptions' || activeQueue === 'revalidation' || activeFormGroupId !== null,
     retry: false,
   });
 
@@ -305,6 +315,11 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
       queryClient.invalidateQueries({ queryKey: SUBMISSIONS_QUERY_ROOT }),
       queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'resource-allocation-notifications' }),
     ]);
+  }
+
+  function persistFilters(filters: ExceptionFilterValues) {
+    if (activeQueue === 'exceptions') updateExceptionQueueLocation(filters, exceptionState);
+    else if (activeQueue === 'revalidation') updateRevalidationQueueLocation(filters);
   }
 
   async function requestActionKey(
@@ -377,6 +392,8 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
               setSelectedQueue(queue);
               if (queue !== 'exceptions') {
                 setExceptionState(null);
+              }
+              if (queue !== 'exceptions' && queue !== 'revalidation') {
                 setExceptionFilters({});
               }
               updateQueueLocation(queue);
@@ -411,8 +428,8 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
         </div>
       )}
 
-      {activeQueue === 'exceptions' && (
-        <div className="request-exception-filters" role="group" aria-label="Filter exceptions">
+      {(activeQueue === 'exceptions' || activeQueue === 'revalidation') && (
+        <div className="request-exception-filters" role="group" aria-label={activeQueue === 'revalidation' ? 'Filter revalidation requests' : 'Filter exceptions'}>
           <label className="form-field">
             <span>Group</span>
             <select
@@ -420,7 +437,7 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
               onChange={(event) => {
                 const next = { ...exceptionFilters, groupId: event.target.value || undefined };
                 setExceptionFilters(next);
-                updateExceptionQueueLocation(next, exceptionState);
+                persistFilters(next);
               }}
               disabled={selectionsQuery.isPending}
             >
@@ -435,7 +452,7 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
               onChange={(event) => {
                 const next = { ...exceptionFilters, initiativeId: event.target.value || undefined };
                 setExceptionFilters(next);
-                updateExceptionQueueLocation(next, exceptionState);
+                persistFilters(next);
               }}
               disabled={selectionsQuery.isPending}
             >
@@ -450,7 +467,7 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
               onChange={(event) => {
                 const next = { ...exceptionFilters, resourceProfileId: event.target.value || undefined };
                 setExceptionFilters(next);
-                updateExceptionQueueLocation(next, exceptionState);
+                persistFilters(next);
               }}
               disabled={selectionsQuery.isPending}
             >
@@ -667,7 +684,7 @@ interface RequestQueueCardProps {
   onEscalationToggle: () => void;
   onCancellationToggle: () => void;
   onRefer: () => void;
-  onCorrect: (input: { initiativeId?: string; groupId?: string; resourceProfileId?: string; reason: string }) => Promise<void>;
+  onCorrect: (input: { initiativeId?: string; groupId?: string; resourceProfileId?: string; personId?: string; reason: string }) => Promise<void>;
   onRemove: (reason: string) => Promise<void>;
   onDeny: (explanation: string) => Promise<void>;
   onApprove: (approval: ApprovalDecision) => Promise<void>;
@@ -712,9 +729,7 @@ function RequestQueueCard({
   onEscalate,
   onCancelException,
 }: RequestQueueCardProps) {
-  const responsible = Array.isArray(item.nextResponsible)
-    ? item.nextResponsible.map((person) => `${person.displayName} (${person.role.replace('ALLOCATION_', '')})`).join(', ')
-    : item.nextResponsible.role === 'ALLOCATION_ADMIN' ? 'Tech Resource Allocation Admin' : 'Assigned group';
+  const responsible = requestResponsibleLabel(item.nextResponsible);
   const conditions = item.requestedConditions;
   const actionDisabled = busy || actionsBlocked;
   const ownRequest = item.requester.personId === personId;
@@ -725,7 +740,7 @@ function RequestQueueCard({
     <article id={`resource-request-${item.id}`} tabIndex={-1} className={`request-queue-card${highlighted ? ' request-queue-card-highlighted' : ''}`} aria-labelledby={`request-title-${item.id}`}>
       <div className="request-queue-card-heading">
         <div>
-          <p className="eyebrow">{queue === 'presentation' ? 'Waiting for presentation' : queue === 'team-decision' ? 'Waiting for group decision' : 'Admin exception review'}</p>
+          <p className="eyebrow">{queue === 'presentation' ? 'Waiting for presentation' : queue === 'team-decision' ? 'Waiting for group decision' : queue === 'revalidation' ? 'Eligibility revalidation' : 'Admin exception review'}</p>
           <h3 id={`request-title-${item.id}`}>{conditions.initiativeCode ?? 'ITDM'} — {conditions.initiativeName ?? 'Resource request'}</h3>
           <p className="request-queue-requester">Requested by {item.requester.displayName ?? 'Unknown requester'}</p>
         </div>
@@ -742,16 +757,33 @@ function RequestQueueCard({
         {item.dueAt && <div><dt>Presentation deadline</dt><dd>{dateLabel(item.dueAt)}</dd></div>}
       </dl>
 
+      {queue === 'revalidation' && (
+        <p className="request-revalidation-origin"><strong>Origin:</strong> {revalidationOriginLabel(item.originState)}</p>
+      )}
+
       {item.impediments?.includes('PRESENTATION_DEADLINE_PASSED') && (
         <p className="form-error request-queue-impediment" role="status">The 21-day presentation deadline has passed. Automatic removal is pending, so actions are unavailable.</p>
       )}
-      {queue === 'exceptions' && (item.impediments?.length ?? 0) > 0 && (
+      {(queue === 'exceptions' || queue === 'revalidation') && (item.impediments?.length ?? 0) > 0 && (
         <div className="form-error request-exception-impediments" role="status">
           <p>Review these conditions before final approval:</p>
-          <ul>{item.impediments?.map((impediment) => <li key={impediment}>{exceptionImpedimentLabel(impediment)}</li>)}</ul>
+          <ul>{item.impediments?.map((impediment) => <li key={impediment}>{revalidationImpedimentLabel(impediment)}</li>)}</ul>
         </div>
       )}
       {conditions.comment && <p className="request-queue-comment">{conditions.comment}</p>}
+
+      {queue === 'revalidation' && item.approvedConditions && (
+        <section className="request-detail-outcome request-revalidation-previous-proposal" aria-label="Previous proposal">
+          <h4>Previous proposal</h4>
+          <dl className="request-queue-details">
+            <div><dt>Proposed person</dt><dd>{item.approvedConditions.personName}</dd></div>
+            <div><dt>Proposed resource profile</dt><dd>{item.approvedConditions.resourceProfileName}</dd></div>
+            <div><dt>Period</dt><dd>{item.approvedConditions.startDate} to {item.approvedConditions.endDate}</dd></div>
+            <div><dt>Weekly hours</dt><dd>{item.approvedConditions.weeklyHours} hours per week</dd></div>
+          </dl>
+          {item.approvedConditions.explanation && <p><strong>Previous decision explanation:</strong> {item.approvedConditions.explanation}</p>}
+        </section>
+      )}
 
       {queue === 'exceptions' && item.resolutionStrategy && (
         <div className="request-exception-recorded-strategy" role="status">
@@ -775,16 +807,19 @@ function RequestQueueCard({
           <button type="button" className="primary-button" onClick={onRefer} disabled={actionDisabled}>
             {busy ? 'Updating request…' : 'Refer to group decision'}
           </button>
-          {role === 'ALLOCATION_ADMIN' && item.availableActions.includes('REFERENCE_CORRECTION') && (
-            <button type="button" className="secondary-button" aria-expanded={openCorrection} onClick={onCorrectionToggle} disabled={actionDisabled}>
-              Correct references
-            </button>
-          )}
           {role === 'ALLOCATION_ADMIN' && item.availableActions.includes('ADMINISTRATIVE_REMOVE') && (
             <button type="button" className="secondary-button" aria-expanded={openRemoval} onClick={onRemovalToggle} disabled={actionDisabled}>
               Remove request
             </button>
           )}
+        </div>
+      )}
+
+      {item.availableActions.includes('REFERENCE_CORRECTION') && (
+        <div className="request-queue-actions">
+          <button type="button" className="secondary-button" aria-expanded={openCorrection} onClick={onCorrectionToggle} disabled={actionDisabled}>
+            Correct references
+          </button>
         </div>
       )}
 
@@ -1043,22 +1078,31 @@ function ReferenceCorrectionForm({
   onSubmit: RequestQueueCardProps['onCorrect'];
 }) {
   const { register, handleSubmit, control, formState: { errors } } = useForm<ReferenceCorrectionValues>({
-    defaultValues: { initiativeId: '', groupId: '', resourceProfileId: '', reason: '' },
+    defaultValues: { initiativeId: '', groupId: '', resourceProfileId: '', personId: '', reason: '' },
   });
   const selectedGroupId = useWatch({ control, name: 'groupId' });
   const currentGroupId = readValue(item, 'groupId');
   const effectiveGroupId = selectedGroupId || currentGroupId;
   const activeProfiles = selections.profiles.filter((profile) => profile.groupId === effectiveGroupId);
+  const eligibleReplacementPeople = selections.people.filter((person) => person.groupId === effectiveGroupId);
+  const canReplacePerson = (item.decisionState === 'PRE_N3' || item.decisionState === 'ESCALATION')
+    && (item.impediments?.includes('PERSON_INACTIVE') === true || item.impediments?.includes('PERSON_LEFT_GROUP') === true);
+  const correctionHelp = item.decisionState === 'REQUIRES_REVALIDATION'
+    ? 'This correction counts as presentation. The request stays in revalidation until an authorized decision or referral follows.'
+    : item.decisionState === 'PRE_N3' || item.decisionState === 'ESCALATION'
+      ? 'This correction is recorded with a reason and keeps the request in its current exception stage.'
+      : 'Choose an active replacement when a reference needs correction. The presentation deadline stays unchanged.';
 
   return (
     <form className="request-queue-action-form" aria-label={`Correct references for request ${item.id}`} onSubmit={handleSubmit((values) => onSubmit({
       ...(values.initiativeId ? { initiativeId: values.initiativeId } : {}),
       ...(values.groupId ? { groupId: values.groupId } : {}),
       ...(values.resourceProfileId ? { resourceProfileId: values.resourceProfileId } : {}),
+      ...(values.personId ? { personId: values.personId } : {}),
       reason: values.reason.trim(),
     }))}>
       <h4>Correct request references</h4>
-      <p>Choose an active replacement when a reference needs correction. The presentation deadline stays unchanged.</p>
+      <p>{correctionHelp}</p>
       <label className="form-field">
         <span>ITDM</span>
         <select {...register('initiativeId')} disabled={disabled}>
@@ -1083,6 +1127,17 @@ function ReferenceCorrectionForm({
         </select>
         {errors.resourceProfileId && <span className="field-error">{errors.resourceProfileId.message}</span>}
       </label>
+      {canReplacePerson && (
+        <label className="form-field">
+          <span>Replacement person</span>
+          <select {...register('personId')} disabled={disabled || eligibleReplacementPeople.length === 0}>
+            <option value="">Keep current person</option>
+            {eligibleReplacementPeople.map((person) => <option key={person.id} value={person.id}>{person.displayName}</option>)}
+          </select>
+          <span className="field-help">Choose an active person in the current group. Correct the group first if the replacement belongs to another group.</span>
+          {eligibleReplacementPeople.length === 0 && <span className="field-error">No active people are available for the current group.</span>}
+        </label>
+      )}
       <label className="form-field request-queue-reason-field">
         <span>Reason</span>
         <textarea {...register('reason', { required: 'Provide a reason.', maxLength: { value: 2000, message: 'Use no more than 2,000 characters.' }, validate: (value) => Boolean(value.trim()) || 'Provide a reason.' })} maxLength={2000} disabled={disabled} />

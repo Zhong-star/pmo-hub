@@ -16,6 +16,7 @@ import {
   type ResourceRequestItem,
 } from './requestApi';
 import { DeniedRequestResponse } from './DeniedRequestResponse';
+import { requestResponsibleLabel, revalidationImpedimentLabel, revalidationOriginLabel } from './revalidation';
 
 interface RequestWorkspaceProps {
   localUserId: string;
@@ -633,9 +634,24 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
                   <section className="request-detail-outcome request-proposal-status" aria-label="Revalidation status">
                     <h4>Requires revalidation</h4>
                     <p>This request requires revalidation. The previous proposal cannot be accepted. A decision maker must review eligible conditions before a new decision is issued.</p>
+                    {currentItem.revalidation && (
+                      <>
+                        <p><strong>Origin:</strong> {revalidationOriginLabel(currentItem.revalidation.originState)}</p>
+                        {(currentItem.revalidation.impediments.length > 0) && (
+                          <div>
+                            <strong>Current blockers:</strong>
+                            <ul>{currentItem.revalidation.impediments.map((impediment) => (
+                              <li key={impediment}>{revalidationImpedimentLabel(impediment)}</li>
+                            ))}</ul>
+                          </div>
+                        )}
+                        <p><strong>Next responsible:</strong> {requestResponsibleLabel(currentItem.revalidation.nextResponsible)}</p>
+                      </>
+                    )}
                   </section>
                 )}
                 {(currentItem.decisionState === 'DENIED' || currentItem.decisionState === 'PRE_N3' || currentItem.decisionState === 'CANCELLED'
+                  || currentItem.decisionState === 'REQUIRES_REVALIDATION'
                   || (currentItem.decisionState === 'APPROVED_WITH_CHANGES' && currentItem.availableActions?.includes('CONTEST') === true)) && (
                   <DeniedRequestResponse
                     localUserId={localUserId}
@@ -661,12 +677,16 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
                 {currentItem.approvedConditions && (
                   <section
                     className="request-detail-outcome"
-                    aria-label={currentItem.decisionState === 'APPROVED_WITH_CHANGES' ? 'Proposed conditions' : 'Approved conditions'}
+                    aria-label={currentItem.decisionState === 'APPROVED_WITH_CHANGES'
+                      ? 'Proposed conditions'
+                      : currentItem.decisionState === 'REQUIRES_REVALIDATION' ? 'Previous proposal' : 'Approved conditions'}
                   >
-                    <h4>{currentItem.decisionState === 'APPROVED_WITH_CHANGES' ? 'Proposed conditions' : 'Approved conditions'}</h4>
+                    <h4>{currentItem.decisionState === 'APPROVED_WITH_CHANGES'
+                      ? 'Proposed conditions'
+                      : currentItem.decisionState === 'REQUIRES_REVALIDATION' ? 'Previous proposal' : 'Approved conditions'}</h4>
                     <dl className="request-queue-details">
-                      <div><dt>Approved person</dt><dd>{currentItem.approvedConditions.personName}</dd></div>
-                      <div><dt>Approved resource profile</dt><dd>{currentItem.approvedConditions.resourceProfileName}</dd></div>
+                      <div><dt>{currentItem.decisionState === 'REQUIRES_REVALIDATION' ? 'Proposed person' : 'Approved person'}</dt><dd>{currentItem.approvedConditions.personName}</dd></div>
+                      <div><dt>{currentItem.decisionState === 'REQUIRES_REVALIDATION' ? 'Proposed resource profile' : 'Approved resource profile'}</dt><dd>{currentItem.approvedConditions.resourceProfileName}</dd></div>
                       <div><dt>Group</dt><dd>{currentItem.approvedConditions.groupName}</dd></div>
                       <div><dt>Period</dt><dd>{currentItem.approvedConditions.startDate} to {currentItem.approvedConditions.endDate}</dd></div>
                       <div><dt>Weekly hours</dt><dd>{currentItem.approvedConditions.weeklyHours} hours per week</dd></div>

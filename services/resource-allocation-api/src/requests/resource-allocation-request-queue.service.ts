@@ -26,7 +26,7 @@ const defaultPageSize = 50;
 const maximumPageSize = 100;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type RequestQueueCode = 'presentation' | 'team-decision' | 'exceptions';
+type RequestQueueCode = 'presentation' | 'team-decision' | 'exceptions' | 'revalidation';
 
 interface QueueFilters {
   limit?: string;
@@ -57,6 +57,8 @@ interface QueueRow {
   affected_initiative_ids: string[] | null;
   exception_impediments: string[] | null;
   decision_state: string;
+  revalidation_origin_state: string | null;
+  revalidation_decision_stage: string | null;
   received_at: Date;
   stage_entered_at: Date;
   due_at: Date | null;
@@ -71,6 +73,7 @@ interface RequestSnapshot extends Record<string, unknown> {
   requesterId: string;
   requesterSnapshot: Record<string, unknown>;
   requestedConditions: Record<string, unknown>;
+  approvedConditions: Record<string, unknown> | null;
   decisionState: string;
   receivedAt: Date;
   stageEnteredAt: Date;
@@ -111,11 +114,17 @@ export class ResourceAllocationRequestQueueService {
         if (scope.groupIds.length === 0) conditions.push('FALSE');
         else conditions.push(`r.requested_conditions->>'groupId' = ANY(${bind(scope.groupIds)}::text[])`);
       }
+      if ('revalidationOriginStates' in scope && scope.revalidationOriginStates) {
+        conditions.push(`r.revalidation_origin_state = ANY(${bind(scope.revalidationOriginStates)}::text[])`);
+      }
+      if ('revalidationDecisionStages' in scope && scope.revalidationDecisionStages) {
+        conditions.push(`r.revalidation_decision_stage = ANY(${bind(scope.revalidationDecisionStages)}::text[])`);
+      }
       if (normalizedFilters.groupId) conditions.push(`r.requested_conditions->>'groupId' = ${bind(normalizedFilters.groupId)}`);
       if (normalizedFilters.initiativeId) conditions.push(`r.requested_conditions->>'initiativeId' = ${bind(normalizedFilters.initiativeId)}`);
       if (normalizedFilters.resourceProfileId) conditions.push(`r.requested_conditions->>'resourceProfileId' = ${bind(normalizedFilters.resourceProfileId)}`);
       if (normalizedFilters.decisionState) conditions.push(`r.decision_state = ${bind(normalizedFilters.decisionState)}`);
-      if (queue === 'team-decision') conditions.push('g.active = TRUE');
+      if (queue === 'team-decision' || (queue === 'revalidation' && actor.role !== ResourceAllocationRole.Admin)) conditions.push('g.active = TRUE');
 
       if (cursor) {
         if (queue === 'presentation') {
@@ -128,6 +137,7 @@ export class ResourceAllocationRequestQueueService {
       const limitParameter = bind(pageSize + 1);
       const rows = await this.dataSource.query(
         `SELECT r.id, r.requester_id, r.requester_snapshot, r.requested_conditions, r.approved_conditions, r.decision_state,
+                r.revalidation_origin_state, r.revalidation_decision_stage,
                 r.received_at, r.stage_entered_at,
                 CASE WHEN r.decision_state = 'WAITING_FOR_PRESENTATION' THEN r.expiration_due_at ELSE NULL END AS due_at,
                 (
@@ -157,7 +167,16 @@ export class ResourceAllocationRequestQueueService {
                   CASE WHEN r.decision_state IN ('PRE_N3', 'ESCALATION') AND p.active IS DISTINCT FROM TRUE THEN 'PROFILE_INACTIVE' END,
                   CASE WHEN r.decision_state IN ('PRE_N3', 'ESCALATION') AND p.active = TRUE AND p.group_id::text <> r.requested_conditions->>'groupId' THEN 'PROFILE_GROUP_MISMATCH' END,
                   CASE WHEN r.decision_state IN ('PRE_N3', 'ESCALATION') AND r.approved_conditions ? 'personId' AND person.active IS DISTINCT FROM TRUE THEN 'PERSON_INACTIVE' END,
-                  CASE WHEN r.decision_state IN ('PRE_N3', 'ESCALATION') AND person.active = TRUE AND person.group_id::text <> r.requested_conditions->>'groupId' THEN 'PERSON_LEFT_GROUP' END
+                  CASE WHEN r.decision_state IN ('PRE_N3', 'ESCALATION') AND person.active = TRUE AND person.group_id::text <> r.requested_conditions->>'groupId' THEN 'PERSON_LEFT_GROUP' END,
+                  CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND (g.id IS NULL OR g.active = FALSE) THEN 'GROUP_INACTIVE' END,
+                  CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND i.active IS DISTINCT FROM TRUE THEN 'INITIATIVE_INACTIVE' END,
+                  CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND p.active IS DISTINCT FROM TRUE THEN 'PROFILE_INACTIVE' END,
+                  CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND p.active = TRUE AND p.group_id::text <> r.requested_conditions->>'groupId' THEN 'PROFILE_GROUP_MISMATCH' END,
+                  CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND r.revalidation_origin_state = 'APPROVED_WITH_CHANGES' AND person.active IS DISTINCT FROM TRUE THEN 'PERSON_INACTIVE' END,
+                  CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND r.revalidation_origin_state = 'APPROVED_WITH_CHANGES' AND person.active = TRUE AND person.group_id::text <> r.requested_conditions->>'groupId' THEN 'PERSON_LEFT_GROUP' END,
+                  CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND r.revalidation_origin_state = 'APPROVED_WITH_CHANGES' AND (r.approved_conditions->>'startDate') < (clock_timestamp() AT TIME ZONE 'America/Sao_Paulo')::date::text THEN 'PROPOSED_START_DATE_PASSED' END,
+                  CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND r.revalidation_origin_state = 'APPROVED_WITH_CHANGES' AND (r.approved_conditions->>'endDate') < (r.approved_conditions->>'startDate') THEN 'PROPOSAL_PERIOD_INVALID' END,
+                  CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND r.revalidation_origin_state = 'APPROVED_WITH_CHANGES' AND ((r.approved_conditions->>'weeklyHours')::numeric <= 0 OR (r.approved_conditions->>'weeklyHours')::numeric > 40) THEN 'PROPOSAL_HOURS_INVALID' END
                 ], NULL::text) AS exception_impediments,
                 (r.decision_state = 'WAITING_FOR_PRESENTATION' AND r.expiration_due_at < clock_timestamp()) AS deadline_passed,
                 ((r.requested_conditions->>'startDate') < (clock_timestamp() AT TIME ZONE 'America/Sao_Paulo')::date::text) AS approval_date_invalid,
@@ -170,10 +189,10 @@ export class ResourceAllocationRequestQueueService {
                   ) ORDER BY leader.display_name, leader.id)
                   FROM resource_people AS leader
                   WHERE leader.active = TRUE AND (
-                    (leader.role = 'ALLOCATION_MODERATOR' AND leader.group_id = g.id)
+                    leader.id <> r.requester_id AND ((leader.role = 'ALLOCATION_MODERATOR' AND leader.group_id = g.id)
                     OR (leader.role = 'ALLOCATION_ADMIN' AND leader.group_id = g.id)
                     OR leader.id = g.supervisor_id
-                    OR leader.id = g.manager_id
+                    OR leader.id = g.manager_id)
                   )
                 ), '[]'::jsonb) AS next_responsible
          FROM resource_requests AS r
@@ -236,12 +255,17 @@ export class ResourceAllocationRequestQueueService {
         }, async () => {
           const request = await this.lockRequest(manager, requestId);
           this.requireVersion(request, expectedVersion);
-          this.requireState(request, ['WAITING_FOR_PRESENTATION'], 'Only a request waiting for presentation can be referred.');
-          await this.requireCurrentWaitingDeadline(manager, request);
+          this.requireState(request, ['WAITING_FOR_PRESENTATION', 'REQUIRES_REVALIDATION'], 'Only a request waiting for presentation or revalidation can be referred.');
+          if (request.decisionState === 'WAITING_FOR_PRESENTATION') await this.requireCurrentWaitingDeadline(manager, request);
+          if (request.decisionState === 'REQUIRES_REVALIDATION' && !['WAITING_FOR_PRESENTATION', 'PENDING_TEAM_DECISION'].includes(request.revalidationOriginState ?? '')) {
+            throw new ResourceAllocationException('INVALID_STATE_TRANSITION', 'Request cannot be referred', 422, 'Only a request originally waiting for presentation or team decision can be referred.');
+          }
           const { group } = await this.requireActiveReferences(manager, request.requestedConditions);
           const occurredAt = await this.currentTimestamp(manager);
           const before = this.snapshot(request);
           request.decisionState = 'PENDING_TEAM_DECISION';
+          request.revalidationOriginState = null;
+          request.revalidationDecisionStage = null;
           request.stageEnteredAt = occurredAt;
           const saved = await manager.getRepository(ResourceRequest).save(request);
           await this.recordHistory(manager, saved, actor, 'REFERRED', before, this.snapshot(saved), correlation, occurredAt);
@@ -278,12 +302,22 @@ export class ResourceAllocationRequestQueueService {
         }, async () => {
           const request = await this.lockRequest(manager, requestId);
           this.requireVersion(request, expectedVersion);
-          this.requireState(request, ['WAITING_FOR_PRESENTATION'], 'References can only be corrected while a request waits for presentation.');
-          await this.requireCurrentWaitingDeadline(manager, request);
+          this.requireState(request, ['WAITING_FOR_PRESENTATION', 'REQUIRES_REVALIDATION', 'PRE_N3', 'ESCALATION'], 'References can only be corrected while a request waits for presentation, revalidation, or exception resolution.');
+          if (request.decisionState === 'WAITING_FOR_PRESENTATION') await this.requireCurrentWaitingDeadline(manager, request);
+          if (correction.personId && !['PRE_N3', 'ESCALATION'].includes(request.decisionState)) {
+            throw new ResourceAllocationException('INVALID_STATE_TRANSITION', 'Person cannot be corrected', 422, 'A person may be corrected directly only during Pre N3 or Escalation resolution.');
+          }
           const before = this.snapshot(request);
           const prior = request.requestedConditions;
-          const next = this.applyReferenceCorrection(prior, correction);
+          const { personId, ...referenceCorrection } = correction;
+          const next = this.applyReferenceCorrection(prior, referenceCorrection);
           const references = await this.requireActiveReferences(manager, next);
+          const correctedPerson = personId
+            ? await manager.getRepository(ResourcePerson).findOne({ where: { id: personId, active: true, groupId: references.group.id } })
+            : null;
+          if (personId && !correctedPerson) {
+            throw new ResourceAllocationException('INELIGIBLE_REFERENCE', 'Ineligible reference', 422, 'Select an active person assigned to the corrected request group.');
+          }
           if (correction.initiativeId) {
             next.initiativeId = references.initiative.id;
             next.initiativeCode = references.initiative.code;
@@ -301,19 +335,41 @@ export class ResourceAllocationRequestQueueService {
             await markInitiativeUsedForRequest(manager, references.initiative.id);
           }
           request.requestedConditions = next;
+          if (request.approvedConditions || correctedPerson) {
+            const approved = this.applyReferenceCorrection(request.approvedConditions ?? next, referenceCorrection);
+            if (correction.initiativeId) {
+              approved.initiativeId = references.initiative.id;
+              approved.initiativeCode = references.initiative.code;
+              approved.initiativeName = references.initiative.name;
+            }
+            if (correction.groupId) {
+              approved.groupId = references.group.id;
+              approved.groupName = references.group.name;
+            }
+            if (correction.resourceProfileId) {
+              approved.resourceProfileId = references.profile.id;
+              approved.resourceProfileName = references.profile.name;
+            }
+            if (correctedPerson) {
+              approved.personId = correctedPerson.id;
+              approved.personName = correctedPerson.displayName;
+            }
+            request.approvedConditions = approved;
+          }
           const occurredAt = await this.currentTimestamp(manager);
           const saved = await manager.getRepository(ResourceRequest).save(request);
           await this.recordHistory(manager, saved, actor, 'REFERENCE_CORRECTED', before, this.snapshot(saved), correlation, occurredAt, correction.reason);
-          if (saved.requesterId !== actor.id) {
-            await this.notify(manager, {
-              recipientId: saved.requesterId,
-              requestId: saved.id,
-              eventCode: `REQUEST_REFERENCE_CORRECTED_${saved.version}`,
-              title: 'Resource request references updated',
-              message: 'An Admin updated the references on your request. Review its current status in Tech Resource Allocation.',
-              createdAt: occurredAt,
-            });
-          }
+          const recipients = saved.decisionState === 'WAITING_FOR_PRESENTATION'
+            ? [saved.requesterId]
+            : [saved.requesterId, ...(await this.getActiveGroupLeaderIds(manager, saved))];
+          await this.notifyMany(manager, recipients.map((recipientId) => ({
+            recipientId,
+            requestId: saved.id,
+            eventCode: `REQUEST_REFERENCE_CORRECTED_${saved.version}`,
+            title: 'Resource request references updated',
+            message: 'An Admin corrected the references on your request. Review its current status in Tech Resource Allocation.',
+            createdAt: occurredAt,
+          })).filter((notice) => notice.recipientId !== actor.id));
           return this.toRequestResponse(saved);
         });
       });
@@ -379,6 +435,37 @@ export class ResourceAllocationRequestQueueService {
   }
 
   private async authorizeQueue(actor: ResourcePerson, queue: RequestQueueCode, requestedGroupId?: string) {
+    if (queue === 'revalidation') {
+      if (actor.role === ResourceAllocationRole.Admin) {
+        return {
+          decisionState: 'REQUIRES_REVALIDATION',
+          revalidationOriginStates: ['WAITING_FOR_PRESENTATION', 'PENDING_TEAM_DECISION', 'APPROVED_WITH_CHANGES'],
+          groupIds: null as string[] | null,
+        };
+      }
+      let groupIds: string[];
+      switch (actor.role) {
+        case ResourceAllocationRole.Moderator:
+          groupIds = actor.groupId ? [actor.groupId] : [];
+          break;
+        case ResourceAllocationRole.Supervisor:
+        case ResourceAllocationRole.Manager:
+          groupIds = actor.coveredGroupIds;
+          break;
+        default:
+          throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'This role cannot view the revalidation queue.');
+      }
+      if (requestedGroupId && !groupIds.includes(requestedGroupId)) {
+        throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'The requested group is outside your active scope.');
+      }
+      return {
+        decisionState: 'REQUIRES_REVALIDATION',
+        revalidationOriginStates: ['APPROVED_WITH_CHANGES'],
+        revalidationDecisionStages: ['PENDING_TEAM_DECISION'],
+        groupIds: requestedGroupId ? [requestedGroupId] : [...new Set(groupIds)].sort(),
+      };
+    }
+
     if (queue === 'presentation') {
       if (actor.role !== ResourceAllocationRole.Admin) {
         throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'Only an active Admin can view this queue.');
@@ -425,8 +512,38 @@ export class ResourceAllocationRequestQueueService {
   private toQueueItem(row: QueueRow, queue: RequestQueueCode, actor: ResourcePerson) {
     const canDecide = row.requester_id !== actor.id && !row.deadline_passed;
     const canApprove = canDecide && !row.approval_date_invalid;
-    const canResolveException = !row.exception_impediments?.includes('GROUP_INACTIVE') &&
-      !row.exception_impediments?.includes('INITIATIVE_INACTIVE');
+    const canResolveException = (row.exception_impediments?.length ?? 0) === 0;
+    const groupId = typeof row.requested_conditions.groupId === 'string' ? row.requested_conditions.groupId : '';
+    const inGroupScope = actor.role === ResourceAllocationRole.Admin
+      ? actor.groupId === groupId
+      : actor.role === ResourceAllocationRole.Moderator
+        ? actor.groupId === groupId
+        : (actor.role === ResourceAllocationRole.Supervisor || actor.role === ResourceAllocationRole.Manager) && actor.coveredGroupIds.includes(groupId);
+    const isReferenceImpediment = row.exception_impediments?.some((impediment) => [
+      'GROUP_INACTIVE', 'INITIATIVE_INACTIVE', 'PROFILE_INACTIVE', 'PROFILE_GROUP_MISMATCH',
+    ].includes(impediment)) ?? false;
+    const isRequester = row.requester_id === actor.id;
+    const revalidationActions = (() => {
+      const correction = actor.role === ResourceAllocationRole.Admin && isReferenceImpediment ? ['REFERENCE_CORRECTION'] : [];
+      if (row.revalidation_origin_state === 'WAITING_FOR_PRESENTATION') {
+        return actor.role === ResourceAllocationRole.Admin
+          ? [...correction, ...(!isReferenceImpediment ? ['REFER'] : []), ...(!isRequester && !isReferenceImpediment ? ['APPROVE', 'DENY'] : [])]
+          : [];
+      }
+      if (row.revalidation_origin_state === 'PENDING_TEAM_DECISION') {
+        return actor.role === ResourceAllocationRole.Admin
+          ? [...correction, ...(!isReferenceImpediment ? ['REFER'] : []), ...(!isRequester && !isReferenceImpediment ? ['APPROVE', 'DENY'] : [])]
+          : [];
+      }
+      if (row.revalidation_origin_state === 'APPROVED_WITH_CHANGES') {
+        const canProposalDecide = inGroupScope || actor.role === ResourceAllocationRole.Admin && row.revalidation_decision_stage === 'WAITING_FOR_PRESENTATION';
+        return [
+          ...correction,
+          ...(!isRequester && canProposalDecide ? ['DENY', ...(!isReferenceImpediment ? ['APPROVE'] : [])] : []),
+        ];
+      }
+      return [];
+    })();
     return {
       id: row.id,
       requester: row.requester_snapshot,
@@ -436,19 +553,22 @@ export class ResourceAllocationRequestQueueService {
       resolutionReason: row.resolution_reason,
       affectedInitiativeIds: row.affected_initiative_ids ?? [],
       decisionState: row.decision_state,
+      originState: row.revalidation_origin_state,
       receivedAt: new Date(row.received_at).toISOString(),
       stageEnteredAt: new Date(row.stage_entered_at).toISOString(),
       dueAt: row.due_at ? new Date(row.due_at).toISOString() : null,
-      impediments: queue === 'exceptions'
+      impediments: queue === 'exceptions' || queue === 'revalidation'
         ? row.exception_impediments ?? []
         : row.deadline_passed ? ['PRESENTATION_DEADLINE_PASSED'] : [],
-      nextResponsible: queue === 'team-decision'
+      nextResponsible: queue === 'team-decision' || queue === 'revalidation' && row.revalidation_origin_state === 'APPROVED_WITH_CHANGES' && row.revalidation_decision_stage === 'PENDING_TEAM_DECISION'
         ? row.next_responsible
         : { role: 'ALLOCATION_ADMIN' },
-      availableActions: queue === 'exceptions'
-        ? row.requester_id === actor.id
-          ? []
-          : [...(row.decision_state === 'PRE_N3' ? ['ESCALATE'] : []), 'CANCEL', 'RECORD_STRATEGY', ...(canResolveException ? ['RESOLVE'] : [])]
+      availableActions: queue === 'revalidation'
+        ? revalidationActions
+        : queue === 'exceptions'
+        ? [...(row.exception_impediments?.length ? ['REFERENCE_CORRECTION'] : []), ...(!isRequester
+          ? [...(row.decision_state === 'PRE_N3' ? ['ESCALATE'] : []), 'CANCEL', 'RECORD_STRATEGY', ...(canResolveException ? ['RESOLVE'] : [])]
+          : [])]
         : queue === 'presentation'
         ? !row.deadline_passed
           ? ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', ...(canApprove ? ['APPROVE'] : []), ...(canDecide ? ['DENY'] : [])]
@@ -513,6 +633,23 @@ export class ResourceAllocationRequestQueueService {
     })));
   }
 
+  private async getActiveGroupLeaderIds(manager: EntityManager, request: ResourceRequest): Promise<string[]> {
+    const groupId = this.readUuid(request.requestedConditions.groupId);
+    if (!groupId) return [];
+    const leaders = await manager.query(`
+      SELECT DISTINCT person.id
+      FROM resource_people AS person
+      LEFT JOIN resource_groups AS request_group ON request_group.id = $1
+      WHERE person.active = TRUE
+        AND (
+          (person.role IN ($2, $3) AND person.group_id = $1)
+          OR person.id = request_group.supervisor_id
+          OR person.id = request_group.manager_id
+        )
+    `, [groupId, ResourceAllocationRole.Moderator, ResourceAllocationRole.Admin]) as Array<{ id: string }>;
+    return leaders.map((leader) => leader.id);
+  }
+
   private async notifyMany(
     manager: EntityManager,
     notices: Array<{
@@ -570,7 +707,10 @@ export class ResourceAllocationRequestQueueService {
       requesterId: request.requesterId,
       requesterSnapshot: request.requesterSnapshot,
       requestedConditions: request.requestedConditions,
+      approvedConditions: request.approvedConditions,
       decisionState: request.decisionState,
+      revalidationOriginState: request.revalidationOriginState,
+      revalidationDecisionStage: request.revalidationDecisionStage,
       receivedAt: request.receivedAt,
       stageEnteredAt: request.stageEnteredAt,
       expirationDueAt: request.expirationDueAt,
@@ -585,6 +725,7 @@ export class ResourceAllocationRequestQueueService {
       requester: request.requesterSnapshot,
       requestedConditions: request.requestedConditions,
       decisionState: request.decisionState,
+      originState: request.revalidationOriginState,
       receivedAt: request.receivedAt.toISOString(),
       stageEnteredAt: request.stageEnteredAt.toISOString(),
       dueAt: request.decisionState === 'WAITING_FOR_PRESENTATION' ? request.expirationDueAt.toISOString() : null,
@@ -624,8 +765,8 @@ export class ResourceAllocationRequestQueueService {
   }
 
   private parseQueueCode(value: string): RequestQueueCode {
-    if (value === 'presentation' || value === 'team-decision' || value === 'exceptions') return value;
-    throw this.validationError('queueCode must be presentation, team-decision, or exceptions.');
+    if (value === 'presentation' || value === 'team-decision' || value === 'exceptions' || value === 'revalidation') return value;
+    throw this.validationError('queueCode must be presentation, team-decision, exceptions, or revalidation.');
   }
 
   private parsePageSize(value: string | undefined): number {
@@ -716,16 +857,18 @@ export class ResourceAllocationRequestQueueService {
   }
 
   private normalizeReferenceCorrection(input: CorrectRequestReferencesDto) {
-    const corrected: { initiativeId?: string; groupId?: string; resourceProfileId?: string; reason: string } = {
+    const corrected: { personId?: string; initiativeId?: string; groupId?: string; resourceProfileId?: string; reason: string } = {
       reason: this.normalizeReason(input.reason),
     };
+    const personId = this.normalizeOptionalUuid(input.personId, 'personId');
     const initiativeId = this.normalizeOptionalUuid(input.initiativeId, 'initiativeId');
     const groupId = this.normalizeOptionalUuid(input.groupId, 'groupId');
     const resourceProfileId = this.normalizeOptionalUuid(input.resourceProfileId, 'resourceProfileId');
+    if (personId) corrected.personId = personId;
     if (initiativeId) corrected.initiativeId = initiativeId;
     if (groupId) corrected.groupId = groupId;
     if (resourceProfileId) corrected.resourceProfileId = resourceProfileId;
-    if (!initiativeId && !groupId && !resourceProfileId) {
+    if (!personId && !initiativeId && !groupId && !resourceProfileId) {
       throw this.validationError('Provide at least one reference to correct.');
     }
     return corrected;

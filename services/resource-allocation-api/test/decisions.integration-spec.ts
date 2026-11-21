@@ -399,8 +399,76 @@ describe('Tech Resource Allocation denials and exception resolution (#65/#66)', 
       id: resourceRequest.id,
       decisionState: 'PRE_N3',
       impediments: ['GROUP_INACTIVE', 'INITIATIVE_INACTIVE', 'PROFILE_INACTIVE', 'PERSON_INACTIVE'],
-      availableActions: ['ESCALATE', 'CANCEL', 'RECORD_STRATEGY'],
+      availableActions: ['REFERENCE_CORRECTION', 'ESCALATE', 'CANCEL', 'RECORD_STRATEGY'],
     }));
+  });
+
+  it('requires a reasoned profile correction before resolving an exception with an inactive reference', async () => {
+    const fixture = await setup();
+    const item = await createRequest(fixture, { state: 'ESCALATION' });
+    const profiles = dataSource!.getRepository(ResourceProfile);
+    const replacement = await profiles.save({ name: 'Replacement', active: true, groupId: fixture.group.id });
+    await request(app!.getHttpServer()).patch(`/api/resource-allocation/v1/admin/resource-profiles/${fixture.profile.id}`)
+      .set(commandHeaders(fixture.admin.localUserId, fixture.profile.version))
+      .set('Content-Type', 'application/merge-patch+json')
+      .send({ active: false })
+      .expect(200);
+
+    const basePath = `/api/resource-allocation/v1/requests/${item.id}`;
+    const final = {
+      strategy: 'OUTSOURCE', reason: 'The provider confirmed capacity.',
+      personId: fixture.moderator.id, resourceProfileId: replacement.id,
+      startDate: '2027-01-12', endDate: '2027-01-30', weeklyHours: 16,
+    };
+    await request(app!.getHttpServer()).post(`${basePath}/resolutions`)
+      .set(commandHeaders(fixture.admin.localUserId, item.version))
+      .send(final)
+      .expect(422);
+
+    const corrected = await request(app!.getHttpServer()).post(`${basePath}/reference-corrections`)
+      .set(commandHeaders(fixture.admin.localUserId, item.version))
+      .send({ resourceProfileId: replacement.id, reason: 'Replace the inactive profile in the same group.' })
+      .expect(200);
+    expect(corrected.body.decisionState).toBe('ESCALATION');
+    const history = await dataSource!.getRepository(ResourceRequestHistory).findBy({ requestId: item.id, action: 'REFERENCE_CORRECTED' });
+    expect(history).toHaveLength(1);
+    expect(history[0].afterSnapshot.reason).toBe('Replace the inactive profile in the same group.');
+    const resolved = await request(app!.getHttpServer()).post(`${basePath}/resolutions`)
+      .set(commandHeaders(fixture.admin.localUserId, corrected.body.version))
+      .send(final)
+      .expect(200);
+    expect(resolved.body).toMatchObject({ decisionState: 'APPROVED', allocation: { weeklyHours: 16 } });
+  });
+
+  it('records the previous and replacement person while keeping the exception in Pre N3', async () => {
+    const fixture = await setup();
+    const item = await createRequest(fixture, { state: 'PRE_N3' });
+    const people = dataSource!.getRepository(ResourcePerson);
+    const replacement = await people.save({
+      localUserId: 'replacement', displayName: 'Replacement', email: 'replacement@example.test',
+      role: ResourceAllocationRole.User, active: true, coveredGroupIds: [], groupId: fixture.group.id,
+    });
+    const requests = dataSource!.getRepository(ResourceRequest);
+    await requests.save({
+      ...item,
+      approvedConditions: { ...item.requestedConditions, personId: fixture.moderator.id },
+    });
+    await people.update(fixture.moderator.id, { active: false });
+    const current = await requests.findOneByOrFail({ id: item.id });
+    const reason = 'Replace the person who no longer has access.';
+    const corrected = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${item.id}/reference-corrections`)
+      .set(commandHeaders(fixture.admin.localUserId, current.version))
+      .send({ personId: replacement.id, reason })
+      .expect(200);
+    expect(corrected.body.decisionState).toBe('PRE_N3');
+    const history = await dataSource!.getRepository(ResourceRequestHistory).findBy({ requestId: item.id, action: 'REFERENCE_CORRECTED' });
+    expect(history).toHaveLength(1);
+    expect(history[0].afterSnapshot).toMatchObject({
+      reason,
+      before: { approvedConditions: { personId: fixture.moderator.id } },
+      after: { approvedConditions: { personId: replacement.id } },
+    });
   });
 
   it('records an Admin strategy without assigning a person or creating an allocation and replays it once', async () => {

@@ -117,7 +117,7 @@ export function contestRequest(
   return postDecision(localUserId, requestId, 'contests', version, idempotencyKey, { explanation });
 }
 
-export function cancelDeniedRequest(
+export function cancelRequest(
   localUserId: string,
   requestId: string,
   version: number,

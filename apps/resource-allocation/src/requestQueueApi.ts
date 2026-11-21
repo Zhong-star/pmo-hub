@@ -1,11 +1,12 @@
 import axios from 'axios';
 import { getSelectionCollection, type SelectionItem } from './submissionApi';
 import type { ApprovedRequestConditions, RequestAllocation, RequestConfirmationSource } from './requestApi';
+import type { RevalidationOriginState, RevalidationResponsible } from './revalidation';
 
 export const REQUEST_QUEUES_QUERY_ROOT = ['resource-allocation-request-queues'] as const;
 const API_ROOT = '/api/resource-allocation/v1';
 
-export type RequestQueueCode = 'presentation' | 'team-decision' | 'exceptions';
+export type RequestQueueCode = 'presentation' | 'team-decision' | 'exceptions' | 'revalidation';
 export type ExceptionDecisionState = 'PRE_N3' | 'ESCALATION';
 export type ExceptionResolutionStrategy = 'OUTSOURCE' | 'WAIT_FOR_EMB_RESOURCE' | 'DEPRIORITIZE_OTHER_DEMANDS';
 
@@ -33,11 +34,12 @@ export interface RequestQueueItem {
     comment?: string;
   };
   decisionState: string;
+  originState?: RevalidationOriginState;
   receivedAt: string;
   stageEnteredAt: string;
   dueAt: string | null;
   impediments?: string[];
-  nextResponsible: { role?: string } | Array<{ personId: string; displayName: string; role: string }>;
+  nextResponsible: RevalidationResponsible;
   availableActions: string[];
   resolutionStrategy?: ExceptionResolutionStrategy | null;
   resolutionReason?: string | null;
@@ -221,7 +223,7 @@ export function correctRequestReferences(
   requestId: string,
   version: number,
   idempotencyKey: string,
-  correction: { initiativeId?: string; groupId?: string; resourceProfileId?: string; reason: string },
+  correction: { initiativeId?: string; groupId?: string; resourceProfileId?: string; personId?: string; reason: string },
 ) {
   return postAction<RequestActionResult>(localUserId, requestId, 'reference-corrections', version, idempotencyKey, correction);
 }

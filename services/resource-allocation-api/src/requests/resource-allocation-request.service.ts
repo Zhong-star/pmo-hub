@@ -17,6 +17,7 @@ import { ResourceRequestHistory } from './resource-request-history.entity';
 import { ResourceRequestCategory, ResourceRequestDecisionState } from '../submissions/submission-category';
 import { normalizeRequestedWeeklyHours } from './requested-weekly-hours';
 import { removeResourceRequest } from './remove-resource-request';
+import { getRequestRevalidationSummary } from './revalidate-requests-for-eligibility-change';
 import { ResourceAllocation } from '../allocations/resource-allocation.entity';
 import { allocationResponse } from '../allocations/allocation-response';
 import type { RequestCollectionQueryDto, UpdateRequestedConditionsDto } from './request.dto';
@@ -117,6 +118,7 @@ export class ResourceAllocationRequestService {
       allocation: allocation ? allocationResponse(allocation) : null,
       dueAt: this.actionableDeadline(request)?.toISOString() ?? null,
       availableActions: this.availableActions(request, now),
+      revalidation: await getRequestRevalidationSummary(this.dataSource.manager, request),
     };
   }
 
@@ -468,6 +470,7 @@ export class ResourceAllocationRequestService {
   }
 
   private availableActions(request: ResourceRequest, now: Date): string[] {
+    if (request.decisionState === ResourceRequestDecisionState.RequiresRevalidation) return ['CANCEL'];
     if (request.decisionState === ResourceRequestDecisionState.ApprovedWithChanges &&
       request.decisionResponseDueAt && now < request.decisionResponseDueAt) {
       return ['ACCEPT', 'CONTEST'];

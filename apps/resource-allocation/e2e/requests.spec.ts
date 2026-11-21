@@ -492,8 +492,86 @@ test('explains that a proposal in revalidation cannot be accepted', async ({ pag
   await page.goto(`/resource-allocation/?requestId=${requestId}`);
   const detail = page.getByRole('region', { name: 'ITDM-61' });
   await expect(detail.getByRole('button', { name: 'Accept proposed conditions' })).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: 'Cancel request' })).toHaveCount(0);
   await expect(detail.getByRole('heading', { name: 'Requires revalidation' })).toBeVisible();
   await expect(detail).toContainText('The previous proposal cannot be accepted.');
+});
+
+test('lets a requester cancel revalidation with a reason and sends the current version', async ({ page }) => {
+  await installAccessAndSelections(page);
+  let currentRequest = {
+    ...record(4),
+    decisionState: 'REQUIRES_REVALIDATION',
+    dueAt: null,
+    availableActions: ['CANCEL'],
+    revalidation: {
+      originState: 'PENDING_TEAM_DECISION',
+      impediments: ['PROFILE_INACTIVE'],
+      nextResponsible: [{ personId: 'manager-id', displayName: 'Morgan Manager', role: 'ALLOCATION_MANAGER' }],
+    },
+    approvedConditions: {
+      personId: 'inactive-person',
+      personName: 'Alex Resource',
+      resourceProfileId: profileId,
+      resourceProfileName: 'API Engineering',
+      groupId,
+      groupName: 'Platform Engineering',
+      initiativeId,
+      initiativeCode: 'ITDM-61',
+      initiativeName: 'Resource planning',
+      startDate: '2027-01-05',
+      endDate: '2027-01-28',
+      weeklyHours: 12,
+      explanation: 'The previous proposal needs a current resource profile.',
+    },
+  };
+  let cancellation: { body: Record<string, string>; headers: Record<string, string> } | null = null;
+  await page.route(`${apiRoot}/requests**`, async (route: Route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === 'GET' && url.pathname.endsWith('/history')) {
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+    if (request.method() === 'GET' && url.pathname.endsWith('/requests')) {
+      await route.fulfill({ json: { items: [currentRequest], page: emptyPage } });
+      return;
+    }
+    if (request.method() === 'GET' && url.pathname.endsWith(`/requests/${requestId}`)) {
+      await route.fulfill({ headers: { etag: `"${currentRequest.version}"` }, json: currentRequest });
+      return;
+    }
+    if (request.method() === 'POST' && url.pathname.endsWith(`/requests/${requestId}/cancellations`)) {
+      cancellation = {
+        body: request.postDataJSON() as Record<string, string>,
+        headers: request.headers(),
+      };
+      currentRequest = { ...currentRequest, decisionState: 'CANCELLED', version: 5, availableActions: [] };
+      await route.fulfill({ headers: { etag: '"5"' }, json: currentRequest });
+      return;
+    }
+    await route.fulfill({ status: 404, contentType: 'application/problem+json', json: { status: 404, code: 'RESOURCE_NOT_FOUND' } });
+  });
+
+  await page.goto(`/resource-allocation/?requestId=${requestId}`);
+  const detail = page.getByRole('region', { name: 'ITDM-61' });
+  await expect(detail.getByRole('heading', { name: 'Requires revalidation' })).toBeVisible();
+  await expect(detail.getByText('Origin: Pending group decision')).toBeVisible();
+  await expect(detail.getByText('The requested resource profile is inactive.')).toBeVisible();
+  await expect(detail.getByText('Next responsible: Morgan Manager (MANAGER)')).toBeVisible();
+  await expect(detail.getByRole('heading', { name: 'Previous proposal' })).toBeVisible();
+  await expect(detail.getByText('The previous proposal needs a current resource profile.')).toBeVisible();
+  await expect(detail.getByRole('button', { name: 'Accept proposed conditions' })).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: 'Cancel request' })).toBeVisible();
+  await expect(detail.getByText(/Revalidation does not expire automatically/)).toBeVisible();
+  await detail.getByRole('button', { name: 'Cancel request' }).click();
+  await detail.getByLabel('Reason for cancellation').fill('The initiative is no longer active.');
+  await detail.getByRole('button', { name: 'Confirm cancellation' }).click();
+
+  await expect(detail).toContainText('Cancelled');
+  expect(cancellation?.body).toEqual({ reason: 'The initiative is no longer active.' });
+  expect(cancellation?.headers['if-match']).toBe('"4"');
+  expect(cancellation?.headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i);
 });
 
 test('preserves edited text after temporary and version-conflict failures until the user reloads', async ({ page }) => {

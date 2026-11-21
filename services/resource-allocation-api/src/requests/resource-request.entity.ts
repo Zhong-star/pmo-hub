@@ -23,6 +23,12 @@ export class ResourceRequest {
   @Column({ name: 'decision_state', type: 'varchar', length: 40 })
   decisionState!: string;
 
+  @Column({ name: 'revalidation_origin_state', type: 'varchar', length: 40, nullable: true })
+  revalidationOriginState!: string | null;
+
+  @Column({ name: 'revalidation_decision_stage', type: 'varchar', length: 40, nullable: true })
+  revalidationDecisionStage!: string | null;
+
   @CreateDateColumn({ name: 'received_at', type: 'timestamptz' })
   receivedAt!: Date;
 

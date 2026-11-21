@@ -69,7 +69,7 @@ export class ResourceAllocationRequestQueueController {
   @Get('request-queues/:queueCode')
   @ApiOperation({ summary: 'List request work visible to the current role and scope' })
   @ApiSecurity('localProfile')
-  @ApiParam({ name: 'queueCode', enum: ['presentation', 'team-decision', 'exceptions'] })
+  @ApiParam({ name: 'queueCode', enum: ['presentation', 'team-decision', 'exceptions', 'revalidation'] })
   @ApiOkResponse({ type: RequestQueueCollectionDto, description: 'Scoped cursor-paginated request queue.' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size (default 50, maximum 100).' })
   @ApiQuery({ name: 'cursor', required: false, type: String })

@@ -23,6 +23,7 @@ import {
 } from './resource-administration.dto';
 import { runIdempotentOperation } from './idempotency/run-idempotent-operation';
 import { lockResourceAllocationAdministrationWrites } from './resource-allocation-write-lock';
+import { revalidateRequestsForEligibilityChange } from '../requests/revalidate-requests-for-eligibility-change';
 
 
 @Injectable()
@@ -158,6 +159,7 @@ export class ResourceAllocationAdministrationService {
         const nextRole = input.role ?? person.role;
         const nextActive = input.active ?? person.active;
         const nextGroupId = input.groupId === undefined ? person.groupId : input.groupId;
+        const previousGroupId = person.groupId;
         await this.ensurePersonCanChangeRoleOrActive(manager, person, nextRole, nextActive);
         person.localUserId = input.localUserId?.trim() ?? person.localUserId;
         person.displayName = input.displayName?.trim() ?? person.displayName;
@@ -167,6 +169,9 @@ export class ResourceAllocationAdministrationService {
         person.active = nextActive;
         person.groupId = await this.validatePersonGroup(manager, nextRole, nextGroupId, nextActive);
         const saved = await repository.save(person);
+        if ((wasActive && !saved.active) || previousGroupId !== saved.groupId) {
+          await revalidateRequestsForEligibilityChange(manager, { kind: 'PERSON', id: saved.id }, actor);
+        }
         if (wasActive && !saved.active) await this.notifyPersonDeactivationCommitments(manager, saved, actor.id);
         return this.toPerson(saved);
       });
@@ -241,7 +246,7 @@ export class ResourceAllocationAdministrationService {
     if (Object.keys(input).length === 0) {
       throw new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, 'At least one editable field is required.');
     }
-    return this.withAdminMutation(localUserId, async (manager) => {
+    return this.withAdminMutation(localUserId, async (manager, actor) => {
       const repository = manager.getRepository(ResourceGroup);
       const group = await repository.createQueryBuilder('group')
         .setLock('pessimistic_write')
@@ -252,6 +257,7 @@ export class ResourceAllocationAdministrationService {
         throw new ResourceAllocationException('PRECONDITION_FAILED', 'Precondition failed', 412, 'The group changed. Reload the record before saving.');
       }
       const previousResponsibles = [group.supervisorId, group.managerId];
+      const wasActive = group.active;
       const nextActive = input.active ?? group.active;
       const nextSupervisorId = input.supervisorId === undefined ? group.supervisorId : input.supervisorId;
       const nextManagerId = input.managerId === undefined ? group.managerId : input.managerId;
@@ -262,6 +268,9 @@ export class ResourceAllocationAdministrationService {
       group.managerId = nextManagerId;
       const saved = await repository.save(group);
       await this.refreshLeadershipCoverage(manager, [...previousResponsibles, nextSupervisorId, nextManagerId]);
+      if (wasActive && !saved.active) {
+        await revalidateRequestsForEligibilityChange(manager, { kind: 'GROUP', id: saved.id }, actor);
+      }
       return this.toGroup(saved);
     });
   }
@@ -323,7 +332,7 @@ export class ResourceAllocationAdministrationService {
     if (Object.keys(input).length === 0) {
       throw new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, 'At least one editable field is required.');
     }
-    return this.withAdminMutation(localUserId, async (manager) => {
+    return this.withAdminMutation(localUserId, async (manager, actor) => {
       const repository = manager.getRepository(ResourceProfile);
       const profile = await repository.createQueryBuilder('profile')
         .setLock('pessimistic_write')
@@ -333,13 +342,19 @@ export class ResourceAllocationAdministrationService {
       if (profile.version !== expectedVersion) {
         throw new ResourceAllocationException('PRECONDITION_FAILED', 'Precondition failed', 412, 'The resource profile changed. Reload it before saving.');
       }
+      const previousGroupId = profile.groupId;
+      const wasActive = profile.active;
       const nextGroupId = input.groupId ?? profile.groupId;
       const nextActive = input.active ?? profile.active;
       await this.validateProfileGroup(manager, nextGroupId, nextActive);
       if (input.name !== undefined) profile.name = input.name.trim();
       profile.groupId = nextGroupId;
       profile.active = nextActive;
-      return this.toResourceProfile(await repository.save(profile));
+      const saved = await repository.save(profile);
+      if ((wasActive && !saved.active) || previousGroupId !== saved.groupId) {
+        await revalidateRequestsForEligibilityChange(manager, { kind: 'PROFILE', id: saved.id }, actor);
+      }
+      return this.toResourceProfile(saved);
     });
   }
 
@@ -597,7 +612,7 @@ export class ResourceAllocationAdministrationService {
     try {
       return await this.dataSource.transaction(async (manager) => {
         await this.lockAdministrationWrites(manager);
-        await this.requireAdmin(localUserId, manager);
+        const actor = await this.requireAdmin(localUserId, manager);
         const repository = manager.getRepository(ResourceInitiative);
         const initiative = await repository.createQueryBuilder('initiative')
           .addSelect('initiative.codeUsed')
@@ -613,8 +628,13 @@ export class ResourceAllocationAdministrationService {
         }
         if (normalizedCode !== undefined) initiative.code = normalizedCode;
         if (normalizedName !== undefined) initiative.name = normalizedName;
+        const wasActive = initiative.active;
         if (input.active !== undefined) initiative.active = input.active;
-        return this.toInitiative(await repository.save(initiative));
+        const saved = await repository.save(initiative);
+        if (wasActive && !saved.active) {
+          await revalidateRequestsForEligibilityChange(manager, { kind: 'INITIATIVE', id: saved.id }, actor);
+        }
+        return this.toInitiative(saved);
       });
     } catch (error) {
       if (error instanceof ResourceAllocationException) throw error;

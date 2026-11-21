@@ -64,7 +64,7 @@ export class ResourceAllocationDecisionService {
           const item = await this.lockRequest(manager, requestId);
           this.requireDecisionAccess(actor, item);
           this.requireVersion(item, expectedVersion);
-          this.requireState(item, ['WAITING_FOR_PRESENTATION', 'PENDING_TEAM_DECISION'], 'Only a request awaiting a decision can be denied.');
+          this.requireState(item, ['WAITING_FOR_PRESENTATION', 'PENDING_TEAM_DECISION', 'REQUIRES_REVALIDATION'], 'Only a request awaiting a decision or revalidation can be denied.');
           if (item.decisionState === 'WAITING_FOR_PRESENTATION') {
             await this.requireDeadlineNotPassed(manager, item.expirationDueAt, 'PRESENTATION_DEADLINE_PASSED', 'The 21-day presentation deadline has passed.');
           }
@@ -72,6 +72,8 @@ export class ResourceAllocationDecisionService {
           const occurredAt = await this.currentTimestamp(manager);
           const before = this.snapshot(item);
           item.decisionState = 'DENIED';
+          item.revalidationOriginState = null;
+          item.revalidationDecisionStage = null;
           item.stageEnteredAt = occurredAt;
           item.expirationDueAt = new Date(occurredAt.getTime() + 14 * 24 * 60 * 60 * 1000);
           const saved = await manager.getRepository(ResourceRequest).save(item);
@@ -319,6 +321,24 @@ export class ResourceAllocationDecisionService {
           if (!group || !person || !initiative || !profile) {
             throw new ResourceAllocationException('INELIGIBLE_REFERENCE', 'Ineligible reference', 422, 'Select an active person, group, ITDM, and profile that belong together.');
           }
+          const previousProfileId = item.approvedConditions?.resourceProfileId ?? requested.resourceProfileId;
+          if (previousProfileId !== profile.id) {
+            const currentProfile = typeof previousProfileId === 'string' && uuidPattern.test(previousProfileId)
+              ? await manager.getRepository(ResourceProfile).findOneBy({ id: previousProfileId, active: true, groupId })
+              : null;
+            if (!currentProfile) {
+              throw new ResourceAllocationException('INELIGIBLE_REFERENCE', 'Ineligible reference', 422, 'Correct the inactive or mismatched profile with a reason before resolving the exception.');
+            }
+          }
+          const previousPersonId = item.approvedConditions?.personId;
+          if (typeof previousPersonId === 'string' && previousPersonId !== person.id) {
+            const currentPerson = uuidPattern.test(previousPersonId)
+              ? await manager.getRepository(ResourcePerson).findOneBy({ id: previousPersonId, active: true, groupId })
+              : null;
+            if (!currentPerson) {
+              throw new ResourceAllocationException('INELIGIBLE_REFERENCE', 'Ineligible reference', 422, 'Correct the inactive or out-of-group proposed person with a reason before resolving the exception.');
+            }
+          }
           const affectedInitiatives = await this.lockActiveInitiatives(manager, strategy, affectedIds);
           const clockRows = await manager.query(`
             WITH operation_clock AS (SELECT clock_timestamp() AS now)
@@ -459,17 +479,22 @@ export class ResourceAllocationDecisionService {
           const item = await this.lockRequest(manager, requestId);
           this.requireRequester(actor, item);
           this.requireVersion(item, expectedVersion);
-          this.requireState(item, ['DENIED'], 'Only the requester may cancel a denied request.');
-          await this.requireDeadlineNotPassed(manager, item.expirationDueAt, 'DENIAL_RESPONSE_EXPIRED', 'The 14-day response deadline has passed.');
+          const isRevalidation = item.decisionState === 'REQUIRES_REVALIDATION';
+          this.requireState(item, ['DENIED', 'REQUIRES_REVALIDATION'], 'Only the requester may cancel a denied or revalidating request.');
+          if (!isRevalidation) {
+            await this.requireDeadlineNotPassed(manager, item.expirationDueAt, 'DENIAL_RESPONSE_EXPIRED', 'The 14-day response deadline has passed.');
+          }
 
           const occurredAt = await this.currentTimestamp(manager);
           const before = this.snapshot(item);
           item.decisionState = 'CANCELLED';
+          item.revalidationOriginState = null;
+          item.revalidationDecisionStage = null;
           item.stageEnteredAt = occurredAt;
           const saved = await manager.getRepository(ResourceRequest).save(item);
-          await this.recordHistory(manager, saved, actor, 'DENIAL_CANCELLED', before, this.snapshot(saved), reason, correlation, occurredAt);
+          await this.recordHistory(manager, saved, actor, isRevalidation ? 'REVALIDATION_CANCELLED' : 'DENIAL_CANCELLED', before, this.snapshot(saved), reason, correlation, occurredAt);
           const leaders = await this.groupLeaderIds(manager, this.groupId(saved));
-          await this.notifyRecipients(manager, leaders, actor.id, saved, `REQUEST_DENIAL_CANCELLED_${saved.version}`, 'Resource request cancelled', 'The requester cancelled a denied resource request.', occurredAt);
+          await this.notifyRecipients(manager, leaders, actor.id, saved, `REQUEST_${isRevalidation ? 'REVALIDATION' : 'DENIAL'}_CANCELLED_${saved.version}`, 'Resource request cancelled', isRevalidation ? 'The requester cancelled a request that needed eligibility review.' : 'The requester cancelled a denied resource request.', occurredAt);
           return this.toResponse(saved);
         });
       });
@@ -599,12 +624,21 @@ export class ResourceAllocationDecisionService {
     if (item.requesterId === actor.id) {
       throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'A person cannot decide their own request.');
     }
-    if (item.decisionState === 'WAITING_FOR_PRESENTATION' && actor.role === ResourceAllocationRole.Admin) return;
+    if (item.decisionState === 'REQUIRES_REVALIDATION') {
+      if (item.revalidationOriginState === 'WAITING_FOR_PRESENTATION' || item.revalidationOriginState === 'PENDING_TEAM_DECISION') {
+        if (actor.role === ResourceAllocationRole.Admin) return;
+        throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'Only an Admin may decide a reference correction during revalidation.');
+      }
+    }
+    const decisionState = item.decisionState === 'REQUIRES_REVALIDATION'
+      ? item.revalidationDecisionStage === 'WAITING_FOR_PRESENTATION' ? 'WAITING_FOR_PRESENTATION' : 'PENDING_TEAM_DECISION'
+      : item.decisionState;
+    if (decisionState === 'WAITING_FOR_PRESENTATION' && actor.role === ResourceAllocationRole.Admin) return;
     const groupId = this.groupId(item);
     if (!groupId) {
       throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'The request does not have a valid group decision scope.');
     }
-    const authorized = item.decisionState === 'PENDING_TEAM_DECISION' && (
+    const authorized = decisionState === 'PENDING_TEAM_DECISION' && (
       (actor.role === ResourceAllocationRole.Moderator && actor.groupId === groupId) ||
       ((actor.role === ResourceAllocationRole.Supervisor || actor.role === ResourceAllocationRole.Manager) && actor.coveredGroupIds.includes(groupId)) ||
       (actor.role === ResourceAllocationRole.Admin && actor.groupId === groupId)
@@ -616,7 +650,11 @@ export class ResourceAllocationDecisionService {
 
   private async requireCurrentDecisionScope(manager: EntityManager, actor: ResourcePerson, item: ResourceRequest): Promise<void> {
     let decisionState = item.decisionState;
-    if (decisionState !== 'WAITING_FOR_PRESENTATION' && decisionState !== 'PENDING_TEAM_DECISION') {
+    if (decisionState === 'REQUIRES_REVALIDATION') {
+      decisionState = item.revalidationOriginState === 'WAITING_FOR_PRESENTATION'
+        ? 'WAITING_FOR_PRESENTATION'
+        : 'PENDING_TEAM_DECISION';
+    } else if (decisionState !== 'WAITING_FOR_PRESENTATION' && decisionState !== 'PENDING_TEAM_DECISION') {
       const events = await manager.getRepository(ResourceRequestHistory).createQueryBuilder('history')
         .where('history.request_id = :requestId AND history.action = :action', { requestId: item.id, action: 'DENIED' })
         .orderBy('history.occurred_at', 'DESC')
@@ -627,7 +665,7 @@ export class ResourceAllocationDecisionService {
       const priorState = snapshot?.before?.decisionState;
       if (priorState === 'WAITING_FOR_PRESENTATION' || priorState === 'PENDING_TEAM_DECISION') decisionState = priorState;
     }
-    this.requireDecisionAccess(actor, { ...item, decisionState });
+    this.requireDecisionAccess(actor, item.decisionState === 'REQUIRES_REVALIDATION' ? item : { ...item, decisionState });
   }
 
   private requireRequester(actor: ResourcePerson, item: ResourceRequest): void {
@@ -846,6 +884,8 @@ export class ResourceAllocationDecisionService {
       requestedConditions: item.requestedConditions,
       approvedConditions: item.approvedConditions,
       decisionState: item.decisionState,
+      revalidationOriginState: item.revalidationOriginState,
+      revalidationDecisionStage: item.revalidationDecisionStage,
       receivedAt: item.receivedAt.toISOString(),
       stageEnteredAt: item.stageEnteredAt.toISOString(),
       expirationDueAt: item.expirationDueAt.toISOString(),
@@ -870,6 +910,8 @@ export class ResourceAllocationDecisionService {
   private snapshot(item: ResourceRequest): Record<string, unknown> {
     return {
       decisionState: item.decisionState,
+      revalidationOriginState: item.revalidationOriginState,
+      revalidationDecisionStage: item.revalidationDecisionStage,
       requestedConditions: item.requestedConditions,
       approvedConditions: item.approvedConditions,
       stageEnteredAt: item.stageEnteredAt.toISOString(),

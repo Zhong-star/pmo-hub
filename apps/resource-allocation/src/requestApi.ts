@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { RequestCategory } from './submissionApi';
+import type { RevalidationOriginState, RevalidationResponsible } from './revalidation';
 
 export const REQUESTS_QUERY_ROOT = ['resource-allocation-requests'] as const;
 const API_ROOT = '/api/resource-allocation/v1';
@@ -62,6 +63,12 @@ export interface RequestAllocation {
   version: number;
 }
 
+export interface RequestRevalidation {
+  originState: RevalidationOriginState;
+  impediments: string[];
+  nextResponsible: RevalidationResponsible;
+}
+
 export interface ResourceRequestItem {
   id: string;
   requesterSnapshot: { personId: string; displayName: string; role: string };
@@ -74,6 +81,7 @@ export interface ResourceRequestItem {
   availableActions?: string[];
   confirmationSource?: RequestConfirmationSource;
   approvedConditions?: ApprovedRequestConditions;
+  revalidation?: RequestRevalidation | null;
   allocation?: RequestAllocation;
   version: number;
 }
