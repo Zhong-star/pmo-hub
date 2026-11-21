@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFieldArray, useForm, useWatch, type Control, type FieldErrors, type UseFormGetValues, type UseFormRegister, type UseFormSetValue } from 'react-hook-form';
+import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
+import { REQUESTS_QUERY_ROOT } from './requestApi';
+import { REQUEST_QUEUES_QUERY_ROOT } from './requestQueueApi';
 import {
   createSubmission,
   getSelectionCollection,
   getSubmission,
   getSubmissionCollection,
   getSubmissionLines,
+  SELECTIONS_QUERY_ROOT,
   SUBMISSIONS_QUERY_ROOT,
   SubmissionRequestError,
   type CreateSubmissionInput,
@@ -126,7 +130,7 @@ function rowsFromPages<T>(data: { pages: Array<{ items: T[] }> } | undefined): T
 
 function useSelectionQuery(localUserId: string, collection: 'groups' | 'resource-profiles' | 'initiatives') {
   return useInfiniteQuery({
-    queryKey: ['resource-allocation-selections', localUserId, collection],
+    queryKey: [...SELECTIONS_QUERY_ROOT, localUserId, collection],
     queryFn: ({ pageParam }) => getSelectionCollection(collection, localUserId, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.page.nextCursor ?? undefined,
@@ -527,8 +531,13 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
       setNotice(`Submission ${receipt.id} was received. Line processing can continue after you close this page.`);
       setSelectedSubmissionId(receipt.id);
       reset(defaultValues);
-      await queryClient.invalidateQueries({ queryKey: [...SUBMISSIONS_QUERY_ROOT, localUserId] });
-      await queryClient.invalidateQueries({ queryKey: [...SUBMISSIONS_QUERY_ROOT, localUserId, receipt.id] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [...SUBMISSIONS_QUERY_ROOT, localUserId] }),
+        queryClient.invalidateQueries({ queryKey: [...SUBMISSIONS_QUERY_ROOT, localUserId, receipt.id] }),
+        queryClient.invalidateQueries({ queryKey: REQUESTS_QUERY_ROOT }),
+        queryClient.invalidateQueries({ queryKey: REQUEST_QUEUES_QUERY_ROOT }),
+        queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_ROOT }),
+      ]);
     } catch (error) {
       if (hasAccessError(error)) {
         clearOutbox(localUserId);
@@ -598,13 +607,18 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
   }
 
   const allQueries = [groupsQuery, profilesQuery, initiativesQuery];
-  const hasSelectionError = allQueries.some((query) => query.isError && !hasAccessError(query.error));
   const selectionLoading = allQueries.some((query) => query.isPending);
-  const selectionLoadMore = allQueries.some((query) => query.hasNextPage);
+  const selectionFetching = allQueries.some((query) => query.isFetching);
+  const selectionFetchingNextPage = allQueries.some((query) => query.isFetchingNextPage);
+  const hasSelectionError = allQueries.some((query) => query.isError && !query.isFetchNextPageError && !hasAccessError(query.error));
+  const hasSelectionNextPageError = allQueries.some((query) => query.isFetchNextPageError && !hasAccessError(query.error));
+  const selectionLoadMore = allQueries.some((query) => query.hasNextPage || query.isFetchNextPageError);
 
   function loadMoreSelections() {
     for (const query of allQueries) {
-      if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+      if ((query.hasNextPage || query.isFetchNextPageError) && !query.isFetching && !(query.isError && !query.isFetchNextPageError)) {
+        void query.fetchNextPage();
+      }
     }
   }
 
@@ -642,13 +656,40 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
         {hasSelectionError && (
           <div className="form-error" role="alert">
             <p>Request options could not be loaded. Your submission history remains available.</p>
-            <button type="button" className="text-button" onClick={() => allQueries.forEach((query) => void query.refetch())}>Try again</button>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => allQueries.forEach((query) => void query.refetch())}
+              disabled={selectionFetching}
+            >
+              Try again
+            </button>
           </div>
         )}
         {selectionLoadMore && !outbox && (
-          <button type="button" className="text-button selection-load-more" onClick={loadMoreSelections}>
-            Load more selection options
-          </button>
+          <div className="selection-pagination">
+            <button
+              type="button"
+              className="text-button selection-load-more"
+              onClick={loadMoreSelections}
+              disabled={selectionFetching || hasSelectionError}
+            >
+              {selectionFetchingNextPage ? 'Loading more selection options…' : 'Load more selection options'}
+            </button>
+            {hasSelectionNextPageError && (
+              <div className="form-error load-more-error" role="alert">
+                <p>More request options could not be loaded. Options already shown remain available.</p>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={loadMoreSelections}
+                  disabled={selectionFetching || hasSelectionError}
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
         {!outbox && !selectionLoading && (
@@ -782,7 +823,14 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
         {submissionsQuery.isError && !submissionsQuery.isFetchNextPageError && !hasAccessError(submissionsQuery.error) && (
           <div className="form-error" role="alert">
             <p>Saved submissions could not be loaded. You can retry without losing the current form.</p>
-            <button type="button" className="text-button" onClick={() => void submissionsQuery.refetch()}>Try again</button>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => void submissionsQuery.refetch()}
+                  disabled={submissionsQuery.isFetching}
+                >
+                  Try again
+                </button>
           </div>
         )}
         {submissionsQuery.isSuccess && submissions.length === 0 && (
@@ -822,7 +870,14 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
             {submissionsQuery.isFetchNextPageError && (
               <div className="form-error load-more-error" role="alert">
                 <p>More saved submissions could not be loaded. Existing results are still available.</p>
-                <button type="button" className="text-button" onClick={() => void submissionsQuery.fetchNextPage()}>Try again</button>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => void submissionsQuery.fetchNextPage()}
+                  disabled={submissionsQuery.isFetching || (submissionsQuery.isError && !submissionsQuery.isFetchNextPageError)}
+                >
+                  Try again
+                </button>
               </div>
             )}
             {effectiveSubmissionId && (

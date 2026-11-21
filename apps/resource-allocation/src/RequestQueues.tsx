@@ -9,6 +9,9 @@ import { DenialAction } from './DenialAction';
 import { ExceptionResolutionAction } from './ExceptionResolutionAction';
 import { ExceptionStageAction } from './ExceptionStageAction';
 import { requestResponsibleLabel, revalidationImpedimentLabel, revalidationOriginLabel } from './revalidation';
+import { ALLOCATIONS_QUERY_ROOT } from './allocationApi';
+import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
+import { REQUESTS_QUERY_ROOT } from './requestApi';
 import { SUBMISSIONS_QUERY_ROOT, type SelectionItem } from './submissionApi';
 
 interface RequestQueuesProps {
@@ -312,9 +315,10 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
   async function invalidateRequestSurfaces() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: REQUEST_QUEUES_QUERY_ROOT }),
-      queryClient.invalidateQueries({ queryKey: ['resource-allocation-requests'] }),
+      queryClient.invalidateQueries({ queryKey: REQUESTS_QUERY_ROOT }),
+      queryClient.invalidateQueries({ queryKey: ALLOCATIONS_QUERY_ROOT }),
       queryClient.invalidateQueries({ queryKey: SUBMISSIONS_QUERY_ROOT }),
-      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'resource-allocation-notifications' }),
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_ROOT }),
     ]);
   }
 
@@ -362,11 +366,7 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
 
   if (queues.length === 0) return null;
 
-  const requestedQueue = new URLSearchParams(window.location.search).get('queue');
-  const linkQueue = requestedQueue && queues.includes(requestedQueue as RequestQueueCode)
-    ? requestedQueue as RequestQueueCode
-    : queues[0];
-  const visibleItems = activeQueue === linkQueue ? items : [];
+  const visibleItems = items;
 
   return (
     <section className="request-queues-panel" aria-labelledby="request-queues-title">

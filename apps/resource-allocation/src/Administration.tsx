@@ -2,6 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { handleTabListKeyDown } from './tabNavigation';
+import { ALLOCATIONS_QUERY_ROOT } from './allocationApi';
+import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
+import { REQUESTS_QUERY_ROOT } from './requestApi';
+import { REQUEST_QUEUES_QUERY_ROOT } from './requestQueueApi';
+import { SELECTIONS_QUERY_ROOT, SUBMISSIONS_QUERY_ROOT } from './submissionApi';
 import {
   AdministrationRequestError,
   createAdminResource,
@@ -24,6 +29,11 @@ interface AdministrationProps {
 type AdminRecord = AdminPerson | AdminGroup | AdminResourceProfile | AdminInitiative;
 type EditorMode = 'create' | 'edit';
 type EditorState = { collection: AdminCollection; mode: EditorMode; id?: string };
+type PaginationState = {
+  isFetching: boolean;
+  hasBackgroundError: boolean;
+  hasNextPageError: boolean;
+};
 
 interface FormValues {
   localUserId: string;
@@ -239,8 +249,7 @@ function Administration({ localUserId, onAccessDenied }: AdministrationProps) {
   };
   const currentQuery = queryByCollection[selectedCollection];
   const currentRecords = recordsByCollection[selectedCollection];
-  const hasInitialError = [peopleQuery, groupsQuery, profilesQuery, initiativesQuery].some((query) =>
-    query.isError && !query.isFetchNextPageError);
+  const hasInitialError = currentQuery.isError && !currentQuery.isFetchNextPageError;
 
   function openEditor(nextEditor: EditorState) {
     setNotice('');
@@ -306,7 +315,7 @@ function Administration({ localUserId, onAccessDenied }: AdministrationProps) {
         {hasInitialError && (
           <div className="form-error" role="alert">
             <p>Could not load administrative records. Your saved work is unchanged.</p>
-            <button type="button" className="text-button" onClick={() => void currentQuery.refetch()}>
+            <button type="button" className="text-button" onClick={() => void currentQuery.refetch()} disabled={currentQuery.isFetching}>
               Try again
             </button>
           </div>
@@ -354,20 +363,38 @@ function Administration({ localUserId, onAccessDenied }: AdministrationProps) {
             onClose={closeEditor}
             onAccessDenied={onAccessDenied}
             onSaved={async (message) => {
-              await queryClient.resetQueries({
-                queryKey: ['resource-allocation-admin', localUserId],
-                predicate: (query) => query.queryKey[3] !== 'detail',
-              });
-              if (editor.collection === 'people') {
-                await queryClient.invalidateQueries({ queryKey: ['resource-allocation-access', localUserId] });
-              }
+              await Promise.all([
+                queryClient.resetQueries({
+                  queryKey: ['resource-allocation-admin', localUserId],
+                  predicate: (query) => query.queryKey[3] !== 'detail',
+                }),
+                queryClient.invalidateQueries({ queryKey: [...SELECTIONS_QUERY_ROOT, localUserId] }),
+                queryClient.invalidateQueries({ queryKey: REQUESTS_QUERY_ROOT }),
+                queryClient.invalidateQueries({ queryKey: REQUEST_QUEUES_QUERY_ROOT }),
+                queryClient.invalidateQueries({ queryKey: ALLOCATIONS_QUERY_ROOT }),
+                queryClient.invalidateQueries({ queryKey: SUBMISSIONS_QUERY_ROOT }),
+                queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_ROOT }),
+                ...(editor.collection === 'people'
+                  ? [queryClient.invalidateQueries({ queryKey: ['resource-allocation-access', localUserId] })]
+                  : []),
+              ]);
               setEditor(null);
               setNotice(message);
             }}
             onLoadMorePeople={() => void peopleQuery.fetchNextPage()}
             onLoadMoreGroups={() => void groupsQuery.fetchNextPage()}
-            canLoadMorePeople={Boolean(peopleQuery.hasNextPage)}
-            canLoadMoreGroups={Boolean(groupsQuery.hasNextPage)}
+            canLoadMorePeople={Boolean(peopleQuery.hasNextPage || peopleQuery.isFetchNextPageError)}
+            canLoadMoreGroups={Boolean(groupsQuery.hasNextPage || groupsQuery.isFetchNextPageError)}
+            peoplePagination={{
+              isFetching: peopleQuery.isFetching,
+              hasBackgroundError: peopleQuery.isError && !peopleQuery.isFetchNextPageError,
+              hasNextPageError: peopleQuery.isFetchNextPageError,
+            }}
+            groupsPagination={{
+              isFetching: groupsQuery.isFetching,
+              hasBackgroundError: groupsQuery.isError && !groupsQuery.isFetchNextPageError,
+              hasNextPageError: groupsQuery.isFetchNextPageError,
+            }}
           />
         )}
       </section>
@@ -484,6 +511,8 @@ function RecordEditor({
   onLoadMoreGroups,
   canLoadMorePeople,
   canLoadMoreGroups,
+  peoplePagination,
+  groupsPagination,
 }: {
   editor: EditorState;
   localUserId: string;
@@ -496,6 +525,8 @@ function RecordEditor({
   onLoadMoreGroups: () => void;
   canLoadMorePeople: boolean;
   canLoadMoreGroups: boolean;
+  peoplePagination: PaginationState;
+  groupsPagination: PaginationState;
 }) {
   const detailQuery = useQuery({
     queryKey: ['resource-allocation-admin', localUserId, editor.collection, 'detail', editor.id],
@@ -608,9 +639,23 @@ function RecordEditor({
     </label>
   );
 
-  function selectMore(collection: 'people' | 'groups', hasMore: boolean, onLoadMore: () => void) {
-    if (!hasMore) return null;
-    return <button type="button" className="text-button load-options" onClick={onLoadMore}>Load more {collection}</button>;
+  function selectMore(collection: 'people' | 'groups', hasMore: boolean, pagination: PaginationState, onLoadMore: () => void) {
+    if (!hasMore && !pagination.hasNextPageError) return null;
+    return (
+      <div className="load-options-row">
+        {pagination.hasNextPageError && (
+          <p className="form-error" role="alert">More {collection} could not be loaded. Previously loaded records remain available.</p>
+        )}
+        <button
+          type="button"
+          className="text-button load-options"
+          onClick={onLoadMore}
+          disabled={pagination.isFetching || pagination.hasBackgroundError}
+        >
+          {pagination.isFetching ? `Loading ${collection}…` : pagination.hasNextPageError ? `Try loading more ${collection} again` : `Load more ${collection}`}
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -659,7 +704,7 @@ function RecordEditor({
             <div className="field-with-help">
               {renderSelect('groupId', 'Group', groupOptions.map((group) => ({ id: group.id, label: group.name })), role === 'ALLOCATION_MODERATOR')}
               <p className="field-help">Group is optional for most roles. Moderators need an active group. Supervisor and Manager coverage is managed separately on the Groups tab.</p>
-              {selectMore('groups', canLoadMoreGroups, onLoadMoreGroups)}
+              {selectMore('groups', canLoadMoreGroups, groupsPagination, onLoadMoreGroups)}
             </div>
           </>
         )}
@@ -668,7 +713,7 @@ function RecordEditor({
           <>
             {registerField('name', 'Name', 'text', true)}
             {renderSelect('supervisorId', 'Supervisor', supervisors.map((person) => ({ id: person.id, label: person.displayName })), false, true)}
-            {selectMore('people', canLoadMorePeople, onLoadMorePeople)}
+            {selectMore('people', canLoadMorePeople, peoplePagination, onLoadMorePeople)}
             {renderSelect('managerId', 'Manager', managers.map((person) => ({ id: person.id, label: person.displayName })), false, true)}
             <p className="field-help full-row">Active groups need an active Supervisor and Manager. Only active people with the matching role are selectable.</p>
           </>
@@ -678,7 +723,7 @@ function RecordEditor({
           <>
             {registerField('name', 'Name', 'text', true)}
             {renderSelect('groupId', 'Group', groupOptions.map((group) => ({ id: group.id, label: group.name })), true)}
-            {selectMore('groups', canLoadMoreGroups, onLoadMoreGroups)}
+            {selectMore('groups', canLoadMoreGroups, groupsPagination, onLoadMoreGroups)}
           </>
         )}
 

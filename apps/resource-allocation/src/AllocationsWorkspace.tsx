@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
+import { REQUESTS_QUERY_ROOT } from './requestApi';
 import {
   ALLOCATIONS_QUERY_ROOT,
   AllocationRequestError,
@@ -230,6 +232,8 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
       actionForm.reset({ reason: '' });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId] }),
+        queryClient.invalidateQueries({ queryKey: REQUESTS_QUERY_ROOT }),
+        queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_ROOT }),
       ]);
     },
     onError: (error) => {
@@ -427,7 +431,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
         {allocationQuery.isError && !allocationQuery.isFetchNextPageError && !accessDenied(allocationQuery.error) && (
           <div className="form-error" role="alert">
             <p>{errorText(allocationQuery.error)}</p>
-            <button type="button" className="text-button" onClick={() => void allocationQuery.refetch()}>Try again</button>
+            <button type="button" className="text-button" onClick={() => void allocationQuery.refetch()} disabled={allocationQuery.isFetching}>Try again</button>
           </div>
         )}
         {allocationQuery.isSuccess && allocations.length === 0 && (
@@ -459,7 +463,14 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
         {allocationQuery.isFetchNextPageError && (
           <div className="form-error allocation-page-error" role="alert">
             <p>More allocations could not be loaded. The allocations already shown are still available.</p>
-            <button type="button" className="text-button" onClick={() => void allocationQuery.fetchNextPage()}>Try loading more again</button>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => void allocationQuery.fetchNextPage()}
+              disabled={allocationQuery.isFetching || (allocationQuery.isError && !allocationQuery.isFetchNextPageError)}
+            >
+              Try loading more again
+            </button>
           </div>
         )}
         {allocationQuery.hasNextPage && (
