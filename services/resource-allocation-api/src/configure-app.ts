@@ -1,6 +1,7 @@
 import { RequestMethod, ValidationPipe, type INestApplication } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
 import { randomUUID } from 'node:crypto';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { createOpenApiDocument } from './openapi-document';
 import { ResourceAllocationProblemFilter } from './access/resource-allocation-problem';
 
@@ -19,6 +20,9 @@ const correlationIdPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 export function configureApp(app: INestApplication) {
   const prefix = 'api/resource-allocation/v1';
   app.enableShutdownHooks();
+  const expressApp = app as NestExpressApplication;
+  expressApp.set('etag', false);
+  expressApp.useBodyParser('json', { type: ['application/json', 'application/merge-patch+json'] });
   app.setGlobalPrefix(prefix, {
     exclude: [
       { path: 'health/live', method: RequestMethod.GET },

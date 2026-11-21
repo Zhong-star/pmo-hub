@@ -1,4 +1,4 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn, VersionColumn } from 'typeorm';
 import { ResourceAllocationRole } from './resource-allocation-role';
 
 @Entity({ name: 'resource_people' })
@@ -23,4 +23,10 @@ export class ResourcePerson {
 
   @Column({ name: 'covered_group_ids', type: 'uuid', array: true, default: () => "'{}'" })
   coveredGroupIds!: string[];
+
+  @Column({ name: 'group_id', type: 'uuid', nullable: true })
+  groupId!: string | null;
+
+  @VersionColumn({ default: 1 })
+  version!: number;
 }

@@ -171,6 +171,1562 @@
           "Tech Resource Allocation access"
         ]
       }
+    },
+    "/api/resource-allocation/v1/admin/initiatives": {
+      "get": {
+        "operationId": "ResourceAllocationAdministrationController_listInitiatives",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size (default 50, maximum 100).",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "active",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceInitiativeCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List administrative ITDM records",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      },
+      "post": {
+        "operationId": "ResourceAllocationAdministrationController_createInitiative",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInitiativeRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "description": "Omitted on a replayed receipt; fetch the resource for its current version.",
+                "schema": {
+                  "type": "string",
+                  "example": "\"1\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceInitiativeResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another ITDM uses this normalized code.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Create an administrative ITDM",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/admin/people": {
+      "get": {
+        "operationId": "ResourceAllocationAdministrationController_listPeople",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "active",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourcePersonCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List administrative people",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      },
+      "post": {
+        "operationId": "ResourceAllocationAdministrationController_createPerson",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateResourcePersonRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "description": "Omitted on a replayed receipt; fetch the resource for its current version.",
+                "schema": {
+                  "type": "string",
+                  "example": "\"1\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourcePersonResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The local profile already has a module person.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The role or group reference is not eligible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Create a module person",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/admin/people/{id}": {
+      "get": {
+        "operationId": "ResourceAllocationAdministrationController_getPerson",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"1\""
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourcePersonResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The person was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Get an administrative person",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      },
+      "patch": {
+        "operationId": "ResourceAllocationAdministrationController_updatePerson",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateResourcePersonRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"2\""
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourcePersonResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match or merge patch is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The person was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The person changed since it was read.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The last Admin or an assigned group responsible cannot be removed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Update an administrative person",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/admin/groups": {
+      "get": {
+        "operationId": "ResourceAllocationAdministrationController_listGroups",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "active",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGroupCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List administrative groups",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      },
+      "post": {
+        "operationId": "ResourceAllocationAdministrationController_createGroup",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateResourceGroupRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "description": "Omitted on a replayed receipt; fetch the resource for its current version.",
+                "schema": {
+                  "type": "string",
+                  "example": "\"1\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGroupResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The group needs active Supervisor and Manager references.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Create an administrative group",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/admin/groups/{id}": {
+      "get": {
+        "operationId": "ResourceAllocationAdministrationController_getGroup",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"1\""
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGroupResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The group was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Get an administrative group",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      },
+      "patch": {
+        "operationId": "ResourceAllocationAdministrationController_updateGroup",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateResourceGroupRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"2\""
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGroupResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match or merge patch is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The group was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The group changed since it was read.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The responsible assignment is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Update an administrative group",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/admin/resource-profiles": {
+      "get": {
+        "operationId": "ResourceAllocationAdministrationController_listResourceProfiles",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "active",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceProfileCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List administrative resource profiles",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      },
+      "post": {
+        "operationId": "ResourceAllocationAdministrationController_createResourceProfile",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateResourceProfileRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "description": "Omitted on a replayed receipt; fetch the resource for its current version.",
+                "schema": {
+                  "type": "string",
+                  "example": "\"1\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceProfileResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The profile must belong to an active group.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Create an administrative resource profile",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/admin/resource-profiles/{id}": {
+      "get": {
+        "operationId": "ResourceAllocationAdministrationController_getResourceProfile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"1\""
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceProfileResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource profile was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Get an administrative resource profile",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      },
+      "patch": {
+        "operationId": "ResourceAllocationAdministrationController_updateResourceProfile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateResourceProfileRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"2\""
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceProfileResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match or merge patch is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource profile was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The resource profile changed since it was read.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The profile must belong to an active group.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Update an administrative resource profile",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/admin/initiatives/{id}": {
+      "get": {
+        "operationId": "ResourceAllocationAdministrationController_getInitiative",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"1\""
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceInitiativeResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The ITDM was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Get an administrative ITDM",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      },
+      "patch": {
+        "operationId": "ResourceAllocationAdministrationController_updateInitiative",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Strong ETag version from the latest item response.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateInitiativeRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"2\""
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceInitiativeResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match or merge patch is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may manage administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The ITDM was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The ITDM changed since it was read.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A used ITDM code cannot be changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Update an administrative ITDM",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/people": {
+      "get": {
+        "operationId": "ResourceAllocationSelectionController_listPeople",
+        "parameters": [
+          {
+            "name": "groupId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active people with display name and group only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourcePersonSelectionCollectionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List minimum person-selection data for an active module user",
+        "tags": [
+          "Tech Resource Allocation selections"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/groups": {
+      "get": {
+        "operationId": "ResourceAllocationSelectionController_listGroups",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active groups with their identifier and name only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGroupSelectionCollectionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List active group-selection data for an active module user",
+        "tags": [
+          "Tech Resource Allocation selections"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/resource-profiles": {
+      "get": {
+        "operationId": "ResourceAllocationSelectionController_listResourceProfiles",
+        "parameters": [
+          {
+            "name": "groupId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active profiles in active groups with name and group identifier only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceProfileSelectionCollectionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List active resource-profile selection data for an active module user",
+        "tags": [
+          "Tech Resource Allocation selections"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/initiatives": {
+      "get": {
+        "operationId": "ResourceAllocationSelectionController_listInitiatives",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active ITDMs with their identifier, code and name only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceInitiativeSelectionCollectionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List active ITDM-selection data for an active module user",
+        "tags": [
+          "Tech Resource Allocation selections"
+        ]
+      }
     }
   },
   "info": {
@@ -305,6 +1861,11 @@
             "type": "string",
             "example": "Local Developer"
           },
+          "groupId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
           "role": {
             "type": "string",
             "enum": [
@@ -328,6 +1889,7 @@
           "id",
           "localUserId",
           "displayName",
+          "groupId",
           "role",
           "coveredGroupIds"
         ]
@@ -341,6 +1903,613 @@
         },
         "required": [
           "person"
+        ]
+      },
+      "ResourceInitiativeResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "active",
+          "version"
+        ]
+      },
+      "ResourceInitiativeCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceInitiativeResponseDto"
+            }
+          },
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ]
+      },
+      "ResourcePersonResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "localUserId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ALLOCATION_USER",
+              "ALLOCATION_MODERATOR",
+              "ALLOCATION_SUPERVISOR",
+              "ALLOCATION_MANAGER",
+              "ALLOCATION_ADMIN"
+            ]
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "coveredGroupIds": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "localUserId",
+          "displayName",
+          "email",
+          "active",
+          "role",
+          "groupId",
+          "coveredGroupIds",
+          "version"
+        ]
+      },
+      "ResourcePersonCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourcePersonResponseDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "items"
+        ]
+      },
+      "CreateResourcePersonRequestDto": {
+        "type": "object",
+        "properties": {
+          "localUserId": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 320
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ALLOCATION_USER",
+              "ALLOCATION_MODERATOR",
+              "ALLOCATION_SUPERVISOR",
+              "ALLOCATION_MANAGER",
+              "ALLOCATION_ADMIN"
+            ]
+          },
+          "groupId": {
+            "type": "object",
+            "format": "uuid",
+            "nullable": true
+          },
+          "active": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "localUserId",
+          "displayName",
+          "email",
+          "role"
+        ]
+      },
+      "UpdateResourcePersonRequestDto": {
+        "type": "object",
+        "properties": {
+          "localUserId": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 320
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ALLOCATION_USER",
+              "ALLOCATION_MODERATOR",
+              "ALLOCATION_SUPERVISOR",
+              "ALLOCATION_MANAGER",
+              "ALLOCATION_ADMIN"
+            ]
+          },
+          "groupId": {
+            "type": "object",
+            "format": "uuid",
+            "nullable": true
+          },
+          "active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ResourceGroupResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "supervisorId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "managerId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "active",
+          "supervisorId",
+          "managerId",
+          "version"
+        ]
+      },
+      "ResourceGroupCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceGroupResponseDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "items"
+        ]
+      },
+      "CreateResourceGroupRequestDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean",
+            "default": true
+          },
+          "supervisorId": {
+            "type": "object",
+            "format": "uuid",
+            "nullable": true
+          },
+          "managerId": {
+            "type": "object",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateResourceGroupRequestDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "supervisorId": {
+            "type": "object",
+            "format": "uuid",
+            "nullable": true
+          },
+          "managerId": {
+            "type": "object",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "ResourceProfileResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "groupId",
+          "active",
+          "version"
+        ]
+      },
+      "ResourceProfileCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceProfileResponseDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "items"
+        ]
+      },
+      "CreateResourceProfileRequestDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "active": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "name",
+          "groupId"
+        ]
+      },
+      "UpdateResourceProfileRequestDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateInitiativeRequestDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 100,
+            "example": "ITDM-041"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "example": "Planning portal"
+          },
+          "active": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ]
+      },
+      "UpdateInitiativeRequestDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 100,
+            "example": "ITDM-041"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "example": "Planning portal"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ResourcePersonSelectionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "groupId"
+        ]
+      },
+      "ResourcePersonSelectionCollectionDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourcePersonSelectionDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "items"
+        ]
+      },
+      "ResourceGroupSelectionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "ResourceGroupSelectionCollectionDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceGroupSelectionDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "items"
+        ]
+      },
+      "ResourceProfileSelectionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "groupId"
+        ]
+      },
+      "ResourceProfileSelectionCollectionDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceProfileSelectionDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "items"
+        ]
+      },
+      "ResourceInitiativeSelectionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ]
+      },
+      "ResourceInitiativeSelectionCollectionDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceInitiativeSelectionDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "items"
         ]
       }
     }

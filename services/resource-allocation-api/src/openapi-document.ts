@@ -3,6 +3,7 @@ import type { INestApplication } from '@nestjs/common';
 
 const accessPath = '/api/resource-allocation/v1/access';
 const localProfileHeader = 'X-PMO-Local-User-ID';
+const localProfileChallenge = 'LocalProfile realm="Tech Resource Allocation"';
 
 export function createOpenApiDocument(app: INestApplication) {
   const config = new DocumentBuilder()
@@ -20,6 +21,35 @@ export function createOpenApiDocument(app: INestApplication) {
       if ('name' in parameter && parameter.name === localProfileHeader) parameter.required = false;
     }
     accessOperation.security = [{ localProfile: [] }, {}];
+  }
+
+  for (const [path, pathItem] of Object.entries(document.paths)) {
+    if (!path.startsWith('/api/resource-allocation/v1/admin/') &&
+      !['/api/resource-allocation/v1/people', '/api/resource-allocation/v1/groups',
+        '/api/resource-allocation/v1/resource-profiles', '/api/resource-allocation/v1/initiatives'].includes(path)) continue;
+    for (const operation of Object.values(pathItem)) {
+      if (!operation || typeof operation !== 'object' || !('responses' in operation)) continue;
+      const responses = operation.responses as Record<string, {
+        description?: string;
+        headers?: Record<string, unknown>;
+        content?: Record<string, unknown>;
+      }>;
+      for (const [status, response] of Object.entries(responses)) {
+        const statusCode = Number(status);
+        if (statusCode < 400 || statusCode > 599) continue;
+        response.content = {
+          'application/problem+json': {
+            schema: { $ref: '#/components/schemas/ResourceAllocationProblemDto' },
+          },
+        };
+        if (statusCode === 401) {
+          response.headers = {
+            ...response.headers,
+            'WWW-Authenticate': { schema: { type: 'string', example: localProfileChallenge } },
+          };
+        }
+      }
+    }
   }
   return document;
 }

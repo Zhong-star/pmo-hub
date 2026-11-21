@@ -6,12 +6,13 @@ type OpenApiDocument = {
   paths: Record<string, Record<string, {
     parameters?: Array<{ name?: string; required?: boolean }>;
     security?: Array<Record<string, unknown>>;
+    requestBody?: { content?: Record<string, unknown> };
     responses: Record<string, {
       content?: Record<string, unknown>;
       headers?: Record<string, unknown>;
     }>;
   }>>;
-  components: { schemas: Record<string, { properties?: Record<string, { enum?: string[] }> }> };
+  components: { schemas: Record<string, { properties?: Record<string, { enum?: string[]; $ref?: string }> }> };
 };
 
 const contract = JSON.parse(
@@ -45,5 +46,36 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
     expect(contract.paths).toHaveProperty('/health/live');
     expect(contract.paths).toHaveProperty('/health/ready');
     expect(contract.paths).toHaveProperty('/health/startup');
+  });
+
+  it('documents Admin create idempotency, conditional edits, and ETags only for mutable items', () => {
+    const collection = contract.paths['/api/resource-allocation/v1/admin/initiatives'];
+    const create = collection.post;
+    expect(create.parameters).toContainEqual(expect.objectContaining({ name: 'Idempotency-Key', required: true }));
+    expect(create.responses['201'].headers).toHaveProperty('Location');
+    expect(create.responses['201'].headers).toHaveProperty('ETag');
+    expect(create.responses['201'].headers).toHaveProperty('Idempotency-Replayed');
+    expect(create.responses['409'].content).toHaveProperty('application/problem+json');
+    expect(create.responses['401'].content).toHaveProperty('application/problem+json');
+
+    const item = contract.paths['/api/resource-allocation/v1/admin/initiatives/{id}'];
+    expect(item.get.responses['200'].headers).toHaveProperty('ETag');
+    expect(item.patch.parameters).toContainEqual(expect.objectContaining({ name: 'If-Match', required: true }));
+    expect(item.patch.requestBody?.content).toHaveProperty('application/merge-patch+json');
+    expect(item.patch.responses['200'].headers).toHaveProperty('ETag');
+    expect(item.patch.responses['412'].content).toHaveProperty('application/problem+json');
+    expect(collection.get.responses['200'].headers ?? {}).not.toHaveProperty('ETag');
+  });
+
+  it('documents minimum selection projections without administrative identity fields', () => {
+    const peopleList = contract.paths['/api/resource-allocation/v1/people'].get;
+    const peopleSchema = contract.components.schemas.ResourcePersonSelectionDto;
+    expect(peopleList.responses['200'].content).toHaveProperty('application/json');
+    expect(peopleSchema.properties).toHaveProperty('id');
+    expect(peopleSchema.properties).toHaveProperty('displayName');
+    expect(peopleSchema.properties).toHaveProperty('groupId');
+    expect(peopleSchema.properties).not.toHaveProperty('email');
+    expect(peopleSchema.properties).not.toHaveProperty('localUserId');
+    expect(peopleSchema.properties).not.toHaveProperty('role');
   });
 });

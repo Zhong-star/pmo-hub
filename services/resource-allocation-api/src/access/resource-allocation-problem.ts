@@ -1,6 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { AdministratorContactDto } from './access-response.dto';
+import { isDatabaseUnavailable } from '../database/database-errors';
 
 export const localProfileHeader = 'X-PMO-Local-User-ID';
 export const localProfileChallenge = 'LocalProfile realm="Tech Resource Allocation"';
@@ -44,7 +45,9 @@ export class ResourceAllocationProblemFilter implements ExceptionFilter {
     const http = host.switchToHttp();
     const request = http.getRequest<ProblemRequest>();
     const response = http.getResponse<ProblemResponse>();
-    const status = exception instanceof HttpException ? exception.getStatus() : 500;
+    const status = isDatabaseUnavailable(exception)
+      ? 503
+      : exception instanceof HttpException ? exception.getStatus() : 500;
     const defaults = standardProblem(status);
     const problem = exception instanceof ResourceAllocationException
       ? exception

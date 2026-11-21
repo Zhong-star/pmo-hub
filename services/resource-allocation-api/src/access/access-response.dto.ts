@@ -11,6 +11,9 @@ export class ResourcePersonAccessDto {
   @ApiProperty({ type: String, example: 'Local Developer' })
   displayName!: string;
 
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  groupId!: string | null;
+
   @ApiProperty({ type: String, enum: Object.values(ResourceAllocationRole) })
   role!: ResourceAllocationRole;
 

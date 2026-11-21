@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AccessRequestError,
   getResourceAllocationAccess,
   LOCAL_USER_STORAGE_KEY,
   readSelectedProfileId,
 } from './accessApi';
+import { Administration } from './Administration';
 
 type ProfileSelection = { profileId: string | null; generation: number };
 
@@ -22,21 +23,28 @@ function administratorContacts(error: AccessRequestError) {
 }
 
 export function App() {
+  const queryClient = useQueryClient();
   const [selection, setSelection] = useState<ProfileSelection>(() => ({
     profileId: readSelectedProfileId(),
     generation: 0,
   }));
   const currentSelection = useRef(selection);
+  const [adminAccessBlocked, setAdminAccessBlocked] = useState(false);
   const { profileId, generation } = selection;
 
   const reconcileProfile = useCallback(() => {
     const nextProfileId = readSelectedProfileId();
     const current = currentSelection.current;
     if (current.profileId === nextProfileId) return;
+    queryClient.removeQueries({
+      predicate: (query) => query.queryKey[0] === 'resource-allocation-access'
+        || query.queryKey[0] === 'resource-allocation-admin',
+    });
+    setAdminAccessBlocked(false);
     const nextSelection = { profileId: nextProfileId, generation: current.generation + 1 };
     currentSelection.current = nextSelection;
     setSelection(nextSelection);
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     function handleStorageChange(event: StorageEvent) {
@@ -59,6 +67,25 @@ export function App() {
     staleTime: 0,
   });
 
+  const accessDenied = accessQuery.isError && (isMissingProfile(accessQuery.error) || isDenied(accessQuery.error));
+  const accessConfirmedNonAdmin = accessQuery.isSuccess && accessQuery.data.person.role !== 'ALLOCATION_ADMIN';
+
+  useEffect(() => {
+    if (profileId && (accessDenied || accessConfirmedNonAdmin)) {
+      queryClient.removeQueries({ queryKey: ['resource-allocation-admin', profileId] });
+    }
+  }, [accessConfirmedNonAdmin, accessDenied, profileId, queryClient]);
+
+  const isAdministrator = accessQuery.isSuccess
+    && accessQuery.data.person.role === 'ALLOCATION_ADMIN'
+    && !adminAccessBlocked;
+  const refetchAccess = accessQuery.refetch;
+  const handleAdminAccessDenied = useCallback(() => {
+    setAdminAccessBlocked(true);
+    queryClient.removeQueries({ queryKey: ['resource-allocation-admin', profileId] });
+    void refetchAccess();
+  }, [profileId, queryClient, refetchAccess]);
+
   const heading = profileId === null || (accessQuery.isError && isMissingProfile(accessQuery.error))
     ? 'Select a local profile in PMO Hub'
     : accessQuery.isPending
@@ -79,64 +106,79 @@ export function App() {
       </header>
 
       <main id="main-content" className="main-content" tabIndex={-1}>
-        <section className="access-card" aria-labelledby="page-title">
-          <div className="card-mark" aria-hidden="true">RA</div>
-          <p className="eyebrow">PMO Hub module</p>
-          <h1 id="page-title">{heading}</h1>
+        <div className={isAdministrator ? 'content-column content-column-wide' : 'content-column'}>
+          <section className="access-card" aria-labelledby="page-title">
+            <div className="card-mark" aria-hidden="true">RA</div>
+            <p className="eyebrow">PMO Hub module</p>
+            <h1 id="page-title">{heading}</h1>
 
-          {profileId === null && (
-            <p className="supporting-copy">
-              Select your local profile in PMO Hub, then open Tech Resource Allocation again.
-            </p>
-          )}
+            {profileId === null && (
+              <p className="supporting-copy">
+                Select your local profile in PMO Hub, then open Tech Resource Allocation again.
+              </p>
+            )}
 
-          {profileId !== null && accessQuery.isPending && (
-            <p className="supporting-copy" role="status">Checking your module access…</p>
-          )}
+            {profileId !== null && accessQuery.isPending && (
+              <p className="supporting-copy" role="status">Checking your module access…</p>
+            )}
 
-          {accessQuery.isSuccess && (
-            <div className="profile-summary" aria-live="polite">
-              <span className="status-dot" aria-hidden="true" />
-              <div>
-                <p className="profile-name">{accessQuery.data.person.displayName}</p>
-                <p className="profile-role">Role: {accessQuery.data.person.role}</p>
+            {accessQuery.isSuccess && (
+              <div className="profile-summary" aria-live="polite">
+                <span className="status-dot" aria-hidden="true" />
+                <div>
+                  <p className="profile-name">{accessQuery.data.person.displayName}</p>
+                  <p className="profile-role">Role: {accessQuery.data.person.role}</p>
+                </div>
               </div>
-            </div>
+            )}
+
+            {accessQuery.isError && isMissingProfile(accessQuery.error) && (
+              <p className="supporting-copy" role="alert">
+                Select your local profile in PMO Hub, then open Tech Resource Allocation again.
+              </p>
+            )}
+
+            {accessQuery.isError && isDenied(accessQuery.error) && (
+              <div className="access-message" role="alert">
+                <p>You do not have active access to this module. Contact an active Admin for help.</p>
+                {administratorContacts(accessQuery.error).length > 0 ? (
+                  <ul className="contact-list" aria-label="Active Tech Resource Allocation Admins">
+                    {administratorContacts(accessQuery.error).map((administrator) => (
+                      <li key={`${administrator.email}:${administrator.displayName}`}>
+                        <span>{administrator.displayName}</span>
+                        <a href={`mailto:${administrator.email}`}>{administrator.email}</a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="fallback-copy">No active Admin contacts are available. Ask your PMO Hub environment owner for help.</p>
+                )}
+              </div>
+            )}
+
+            {accessQuery.isError && !isMissingProfile(accessQuery.error) && !isDenied(accessQuery.error) && (
+              <div className="access-message" role="alert">
+                <p>Tech Resource Allocation is temporarily unavailable. Try again.</p>
+                <button type="button" onClick={() => void accessQuery.refetch()} disabled={accessQuery.isFetching}>
+                  {accessQuery.isFetching ? 'Checking access…' : 'Try again'}
+                </button>
+              </div>
+            )}
+          </section>
+
+          {isAdministrator && profileId && (
+            <Administration localUserId={profileId} onAccessDenied={handleAdminAccessDenied} />
           )}
 
-          {accessQuery.isError && isMissingProfile(accessQuery.error) && (
-            <p className="supporting-copy" role="alert">
-              Select your local profile in PMO Hub, then open Tech Resource Allocation again.
-            </p>
-          )}
-
-          {accessQuery.isError && isDenied(accessQuery.error) && (
-            <div className="access-message" role="alert">
-              <p>You do not have active access to this module. Contact an active Admin for help.</p>
-              {administratorContacts(accessQuery.error).length > 0 ? (
-                <ul className="contact-list" aria-label="Active Tech Resource Allocation Admins">
-                  {administratorContacts(accessQuery.error).map((administrator) => (
-                    <li key={`${administrator.email}:${administrator.displayName}`}>
-                      <span>{administrator.displayName}</span>
-                      <a href={`mailto:${administrator.email}`}>{administrator.email}</a>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="fallback-copy">No active Admin contacts are available. Ask your PMO Hub environment owner for help.</p>
-              )}
-            </div>
-          )}
-
-          {accessQuery.isError && !isMissingProfile(accessQuery.error) && !isDenied(accessQuery.error) && (
-            <div className="access-message" role="alert">
-              <p>Tech Resource Allocation is temporarily unavailable. Try again.</p>
-              <button type="button" onClick={() => void accessQuery.refetch()} disabled={accessQuery.isFetching}>
-                {accessQuery.isFetching ? 'Checking access…' : 'Try again'}
+          {adminAccessBlocked && accessQuery.data?.person.role === 'ALLOCATION_ADMIN' && (
+            <div className="form-error admin-access-revoked" role="alert">
+              <p>Your Admin permission could not be confirmed. Administrative records have been cleared.</p>
+              <button type="button" className="secondary-button" onClick={() => void accessQuery.refetch()} disabled={accessQuery.isFetching}>
+                {accessQuery.isFetching ? 'Checking access…' : 'Check access again'}
               </button>
             </div>
           )}
-        </section>
+        </div>
       </main>
       <footer className="page-footer">Local development · PMO Hub</footer>
     </div>

@@ -11,22 +11,23 @@ const people = {
     role: 'ALLOCATION_USER',
     coveredGroupIds: [],
   },
-  'profile-admin': {
-    id: 'person-admin',
-    localUserId: 'profile-admin',
-    displayName: 'Morgan Admin',
-    role: 'ALLOCATION_ADMIN',
+  'profile-leader': {
+    id: 'person-leader',
+    localUserId: 'profile-leader',
+    displayName: 'Morgan Leader',
+    role: 'ALLOCATION_SUPERVISOR',
     coveredGroupIds: [],
   },
 };
 
 async function openWithProfile(page: Page, profileId: string) {
-  await page.goto('/resource-allocation/');
-  await page.evaluate(({ key, value }) => window.localStorage.setItem(key, value), {
+  await page.addInitScript(({ key, value }) => {
+    if (!window.localStorage.getItem(key)) window.localStorage.setItem(key, value);
+  }, {
     key: selectedProfileKey,
     value: profileId,
   });
-  await page.reload();
+  await page.goto('/resource-allocation/');
 }
 
 test('opens with the selected Hub profile and links back to the catalog', async ({ page }) => {
@@ -113,20 +114,20 @@ test('refreshes access for the new Hub profile without showing the previous prof
   await page.route(accessPath, async (route) => {
     const profileId = route.request().headers()['x-pmo-local-user-id'] ?? '';
     sentProfiles.push(profileId);
-    const person = profileId === 'profile-admin' ? people['profile-admin'] : people['profile-user'];
+    const person = profileId === 'profile-leader' ? people['profile-leader'] : people['profile-user'];
     await route.fulfill({ json: { person } });
   });
 
   await openWithProfile(page, 'profile-user');
   await expect(page.getByText('Taylor User')).toBeVisible();
 
-  await page.evaluate(({ key }) => window.localStorage.setItem(key, 'profile-admin'), {
+  await page.evaluate(({ key }) => window.localStorage.setItem(key, 'profile-leader'), {
     key: selectedProfileKey,
   });
   await page.reload();
 
-  await expect(page.getByText('Morgan Admin')).toBeVisible();
+  await expect(page.getByText('Morgan Leader')).toBeVisible();
   await expect(page.getByText('Taylor User')).toHaveCount(0);
   expect(sentProfiles[0]).toBe('profile-user');
-  expect(sentProfiles.at(-1)).toBe('profile-admin');
+  expect(sentProfiles.at(-1)).toBe('profile-leader');
 });
