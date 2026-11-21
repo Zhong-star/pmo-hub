@@ -78,4 +78,22 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
     expect(peopleSchema.properties).not.toHaveProperty('localUserId');
     expect(peopleSchema.properties).not.toHaveProperty('role');
   });
+
+  it('documents scoped notification reads, conditional marking, and whole-inbox idempotency', () => {
+    const collection = contract.paths['/api/resource-allocation/v1/notifications'];
+    expect(collection.get.parameters).toContainEqual(expect.objectContaining({ name: 'read', required: false }));
+    expect(collection.get.responses['200'].content).toHaveProperty('application/json');
+    expect(collection.get.responses['400'].content).toHaveProperty('application/problem+json');
+
+    const markOne = contract.paths['/api/resource-allocation/v1/notifications/{id}/readings'].post;
+    expect(markOne.parameters).toContainEqual(expect.objectContaining({ name: 'If-Match', required: true }));
+    expect(markOne.parameters).toContainEqual(expect.objectContaining({ name: 'Idempotency-Key', required: true }));
+    expect(markOne.responses['200'].headers).toHaveProperty('ETag');
+    expect(markOne.responses['412'].content).toHaveProperty('application/problem+json');
+
+    const markAll = contract.paths['/api/resource-allocation/v1/notification-readings'].post;
+    expect(markAll.parameters).toContainEqual(expect.objectContaining({ name: 'Idempotency-Key', required: true }));
+    expect(markAll.responses['200'].content).toHaveProperty('application/json');
+    expect(markAll.responses['409'].content).toHaveProperty('application/problem+json');
+  });
 });
