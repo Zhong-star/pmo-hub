@@ -16,6 +16,7 @@ import { ResourceProfile } from '../src/resource-profiles/resource-profile.entit
 import { ResourceInitiative } from '../src/initiatives/resource-initiative.entity';
 import { ResourceAllocationSubmissionWorker } from '../src/submissions/resource-allocation-submission.worker';
 import { ResourceAllocationDeadlineWorker } from '../src/deadlines/resource-allocation-deadline.worker';
+import { readResourceAllocationWorkerStatus } from '../src/workers/resource-allocation-worker-health';
 
 describe('Tech Resource Allocation request deadlines (#67)', () => {
   let container: StartedPostgreSqlContainer | undefined;
@@ -163,10 +164,84 @@ describe('Tech Resource Allocation request deadlines (#67)', () => {
       WHERE source_request_id = $1 AND event_code IN ('REQUEST_WAITING_REMINDER_7D', 'REQUEST_WAITING_REMINDER_14D')
       ORDER BY event_code, recipient_id
     `, [created.id]);
-    expect(reminders).toHaveLength(4);
+    expect(reminders).toHaveLength(2);
     expect(reminders.map((notice: { event_code: string }) => notice.event_code)).toEqual([
       'REQUEST_WAITING_REMINDER_14D', 'REQUEST_WAITING_REMINDER_14D',
-      'REQUEST_WAITING_REMINDER_7D', 'REQUEST_WAITING_REMINDER_7D',
+    ]);
+  });
+
+  it('suppresses the obsolete 7-day reminder during recovery between 14 and 21 days and expires cleanly above 21 days', async () => {
+    const fixture = await setup();
+    const recoveredAt16Days = await createRequest(fixture);
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET received_at = clock_timestamp() - INTERVAL '16 days',
+          stage_entered_at = clock_timestamp() - INTERVAL '16 days',
+          expiration_due_at = clock_timestamp() + INTERVAL '5 days'
+      WHERE id = $1
+    `, [recoveredAt16Days.id]);
+
+    const worker = app!.get(ResourceAllocationDeadlineWorker);
+    expect(await worker.processBatch()).toBe(1);
+    expect(await worker.processBatch()).toBe(0);
+
+    const midRecoveryNotices = await dataSource!.query(`
+      SELECT event_code, recipient_id
+      FROM resource_allocation_notifications
+      WHERE source_request_id = $1 AND event_code <> 'REQUEST_SUBMITTED'
+      ORDER BY event_code, recipient_id
+    `, [recoveredAt16Days.id]) as Array<{ event_code: string; recipient_id: string }>;
+    expect(midRecoveryNotices.map((notice) => notice.event_code)).toEqual([
+      'REQUEST_WAITING_REMINDER_14D',
+      'REQUEST_WAITING_REMINDER_14D',
+    ]);
+    expect(midRecoveryNotices.some((notice) => notice.event_code === 'REQUEST_WAITING_REMINDER_7D')).toBe(false);
+
+    const statusAfterRecovery = await readResourceAllocationWorkerStatus(dataSource!);
+    expect(statusAfterRecovery.operations.find((operation) => operation.name === 'waiting deadline')?.dueCount).toBe(0);
+
+    // Advancing past 21 days expires the request without emitting the suppressed 7-day reminder.
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET received_at = clock_timestamp() - INTERVAL '21 days' - INTERVAL '1 second',
+          expiration_due_at = clock_timestamp() - INTERVAL '1 second'
+      WHERE id = $1
+    `, [recoveredAt16Days.id]);
+    expect(await worker.processBatch()).toBe(1);
+    expect(await worker.processBatch()).toBe(0);
+
+    const afterExpiryNotices = await dataSource!.query(`
+      SELECT event_code
+      FROM resource_allocation_notifications
+      WHERE source_request_id = $1 AND event_code <> 'REQUEST_SUBMITTED'
+      ORDER BY event_code, recipient_id
+    `, [recoveredAt16Days.id]) as Array<{ event_code: string }>;
+    expect(afterExpiryNotices.map((notice) => notice.event_code)).toEqual([
+      'REQUEST_EXPIRED',
+      'REQUEST_EXPIRED',
+      'REQUEST_WAITING_REMINDER_14D',
+      'REQUEST_WAITING_REMINDER_14D',
+    ]);
+
+    // Recovery directly past 21 days emits neither 7-day nor 14-day reminders.
+    const recoveredPast21Days = await createRequest(fixture);
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET received_at = clock_timestamp() - INTERVAL '22 days',
+          stage_entered_at = clock_timestamp() - INTERVAL '22 days',
+          expiration_due_at = clock_timestamp() - INTERVAL '1 second'
+      WHERE id = $1
+    `, [recoveredPast21Days.id]);
+    expect(await worker.processBatch()).toBe(1);
+    const past21Notices = await dataSource!.query(`
+      SELECT event_code
+      FROM resource_allocation_notifications
+      WHERE source_request_id = $1 AND event_code <> 'REQUEST_SUBMITTED'
+      ORDER BY event_code, recipient_id
+    `, [recoveredPast21Days.id]) as Array<{ event_code: string }>;
+    expect(past21Notices.map((notice) => notice.event_code)).toEqual([
+      'REQUEST_EXPIRED',
+      'REQUEST_EXPIRED',
     ]);
   });
 

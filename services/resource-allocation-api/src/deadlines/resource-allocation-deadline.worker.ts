@@ -47,17 +47,18 @@ export class ResourceAllocationDeadlineWorker {
         AND (
           request.expiration_due_at < $1::timestamptz
           OR (
-            request.received_at <= $1::timestamptz - INTERVAL '168 hours'
-            AND NOT EXISTS (
-              SELECT 1 FROM resource_allocation_notifications AS notice
-              WHERE notice.source_request_id = request.id AND notice.event_code = 'REQUEST_WAITING_REMINDER_7D'
-            )
-          )
-          OR (
             request.received_at <= $1::timestamptz - INTERVAL '336 hours'
             AND NOT EXISTS (
               SELECT 1 FROM resource_allocation_notifications AS notice
               WHERE notice.source_request_id = request.id AND notice.event_code = 'REQUEST_WAITING_REMINDER_14D'
+            )
+          )
+          OR (
+            request.received_at > $1::timestamptz - INTERVAL '336 hours'
+            AND request.received_at <= $1::timestamptz - INTERVAL '168 hours'
+            AND NOT EXISTS (
+              SELECT 1 FROM resource_allocation_notifications AS notice
+              WHERE notice.source_request_id = request.id AND notice.event_code = 'REQUEST_WAITING_REMINDER_7D'
             )
           )
         )
@@ -105,13 +106,18 @@ export class ResourceAllocationDeadlineWorker {
         return true;
       }
 
+      if (due.reminder14Days) {
+        if (!due.reminder14DaysPending) return false;
+        await this.remind(manager, request, 'REQUEST_WAITING_REMINDER_14D', 14);
+        return true;
+      }
+
       if (due.reminder7Days && due.reminder7DaysPending) {
         await this.remind(manager, request, 'REQUEST_WAITING_REMINDER_7D', 7);
+        return true;
       }
-      if (due.reminder14Days && due.reminder14DaysPending) {
-        await this.remind(manager, request, 'REQUEST_WAITING_REMINDER_14D', 14);
-      }
-      return (due.reminder7Days && due.reminder7DaysPending) || (due.reminder14Days && due.reminder14DaysPending);
+
+      return false;
     });
   }
 

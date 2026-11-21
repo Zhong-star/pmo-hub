@@ -408,14 +408,31 @@ export class ResourceAllocationApprovalService {
       correlationId: input.correlationId,
       occurredAt: input.occurredAt,
     });
-    await manager.getRepository(ResourceAllocationNotification).insert({
-      recipientId: request.requesterId,
-      sourceRequestId: request.id,
-      eventCode: `REQUEST_CHANGES_${input.automatic ? 'AUTO_ACCEPTED' : 'ACCEPTED'}_${saved.version}`,
-      title: input.automatic ? 'Resource request proposal automatically confirmed' : 'Resource request proposal accepted',
-      message: `The confirmed allocation is ${startDate} to ${endDate} at ${weeklyHours.toFixed(1)} weekly hours.`,
-      createdAt: input.occurredAt,
-    });
+    const deciderId = this.uuidCondition(approved.decidedByPersonId)
+      ?? await this.findProposalDeciderId(manager, request.id);
+    const candidateRecipients = input.automatic
+      ? [request.requesterId, person!.id, ...(deciderId ? [deciderId] : [])]
+      : [person!.id, ...(deciderId ? [deciderId] : [])].filter((recipientId) => recipientId !== request.requesterId);
+    const recipientIds = [...new Set(candidateRecipients)];
+    if (recipientIds.length > 0) {
+      const eventCode = `REQUEST_CHANGES_${input.automatic ? 'AUTO_ACCEPTED' : 'ACCEPTED'}_${saved.version}`;
+      const title = input.automatic ? 'Resource request proposal automatically confirmed' : 'Resource request proposal accepted';
+      const message = `The confirmed allocation is ${startDate} to ${endDate} at ${weeklyHours.toFixed(1)} weekly hours.`;
+      await manager.getRepository(ResourceAllocationNotification)
+        .createQueryBuilder()
+        .insert()
+        .into(ResourceAllocationNotification)
+        .values(recipientIds.map((recipientId) => ({
+          recipientId,
+          sourceRequestId: request.id,
+          eventCode,
+          title,
+          message,
+          createdAt: input.occurredAt,
+        })))
+        .orIgnore()
+        .execute();
+    }
     return this.changedProposalResponse(saved, allocationResponse(allocation), input.automatic ? 'SYSTEM_DEADLINE' : 'REQUESTER_ACCEPTANCE');
   }
 
@@ -507,6 +524,14 @@ export class ResourceAllocationApprovalService {
 
   private uuidCondition(value: unknown): string | undefined {
     return typeof value === 'string' && uuidPattern.test(value) ? value.toLowerCase() : undefined;
+  }
+
+  private async findProposalDeciderId(manager: EntityManager, requestId: string): Promise<string | undefined> {
+    const latestProposal = await manager.getRepository(ResourceRequestHistory).findOne({
+      where: { requestId, action: 'APPROVAL_CHANGES_PROPOSED' },
+      order: { occurredAt: 'DESC', id: 'DESC' },
+    });
+    return this.uuidCondition(latestProposal?.actorSnapshot?.personId);
   }
 
   private systemActorSnapshot(): Record<string, unknown> {
@@ -634,6 +659,7 @@ export class ResourceAllocationApprovalService {
       startDate,
       endDate,
       weeklyHours,
+      ...(datesOrHoursChanged ? { decidedByPersonId: input.actor.id } : {}),
       ...(input.explanation ? { explanation: input.explanation } : {}),
     };
 
