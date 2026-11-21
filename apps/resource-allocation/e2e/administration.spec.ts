@@ -31,6 +31,9 @@ async function openWithProfile(page: Page, profileId: string) {
   await page.route('**/api/resource-allocation/v1/submissions**', async (route) => route.fulfill({
     json: { items: [], page: { ...emptySelectionPage, limit: 50 } },
   }));
+  await page.route('**/api/resource-allocation/v1/requests**', async (route) => route.fulfill({
+    json: { items: [], page: { ...emptySelectionPage, limit: 50 } },
+  }));
   await page.addInitScript(({ key, value }) => {
     if (!window.localStorage.getItem(key)) window.localStorage.setItem(key, value);
   }, {
