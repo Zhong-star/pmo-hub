@@ -892,6 +892,105 @@ describe('Tech Resource Allocation submissions (#60)', () => {
       .expect(404);
   });
 
+  it('uses the decision stage recorded in history when authorizing approval and denial receipts', async () => {
+    const fixture = await setup();
+    const people = dataSource!.getRepository(ResourcePerson);
+    const assignee = await people.save(people.create({
+      localUserId: 'receipt-stage-assignee', displayName: 'Receipt Stage Assignee', email: 'receipt-assignee@example.test',
+      role: ResourceAllocationRole.User, active: true, coveredGroupIds: [], groupId: fixture.group.id,
+    }));
+    const groupAdmin = await people.save(people.create({
+      localUserId: 'receipt-stage-admin', displayName: 'Receipt Stage Admin', email: 'receipt-admin@example.test',
+      role: ResourceAllocationRole.Admin, active: true, coveredGroupIds: [], groupId: fixture.group.id,
+    }));
+
+    const submitRequest = async () => {
+      const payload = bodyFor(fixture, 20);
+      const submission = await request(app!.getHttpServer())
+        .post('/api/resource-allocation/v1/submissions')
+        .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+        .set('Idempotency-Key', randomUUID())
+        .send(payload)
+        .expect(202);
+      expect(await app!.get(ResourceAllocationSubmissionWorker).processBatch(1)).toBe(1);
+      const lines = await request(app!.getHttpServer())
+        .get(`/api/resource-allocation/v1/submissions/${submission.body.id}/lines`)
+        .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+        .expect(200);
+      return lines.body.items[0].requestId as string;
+    };
+
+    const recover = (actor: ResourcePerson, key: string, operation: string) => request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${key}?operation=${operation}`)
+      .set('X-PMO-Local-User-ID', actor.localUserId);
+
+    // A module-wide Admin can act during Apresentação and recover that decision afterwards.
+    const presentationApprovalRequestId = await submitRequest();
+    const presentationApprovalKey = randomUUID();
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${presentationApprovalRequestId}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', presentationApprovalKey)
+      .send({ personId: assignee.id })
+      .expect(200);
+    await recover(fixture.admin, presentationApprovalKey, 'request.approve').expect(200);
+
+    // The same global Admin can deny during Apresentação and recover the denial.
+    const presentationDenialRequestId = await submitRequest();
+    const presentationDenialKey = randomUUID();
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${presentationDenialRequestId}/denials`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', presentationDenialKey)
+      .send({ explanation: 'The request cannot be supported.' })
+      .expect(200);
+    await recover(fixture.admin, presentationDenialKey, 'request.deny').expect(200);
+
+    // Group Admins may decide a team-stage request, but lose access to its receipt when their group scope changes.
+    const teamApprovalRequestId = await submitRequest();
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${teamApprovalRequestId}/referrals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({})
+      .expect(200);
+    const teamApprovalKey = randomUUID();
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${teamApprovalRequestId}/approvals`)
+      .set('X-PMO-Local-User-ID', groupAdmin.localUserId)
+      .set('If-Match', '"2"')
+      .set('Idempotency-Key', teamApprovalKey)
+      .send({ personId: assignee.id })
+      .expect(200);
+    await recover(groupAdmin, teamApprovalKey, 'request.approve').expect(200);
+    await people.update(groupAdmin.id, { groupId: null });
+    await recover(groupAdmin, teamApprovalKey, 'request.approve').expect(403);
+    await people.update(groupAdmin.id, { groupId: fixture.group.id });
+
+    const teamDenialRequestId = await submitRequest();
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${teamDenialRequestId}/referrals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({})
+      .expect(200);
+    const teamDenialKey = randomUUID();
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${teamDenialRequestId}/denials`)
+      .set('X-PMO-Local-User-ID', groupAdmin.localUserId)
+      .set('If-Match', '"2"')
+      .set('Idempotency-Key', teamDenialKey)
+      .send({ explanation: 'The team has no capacity.' })
+      .expect(200);
+    await recover(groupAdmin, teamDenialKey, 'request.deny').expect(200);
+    await people.update(groupAdmin.id, { groupId: null });
+    await recover(groupAdmin, teamDenialKey, 'request.deny').expect(403);
+  });
+
   it('persists and exposes aligned problem details (code, title, detail, message) for definitively failed submission lines', async () => {
     const fixture = await setup();
     const payload = bodyFor(fixture, 20);

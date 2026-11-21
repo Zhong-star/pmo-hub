@@ -190,11 +190,7 @@ export class ResourceAllocationOperationResultService {
       if (request.requesterId === actor.id) {
         throw this.accessDenied('A person cannot decide their own request.');
       }
-      if (operation === 'request.approve') {
-        this.requireCurrentRequestScope(actor, request);
-      } else {
-        await this.requireCurrentDenialScope(actor, request);
-      }
+      await this.requireCurrentDecisionScope(actor, request, operation === 'request.approve' ? 'APPROVED' : 'DENIED');
       return;
     }
 
@@ -212,52 +208,69 @@ export class ResourceAllocationOperationResultService {
     }
   }
 
-  private requireCurrentRequestScope(actor: ResourcePerson, request: ResourceRequest): void {
-    if (actor.role === ResourceAllocationRole.Admin) return;
+  private async requireCurrentDecisionScope(
+    actor: ResourcePerson,
+    request: ResourceRequest,
+    action: 'APPROVED' | 'DENIED',
+  ): Promise<void> {
+    const actions = action === 'APPROVED' ? ['APPROVED', 'APPROVAL_CHANGES_PROPOSED'] : ['DENIED'];
+    const latestDecision = await this.dataSource.getRepository(ResourceRequestHistory).createQueryBuilder('history')
+      .where('history.request_id = :requestId AND history.action IN (:...actions)', { requestId: request.id, actions })
+      .orderBy('history.occurred_at', 'DESC')
+      .addOrderBy('history.id', 'DESC')
+      .getOne();
+    const snapshot = latestDecision?.afterSnapshot as {
+      before?: {
+        decisionState?: unknown;
+        revalidationOriginState?: unknown;
+        revalidationDecisionStage?: unknown;
+      };
+    } | undefined;
+    const decision = snapshot?.before;
+    if (!decision) throw this.notFound('Operation result');
+
+    let decisionStage: 'WAITING_FOR_PRESENTATION' | 'PENDING_TEAM_DECISION';
+    let adminOnly = false;
+    if (decision.decisionState === 'WAITING_FOR_PRESENTATION') {
+      decisionStage = 'WAITING_FOR_PRESENTATION';
+      adminOnly = true;
+    } else if (decision.decisionState === 'PENDING_TEAM_DECISION') {
+      decisionStage = 'PENDING_TEAM_DECISION';
+    } else if (decision.decisionState === 'REQUIRES_REVALIDATION') {
+      if (decision.revalidationOriginState === 'WAITING_FOR_PRESENTATION' ||
+        decision.revalidationOriginState === 'PENDING_TEAM_DECISION') {
+        decisionStage = decision.revalidationOriginState;
+        adminOnly = true;
+      } else if (decision.revalidationOriginState === 'APPROVED_WITH_CHANGES') {
+        decisionStage = decision.revalidationDecisionStage === 'WAITING_FOR_PRESENTATION'
+          ? 'WAITING_FOR_PRESENTATION'
+          : 'PENDING_TEAM_DECISION';
+        adminOnly = decisionStage === 'WAITING_FOR_PRESENTATION';
+      } else {
+        throw this.notFound('Operation result');
+      }
+    } else {
+      throw this.notFound('Operation result');
+    }
+
+    if (adminOnly) {
+      if (actor.role === ResourceAllocationRole.Admin) return;
+      throw this.accessDenied('Only an active Admin may access this decision receipt.');
+    }
+    if (decisionStage === 'WAITING_FOR_PRESENTATION') {
+      if (actor.role === ResourceAllocationRole.Admin) return;
+      throw this.accessDenied('The active role is no longer authorized for this presentation decision.');
+    }
+
     const groupId = this.extractUuid(request.requestedConditions, 'groupId');
     const authorized = groupId !== undefined && (
-      actor.role === ResourceAllocationRole.Moderator
-        ? actor.groupId?.toLowerCase() === groupId
-        : (actor.role === ResourceAllocationRole.Supervisor || actor.role === ResourceAllocationRole.Manager) &&
-          actor.coveredGroupIds.some((id) => id.toLowerCase() === groupId)
-    );
-    if (!authorized) {
-      throw this.accessDenied('The active profile no longer has access to this request group.');
-    }
-  }
-
-  private async requireCurrentDenialScope(actor: ResourcePerson, request: ResourceRequest): Promise<void> {
-    let decisionState = request.decisionState;
-    if (decisionState === 'REQUIRES_REVALIDATION') {
-      decisionState = request.revalidationOriginState === 'WAITING_FOR_PRESENTATION'
-        ? 'WAITING_FOR_PRESENTATION'
-        : 'PENDING_TEAM_DECISION';
-    } else if (decisionState !== 'WAITING_FOR_PRESENTATION' && decisionState !== 'PENDING_TEAM_DECISION') {
-      const latestDenial = await this.dataSource.getRepository(ResourceRequestHistory).findOne({
-        where: { requestId: request.id, action: 'DENIED' },
-        order: { occurredAt: 'DESC', id: 'DESC' },
-      });
-      const snapshot = latestDenial?.afterSnapshot as { before?: { decisionState?: unknown } } | undefined;
-      const priorState = snapshot?.before?.decisionState;
-      if (priorState === 'WAITING_FOR_PRESENTATION' || priorState === 'PENDING_TEAM_DECISION') {
-        decisionState = priorState;
-      }
-    }
-    if (decisionState === 'WAITING_FOR_PRESENTATION') {
-      if (actor.role !== ResourceAllocationRole.Admin) {
-        throw this.accessDenied('The active role is no longer authorized for this presentation decision.');
-      }
-      return;
-    }
-    const groupId = this.extractUuid(request.requestedConditions, 'groupId');
-    const authorized = decisionState === 'PENDING_TEAM_DECISION' && groupId !== undefined && (
       (actor.role === ResourceAllocationRole.Moderator && actor.groupId?.toLowerCase() === groupId) ||
       ((actor.role === ResourceAllocationRole.Supervisor || actor.role === ResourceAllocationRole.Manager) &&
         actor.coveredGroupIds.some((id) => id.toLowerCase() === groupId)) ||
       (actor.role === ResourceAllocationRole.Admin && actor.groupId?.toLowerCase() === groupId)
     );
     if (!authorized) {
-      throw this.accessDenied('The active role is not authorized for this group decision scope.');
+      throw this.accessDenied('The active profile no longer has access to this request group.');
     }
   }
 
