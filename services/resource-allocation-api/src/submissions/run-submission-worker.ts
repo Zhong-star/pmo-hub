@@ -2,6 +2,12 @@ import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { createResourceAllocationDataSourceOptions, getResourceAllocationDatabaseUrl, RESOURCE_ALLOCATION_DATABASE_URL_ENV } from '../database/database-options';
 import { ResourceAllocationSubmissionWorker } from './resource-allocation-submission.worker';
+import { ResourceAllocationDeadlineWorker } from '../deadlines/resource-allocation-deadline.worker';
+import {
+  RESOURCE_ALLOCATION_WORKER_INTERVAL_MS,
+  runResourceAllocationWorkerCycle,
+  type ResourceAllocationWorkerJob,
+} from '../workers/resource-allocation-worker-cycle';
 
 async function main() {
   const databaseUrl = getResourceAllocationDatabaseUrl();
@@ -9,7 +15,12 @@ async function main() {
 
   const dataSource = new DataSource(createResourceAllocationDataSourceOptions(databaseUrl));
   await dataSource.initialize();
-  const worker = new ResourceAllocationSubmissionWorker(dataSource);
+  const submissionWorker = new ResourceAllocationSubmissionWorker(dataSource);
+  const deadlineWorker = new ResourceAllocationDeadlineWorker(dataSource);
+  const jobs: ResourceAllocationWorkerJob[] = [
+    { name: 'submission', runBatch: () => submissionWorker.processBatch() },
+    { name: 'waiting deadline', runBatch: () => deadlineWorker.processBatch() },
+  ];
   const once = process.argv.includes('--once');
   let stopping = false;
   const stop = () => { stopping = true; };
@@ -18,16 +29,12 @@ async function main() {
 
   try {
     if (once) {
-      await worker.processBatch();
+      if (await runResourceAllocationWorkerCycle(jobs, reportWorkerFailure) > 0) process.exitCode = 1;
       return;
     }
     while (!stopping) {
-      try {
-        await worker.processBatch();
-      } catch (error) {
-        process.stderr.write(`Resource Allocation submission worker cycle failed: ${safeErrorName(error)}\n`);
-      }
-      if (!stopping) await new Promise((resolve) => setTimeout(resolve, 10_000));
+      await runResourceAllocationWorkerCycle(jobs, reportWorkerFailure);
+      if (!stopping) await new Promise((resolve) => setTimeout(resolve, RESOURCE_ALLOCATION_WORKER_INTERVAL_MS));
     }
   } finally {
     await dataSource.destroy();
@@ -36,6 +43,10 @@ async function main() {
 
 function safeErrorName(error: unknown): string {
   return error instanceof Error ? error.name : 'UnknownError';
+}
+
+function reportWorkerFailure(jobName: string, error: unknown): void {
+  process.stderr.write(`Resource Allocation ${jobName} worker cycle failed: ${safeErrorName(error)}\n`);
 }
 
 void main().catch((error: unknown) => {

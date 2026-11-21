@@ -7,6 +7,9 @@ import { HealthController } from './health.controller';
 import { ResourceAllocationAdministrationController } from './administration/resource-allocation-administration.controller';
 import { ResourceAllocationAdministrationService } from './administration/resource-allocation-administration.service';
 import { ResourceAllocationSelectionController } from './administration/resource-allocation-selection.controller';
+import { ResourceAllocationApprovalController } from './approvals/resource-allocation-approval.controller';
+import { ResourceAllocationApprovalService } from './approvals/resource-allocation-approval.service';
+import { ResourceAllocationDeadlineWorker } from './deadlines/resource-allocation-deadline.worker';
 import { ResourceAllocationSubmissionController, ResourceAllocationOperationResultController } from './submissions/resource-allocation-submission.controller';
 import { ResourceAllocationSubmissionService } from './submissions/resource-allocation-submission.service';
 import { ResourceAllocationSubmissionWorker } from './submissions/resource-allocation-submission.worker';
@@ -16,8 +19,6 @@ import { ResourceAllocationRequestQueueController } from './requests/resource-al
 import { ResourceAllocationRequestQueueService } from './requests/resource-allocation-request-queue.service';
 import { ResourceAllocationRequestAuditController, ResourceAllocationRequestController } from './requests/resource-allocation-request.controller';
 import { ResourceAllocationRequestService } from './requests/resource-allocation-request.service';
-import { ResourceAllocationApprovalController } from './approvals/resource-allocation-approval.controller';
-import { ResourceAllocationApprovalService } from './approvals/resource-allocation-approval.service';
 
 @Module({
   controllers: [
@@ -42,6 +43,7 @@ import { ResourceAllocationApprovalService } from './approvals/resource-allocati
     ResourceAllocationRequestQueueService,
     ResourceAllocationRequestService,
     ResourceAllocationApprovalService,
+    ResourceAllocationDeadlineWorker,
   ],
 })
 export class AppModule {

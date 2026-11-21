@@ -189,6 +189,93 @@ test('recovers a durable submission after reload and offers correction only for 
   expect((createdBody?.lines as Array<Record<string, unknown>>)[0]?.attemptKey).not.toBe('attempt-failed');
 });
 
+test('recovers a submitted request that later expired and opens its retained audit without retrying it', async ({ page }) => {
+  await installSelectionFixtures(page);
+  const submission = {
+    id: 'submission-expired',
+    initiativeId: initiative.id,
+    category: 'EXECUTION_PROJECT',
+    receivedAt: '2026-10-20T12:00:00Z',
+    lineCount: 1,
+    counts: { received: 0, processing: 0, succeeded: 1, failed: 0 },
+  };
+  const requestId = 'request-expired';
+  let submissionAttempts = 0;
+  await page.route(`${apiRoot}/submissions**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'POST') {
+      submissionAttempts += 1;
+      await route.fulfill({ status: 202, json: submission });
+      return;
+    }
+    if (url.pathname.endsWith('/submissions')) {
+      await route.fulfill({ json: { items: [submission], page: emptyPage } });
+      return;
+    }
+    if (url.pathname.endsWith(`/submissions/${submission.id}/lines`)) {
+      await route.fulfill({ json: {
+        items: [{
+          id: 'line-expired',
+          attemptKey: 'attempt-expired',
+          submittedConditions: {
+            initiativeId: initiative.id,
+            category: 'EXECUTION_PROJECT',
+            groupId: group.id,
+            resourceProfileId: profile.id,
+            startDate: dateAfter(2),
+            endDate: dateAfter(9),
+            weeklyHours: 8,
+          },
+          status: 'SUCCEEDED',
+          requestId,
+          receivedAt: submission.receivedAt,
+          requestOutcome: {
+            status: 'REMOVED',
+            action: 'EXPIRED',
+            reason: 'Automatically expired after more than 21 days waiting for presentation.',
+            removedAt: '2026-11-10T12:00:00Z',
+          },
+        }],
+        page: emptyPage,
+      } });
+      return;
+    }
+    if (url.pathname.endsWith(`/submissions/${submission.id}`)) {
+      await route.fulfill({ json: submission });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route(`${apiRoot}/request-audits/${requestId}`, async (route) => route.fulfill({ json: {
+    requestId,
+    events: [{
+      id: 'audit-expired',
+      requestId,
+      action: 'EXPIRED',
+      requesterSnapshot: { displayName: user.displayName },
+      actorSnapshot: { displayName: 'Resource Allocation deadline worker' },
+      requestSnapshot: { requestedConditions: { initiativeCode: 'ITDM-9', groupName: group.name, resourceProfileName: profile.name } },
+      reason: 'Automatically expired after more than 21 days waiting for presentation.',
+      occurredAt: '2026-11-10T12:00:00Z',
+      correlationId: '7b944011-f8d1-483a-8a7f-784f996b4b24',
+    }],
+  } }));
+
+  await openAsUser(page);
+  await expect(page.getByRole('heading', { name: 'My submissions' })).toBeVisible();
+  await expect(page.getByText('Request created:', { exact: false })).toContainText(requestId);
+  await expect(page.getByText('Current outcome: Removed from operation · expired')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Correct and retry/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Open retained audit record' })).toHaveAttribute('href', `/resource-allocation/?auditId=${requestId}`);
+  expect(submissionAttempts).toBe(0);
+
+  await page.getByRole('link', { name: 'Open retained audit record' }).click();
+  await expect(page.getByRole('heading', { name: 'Request audit' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'EXPIRED' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Request audit' }).getByText(/more than 21 days waiting for presentation/)).toBeVisible();
+  expect(submissionAttempts).toBe(0);
+});
+
 test('retries an unconfirmed envelope after reload with the same durable keys and contents', async ({ page }) => {
   await installSelectionFixtures(page);
   let requestCount = 0;
