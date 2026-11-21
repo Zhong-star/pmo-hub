@@ -2643,12 +2643,20 @@
                 "schema": {
                   "type": "string",
                   "example": "\"2\""
-                }
+                },
+                "description": "Version of the newly changed request. Omitted on a replay."
               },
               "Idempotency-Replayed": {
                 "schema": {
                   "type": "string",
                   "example": "true"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestChangeReceiptDto"
                 }
               }
             }
@@ -2719,7 +2727,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Refer a request waiting for presentation to its active group leaders",
+        "summary": "Refer a waiting or revalidated request to its active group leaders",
         "tags": [
           "Tech Resource Allocation requests"
         ]
@@ -2768,18 +2776,26 @@
         },
         "responses": {
           "200": {
-            "description": "The corrected request remains in its current presentation stage.",
+            "description": "The corrected request remains in its current stage.",
             "headers": {
               "ETag": {
                 "schema": {
                   "type": "string",
                   "example": "\"2\""
-                }
+                },
+                "description": "Version of the newly changed request. Omitted on a replay."
               },
               "Idempotency-Replayed": {
                 "schema": {
                   "type": "string",
                   "example": "true"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestChangeReceiptDto"
                 }
               }
             }
@@ -2850,7 +2866,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Correct eligible references on a waiting request with an explanation",
+        "summary": "Correct request references with a reason during presentation, revalidation, or exception resolution",
         "tags": [
           "Tech Resource Allocation requests"
         ]
@@ -7479,6 +7495,59 @@
       "ReferRequestDto": {
         "type": "object",
         "properties": {}
+      },
+      "RequestChangeReceiptDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requester": {
+            "type": "object"
+          },
+          "requestedConditions": {
+            "type": "object"
+          },
+          "decisionState": {
+            "type": "string"
+          },
+          "originState": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "WAITING_FOR_PRESENTATION",
+              "PENDING_TEAM_DECISION",
+              "APPROVED_WITH_CHANGES"
+            ]
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stageEnteredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id",
+          "requester",
+          "requestedConditions",
+          "decisionState",
+          "receivedAt",
+          "stageEnteredAt",
+          "version"
+        ]
       },
       "CorrectRequestReferencesDto": {
         "type": "object",

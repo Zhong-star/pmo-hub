@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
 import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class RequestQueueItemDto {
@@ -58,6 +58,10 @@ export class RequestQueueCollectionDto {
   @ApiProperty({ type: Object })
   page!: { nextCursor: string | null; limit: number };
 }
+
+export class RequestChangeReceiptDto extends PickType(RequestQueueItemDto, [
+  'id', 'requester', 'requestedConditions', 'decisionState', 'originState', 'receivedAt', 'stageEnteredAt', 'dueAt', 'version',
+] as const) {}
 
 // This class intentionally accepts no fields; the request still needs a runtime DTO for whitelist validation.
 export class ReferRequestDto {}

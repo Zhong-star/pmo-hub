@@ -326,6 +326,7 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
       .expect('Idempotency-Replayed', 'true')
       .expect(200);
     expect(replay.body).toEqual(first.body);
+    expect(replay.headers.etag).toBeUndefined();
 
     await request(app!.getHttpServer())
       .post(path)

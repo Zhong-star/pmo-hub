@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 type OpenApiDocument = {
   paths: Record<string, Record<string, {
-    parameters?: Array<{ name?: string; required?: boolean }>;
+    parameters?: Array<{ name?: string; required?: boolean; schema?: { enum?: string[] } }>;
     security?: Array<Record<string, unknown>>;
     requestBody?: { content?: Record<string, unknown> };
     responses: Record<string, {
@@ -119,5 +119,27 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
     expect(markAll.parameters).toContainEqual(expect.objectContaining({ name: 'Idempotency-Key', required: true }));
     expect(markAll.responses['200'].content).toHaveProperty('application/json');
     expect(markAll.responses['409'].content).toHaveProperty('application/problem+json');
+  });
+
+  it('documents revalidation and the conditional commands used by the request queue client', () => {
+    const root = '/api/resource-allocation/v1';
+    const queues = contract.paths[`${root}/request-queues/{queueCode}`].get;
+    expect(queues.parameters?.find(({ name }) => name === 'queueCode')?.schema?.enum).toContain('revalidation');
+    expect(contract.components.schemas.RequestQueueItemDto.properties?.originState?.enum).toContain('APPROVED_WITH_CHANGES');
+    expect(contract.components.schemas.CorrectRequestReferencesDto.properties).toHaveProperty('personId');
+
+    for (const operation of ['referrals', 'reference-corrections']) {
+      const command = contract.paths[`${root}/requests/{id}/${operation}`].post;
+      expect(command.parameters).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'If-Match', required: true }),
+        expect.objectContaining({ name: 'Idempotency-Key', required: true }),
+      ]));
+      expect(command.responses['200'].content).toMatchObject({
+        'application/json': { schema: { $ref: '#/components/schemas/RequestChangeReceiptDto' } },
+      });
+      expect(command.responses['200'].headers).toHaveProperty('Idempotency-Replayed');
+      expect(command.responses['412'].content).toHaveProperty('application/problem+json');
+    }
+    expect(contract.components.schemas.RequestChangeReceiptDto.properties).toHaveProperty('version');
   });
 });

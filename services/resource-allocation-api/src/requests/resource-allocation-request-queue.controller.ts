@@ -32,6 +32,7 @@ import {
   CorrectRequestReferencesDto,
   ReferRequestDto,
   RemovedRequestReceiptDto,
+  RequestChangeReceiptDto,
   RequestQueueCollectionDto,
 } from './request-queue.dto';
 import { ResourceAllocationRequestQueueService } from './resource-allocation-request-queue.service';
@@ -39,6 +40,11 @@ import { ResourceAllocationRequestQueueService } from './resource-allocation-req
 interface ResponseWithHeaders {
   setHeader(name: string, value: string): void;
 }
+
+const changeReceiptHeaders = {
+  ETag: { schema: { type: 'string', example: '"2"' }, description: 'Version of the newly changed request. Omitted on a replay.' },
+  'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } },
+};
 
 interface QueueFilters {
   limit?: string;
@@ -91,11 +97,11 @@ export class ResourceAllocationRequestQueueController {
 
   @Post('requests/:id/referrals')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Refer a request waiting for presentation to its active group leaders' })
+  @ApiOperation({ summary: 'Refer a waiting or revalidated request to its active group leaders' })
   @ApiSecurity('localProfile')
   @ApiHeader({ name: 'If-Match', required: true, description: 'Current strong request ETag.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, description: 'UUID for this exact referral action.' })
-  @ApiOkResponse({ description: 'The request now waits for its group decision.', headers: { ETag: { schema: { type: 'string', example: '"2"' } }, 'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } } } })
+  @ApiOkResponse({ type: RequestChangeReceiptDto, description: 'The request now waits for its group decision.', headers: changeReceiptHeaders })
   @ApiForbiddenResponse({ description: 'Only an active Admin may refer requests.' })
   @ApiNotFoundResponse({ description: 'The request was not found in the operation.' })
   @ApiResponse({ status: 400, description: 'If-Match, Idempotency-Key, or request body is invalid.' })
@@ -112,18 +118,18 @@ export class ResourceAllocationRequestQueueController {
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
     const operation = await this.requestService.refer(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
-    response.setHeader('ETag', `"${operation.result.version}"`);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
   }
 
   @Post('requests/:id/reference-corrections')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Correct eligible references on a waiting request with an explanation' })
+  @ApiOperation({ summary: 'Correct request references with a reason during presentation, revalidation, or exception resolution' })
   @ApiSecurity('localProfile')
   @ApiHeader({ name: 'If-Match', required: true, description: 'Current strong request ETag.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, description: 'UUID for this exact correction action.' })
-  @ApiOkResponse({ description: 'The corrected request remains in its current presentation stage.', headers: { ETag: { schema: { type: 'string', example: '"2"' } }, 'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } } } })
+  @ApiOkResponse({ type: RequestChangeReceiptDto, description: 'The corrected request remains in its current stage.', headers: changeReceiptHeaders })
   @ApiForbiddenResponse({ description: 'Only an active Admin may correct request references.' })
   @ApiNotFoundResponse({ description: 'The request was not found in the operation.' })
   @ApiResponse({ status: 400, description: 'The body, If-Match, or Idempotency-Key is invalid.' })
@@ -140,8 +146,8 @@ export class ResourceAllocationRequestQueueController {
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
     const operation = await this.requestService.correctReferences(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
-    response.setHeader('ETag', `"${operation.result.version}"`);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
   }
 
