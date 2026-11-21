@@ -1,0 +1,541 @@
+import 'reflect-metadata';
+import { randomUUID } from 'node:crypto';
+import type { INestApplication } from '@nestjs/common';
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { Test } from '@nestjs/testing';
+import { DataSource } from 'typeorm';
+import request from 'supertest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/configure-app';
+import { RESOURCE_ALLOCATION_DATA_SOURCE } from '../src/database/database.module';
+import { ResourcePerson } from '../src/people/resource-person.entity';
+import { ResourceAllocationRole } from '../src/people/resource-allocation-role';
+import { ResourceGroup } from '../src/groups/resource-group.entity';
+import { ResourceProfile } from '../src/resource-profiles/resource-profile.entity';
+import { ResourceInitiative } from '../src/initiatives/resource-initiative.entity';
+import { ResourceRequest } from '../src/requests/resource-request.entity';
+import { ResourceRequestHistory } from '../src/requests/resource-request-history.entity';
+import { ResourceSubmission } from '../src/submissions/resource-submission.entity';
+import { ResourceSubmissionLine } from '../src/submissions/resource-submission-line.entity';
+
+describe('Tech Resource Allocation approvals (#63)', () => {
+  let container: StartedPostgreSqlContainer | undefined;
+  let app: INestApplication | undefined;
+  let dataSource: DataSource | undefined;
+
+  beforeAll(async () => {
+    container = await new PostgreSqlContainer('postgres:17-alpine')
+      .withDatabase('resource_allocation_approvals_test')
+      .withUsername('resource_allocation_test')
+      .withPassword('test_only_password')
+      .start();
+    const moduleRef = await Test.createTestingModule({
+      imports: [AppModule.register(container.getConnectionUri())],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    configureApp(app);
+    await app.init();
+    dataSource = app.get<DataSource>(RESOURCE_ALLOCATION_DATA_SOURCE);
+    await dataSource.runMigrations();
+  }, 120_000);
+
+  afterAll(async () => {
+    try {
+      await app?.close();
+    } finally {
+      await container?.stop();
+    }
+  }, 120_000);
+
+  beforeEach(async () => {
+    await dataSource?.query('TRUNCATE TABLE resource_people, resource_initiatives RESTART IDENTITY CASCADE');
+  });
+
+  async function addPerson(localUserId: string, role: ResourceAllocationRole, groupId: string | null = null) {
+    const repository = dataSource!.getRepository(ResourcePerson);
+    return repository.save(repository.create({
+      localUserId,
+      displayName: localUserId,
+      email: `${localUserId}@example.test`,
+      role,
+      active: true,
+      groupId,
+      coveredGroupIds: [],
+    }));
+  }
+
+  async function setup() {
+    const admin = await addPerson('admin', ResourceAllocationRole.Admin);
+    const requester = await addPerson('requester', ResourceAllocationRole.User);
+    const assignee = await addPerson('assignee', ResourceAllocationRole.User);
+    const unscopedManager = await addPerson('unscoped-manager', ResourceAllocationRole.Manager);
+    const supervisor = await addPerson('supervisor', ResourceAllocationRole.Supervisor);
+    const manager = await addPerson('manager', ResourceAllocationRole.Manager);
+    const groups = dataSource!.getRepository(ResourceGroup);
+    const group = await groups.save(groups.create({
+      name: 'Platform', active: true, supervisorId: supervisor.id, managerId: manager.id,
+    }));
+    const groupAdmin = await addPerson('group-admin', ResourceAllocationRole.Admin, group.id);
+    admin.groupId = group.id;
+    requester.groupId = group.id;
+    assignee.groupId = group.id;
+    supervisor.coveredGroupIds = [group.id];
+    manager.coveredGroupIds = [group.id];
+    await dataSource!.getRepository(ResourcePerson).save([admin, requester, assignee, supervisor, manager]);
+    const profile = await dataSource!.getRepository(ResourceProfile).save({ name: 'API', groupId: group.id, active: true });
+    const initiative = await dataSource!.getRepository(ResourceInitiative).save({
+      code: 'ITDM-63', name: 'Resource allocation', active: true, codeUsed: true,
+    });
+    return { admin, groupAdmin, requester, assignee, supervisor, manager, unscopedManager, group, profile, initiative };
+  }
+
+  async function createRequest(
+    requester: ResourcePerson,
+    group: ResourceGroup,
+    profile: ResourceProfile,
+    initiative: ResourceInitiative,
+    decisionState: 'WAITING_FOR_PRESENTATION' | 'PENDING_TEAM_DECISION' = 'WAITING_FOR_PRESENTATION',
+  ) {
+    const correlationId = randomUUID();
+    const submission = await dataSource!.getRepository(ResourceSubmission).save({
+      requesterId: requester.id, category: 'EXECUTION_PROJECT', lineCount: 1, correlationId,
+    });
+    const line = await dataSource!.getRepository(ResourceSubmissionLine).save({
+      submissionId: submission.id,
+      requesterId: requester.id,
+      attemptKey: randomUUID(),
+      attemptPayloadHash: 'a'.repeat(64),
+      lineNumber: 0,
+      submittedConditions: {},
+      status: 'RECEIVED' as never,
+      requestId: null,
+      problem: null,
+      requestOutcome: null,
+      claimToken: null,
+      claimedAt: null,
+      completedAt: null,
+    });
+    const requestedConditions = {
+      initiativeId: initiative.id,
+      initiativeCode: initiative.code,
+      initiativeName: initiative.name,
+      category: 'EXECUTION_PROJECT',
+      groupId: group.id,
+      groupName: group.name,
+      resourceProfileId: profile.id,
+      resourceProfileName: profile.name,
+      startDate: '2027-01-11',
+      endDate: '2027-01-29',
+      weeklyHours: 20,
+      comment: 'Support delivery.',
+    };
+    const resourceRequest = await dataSource!.getRepository(ResourceRequest).save({
+      submissionLineId: line.id,
+      requesterId: requester.id,
+      requesterSnapshot: { personId: requester.id, displayName: requester.displayName, role: requester.role },
+      requestedConditions,
+      decisionState,
+      receivedAt: new Date(),
+      stageEnteredAt: new Date(),
+      expirationDueAt: new Date(Date.now() + 21 * 86_400_000),
+      removedAt: null,
+    });
+    await dataSource!.getRepository(ResourceSubmissionLine).update(line.id, {
+      requestId: resourceRequest.id,
+      status: 'SUCCEEDED' as never,
+      completedAt: new Date(),
+      requestOutcome: { decisionState, requestedConditions },
+    });
+    await dataSource!.getRepository(ResourceRequestHistory).insert({
+      requestId: resourceRequest.id,
+      actorSnapshot: { personId: requester.id, displayName: requester.displayName, role: requester.role },
+      action: 'SUBMITTED',
+      afterSnapshot: { requestId: resourceRequest.id, decisionState, requestedConditions },
+      correlationId,
+    });
+    return resourceRequest;
+  }
+
+  it('approves an in-scope request once and exposes its confirmed allocation in the requester detail', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+    const queue = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/request-queues/presentation')
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(queue.body.items[0].availableActions).toContain('APPROVE');
+
+    const path = `/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`;
+    const key = randomUUID();
+    const headers = {
+      'X-PMO-Local-User-ID': fixture.admin.localUserId,
+      'If-Match': '"1"',
+      'Idempotency-Key': key,
+      'X-Correlation-ID': randomUUID(),
+    };
+    const approved = await request(app!.getHttpServer())
+      .post(path)
+      .set(headers)
+      .send({ personId: fixture.assignee.id })
+      .expect(200);
+
+    expect(approved.headers.etag).toBe('"2"');
+    expect(approved.body).toMatchObject({
+      id: resourceRequest.id,
+      decisionState: 'APPROVED',
+      version: 2,
+      approvedConditions: {
+        personId: fixture.assignee.id,
+        resourceProfileId: fixture.profile.id,
+        startDate: '2027-01-11',
+        endDate: '2027-01-29',
+        weeklyHours: 20,
+      },
+      allocation: { id: expect.any(String), state: 'NOT_STARTED' },
+    });
+
+    const detail = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/requests/${resourceRequest.id}`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(200);
+    expect(detail.body.allocation).toMatchObject({
+      person: { personId: fixture.assignee.id, displayName: fixture.assignee.displayName },
+      resourceProfile: { id: fixture.profile.id, name: fixture.profile.name },
+      startDate: '2027-01-11',
+      endDate: '2027-01-29',
+      weeklyHours: 20,
+    });
+
+    const replay = await request(app!.getHttpServer())
+      .post(path)
+      .set(headers)
+      .send({ personId: fixture.assignee.id })
+      .expect('Idempotency-Replayed', 'true')
+      .expect(200);
+    expect(replay.body).toEqual(approved.body);
+    expect(replay.headers.etag).toBeUndefined();
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(1);
+    expect(await dataSource!.query("SELECT id FROM resource_request_history WHERE request_id = $1 AND action = 'APPROVED'", [resourceRequest.id])).toHaveLength(1);
+    expect(await dataSource!.query("SELECT id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code LIKE 'REQUEST_APPROVED_%'", [resourceRequest.id])).toHaveLength(1);
+  });
+
+  it('corrects only the approved profile with an explanation and preserves the requested profile', async () => {
+    const fixture = await setup();
+    const original = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+    const replacement = await dataSource!.getRepository(ResourceProfile).save({
+      name: 'Cloud API', groupId: fixture.group.id, active: true,
+    });
+    const path = `/api/resource-allocation/v1/requests/${original.id}/approvals`;
+
+    await request(app!.getHttpServer())
+      .post(path)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ personId: fixture.assignee.id, resourceProfileId: replacement.id })
+      .expect(400);
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [original.id])).toHaveLength(0);
+
+    const result = await request(app!.getHttpServer())
+      .post(path)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        personId: fixture.assignee.id,
+        resourceProfileId: replacement.id,
+        explanation: 'The requested profile does not match the confirmed work.',
+      })
+      .expect(200);
+
+    expect(result.body).toMatchObject({
+      decisionState: 'APPROVED',
+      approvedConditions: {
+        resourceProfileId: replacement.id,
+        resourceProfileName: replacement.name,
+        startDate: '2027-01-11',
+        endDate: '2027-01-29',
+        weeklyHours: 20,
+        explanation: 'The requested profile does not match the confirmed work.',
+      },
+      allocation: { resourceProfile: { id: replacement.id, name: replacement.name } },
+    });
+    const savedRequest = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: original.id });
+    expect(savedRequest.requestedConditions.resourceProfileId).toBe(fixture.profile.id);
+    expect(savedRequest.approvedConditions?.resourceProfileId).toBe(replacement.id);
+    const history = await dataSource!.getRepository(ResourceRequestHistory).findOneByOrFail({ requestId: original.id, action: 'APPROVED' });
+    expect(history.afterSnapshot).toMatchObject({
+      requestedConditions: { resourceProfileId: fixture.profile.id },
+      approvedConditions: { resourceProfileId: replacement.id },
+    });
+  });
+
+  it('limits approval to an authorized non-requester and rejects an old version', async () => {
+    const fixture = await setup();
+    const ownRequest = await createRequest(fixture.admin, fixture.group, fixture.profile, fixture.initiative);
+    const queue = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/request-queues/presentation')
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(queue.body.items.find((item: { id: string }) => item.id === ownRequest.id).availableActions).not.toContain('APPROVE');
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${ownRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('Idempotency-Key', randomUUID())
+      .send({ personId: fixture.assignee.id })
+      .expect(400);
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${ownRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ personId: fixture.assignee.id })
+      .expect(403);
+
+    const pending = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative, 'PENDING_TEAM_DECISION');
+    const managerQueue = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/request-queues/team-decision')
+      .set('X-PMO-Local-User-ID', fixture.manager.localUserId)
+      .expect(200);
+    expect(managerQueue.body.items.find((item: { id: string }) => item.id === pending.id).availableActions).toContain('APPROVE');
+    const candidates = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/requests/${pending.id}/approval-candidates`)
+      .set('X-PMO-Local-User-ID', fixture.manager.localUserId)
+      .expect(200);
+    expect(candidates.body.items).toEqual(expect.arrayContaining([
+      { id: fixture.assignee.id, displayName: fixture.assignee.displayName, groupId: fixture.group.id },
+    ]));
+    expect(candidates.body.items[0]).not.toHaveProperty('email');
+    const otherGroup = await dataSource!.getRepository(ResourceGroup).save({
+      name: 'Data', active: true, supervisorId: fixture.supervisor.id, managerId: fixture.manager.id,
+    });
+    const ineligiblePerson = await addPerson('wrong-group-assignee', ResourceAllocationRole.User, otherGroup.id);
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${pending.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.manager.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ personId: ineligiblePerson.id })
+      .expect(422);
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${pending.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.unscopedManager.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ personId: fixture.assignee.id })
+      .expect(403);
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/requests/${pending.id}/approval-candidates`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(403);
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${pending.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ personId: fixture.assignee.id })
+      .expect(403);
+
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${pending.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.manager.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ personId: fixture.assignee.id })
+      .expect(200);
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${pending.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ personId: fixture.assignee.id })
+      .expect(412);
+  });
+
+  it('serializes competing approvals against the current request version', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative, 'PENDING_TEAM_DECISION');
+    const path = `/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`;
+    const send = (actor: ResourcePerson) => request(app!.getHttpServer())
+      .post(path)
+      .set('X-PMO-Local-User-ID', actor.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ personId: fixture.assignee.id });
+
+    const results = await Promise.all([send(fixture.manager), send(fixture.admin)]);
+    expect(results.map((result) => result.status).sort()).toEqual([200, 412]);
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(1);
+    expect(await dataSource!.query("SELECT id FROM resource_request_history WHERE request_id = $1 AND action = 'APPROVED'", [resourceRequest.id])).toHaveLength(1);
+  });
+
+  it('checks current group scope before returning a saved approval receipt', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative, 'PENDING_TEAM_DECISION');
+    const path = `/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`;
+    const key = randomUUID();
+    const headers = {
+      'X-PMO-Local-User-ID': fixture.manager.localUserId,
+      'If-Match': '"1"',
+      'Idempotency-Key': key,
+      'X-Correlation-ID': randomUUID(),
+    };
+    await request(app!.getHttpServer())
+      .post(path)
+      .set(headers)
+      .send({ personId: fixture.assignee.id })
+      .expect(200);
+    await dataSource!.getRepository(ResourcePerson).update(fixture.manager.id, { coveredGroupIds: [] });
+
+    await request(app!.getHttpServer())
+      .post(path)
+      .set(headers)
+      .send({ personId: fixture.assignee.id })
+      .expect(403);
+  });
+
+  it('checks the waiting deadline after locking the request and suppresses approval when it has passed', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+    await dataSource!.getRepository(ResourceRequest).update(resourceRequest.id, { expirationDueAt: new Date(Date.now() - 1000) });
+    const current = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id });
+    const queue = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/request-queues/presentation')
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(queue.body.items[0].availableActions).not.toContain('APPROVE');
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', `"${current.version}"`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ personId: fixture.assignee.id })
+      .expect(422);
+    expect(await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id }))
+      .toMatchObject({ decisionState: 'WAITING_FOR_PRESENTATION', version: current.version });
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(0);
+  });
+
+  it('rechecks the waiting deadline after blocking on the shared administration lock', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+    const deadline = new Date(Date.now() + 350);
+    await dataSource!.getRepository(ResourceRequest).update(resourceRequest.id, { expirationDueAt: deadline });
+    const current = await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id });
+    const lockHolder = dataSource!.createQueryRunner();
+    await lockHolder.connect();
+    await lockHolder.startTransaction();
+    await lockHolder.query('SELECT pg_advisory_xact_lock($1, $2)', [20261120, 59]);
+    let responseSettled = false;
+
+    try {
+      const waitingResponse = request(app!.getHttpServer())
+        .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`)
+        .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+        .set('If-Match', `"${current.version}"`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ personId: fixture.assignee.id })
+        .then((response) => {
+          responseSettled = true;
+          return response;
+        });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(responseSettled).toBe(false);
+      await lockHolder.query('SELECT pg_sleep(0.45)');
+      await lockHolder.commitTransaction();
+      expect((await waitingResponse).status).toBe(422);
+    } finally {
+      if (lockHolder.isTransactionActive) await lockHolder.rollbackTransaction();
+      await lockHolder.release();
+    }
+    expect(await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id }))
+      .toMatchObject({ decisionState: 'WAITING_FOR_PRESENTATION', version: current.version });
+  });
+
+  it('rolls back approval, allocation, history, notice, and receipt together when notification persistence fails', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+    const key = randomUUID();
+    const path = `/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`;
+    const createTrigger = async () => {
+      await dataSource!.query(`
+        CREATE FUNCTION fail_approval_notice() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.event_code LIKE 'REQUEST_APPROVED_%' THEN
+            RAISE EXCEPTION 'test approval notice failure' USING ERRCODE = 'P0001';
+          END IF;
+          RETURN NEW;
+        END;
+        $$
+      `);
+      await dataSource!.query(`
+        CREATE TRIGGER fail_approval_notice_before_insert
+        BEFORE INSERT ON resource_allocation_notifications
+        FOR EACH ROW EXECUTE FUNCTION fail_approval_notice()
+      `);
+    };
+    await createTrigger();
+
+    try {
+      await request(app!.getHttpServer())
+        .post(path)
+        .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+        .set('If-Match', '"1"')
+        .set('Idempotency-Key', key)
+        .send({ personId: fixture.assignee.id })
+        .expect(500);
+      expect(await dataSource!.getRepository(ResourceRequest).findOneByOrFail({ id: resourceRequest.id }))
+        .toMatchObject({ decisionState: 'WAITING_FOR_PRESENTATION', version: 1, approvedConditions: null });
+      expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(0);
+      expect(await dataSource!.query("SELECT id FROM resource_request_history WHERE request_id = $1 AND action = 'APPROVED'", [resourceRequest.id])).toHaveLength(0);
+      expect(await dataSource!.query("SELECT id FROM resource_allocation_operation_receipts WHERE operation = 'request.approve' AND idempotency_key = $1", [key])).toHaveLength(0);
+    } finally {
+      await dataSource!.query('DROP TRIGGER fail_approval_notice_before_insert ON resource_allocation_notifications');
+      await dataSource!.query('DROP FUNCTION fail_approval_notice()');
+    }
+
+    await request(app!.getHttpServer())
+      .post(path)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', key)
+      .send({ personId: fixture.assignee.id })
+      .expect(200);
+    expect(await dataSource!.query('SELECT id FROM resource_allocations WHERE source_request_id = $1', [resourceRequest.id])).toHaveLength(1);
+    expect(await dataSource!.query("SELECT id FROM resource_request_history WHERE request_id = $1 AND action = 'APPROVED'", [resourceRequest.id])).toHaveLength(1);
+    expect(await dataSource!.query("SELECT id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code LIKE 'REQUEST_APPROVED_%'", [resourceRequest.id])).toHaveLength(1);
+  });
+
+  it('keeps an allocation and notifies its group leadership when the assigned person is deactivated', async () => {
+    const fixture = await setup();
+    const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
+    const approved = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resourceRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ personId: fixture.assignee.id })
+      .expect(200);
+    const currentAssignee = await dataSource!.getRepository(ResourcePerson).findOneByOrFail({ id: fixture.assignee.id });
+
+    await request(app!.getHttpServer())
+      .patch(`/api/resource-allocation/v1/admin/people/${fixture.assignee.id}`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', `"${currentAssignee.version}"`)
+      .send({ active: false })
+      .expect(200);
+
+    const detail = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/requests/${resourceRequest.id}`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(200);
+    expect(detail.body.allocation).toMatchObject({ id: approved.body.allocation.id, person: { personId: fixture.assignee.id } });
+    expect((await dataSource!.getRepository(ResourcePerson).findOneByOrFail({ id: fixture.assignee.id })).active).toBe(false);
+    const notices = await dataSource!.query(
+      "SELECT recipient_id FROM resource_allocation_notifications WHERE source_request_id = $1 AND event_code LIKE 'PERSON_DEACTIVATED_%' ORDER BY recipient_id",
+      [resourceRequest.id],
+    ) as Array<{ recipient_id: string }>;
+    expect(notices.map((notice) => notice.recipient_id).sort()).toEqual([fixture.groupAdmin.id, fixture.manager.id, fixture.supervisor.id].sort());
+  });
+});

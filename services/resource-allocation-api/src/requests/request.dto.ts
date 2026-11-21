@@ -95,6 +95,8 @@ export class ResourceRequestResponseDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty({ type: Object }) requesterSnapshot!: Record<string, unknown>;
   @ApiProperty({ type: Object }) requestedConditions!: Record<string, unknown>;
+  @ApiPropertyOptional({ type: Object, nullable: true }) approvedConditions!: Record<string, unknown> | null;
+  @ApiPropertyOptional({ type: Object, nullable: true }) allocation!: Record<string, unknown> | null;
   @ApiProperty({ enum: ResourceRequestDecisionState }) decisionState!: ResourceRequestDecisionState;
   @ApiProperty({ type: String, format: 'date-time' }) receivedAt!: string;
   @ApiProperty({ type: String, format: 'date-time' }) stageEnteredAt!: string;

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import type { ResourceAllocationRole } from './accessApi';
-import { getQueueSelections, getRequestQueue, correctRequestReferences, referRequest, removeRequestAdministratively, REQUEST_QUEUES_QUERY_ROOT, RequestQueueRequestError, type RequestQueueCode, type RequestQueueItem, type QueueSelections } from './requestQueueApi';
+import { approveRequest, getQueueSelections, getRequestQueue, correctRequestReferences, referRequest, removeRequestAdministratively, REQUEST_QUEUES_QUERY_ROOT, RequestQueueRequestError, type RequestQueueCode, type RequestQueueItem, type QueueSelections } from './requestQueueApi';
 import { denyRequest, RequestDecisionApiError } from './requestDecisionApi';
 import { DenialAction } from './DenialAction';
 import { SUBMISSIONS_QUERY_ROOT, type SelectionItem } from './submissionApi';
@@ -23,6 +23,12 @@ interface ReferenceCorrectionValues {
 
 interface RemovalValues {
   reason: string;
+}
+
+interface ApprovalValues {
+  personId: string;
+  resourceProfileId: string;
+  explanation: string;
 }
 
 const queueLabels: Record<RequestQueueCode, string> = {
@@ -127,6 +133,7 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
   const [openCorrectionId, setOpenCorrectionId] = useState<string | null>(null);
   const [openRemovalId, setOpenRemovalId] = useState<string | null>(null);
   const [openDenialId, setOpenDenialId] = useState<string | null>(null);
+  const [openApprovalId, setOpenApprovalId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -144,15 +151,18 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
     refetchOnWindowFocus: true,
     retry: false,
   });
+  const items = queueQuery.data?.pages.flatMap((page) => page.items) ?? [];
 
+  const activeFormRequestId = openApprovalId ?? (role === 'ALLOCATION_ADMIN' ? openCorrectionId : null);
+  const activeFormItem = items.find((item) => item.id === activeFormRequestId);
+  const activeFormGroupId = activeFormItem ? readValue(activeFormItem, 'groupId') : null;
   const selectionsQuery = useQuery<QueueSelections>({
-    queryKey: [...REQUEST_QUEUES_QUERY_ROOT, localUserId, 'reference-selections'],
-    queryFn: () => getQueueSelections(localUserId),
-    enabled: role === 'ALLOCATION_ADMIN' && openCorrectionId !== null,
+    queryKey: [...REQUEST_QUEUES_QUERY_ROOT, localUserId, 'reference-selections', activeFormGroupId, openApprovalId],
+    queryFn: () => getQueueSelections(localUserId, openApprovalId ?? undefined),
+    enabled: activeFormGroupId !== null,
     retry: false,
   });
 
-  const items = queueQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const focusedItem = selectedRequestId ? items.find((item) => item.id === selectedRequestId) : undefined;
   const {
     fetchNextPage,
@@ -217,6 +227,7 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
       setOpenCorrectionId(null);
       setOpenRemovalId(null);
       setOpenDenialId(null);
+      setOpenApprovalId(null);
     } catch (error) {
       if (accessDenied(error)) onAccessDenied();
       if ((error instanceof RequestQueueRequestError || error instanceof RequestDecisionApiError) && error.status === 412) {
@@ -302,11 +313,33 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
                 openCorrection={openCorrectionId === item.id}
                 openRemoval={openRemovalId === item.id}
                 openDenial={openDenialId === item.id}
+                openApproval={openApprovalId === item.id}
                 busy={pendingRequestId === item.id}
                 highlighted={item.id === selectedRequestId}
-                onCorrectionToggle={() => setOpenCorrectionId(openCorrectionId === item.id ? null : item.id)}
-                onRemovalToggle={() => setOpenRemovalId(openRemovalId === item.id ? null : item.id)}
-                onDenialToggle={() => setOpenDenialId(openDenialId === item.id ? null : item.id)}
+                onCorrectionToggle={() => {
+                  setOpenApprovalId(null);
+                  setOpenDenialId(null);
+                  setOpenRemovalId(null);
+                  setOpenCorrectionId(openCorrectionId === item.id ? null : item.id);
+                }}
+                onRemovalToggle={() => {
+                  setOpenCorrectionId(null);
+                  setOpenApprovalId(null);
+                  setOpenDenialId(null);
+                  setOpenRemovalId(openRemovalId === item.id ? null : item.id);
+                }}
+                onDenialToggle={() => {
+                  setOpenCorrectionId(null);
+                  setOpenRemovalId(null);
+                  setOpenApprovalId(null);
+                  setOpenDenialId(openDenialId === item.id ? null : item.id);
+                }}
+                onApprovalToggle={() => {
+                  setOpenCorrectionId(null);
+                  setOpenRemovalId(null);
+                  setOpenDenialId(null);
+                  setOpenApprovalId(openApprovalId === item.id ? null : item.id);
+                }}
                 onRefer={() => void performAction(item.id, async () => referRequest(
                   localUserId,
                   item.id,
@@ -336,6 +369,13 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
                   item.version,
                   await requestActionKey(localUserId, item.id, item.version, 'denial', { explanation }),
                   explanation,
+                ))}
+                onApprove={(approval) => performAction(item.id, async () => approveRequest(
+                  localUserId,
+                  item.id,
+                  item.version,
+                  await requestActionKey(localUserId, item.id, item.version, 'approval', approval),
+                  approval,
                 ))}
               />
             ))}
@@ -372,15 +412,18 @@ interface RequestQueueCardProps {
   openCorrection: boolean;
   openRemoval: boolean;
   openDenial: boolean;
+  openApproval: boolean;
   busy: boolean;
   highlighted: boolean;
   onCorrectionToggle: () => void;
   onRemovalToggle: () => void;
   onDenialToggle: () => void;
+  onApprovalToggle: () => void;
   onRefer: () => void;
   onCorrect: (input: { initiativeId?: string; groupId?: string; resourceProfileId?: string; reason: string }) => Promise<void>;
   onRemove: (reason: string) => Promise<void>;
   onDeny: (explanation: string) => Promise<void>;
+  onApprove: (approval: { personId: string; resourceProfileId?: string; explanation?: string }) => Promise<void>;
 }
 
 function RequestQueueCard({
@@ -394,15 +437,18 @@ function RequestQueueCard({
   openCorrection,
   openRemoval,
   openDenial,
+  openApproval,
   busy,
   highlighted,
   onCorrectionToggle,
   onRemovalToggle,
   onDenialToggle,
+  onApprovalToggle,
   onRefer,
   onCorrect,
   onRemove,
   onDeny,
+  onApprove,
 }: RequestQueueCardProps) {
   const responsible = Array.isArray(item.nextResponsible)
     ? item.nextResponsible.map((person) => `${person.displayName} (${person.role.replace('ALLOCATION_', '')})`).join(', ')
@@ -464,11 +510,105 @@ function RequestQueueCard({
         />
       )}
 
+      {item.availableActions.includes('APPROVE') && (
+        <div className="request-queue-actions">
+          <button type="button" className="primary-button" aria-expanded={openApproval} onClick={onApprovalToggle} disabled={actionDisabled}>
+            {busy ? 'Approving request…' : 'Approve request'}
+          </button>
+        </div>
+      )}
+
       {openCorrection && selections && <ReferenceCorrectionForm item={item} selections={selections} disabled={actionDisabled} onSubmit={onCorrect} />}
       {openCorrection && selectionsLoading && <p className="supporting-copy" role="status">Loading active reference choices…</p>}
       {openCorrection && selectionsError != null && <p className="form-error" role="alert">Reference choices could not be loaded. Close this form and try again.</p>}
       {openRemoval && <AdministrativeRemovalForm disabled={actionDisabled} onSubmit={onRemove} />}
+      {openApproval && selections && <ApprovalForm item={item} selections={selections} disabled={actionDisabled} onSubmit={onApprove} />}
+      {openApproval && selectionsLoading && <p className="supporting-copy" role="status">Loading eligible people and active profiles…</p>}
+      {openApproval && selectionsError != null && <p className="form-error" role="alert">Eligible people and profiles could not be loaded. Close this form and try again.</p>}
     </article>
+  );
+}
+
+function ApprovalForm({
+  item,
+  selections,
+  disabled,
+  onSubmit,
+}: {
+  item: RequestQueueItem;
+  selections: QueueSelections;
+  disabled: boolean;
+  onSubmit: RequestQueueCardProps['onApprove'];
+}) {
+  const { register, handleSubmit, control, formState: { errors } } = useForm<ApprovalValues>({
+    defaultValues: {
+      personId: '',
+      resourceProfileId: readValue(item, 'resourceProfileId'),
+      explanation: '',
+    },
+  });
+  const selectedProfileId = useWatch({ control, name: 'resourceProfileId' });
+  const conditions = item.requestedConditions;
+  const profileChanged = selectedProfileId !== conditions.resourceProfileId;
+  const eligiblePeople = selections.people.filter((person) => person.groupId === conditions.groupId);
+  const eligibleProfiles = selections.profiles.filter((profile) => profile.groupId === conditions.groupId);
+
+  return (
+    <form
+      className="request-queue-action-form"
+      aria-label={`Approve request ${item.id}`}
+      onSubmit={handleSubmit((values) => onSubmit({
+        personId: values.personId,
+        ...(profileChanged ? { resourceProfileId: values.resourceProfileId } : {}),
+        ...(values.explanation.trim() ? { explanation: values.explanation.trim() } : {}),
+      }))}
+    >
+      <h4>Approve request</h4>
+      <p>This approval keeps the requested period and weekly hours.</p>
+      <dl className="request-queue-details">
+        <div><dt>Requested profile</dt><dd>{conditions.resourceProfileName ?? 'Profile unavailable'}</dd></div>
+        <div><dt>Period</dt><dd>{conditions.startDate ?? '—'} to {conditions.endDate ?? '—'}</dd></div>
+        <div><dt>Weekly hours</dt><dd>{conditions.weeklyHours ?? '—'} hours per week</dd></div>
+      </dl>
+      <label className="form-field">
+        <span>Eligible person</span>
+        <select {...register('personId', { required: 'Select an eligible person.' })} disabled={disabled || eligiblePeople.length === 0}>
+          <option value="">Select a person</option>
+          {eligiblePeople.map((person) => <option key={person.id} value={person.id}>{person.displayName}</option>)}
+        </select>
+        {errors.personId && <span className="field-error">{errors.personId.message}</span>}
+        {eligiblePeople.length === 0 && <span className="field-error">No active people are available in this group.</span>}
+      </label>
+      <label className="form-field">
+        <span>Approved resource profile</span>
+        <select
+          {...register('resourceProfileId', {
+            required: 'Select an active resource profile.',
+            validate: (value) => eligibleProfiles.some((profile) => profile.id === value) || 'Select a profile in the request group.',
+          })}
+          disabled={disabled || eligibleProfiles.length === 0}
+        >
+          {eligibleProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name ?? profile.id}</option>)}
+        </select>
+        {errors.resourceProfileId && <span className="field-error">{errors.resourceProfileId.message}</span>}
+      </label>
+      <label className="form-field request-queue-reason-field">
+        <span>Explanation <span className="optional-label">{profileChanged ? '(required for a profile correction)' : '(optional)'}</span></span>
+        <textarea
+          {...register('explanation', {
+            maxLength: { value: 2000, message: 'Use no more than 2,000 characters.' },
+            validate: (value) => !profileChanged || Boolean(value.trim()) || 'Provide an explanation when correcting the resource profile.',
+          })}
+          maxLength={2000}
+          disabled={disabled}
+          aria-required={profileChanged}
+        />
+        {errors.explanation && <span className="field-error">{errors.explanation.message}</span>}
+      </label>
+      <div className="form-actions">
+        <button type="submit" className="primary-button" disabled={disabled || eligiblePeople.length === 0 || eligibleProfiles.length === 0}>Approve request</button>
+      </div>
+    </form>
   );
 }
 

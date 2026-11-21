@@ -197,7 +197,7 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
       decisionState: 'WAITING_FOR_PRESENTATION',
       dueAt: expect.any(String),
       nextResponsible: { role: 'ALLOCATION_ADMIN' },
-      availableActions: ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', 'DENY'],
+      availableActions: ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', 'APPROVE', 'DENY'],
     });
 
     const firstPage = await request(app!.getHttpServer())
@@ -227,7 +227,7 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
       .set('X-PMO-Local-User-ID', fixture.moderatorA.localUserId)
       .expect(200);
 
-    expect(response.body.items.find((item: { id: string }) => item.id === otherRequest.id).availableActions).toEqual(['DENY']);
+    expect(response.body.items.find((item: { id: string }) => item.id === otherRequest.id).availableActions).toEqual(['APPROVE', 'DENY']);
     expect(response.body.items.find((item: { id: string }) => item.id === ownRequest.id).availableActions).toEqual([]);
   });
 

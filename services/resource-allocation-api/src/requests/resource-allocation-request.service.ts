@@ -17,6 +17,8 @@ import { ResourceRequestHistory } from './resource-request-history.entity';
 import { ResourceRequestCategory, ResourceRequestDecisionState } from '../submissions/submission-category';
 import { normalizeRequestedWeeklyHours } from './requested-weekly-hours';
 import { removeResourceRequest } from './remove-resource-request';
+import { ResourceAllocation } from '../allocations/resource-allocation.entity';
+import { allocationResponse } from '../allocations/allocation-response';
 import type { RequestCollectionQueryDto, UpdateRequestedConditionsDto } from './request.dto';
 
 const defaultPageSize = 50;
@@ -101,13 +103,17 @@ export class ResourceAllocationRequestService {
     };
   }
 
-  async get(localUserId: string | undefined, id: string): Promise<ResourceRequest> {
+  async get(localUserId: string | undefined, id: string) {
     const actor = await this.requireActivePersonOutsideTransaction(localUserId);
     const request = await this.dataSource.getRepository(ResourceRequest).createQueryBuilder('request')
       .where('request.id = :id AND request.requester_id = :requesterId AND request.removed_at IS NULL', { id, requesterId: actor.id })
       .getOne();
     if (!request) throw this.notFound('Request');
-    return request;
+    const allocation = await this.dataSource.getRepository(ResourceAllocation).findOne({ where: { sourceRequestId: request.id } });
+    return {
+      request,
+      allocation: allocation ? allocationResponse(allocation) : null,
+    };
   }
 
   async update(
@@ -440,6 +446,7 @@ export class ResourceAllocationRequestService {
       id: request.id,
       requesterSnapshot: request.requesterSnapshot,
       requestedConditions: request.requestedConditions,
+      approvedConditions: request.approvedConditions,
       decisionState: request.decisionState,
       receivedAt: request.receivedAt.toISOString(),
       stageEnteredAt: request.stageEnteredAt.toISOString(),
