@@ -532,7 +532,7 @@ test('preserves edited text after temporary and version-conflict failures until 
   await expect(comment).toBeEnabled();
   await comment.fill('Unsaved text must stay visible.');
   await page.getByRole('button', { name: 'Save request changes' }).click();
-  await expect(page.getByRole('alert')).toContainText('The database is temporarily unavailable.');
+  await expect(detail.getByRole('alert')).toContainText('The database is temporarily unavailable.');
   await expect(comment).toHaveValue('Unsaved text must stay visible.');
 
   await page.getByRole('button', { name: 'Save request changes' }).click();

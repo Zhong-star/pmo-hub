@@ -27,6 +27,8 @@ export function createOpenApiDocument(app: INestApplication) {
     if (!path.startsWith('/api/resource-allocation/v1/admin/') &&
       !path.startsWith('/api/resource-allocation/v1/submissions') &&
       !path.startsWith('/api/resource-allocation/v1/notifications') &&
+      !path.startsWith('/api/resource-allocation/v1/allocations') &&
+      path !== '/api/resource-allocation/v1/allocation-load' &&
       path !== '/api/resource-allocation/v1/notification-readings' &&
       !path.startsWith('/api/resource-allocation/v1/requests') &&
       !path.startsWith('/api/resource-allocation/v1/request-queues/') &&

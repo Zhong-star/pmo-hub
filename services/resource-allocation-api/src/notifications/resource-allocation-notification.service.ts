@@ -16,6 +16,7 @@ const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 const targetAvailableSql = `CASE
   WHEN source_request.id IS NULL OR source_request.removed_at IS NOT NULL THEN FALSE
   WHEN source_request.requester_id = recipient.id THEN TRUE
+  WHEN source_allocation.person_id = recipient.id THEN TRUE
   WHEN recipient.role = 'ALLOCATION_ADMIN' THEN TRUE
   WHEN recipient.role = 'ALLOCATION_MODERATOR' AND recipient.group_id = source_group.id THEN TRUE
   WHEN recipient.role = 'ALLOCATION_SUPERVISOR' AND (
@@ -29,6 +30,7 @@ END`;
 const targetDestinationSql = `CASE
   WHEN NOT (${targetAvailableSql}) THEN NULL
   WHEN source_request.requester_id = recipient.id THEN 'REQUEST_DETAIL'
+  WHEN source_allocation.id IS NOT NULL THEN 'ALLOCATION_DETAIL'
   WHEN recipient.role = 'ALLOCATION_ADMIN' AND source_request.decision_state = 'WAITING_FOR_PRESENTATION' THEN 'PRESENTATION_QUEUE'
   WHEN recipient.role = 'ALLOCATION_ADMIN' AND source_request.decision_state = 'PENDING_TEAM_DECISION' THEN 'TEAM_DECISION_QUEUE'
   WHEN recipient.role = 'ALLOCATION_ADMIN' THEN 'REQUEST_DETAIL'
@@ -54,7 +56,8 @@ interface NotificationRow {
   read_at: string | null;
   source_request_id: string;
   target_available: boolean;
-  target_destination: 'REQUEST_DETAIL' | 'PRESENTATION_QUEUE' | 'TEAM_DECISION_QUEUE' | null;
+  target_destination: 'REQUEST_DETAIL' | 'PRESENTATION_QUEUE' | 'TEAM_DECISION_QUEUE' | 'ALLOCATION_DETAIL' | null;
+  allocation_id: string | null;
   etag?: string;
 }
 
@@ -98,11 +101,13 @@ export class ResourceAllocationNotificationService {
           to_char(notification.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at,
           to_char(notification.read_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS read_at,
           notification.source_request_id::text AS source_request_id,
+          source_allocation.id::text AS allocation_id,
           ${targetAvailableSql} AS target_available,
           ${targetDestinationSql} AS target_destination
         FROM resource_allocation_notifications AS notification
         INNER JOIN resource_people AS recipient ON recipient.id = notification.recipient_id
         LEFT JOIN resource_requests AS source_request ON source_request.id = notification.source_request_id
+        LEFT JOIN resource_allocations AS source_allocation ON source_allocation.source_request_id = source_request.id
         LEFT JOIN resource_groups AS source_group
           ON source_group.id = NULLIF(source_request.requested_conditions->>'groupId', '')::uuid
         WHERE ${clauses.join(' AND ')}
@@ -238,6 +243,7 @@ export class ResourceAllocationNotificationService {
         requestId: row.source_request_id,
         available: row.target_available,
         destination: row.target_destination,
+        allocationId: row.target_destination === 'ALLOCATION_DETAIL' ? row.allocation_id : null,
       },
     };
     return {
@@ -262,12 +268,14 @@ export class ResourceAllocationNotificationService {
         to_char(notification.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at,
         to_char(notification.read_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS read_at,
         notification.source_request_id::text AS source_request_id,
+        source_allocation.id::text AS allocation_id,
         ${targetAvailableSql} AS target_available,
         ${targetDestinationSql} AS target_destination
       FROM resource_allocation_notifications AS notification
       INNER JOIN resource_people AS recipient
         ON recipient.id = notification.recipient_id AND recipient.active = TRUE
       LEFT JOIN resource_requests AS source_request ON source_request.id = notification.source_request_id
+      LEFT JOIN resource_allocations AS source_allocation ON source_allocation.source_request_id = source_request.id
       LEFT JOIN resource_groups AS source_group
         ON source_group.id = NULLIF(source_request.requested_conditions->>'groupId', '')::uuid
       WHERE notification.recipient_id = $1::uuid AND notification.id = $2::uuid

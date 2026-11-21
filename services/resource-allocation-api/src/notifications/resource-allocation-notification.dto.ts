@@ -12,11 +12,14 @@ export class ResourceNotificationTargetDto {
 
   @ApiProperty({
     type: String,
-    enum: ['REQUEST_DETAIL', 'PRESENTATION_QUEUE', 'TEAM_DECISION_QUEUE'],
+    enum: ['REQUEST_DETAIL', 'PRESENTATION_QUEUE', 'TEAM_DECISION_QUEUE', 'ALLOCATION_DETAIL'],
     nullable: true,
     description: 'Frontend destination that is currently available to this recipient, when one exists.',
   })
-  destination!: 'REQUEST_DETAIL' | 'PRESENTATION_QUEUE' | 'TEAM_DECISION_QUEUE' | null;
+  destination!: 'REQUEST_DETAIL' | 'PRESENTATION_QUEUE' | 'TEAM_DECISION_QUEUE' | 'ALLOCATION_DETAIL' | null;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true, description: 'Allocation identifier when the current recipient may open allocation detail.' })
+  allocationId!: string | null;
 }
 
 export class ResourceNotificationDto {

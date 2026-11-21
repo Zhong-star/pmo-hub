@@ -16,7 +16,8 @@ export interface ResourceNotification {
     type: 'REQUEST';
     requestId: string;
     available: boolean;
-    destination: 'REQUEST_DETAIL' | 'PRESENTATION_QUEUE' | 'TEAM_DECISION_QUEUE' | null;
+    destination: 'REQUEST_DETAIL' | 'PRESENTATION_QUEUE' | 'TEAM_DECISION_QUEUE' | 'ALLOCATION_DETAIL' | null;
+    allocationId?: string | null;
   };
   etag: string;
 }
