@@ -1,5 +1,5 @@
 import { api, throwApiRequestError, ResourceAllocationApiError } from './apiClient';
-import type { ApiProblem, ApiResponse } from './apiContracts';
+import type { ApiProblem, ApiQuery, ApiResponse } from './apiContracts';
 
 export const NOTIFICATIONS_QUERY_ROOT = ['resource-allocation-notifications'] as const;
 const API_ROOT = '/api/resource-allocation/v1';
@@ -9,6 +9,7 @@ export type NotificationReadFilter = 'all' | 'read' | 'unread';
 export type ResourceNotification = ApiResponse<'/api/resource-allocation/v1/notifications', 'get'>['items'][number];
 export type ResourceNotificationCollection = ApiResponse<'/api/resource-allocation/v1/notifications', 'get'>;
 export type NotificationReadAllResult = ApiResponse<'/api/resource-allocation/v1/notification-readings', 'post'>;
+type NotificationQuery = ApiQuery<'/api/resource-allocation/v1/notifications', 'get'>;
 
 export class NotificationRequestError extends ResourceAllocationApiError {
   constructor(status: number | null, problem: ApiProblem | null) {
@@ -36,7 +37,7 @@ export async function getNotifications(
         limit: 50,
         ...(filter === 'all' ? {} : { read: filter === 'read' }),
         ...(cursor ? { cursor } : {}),
-      },
+      } satisfies NotificationQuery,
     });
     return response.data;
   } catch (error) {

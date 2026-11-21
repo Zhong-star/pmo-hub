@@ -50,7 +50,7 @@ export async function getRequestQueue(
   try {
     const response = await api.get<RequestQueueCollection>(`${API_ROOT}/request-queues/${queue}`, {
       headers: headers(localUserId),
-      params: { limit: 50, ...(cursor ? { cursor } : {}), ...filters },
+      params: { limit: 50, ...(cursor ? { cursor } : {}), ...filters } satisfies ApiQuery<RequestQueuePath, 'get'>,
     });
     return response.data;
   } catch (error) {
@@ -67,7 +67,7 @@ async function loadPeoplePage(
     `${API_ROOT}/requests/${encodeURIComponent(requestId)}/approval-candidates`,
     {
       headers: headers(localUserId),
-      params: { limit: 50, ...(cursor ? { cursor } : {}) },
+      params: { limit: 50, ...(cursor ? { cursor } : {}) } satisfies ApiQuery<'/api/resource-allocation/v1/requests/{id}/approval-candidates', 'get'>,
     },
   );
   return response.data;

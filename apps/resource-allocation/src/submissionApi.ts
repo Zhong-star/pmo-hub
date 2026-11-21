@@ -1,5 +1,5 @@
 import { api, throwApiRequestError, ResourceAllocationApiError } from './apiClient';
-import type { ApiProblem, ApiRequestBody, ApiResponse } from './apiContracts';
+import type { ApiProblem, ApiQuery, ApiRequestBody, ApiResponse } from './apiContracts';
 
 export const SUBMISSIONS_QUERY_ROOT = ['resource-allocation-submissions'] as const;
 export const SELECTIONS_QUERY_ROOT = ['resource-allocation-selections'] as const;
@@ -14,6 +14,7 @@ type SelectionCollectionName = keyof SelectionPath;
 type SelectionResponse<C extends SelectionCollectionName> = C extends SelectionCollectionName
   ? ApiResponse<SelectionPath[C], 'get'>
   : never;
+type PagedSelectionQuery = ApiQuery<SelectionPath['groups'], 'get'>;
 
 export type RequestCategory = ApiRequestBody<'/api/resource-allocation/v1/submissions', 'post'>['category'];
 export type SelectionCollection = SelectionResponse<SelectionCollectionName>;
@@ -49,12 +50,11 @@ export async function getSelectionCollection<C extends SelectionCollectionName>(
   collection: C,
   localUserId: string,
   cursor: string | null,
-  groupId?: string,
 ): Promise<SelectionResponse<C>> {
   try {
     const response = await api.get<SelectionResponse<C>>(`${API_ROOT}/${collection}`, {
       headers: headers(localUserId),
-      params: { limit: 100, ...(cursor ? { cursor } : {}), ...(groupId ? { groupId } : {}) },
+      params: { limit: 100, ...(cursor ? { cursor } : {}) } satisfies PagedSelectionQuery,
     });
     return response.data;
   } catch (error) {
@@ -66,7 +66,7 @@ export async function getSubmissionCollection(localUserId: string, cursor: strin
   try {
     const response = await api.get<SubmissionCollection>(`${API_ROOT}/submissions`, {
       headers: headers(localUserId),
-      params: { limit: 50, ...(cursor ? { cursor } : {}) },
+      params: { limit: 50, ...(cursor ? { cursor } : {}) } satisfies ApiQuery<'/api/resource-allocation/v1/submissions', 'get'>,
     });
     return response.data;
   } catch (error) {
@@ -93,7 +93,10 @@ export async function getSubmissionLines(
   try {
     const response = await api.get<SubmissionLineCollection>(
       `${API_ROOT}/submissions/${encodeURIComponent(submissionId)}/lines`,
-      { headers: headers(localUserId), params: { limit: 100, ...(cursor ? { cursor } : {}) } },
+      {
+        headers: headers(localUserId),
+        params: { limit: 100, ...(cursor ? { cursor } : {}) } satisfies ApiQuery<'/api/resource-allocation/v1/submissions/{id}/lines', 'get'>,
+      },
     );
     return response.data;
   } catch (error) {

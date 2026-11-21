@@ -12,9 +12,11 @@ export type ApprovedRequestConditions = NonNullable<ResourceRequestItem['approve
 export type RequestAllocation = NonNullable<ResourceRequestItem['allocation']>;
 export type RequestRevalidation = NonNullable<ResourceRequestItem['revalidation']>;
 export type RequestAcceptanceResult = ApiResponse<'/api/resource-allocation/v1/requests/{id}/acceptances', 'post'>;
+type RequestAcceptanceInput = ApiRequestBody<'/api/resource-allocation/v1/requests/{id}/acceptances', 'post'>;
 export type ResourceRequestCollection = ApiResponse<'/api/resource-allocation/v1/requests', 'get'>;
 export type ResourceRequestUpdateResult = ApiResponse<'/api/resource-allocation/v1/requests/{id}', 'patch'>;
 export type ResourceRequestUpdateInput = ApiRequestBody<'/api/resource-allocation/v1/requests/{id}', 'patch'>;
+type RequestWithdrawalInput = ApiRequestBody<'/api/resource-allocation/v1/requests/{id}/withdrawals', 'post'>;
 type RequestFilterQuery = ApiQuery<'/api/resource-allocation/v1/requests', 'get'>;
 export type RequestFilters = Partial<Pick<RequestFilterQuery, 'initiativeId' | 'decisionState' | 'groupId' | 'resourceProfileId'>>;
 export type RequestScope = NonNullable<RequestFilterQuery['scope']> | 'mine';
@@ -41,7 +43,7 @@ export async function getRequestCollection(
   try {
     const response = await api.get<ResourceRequestCollection>(`${API_ROOT}/requests`, {
       headers: headers(localUserId),
-      params: { ...filters, ...(scope === 'visible' ? { scope } : {}), limit: 50, ...(cursor ? { cursor } : {}) },
+      params: { ...filters, ...(scope === 'visible' ? { scope } : {}), limit: 50, ...(cursor ? { cursor } : {}) } satisfies RequestFilterQuery,
     });
     return response.data;
   } catch (error) {
@@ -84,7 +86,7 @@ export async function withdrawRequest(
   idempotencyKey: string,
 ): Promise<RequestAuditEvent> {
   try {
-    const response = await api.post<RequestAuditEvent>(`${API_ROOT}/requests/${encodeURIComponent(requestId)}/withdrawals`, { reason }, {
+    const response = await api.post<RequestAuditEvent>(`${API_ROOT}/requests/${encodeURIComponent(requestId)}/withdrawals`, { reason } satisfies RequestWithdrawalInput, {
       headers: { ...headers(localUserId), 'If-Match': `"${version}"`, 'Idempotency-Key': idempotencyKey },
     });
     return response.data;
@@ -100,7 +102,8 @@ export async function acceptRequest(
   idempotencyKey: string,
 ): Promise<RequestAcceptanceResult> {
   try {
-    const response = await api.post<RequestAcceptanceResult>(`${API_ROOT}/requests/${encodeURIComponent(requestId)}/acceptances`, {}, {
+    const body: RequestAcceptanceInput = {};
+    const response = await api.post<RequestAcceptanceResult>(`${API_ROOT}/requests/${encodeURIComponent(requestId)}/acceptances`, body, {
       headers: {
         ...headers(localUserId),
         'If-Match': `"${version}"`,

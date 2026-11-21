@@ -112,8 +112,6 @@ test('recovers a durable submission after reload and offers correction only for 
   await installSelectionFixtures(page);
   const original = {
     id: 'submission-original',
-    initiativeId: initiative.id,
-    category: 'EXECUTION_PROJECT',
     receivedAt: '2026-11-20T12:00:00Z',
     lineCount: 3,
     counts: { received: 0, processing: 1, succeeded: 1, failed: 1 },
@@ -141,9 +139,9 @@ test('recovers a durable submission after reload and offers correction only for 
       await route.fulfill({
         json: {
           items: [
-            { id: 'line-success', attemptKey: 'attempt-success', submittedConditions: { groupId: group.id, resourceProfileId: profile.id, startDate: dateAfter(2), endDate: dateAfter(9), weeklyHours: 1.25 }, status: 'SUCCEEDED', requestId: 'request-1', requestOutcome: { decisionState: 'Waiting for Tech Allocation Meeting', requestedConditions: { weeklyHours: 1.3 } } },
-            { id: 'line-pending', attemptKey: 'attempt-pending', submittedConditions: { groupId: group.id, resourceProfileId: profile.id, startDate: dateAfter(2), endDate: dateAfter(9), weeklyHours: 4 }, status: 'PROCESSING' },
-            { id: 'line-failed', attemptKey: 'attempt-failed', submittedConditions: { groupId: group.id, resourceProfileId: profile.id, startDate: dateAfter(2), endDate: dateAfter(9), weeklyHours: 0.04, comment: 'Original comment' }, status: 'FAILED', problem: { code: 'INVALID_HOURS', detail: 'Weekly hours are invalid.' } },
+            { id: 'line-success', attemptKey: 'attempt-success', submittedConditions: { initiativeId: initiative.id, category: 'EXECUTION_PROJECT', attemptKey: 'attempt-success', groupId: group.id, resourceProfileId: profile.id, startDate: dateAfter(2), endDate: dateAfter(9), weeklyHours: 1.25 }, status: 'SUCCEEDED', requestId: 'request-1', requestOutcome: { decisionState: 'Waiting for Tech Allocation Meeting', requestedConditions: { weeklyHours: 1.3 } } },
+            { id: 'line-pending', attemptKey: 'attempt-pending', submittedConditions: { initiativeId: initiative.id, category: 'EXECUTION_PROJECT', attemptKey: 'attempt-pending', groupId: group.id, resourceProfileId: profile.id, startDate: dateAfter(2), endDate: dateAfter(9), weeklyHours: 4 }, status: 'PROCESSING' },
+            { id: 'line-failed', attemptKey: 'attempt-failed', submittedConditions: { initiativeId: initiative.id, category: 'EXECUTION_PROJECT', attemptKey: 'attempt-failed', groupId: group.id, resourceProfileId: profile.id, startDate: dateAfter(2), endDate: dateAfter(9), weeklyHours: 0.04, comment: 'Original comment' }, status: 'FAILED', problem: { code: 'INVALID_HOURS', message: 'Weekly hours are invalid.', detail: 'Weekly hours are invalid.' } },
           ],
           page: emptyPage,
         },

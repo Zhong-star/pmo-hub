@@ -148,8 +148,11 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
     expect(contract.components.schemas.RequestQueueItemDto.properties?.originState?.enum).toContain('APPROVED_WITH_CHANGES');
     expect(contract.components.schemas.RequestQueueItemDto.properties?.nextResponsible).toMatchObject({
       oneOf: expect.arrayContaining([
-        expect.objectContaining({ type: 'object' }),
-        expect.objectContaining({ type: 'array' }),
+        { $ref: '#/components/schemas/RequestResponsibleRoleDto' },
+        {
+          type: 'array',
+          items: { $ref: '#/components/schemas/ResourcePersonSnapshotDto' },
+        },
       ]),
     });
     expect(contract.components.schemas.CorrectRequestReferencesDto.properties).toHaveProperty('personId');

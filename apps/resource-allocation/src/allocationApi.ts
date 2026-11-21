@@ -2,19 +2,32 @@ import { api, throwApiRequestError, ResourceAllocationApiError } from './apiClie
 import type { ApiProblem, ApiQuery, ApiRequestBody, ApiResponse } from './apiContracts';
 
 const API_ROOT = '/api/resource-allocation/v1';
+type AllocationCollectionPath = '/api/resource-allocation/v1/allocations';
+type AllocationDetailPath = '/api/resource-allocation/v1/allocations/{id}';
+type AllocationHistoryPath = '/api/resource-allocation/v1/allocations/{id}/history';
+type AllocationLoadPath = '/api/resource-allocation/v1/allocation-load';
+type AllocationActionPathMap = {
+  SUSPEND: '/api/resource-allocation/v1/allocations/{id}/suspensions';
+  RESERVE: '/api/resource-allocation/v1/allocations/{id}/reservations';
+  RESUME: '/api/resource-allocation/v1/allocations/{id}/resumptions';
+  ACTIVATE: '/api/resource-allocation/v1/allocations/{id}/activations';
+  COMPLETE: '/api/resource-allocation/v1/allocations/{id}/completions';
+  CANCEL: '/api/resource-allocation/v1/allocations/{id}/cancellations';
+};
 
 export const ALLOCATIONS_QUERY_ROOT = ['resource-allocation-allocations'] as const;
 
-export type AllocationRecord = ApiResponse<'/api/resource-allocation/v1/allocations', 'get'>['items'][number];
+export type AllocationRecord = ApiResponse<AllocationDetailPath, 'get'>;
 export type AllocationState = AllocationRecord['state'];
 export type AllocationAction = AllocationRecord['availableActions'][number];
-export type AllocationFilters = Partial<ApiQuery<'/api/resource-allocation/v1/allocations', 'get'>>;
-export type AllocationCollection = ApiResponse<'/api/resource-allocation/v1/allocations', 'get'>;
-export type AllocationLoadCollection = ApiResponse<'/api/resource-allocation/v1/allocation-load', 'get'>;
+export type AllocationFilters = Partial<ApiQuery<AllocationCollectionPath, 'get'>>;
+export type AllocationCollection = ApiResponse<AllocationCollectionPath, 'get'>;
+export type AllocationLoadCollection = ApiResponse<AllocationLoadPath, 'get'>;
 export type AllocationLoadItem = AllocationLoadCollection['items'][number];
-export type AllocationHistoryCollection = ApiResponse<'/api/resource-allocation/v1/allocations/{id}/history', 'get'>;
+export type AllocationHistoryCollection = ApiResponse<AllocationHistoryPath, 'get'>;
 export type AllocationHistoryEvent = AllocationHistoryCollection['items'][number];
-type AllocationCommand = ApiRequestBody<'/api/resource-allocation/v1/allocations/{id}/suspensions', 'post'>;
+type AllocationCommand = ApiRequestBody<AllocationActionPathMap['SUSPEND'], 'post'>;
+type AllocationActionResult<Action extends AllocationAction> = ApiResponse<AllocationActionPathMap[Action], 'post'>;
 
 export class AllocationRequestError extends ResourceAllocationApiError {
   constructor(status: number | null, problem: ApiProblem | null) {
@@ -34,7 +47,7 @@ export async function getAllocations(
   try {
     const response = await api.get<AllocationCollection>(`${API_ROOT}/allocations`, {
       headers: headers(localUserId),
-      params: { ...filters, limit: 50, ...(cursor ? { cursor } : {}) },
+      params: { ...filters, limit: 50, ...(cursor ? { cursor } : {}) } satisfies ApiQuery<AllocationCollectionPath, 'get'>,
     });
     return response.data;
   } catch (error) {
@@ -44,7 +57,7 @@ export async function getAllocations(
 
 export async function getAllocation(localUserId: string, allocationId: string) {
   try {
-    const response = await api.get<AllocationRecord>(`${API_ROOT}/allocations/${encodeURIComponent(allocationId)}`, {
+    const response = await api.get<ApiResponse<AllocationDetailPath, 'get'>>(`${API_ROOT}/allocations/${encodeURIComponent(allocationId)}`, {
       headers: headers(localUserId),
     });
     return { allocation: response.data, etag: response.headers.etag as string | undefined };
@@ -60,7 +73,7 @@ export async function getAllocationLoad(
   try {
     const response = await api.get<AllocationLoadCollection>(`${API_ROOT}/allocation-load`, {
       headers: headers(localUserId),
-      params: { date, limit: 50 },
+      params: { date, limit: 50 } satisfies ApiQuery<AllocationLoadPath, 'get'>,
     });
     return response.data;
   } catch (error) {
@@ -75,7 +88,7 @@ export async function getAllocationHistory(
   try {
     const response = await api.get<AllocationHistoryCollection>(`${API_ROOT}/allocations/${encodeURIComponent(allocationId)}/history`, {
       headers: headers(localUserId),
-      params: { limit: 50 },
+      params: { limit: 50 } satisfies ApiQuery<AllocationHistoryPath, 'get'>,
     });
     return response.data;
   } catch (error) {
@@ -92,19 +105,20 @@ const actionPaths: Record<AllocationAction, string> = {
   CANCEL: 'cancellations',
 };
 
-export async function changeAllocationState(
+export async function changeAllocationState<Action extends AllocationAction>(
   localUserId: string,
   allocationId: string,
-  action: AllocationAction,
+  action: Action,
   version: number,
   reason: string,
   idempotencyKey: string,
   correlationId: string,
 ) {
   try {
-    const response = await api.post<AllocationRecord>(
+    const command: AllocationCommand = { reason };
+    const response = await api.post<AllocationActionResult<Action>>(
       `${API_ROOT}/allocations/${encodeURIComponent(allocationId)}/${actionPaths[action]}`,
-      { reason } satisfies AllocationCommand,
+      command,
       {
         headers: {
           ...headers(localUserId),
