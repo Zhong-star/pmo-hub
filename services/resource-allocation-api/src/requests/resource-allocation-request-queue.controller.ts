@@ -35,7 +35,9 @@ import {
   RequestChangeReceiptDto,
   RequestQueueCollectionDto,
 } from './request-queue.dto';
-import { ResourceAllocationRequestQueueService } from './resource-allocation-request-queue.service';
+import { ResourceAllocationRequestQueueReadService } from './resource-allocation-request-queue-read.service';
+import { ResourceAllocationPresentationService } from './resource-allocation-presentation.service';
+import { ResourceAllocationRequestRevalidationService } from './resource-allocation-request-revalidation.service';
 
 interface ResponseWithHeaders {
   setHeader(name: string, value: string): void;
@@ -55,15 +57,17 @@ interface QueueFilters {
   decisionState?: string;
 }
 
-const validatedBody = createValidationPipe;
-
 @ApiTags('Tech Resource Allocation requests')
 @ProtectedResourceProblems()
 @Controller()
 export class ResourceAllocationRequestQueueController {
   constructor(
-    @Inject(ResourceAllocationRequestQueueService)
-    private readonly requestService: ResourceAllocationRequestQueueService,
+    @Inject(ResourceAllocationRequestQueueReadService)
+    private readonly queueReadService: ResourceAllocationRequestQueueReadService,
+    @Inject(ResourceAllocationPresentationService)
+    private readonly presentationService: ResourceAllocationPresentationService,
+    @Inject(ResourceAllocationRequestRevalidationService)
+    private readonly revalidationService: ResourceAllocationRequestRevalidationService,
   ) {}
 
   @Get('request-queues/:queueCode')
@@ -84,7 +88,7 @@ export class ResourceAllocationRequestQueueController {
     @Param('queueCode') queueCode: string,
     @Query() filters: QueueFilters,
   ) {
-    return this.requestService.listQueue(localUserId, queueCode, filters);
+    return this.queueReadService.listQueue(localUserId, queueCode, filters);
   }
 
   @Post('requests/:id/referrals')
@@ -106,10 +110,10 @@ export class ResourceAllocationRequestQueueController {
     @Headers('if-match') ifMatch: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
-    @Body(validatedBody(ReferRequestDto)) input: ReferRequestDto,
+    @Body(createValidationPipe(ReferRequestDto)) input: ReferRequestDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
-    const operation = await this.requestService.refer(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
+    const operation = await this.presentationService.refer(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
     else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
@@ -134,10 +138,10 @@ export class ResourceAllocationRequestQueueController {
     @Headers('if-match') ifMatch: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
-    @Body(validatedBody(CorrectRequestReferencesDto)) input: CorrectRequestReferencesDto,
+    @Body(createValidationPipe(CorrectRequestReferencesDto)) input: CorrectRequestReferencesDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
-    const operation = await this.requestService.correctReferences(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
+    const operation = await this.revalidationService.correctReferences(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
     else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
@@ -162,10 +166,10 @@ export class ResourceAllocationRequestQueueController {
     @Headers('if-match') ifMatch: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
-    @Body(validatedBody(AdministrativeRequestRemovalDto)) input: AdministrativeRequestRemovalDto,
+    @Body(createValidationPipe(AdministrativeRequestRemovalDto)) input: AdministrativeRequestRemovalDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
-    const operation = await this.requestService.removeAdministratively(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
+    const operation = await this.presentationService.removeAdministratively(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
     return operation.result;
   }

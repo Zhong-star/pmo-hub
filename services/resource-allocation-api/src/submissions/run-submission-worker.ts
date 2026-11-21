@@ -3,12 +3,10 @@ import { DataSource } from 'typeorm';
 import { createResourceAllocationDataSourceOptions, getResourceAllocationDatabaseUrl, RESOURCE_ALLOCATION_DATABASE_URL_ENV } from '../database/database-options';
 import { ResourceAllocationSubmissionWorker } from './resource-allocation-submission.worker';
 import { ResourceAllocationDeadlineWorker } from '../deadlines/resource-allocation-deadline.worker';
-import { ResourceAllocationProposalWorker } from '../deadlines/resource-allocation-proposal.worker';
-import { ResourceAllocationApprovalService } from '../approvals/resource-allocation-approval.service';
-import { ResourceAllocationDecisionService } from '../decisions/resource-allocation-decision.service';
+import { ResourceAllocationProposalResponseService } from '../approvals/resource-allocation-proposal-response.service';
+import { ResourceAllocationTeamDecisionService } from '../decisions/resource-allocation-team-decision.service';
 import { ResourceAllocationAccessService } from '../access/resource-allocation-access.service';
 import { ResourceAllocationService } from '../allocations/resource-allocation.service';
-import { ResourceAllocationLifecycleWorker } from '../allocations/resource-allocation-lifecycle.worker';
 import {
   RESOURCE_ALLOCATION_WORKER_INTERVAL_MS,
   createResourceAllocationWorkerJobs,
@@ -24,17 +22,16 @@ async function main() {
   await dataSource.initialize();
   const submissionWorker = new ResourceAllocationSubmissionWorker(dataSource);
   const deadlineWorker = new ResourceAllocationDeadlineWorker(dataSource);
-  const decisions = new ResourceAllocationDecisionService(dataSource, true);
+  const decisions = new ResourceAllocationTeamDecisionService(dataSource, true);
   const allocationService = new ResourceAllocationService(dataSource, new ResourceAllocationAccessService(dataSource, true));
-  const allocationLifecycle = new ResourceAllocationLifecycleWorker(allocationService);
-  const proposalWorker = new ResourceAllocationProposalWorker(new ResourceAllocationApprovalService(dataSource, true));
+  const proposalResponseService = new ResourceAllocationProposalResponseService(dataSource, true);
   const operationMonitor = new ResourceAllocationWorkerOperationMonitor(dataSource);
   const jobs = createResourceAllocationWorkerJobs({
     processSubmissions: () => submissionWorker.processBatch(),
     processWaitingDeadlines: () => deadlineWorker.processBatch(),
     expireDeniedRequests: () => decisions.expireDeniedRequests(),
-    processProposalDeadlines: () => proposalWorker.processBatch(),
-    processAllocationStates: () => allocationLifecycle.processBatch(),
+    processProposalDeadlines: () => proposalResponseService.processProposalDeadlineBatch(),
+    processAllocationStates: () => allocationService.processScheduledBatch(),
   });
   const once = process.argv.includes('--once');
   let stopping = false;

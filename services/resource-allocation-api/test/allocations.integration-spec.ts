@@ -16,7 +16,7 @@ import { ResourceProfile } from '../src/resource-profiles/resource-profile.entit
 import { ResourceInitiative } from '../src/initiatives/resource-initiative.entity';
 import { ResourceAllocation } from '../src/allocations/resource-allocation.entity';
 import { ResourceAllocationHistory } from '../src/allocations/resource-allocation-history.entity';
-import { ResourceAllocationLifecycleWorker } from '../src/allocations/resource-allocation-lifecycle.worker';
+import { ResourceAllocationService } from '../src/allocations/resource-allocation.service';
 import { ResourceRequest } from '../src/requests/resource-request.entity';
 import { ResourceRequestHistory } from '../src/requests/resource-request-history.entity';
 import { ResourceSubmission } from '../src/submissions/resource-submission.entity';
@@ -490,10 +490,10 @@ describe('Tech Resource Allocation allocations (#69)', () => {
     const ending = await createAllocation(fixture, { startDate: addDays(today, -5), endDate: addDays(today, -1), state: 'SUSPENDED' });
     const finalDay = await createAllocation(fixture, { startDate: addDays(today, -5), endDate: today, state: 'SUSPENDED' });
     const canceled = await createAllocation(fixture, { startDate: addDays(today, -5), endDate: addDays(today, -1), state: 'CANCELED' });
-    const worker = app!.get(ResourceAllocationLifecycleWorker);
+    const worker = app!.get(ResourceAllocationService);
 
-    expect(await worker.processBatch()).toBe(2);
-    expect(await worker.processBatch()).toBe(0);
+    expect(await worker.processScheduledBatch()).toBe(2);
+    expect(await worker.processScheduledBatch()).toBe(0);
     const savedStarting = await dataSource!.getRepository(ResourceAllocation).findOneByOrFail({ id: starting.allocation.id });
     const savedEnding = await dataSource!.getRepository(ResourceAllocation).findOneByOrFail({ id: ending.allocation.id });
     const savedFinalDay = await dataSource!.getRepository(ResourceAllocation).findOneByOrFail({ id: finalDay.allocation.id });

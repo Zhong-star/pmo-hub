@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
-import { ResourceAllocationException } from '../access/resource-allocation-problem';
-import { isDatabaseUnavailable } from '../database/database-errors';
+import { ResourceAllocationException, translateResourceAllocationDatabaseError } from '../access/resource-allocation-problem';
+import { parseStrongVersionIfMatch, parseUuidHeader } from '../access/request-headers';
+import { decodeOpaqueCursor, encodeOpaqueCursor } from '../common/opaque-cursor';
 import { RESOURCE_ALLOCATION_DATA_SOURCE, RESOURCE_ALLOCATION_DATABASE_CONFIGURED } from '../database/database.module';
 import { ResourceAllocationRole } from '../people/resource-allocation-role';
 import { ResourcePerson } from '../people/resource-person.entity';
@@ -145,8 +146,8 @@ export class ResourceAllocationRequestService {
     correlationId: string | undefined,
     input: UpdateRequestedConditionsDto,
   ) {
-    const expectedVersion = this.parseIfMatch(ifMatch);
-    const correlation = this.requireCorrelationId(correlationId);
+    const expectedVersion = parseStrongVersionIfMatch(ifMatch, undefined, false);
+    const correlation = parseUuidHeader(correlationId, 'X-Correlation-ID');
     const changes = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as UpdateRequestedConditionsDto;
     if (Object.keys(changes).length === 0) throw this.validationError('At least one requested condition is required.');
 
@@ -203,7 +204,7 @@ export class ResourceAllocationRequestService {
         };
       });
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error);
     }
   }
 
@@ -215,8 +216,8 @@ export class ResourceAllocationRequestService {
     correlationId: string | undefined,
     reason: string,
   ) {
-    const expectedVersion = this.parseIfMatch(ifMatch);
-    const correlation = this.requireCorrelationId(correlationId);
+    const expectedVersion = parseStrongVersionIfMatch(ifMatch, undefined, false);
+    const correlation = parseUuidHeader(correlationId, 'X-Correlation-ID');
     const normalizedReason = reason.trim();
     if (normalizedReason.length === 0 || normalizedReason.length > 2000) {
       throw this.validationError('reason must contain between 1 and 2,000 characters.');
@@ -252,7 +253,7 @@ export class ResourceAllocationRequestService {
         return operation;
       });
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error);
     }
   }
 
@@ -399,7 +400,7 @@ export class ResourceAllocationRequestService {
 
   private decodeRequestCursor(value: string, filters: RequestCursor['filters']): RequestCursor {
     try {
-      const decoded = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as RequestCursor;
+      const decoded = decodeOpaqueCursor<RequestCursor>(value);
       if (decoded.version !== cursorVersion || !this.isUuid(decoded.id) || !this.isValidInstant(decoded.receivedAt) ||
         JSON.stringify(decoded.filters) !== JSON.stringify(filters)) throw new Error('Invalid request cursor.');
       return decoded;
@@ -410,7 +411,7 @@ export class ResourceAllocationRequestService {
 
   private decodeAuditCursor(value: string, requestId: string): AuditCursor {
     try {
-      const decoded = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as AuditCursor;
+      const decoded = decodeOpaqueCursor<AuditCursor>(value);
       if (decoded.version !== cursorVersion || decoded.requestId !== requestId || !this.isUuid(decoded.id) || !this.isValidInstant(decoded.occurredAt)) {
         throw new Error('Invalid audit cursor.');
       }
@@ -421,7 +422,7 @@ export class ResourceAllocationRequestService {
   }
 
   private encodeCursor(value: RequestCursor | AuditCursor): string {
-    return Buffer.from(JSON.stringify(value)).toString('base64url');
+    return encodeOpaqueCursor(value);
   }
 
   private isUuid(value: unknown): value is string {
@@ -437,7 +438,7 @@ export class ResourceAllocationRequestService {
     try {
       return await this.requireActivePerson(this.dataSource.manager, localUserId);
     } catch (error) {
-      throw this.translateDatabaseError(error);
+      throw translateResourceAllocationDatabaseError(error);
     }
   }
 
@@ -469,16 +470,7 @@ export class ResourceAllocationRequestService {
     }
   }
 
-  private parseIfMatch(value: string | undefined): number {
-    const match = value?.match(/^"([1-9][0-9]*)"$/);
-    if (!match) throw this.validationError('A single strong If-Match version is required.');
-    return Number(match[1]);
-  }
 
-  private requireCorrelationId(value: string | undefined): string {
-    if (!value || !this.isUuid(value)) throw this.validationError('A valid X-Correlation-ID is required.');
-    return value.toLowerCase();
-  }
 
   private actorSnapshot(person: ResourcePerson) {
     return { personId: person.id, displayName: person.displayName, role: person.role };
@@ -551,11 +543,4 @@ export class ResourceAllocationRequestService {
     }
   }
 
-  private translateDatabaseError(error: unknown): never {
-    if (error instanceof ResourceAllocationException) throw error;
-    if (isDatabaseUnavailable(error)) {
-      throw new ResourceAllocationException('DEPENDENCY_UNAVAILABLE', 'Dependency unavailable', 503, 'The Resource Allocation database is unavailable or not prepared.', undefined, error);
-    }
-    throw new ResourceAllocationException('INTERNAL_ERROR', 'Internal Server Error', 500, 'Internal Server Error', undefined, error);
-  }
 }

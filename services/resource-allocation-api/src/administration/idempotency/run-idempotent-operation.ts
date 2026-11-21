@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { EntityManager } from 'typeorm';
 import { ResourceAllocationException } from '../../access/resource-allocation-problem';
+import { parseUuidHeader } from '../../access/request-headers';
 import { ResourceAllocationOperationReceipt } from './resource-allocation-operation-receipt.entity';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -32,7 +33,7 @@ export async function runIdempotentOperation<T>(
   }
 
   const actorId = requireUuid(input.actorId, 'actor');
-  const key = requireUuid(input.key, 'Idempotency-Key');
+  const key = parseUuidHeader(input.key, 'Idempotency-Key');
   const operation = input.operation.trim();
   if (operation.length === 0 || operation.length > 200) {
     throw validationError('The operation identifier must contain between 1 and 200 characters.');

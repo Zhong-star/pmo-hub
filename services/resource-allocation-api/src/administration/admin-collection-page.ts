@@ -1,4 +1,5 @@
 import { ResourceAllocationException } from '../access/resource-allocation-problem';
+import { decodeOpaqueCursor, encodeOpaqueCursor } from '../common/opaque-cursor';
 
 export interface AdminCollectionQuery {
   limit: number;
@@ -45,7 +46,7 @@ export function parseAdminCollectionQuery(
   if (query.cursor) {
     let payload: CursorPayload;
     try {
-      payload = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf8')) as CursorPayload;
+      payload = decodeOpaqueCursor<CursorPayload>(query.cursor);
     } catch {
       throw invalidCursor();
     }
@@ -83,7 +84,7 @@ export function nextAdminCollectionCursor(
     ...(filters && Object.keys(filters).length > 0 ? { filters } : {}),
     lastId,
   };
-  return Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return encodeOpaqueCursor(payload);
 }
 
 function invalidCursor(): ResourceAllocationException {

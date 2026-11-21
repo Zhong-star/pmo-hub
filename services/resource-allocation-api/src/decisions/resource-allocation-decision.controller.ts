@@ -36,13 +36,14 @@ import {
   RequestHistoryQueryDto,
 } from './request-decision.dto';
 import { RecordRequestStrategyDto, ResolveRequestExceptionDto } from './resolve-exception.dto';
-import { ResourceAllocationDecisionService } from './resource-allocation-decision.service';
+import { ResourceAllocationTeamDecisionService } from './resource-allocation-team-decision.service';
+import { ResourceAllocationRequesterResponseService } from './resource-allocation-requester-response.service';
+import { ResourceAllocationExceptionResolutionService } from './resource-allocation-exception-resolution.service';
+import { ResourceAllocationRequestHistoryService } from './resource-allocation-request-history.service';
 
 interface ResponseWithHeaders {
   setHeader(name: string, value: string): void;
 }
-
-const validatedBody = createValidationPipe;
 
 @ApiTags('Tech Resource Allocation decisions')
 @ApiSecurity('localProfile')
@@ -50,8 +51,14 @@ const validatedBody = createValidationPipe;
 @Controller()
 export class ResourceAllocationDecisionController {
   constructor(
-    @Inject(ResourceAllocationDecisionService)
-    private readonly decisions: ResourceAllocationDecisionService,
+    @Inject(ResourceAllocationTeamDecisionService)
+    private readonly teamDecisions: ResourceAllocationTeamDecisionService,
+    @Inject(ResourceAllocationRequesterResponseService)
+    private readonly requesterResponses: ResourceAllocationRequesterResponseService,
+    @Inject(ResourceAllocationExceptionResolutionService)
+    private readonly exceptionResolutions: ResourceAllocationExceptionResolutionService,
+    @Inject(ResourceAllocationRequestHistoryService)
+    private readonly requestHistory: ResourceAllocationRequestHistoryService,
   ) {}
 
   @Post('requests/:id/denials')
@@ -72,10 +79,10 @@ export class ResourceAllocationDecisionController {
     @Headers('if-match') ifMatch: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
-    @Body(validatedBody(DenyRequestDto)) input: DenyRequestDto,
+    @Body(createValidationPipe(DenyRequestDto)) input: DenyRequestDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
-    const operation = await this.decisions.deny(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
+    const operation = await this.teamDecisions.deny(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
     else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
@@ -99,10 +106,10 @@ export class ResourceAllocationDecisionController {
     @Headers('if-match') ifMatch: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
-    @Body(validatedBody(ContestRequestDto)) input: ContestRequestDto,
+    @Body(createValidationPipe(ContestRequestDto)) input: ContestRequestDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
-    const operation = await this.decisions.contest(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
+    const operation = await this.requesterResponses.contest(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
     else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
@@ -126,10 +133,10 @@ export class ResourceAllocationDecisionController {
     @Headers('if-match') ifMatch: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
-    @Body(validatedBody(CancelDeniedRequestDto)) input: CancelDeniedRequestDto,
+    @Body(createValidationPipe(CancelDeniedRequestDto)) input: CancelDeniedRequestDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
-    const operation = await this.decisions.cancelDenied(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
+    const operation = await this.requesterResponses.cancelDenied(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
     else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
@@ -153,10 +160,10 @@ export class ResourceAllocationDecisionController {
     @Headers('if-match') ifMatch: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
-    @Body(validatedBody(CancelDeniedRequestDto)) input: CancelDeniedRequestDto,
+    @Body(createValidationPipe(CancelDeniedRequestDto)) input: CancelDeniedRequestDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
-    const operation = await this.decisions.escalate(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
+    const operation = await this.exceptionResolutions.escalate(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
     else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
@@ -180,10 +187,10 @@ export class ResourceAllocationDecisionController {
     @Headers('if-match') ifMatch: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
-    @Body(validatedBody(RecordRequestStrategyDto)) input: RecordRequestStrategyDto,
+    @Body(createValidationPipe(RecordRequestStrategyDto)) input: RecordRequestStrategyDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
-    const operation = await this.decisions.recordStrategy(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
+    const operation = await this.exceptionResolutions.recordStrategy(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
     else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
@@ -207,10 +214,10 @@ export class ResourceAllocationDecisionController {
     @Headers('if-match') ifMatch: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
-    @Body(validatedBody(ResolveRequestExceptionDto)) input: ResolveRequestExceptionDto,
+    @Body(createValidationPipe(ResolveRequestExceptionDto)) input: ResolveRequestExceptionDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders,
   ) {
-    const operation = await this.decisions.resolveException(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
+    const operation = await this.exceptionResolutions.resolveException(localUserId, id, ifMatch, idempotencyKey, correlationId, input);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
     else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
@@ -229,6 +236,6 @@ export class ResourceAllocationDecisionController {
     @Param('id', new ParseUUIDPipe()) id: string,
     @Query(createValidationPipe(RequestHistoryQueryDto)) query: RequestHistoryQueryDto,
   ) {
-    return this.decisions.getHistory(localUserId, id, query);
+    return this.requestHistory.getHistory(localUserId, id, query);
   }
 }
