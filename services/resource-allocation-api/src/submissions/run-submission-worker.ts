@@ -4,6 +4,9 @@ import { createResourceAllocationDataSourceOptions, getResourceAllocationDatabas
 import { ResourceAllocationSubmissionWorker } from './resource-allocation-submission.worker';
 import { ResourceAllocationDeadlineWorker } from '../deadlines/resource-allocation-deadline.worker';
 import { ResourceAllocationDecisionService } from '../decisions/resource-allocation-decision.service';
+import { ResourceAllocationAccessService } from '../access/resource-allocation-access.service';
+import { ResourceAllocationService } from '../allocations/resource-allocation.service';
+import { ResourceAllocationLifecycleWorker } from '../allocations/resource-allocation-lifecycle.worker';
 import {
   RESOURCE_ALLOCATION_WORKER_INTERVAL_MS,
   createResourceAllocationWorkerJobs,
@@ -19,10 +22,13 @@ async function main() {
   const submissionWorker = new ResourceAllocationSubmissionWorker(dataSource);
   const deadlineWorker = new ResourceAllocationDeadlineWorker(dataSource);
   const decisions = new ResourceAllocationDecisionService(dataSource, true);
+  const allocationService = new ResourceAllocationService(dataSource, new ResourceAllocationAccessService(dataSource, true));
+  const allocationLifecycle = new ResourceAllocationLifecycleWorker(allocationService);
   const jobs = createResourceAllocationWorkerJobs({
     processSubmissions: () => submissionWorker.processBatch(),
     processWaitingDeadlines: () => deadlineWorker.processBatch(),
     expireDeniedRequests: () => decisions.expireDeniedRequests(),
+    processAllocationStates: () => allocationLifecycle.processBatch(),
   });
   const once = process.argv.includes('--once');
   let stopping = false;

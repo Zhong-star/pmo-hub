@@ -262,7 +262,7 @@ function NotificationCard({
         <p className="notification-date">{formatTimestamp(notification.createdAt)}</p>
         {notification.target.available && notification.target.destination ? (
           <a className="notification-target-link" href={notificationTargetHref(notification)}>
-            Open related request
+            {notification.target.destination === 'ALLOCATION_DETAIL' ? 'Open related allocation' : 'Open related request'}
           </a>
         ) : (
           <p className={`notification-target${notification.target.available ? '' : ' notification-target-unavailable'}`}>
@@ -284,7 +284,10 @@ function NotificationCard({
 }
 
 function notificationTargetHref(notification: ResourceNotification): string {
-  const { destination, requestId } = notification.target;
+  const { destination, requestId, allocationId } = notification.target;
+  if (destination === 'ALLOCATION_DETAIL' && allocationId) {
+    return `/resource-allocation/?${new URLSearchParams({ allocationId })}`;
+  }
   if (destination === 'REQUEST_DETAIL') {
     return `/resource-allocation/?${new URLSearchParams({ requestId })}`;
   }
