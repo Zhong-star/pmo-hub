@@ -10,6 +10,8 @@ import { ResourceAllocationSelectionController } from './administration/resource
 import { ResourceAllocationSubmissionController, ResourceAllocationOperationResultController } from './submissions/resource-allocation-submission.controller';
 import { ResourceAllocationSubmissionService } from './submissions/resource-allocation-submission.service';
 import { ResourceAllocationSubmissionWorker } from './submissions/resource-allocation-submission.worker';
+import { ResourceAllocationRequestQueueController } from './requests/resource-allocation-request-queue.controller';
+import { ResourceAllocationRequestQueueService } from './requests/resource-allocation-request-queue.service';
 
 @Module({
   controllers: [
@@ -19,12 +21,14 @@ import { ResourceAllocationSubmissionWorker } from './submissions/resource-alloc
     ResourceAllocationSelectionController,
     ResourceAllocationSubmissionController,
     ResourceAllocationOperationResultController,
+    ResourceAllocationRequestQueueController,
   ],
   providers: [
     ResourceAllocationAccessService,
     ResourceAllocationAdministrationService,
     ResourceAllocationSubmissionService,
     ResourceAllocationSubmissionWorker,
+    ResourceAllocationRequestQueueService,
   ],
 })
 export class AppModule {
