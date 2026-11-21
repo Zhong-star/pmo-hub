@@ -22,8 +22,8 @@ import {
   UpdateResourcePersonRequestDto,
 } from './resource-administration.dto';
 import { runIdempotentOperation } from './idempotency/run-idempotent-operation';
+import { lockResourceAllocationAdministrationWrites } from './resource-allocation-write-lock';
 
-const adminMutationLockKey = 20261120;
 
 @Injectable()
 export class ResourceAllocationAdministrationService {
@@ -623,7 +623,7 @@ export class ResourceAllocationAdministrationService {
   }
 
   private async lockAdministrationWrites(manager: EntityManager): Promise<void> {
-    await manager.query('SELECT pg_advisory_xact_lock($1, $2)', [adminMutationLockKey, 59]);
+    await lockResourceAllocationAdministrationWrites(manager);
   }
 
   private async withAdminMutation<T>(

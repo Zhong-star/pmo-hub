@@ -5,6 +5,12 @@ import { ResourceInitiative } from '../initiatives/resource-initiative.entity';
 import { ResourceGroup } from '../groups/resource-group.entity';
 import { ResourceProfile } from '../resource-profiles/resource-profile.entity';
 import { ResourceAllocationOperationReceipt } from '../administration/idempotency/resource-allocation-operation-receipt.entity';
+import { ResourceSubmission } from '../submissions/resource-submission.entity';
+import { ResourceSubmissionLine } from '../submissions/resource-submission-line.entity';
+import { ResourceSubmissionEntry } from '../submissions/resource-submission-entry.entity';
+import { ResourceRequest } from '../requests/resource-request.entity';
+import { ResourceRequestHistory } from '../requests/resource-request-history.entity';
+import { ResourceAllocationNotification } from '../notifications/resource-allocation-notification.entity';
 
 export const RESOURCE_ALLOCATION_DATABASE_URL_ENV = 'RESOURCE_ALLOCATION_DATABASE_URL';
 
@@ -18,7 +24,19 @@ export function createResourceAllocationDataSourceOptions(databaseUrl?: string):
   return {
     type: 'postgres',
     ...(databaseUrl ? { url: databaseUrl } : {}),
-    entities: [ResourcePerson, ResourceGroup, ResourceProfile, ResourceInitiative, ResourceAllocationOperationReceipt],
+    entities: [
+      ResourcePerson,
+      ResourceGroup,
+      ResourceProfile,
+      ResourceInitiative,
+      ResourceAllocationOperationReceipt,
+      ResourceSubmission,
+      ResourceSubmissionLine,
+      ResourceSubmissionEntry,
+      ResourceRequest,
+      ResourceRequestHistory,
+      ResourceAllocationNotification,
+    ],
     migrations: [resolve(__dirname, 'migrations/*{.js,.ts}')],
     migrationsRun: false,
     synchronize: false,

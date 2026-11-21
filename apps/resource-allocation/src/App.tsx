@@ -7,6 +7,7 @@ import {
   readSelectedProfileId,
 } from './accessApi';
 import { Administration } from './Administration';
+import { SubmissionWorkspace } from './SubmissionWorkspace';
 
 type ProfileSelection = { profileId: string | null; generation: number };
 
@@ -30,6 +31,7 @@ export function App() {
   }));
   const currentSelection = useRef(selection);
   const [adminAccessBlocked, setAdminAccessBlocked] = useState(false);
+  const [moduleDataAccessBlocked, setModuleDataAccessBlocked] = useState(false);
   const { profileId, generation } = selection;
 
   const reconcileProfile = useCallback(() => {
@@ -38,9 +40,12 @@ export function App() {
     if (current.profileId === nextProfileId) return;
     queryClient.removeQueries({
       predicate: (query) => query.queryKey[0] === 'resource-allocation-access'
-        || query.queryKey[0] === 'resource-allocation-admin',
+        || query.queryKey[0] === 'resource-allocation-admin'
+        || query.queryKey[0] === 'resource-allocation-selections'
+        || query.queryKey[0] === 'resource-allocation-submissions',
     });
     setAdminAccessBlocked(false);
+    setModuleDataAccessBlocked(false);
     const nextSelection = { profileId: nextProfileId, generation: current.generation + 1 };
     currentSelection.current = nextSelection;
     setSelection(nextSelection);
@@ -71,7 +76,15 @@ export function App() {
   const accessConfirmedNonAdmin = accessQuery.isSuccess && accessQuery.data.person.role !== 'ALLOCATION_ADMIN';
 
   useEffect(() => {
-    if (profileId && (accessDenied || accessConfirmedNonAdmin)) {
+    if (profileId && accessDenied) {
+      queryClient.removeQueries({
+        predicate: (query) => query.queryKey[0] === 'resource-allocation-admin'
+          || query.queryKey[0] === 'resource-allocation-selections'
+          || query.queryKey[0] === 'resource-allocation-submissions',
+      });
+      return;
+    }
+    if (profileId && accessConfirmedNonAdmin) {
       queryClient.removeQueries({ queryKey: ['resource-allocation-admin', profileId] });
     }
   }, [accessConfirmedNonAdmin, accessDenied, profileId, queryClient]);
@@ -79,12 +92,24 @@ export function App() {
   const isAdministrator = accessQuery.isSuccess
     && accessQuery.data.person.role === 'ALLOCATION_ADMIN'
     && !adminAccessBlocked;
+  const canUseModuleData = accessQuery.isSuccess && !moduleDataAccessBlocked;
   const refetchAccess = accessQuery.refetch;
   const handleAdminAccessDenied = useCallback(() => {
     setAdminAccessBlocked(true);
     queryClient.removeQueries({ queryKey: ['resource-allocation-admin', profileId] });
     void refetchAccess();
   }, [profileId, queryClient, refetchAccess]);
+
+  const handleModuleDataAccessDenied = useCallback(() => {
+    setModuleDataAccessBlocked(true);
+    setAdminAccessBlocked(true);
+    queryClient.removeQueries({
+      predicate: (query) => query.queryKey[0] !== 'resource-allocation-access'
+        && typeof query.queryKey[0] === 'string'
+        && query.queryKey[0].startsWith('resource-allocation-'),
+    });
+    void refetchAccess();
+  }, [queryClient, refetchAccess]);
 
   const heading = profileId === null || (accessQuery.isError && isMissingProfile(accessQuery.error))
     ? 'Select a local profile in PMO Hub'
@@ -106,7 +131,7 @@ export function App() {
       </header>
 
       <main id="main-content" className="main-content" tabIndex={-1}>
-        <div className={isAdministrator ? 'content-column content-column-wide' : 'content-column'}>
+        <div className={isAdministrator || canUseModuleData ? 'content-column content-column-wide' : 'content-column'}>
           <section className="access-card" aria-labelledby="page-title">
             <div className="card-mark" aria-hidden="true">RA</div>
             <p className="eyebrow">PMO Hub module</p>
@@ -165,6 +190,19 @@ export function App() {
               </div>
             )}
           </section>
+
+          {canUseModuleData && profileId && (
+            <SubmissionWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
+          )}
+
+          {moduleDataAccessBlocked && (
+            <div className="form-error admin-access-revoked" role="alert">
+              <p>Your module data access could not be confirmed. Protected records have been cleared.</p>
+              <button type="button" className="secondary-button" onClick={() => { setModuleDataAccessBlocked(false); void refetchAccess(); }} disabled={accessQuery.isFetching}>
+                {accessQuery.isFetching ? 'Checking access…' : 'Check access again'}
+              </button>
+            </div>
+          )}
 
           {isAdministrator && profileId && (
             <Administration localUserId={profileId} onAccessDenied={handleAdminAccessDenied} />

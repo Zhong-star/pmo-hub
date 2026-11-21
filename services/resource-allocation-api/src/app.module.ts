@@ -7,6 +7,9 @@ import { HealthController } from './health.controller';
 import { ResourceAllocationAdministrationController } from './administration/resource-allocation-administration.controller';
 import { ResourceAllocationAdministrationService } from './administration/resource-allocation-administration.service';
 import { ResourceAllocationSelectionController } from './administration/resource-allocation-selection.controller';
+import { ResourceAllocationSubmissionController, ResourceAllocationOperationResultController } from './submissions/resource-allocation-submission.controller';
+import { ResourceAllocationSubmissionService } from './submissions/resource-allocation-submission.service';
+import { ResourceAllocationSubmissionWorker } from './submissions/resource-allocation-submission.worker';
 
 @Module({
   controllers: [
@@ -14,8 +17,15 @@ import { ResourceAllocationSelectionController } from './administration/resource
     ResourceAllocationAccessController,
     ResourceAllocationAdministrationController,
     ResourceAllocationSelectionController,
+    ResourceAllocationSubmissionController,
+    ResourceAllocationOperationResultController,
   ],
-  providers: [ResourceAllocationAccessService, ResourceAllocationAdministrationService],
+  providers: [
+    ResourceAllocationAccessService,
+    ResourceAllocationAdministrationService,
+    ResourceAllocationSubmissionService,
+    ResourceAllocationSubmissionWorker,
+  ],
 })
 export class AppModule {
   static register(databaseUrl = getResourceAllocationDatabaseUrl()): DynamicModule {

@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 const accessPath = '**/api/resource-allocation/v1/access';
 const selectedProfileKey = 'pmo-hub.local-user-id';
+const emptyPage = { nextCursor: null, limit: 100 };
 
 const people = {
   'profile-user': {
@@ -21,6 +22,18 @@ const people = {
 };
 
 async function openWithProfile(page: Page, profileId: string) {
+  await page.route('**/api/resource-allocation/v1/initiatives**', async (route) => route.fulfill({
+    json: { items: [], page: emptyPage },
+  }));
+  await page.route('**/api/resource-allocation/v1/groups**', async (route) => route.fulfill({
+    json: { items: [], page: emptyPage },
+  }));
+  await page.route('**/api/resource-allocation/v1/resource-profiles**', async (route) => route.fulfill({
+    json: { items: [], page: emptyPage },
+  }));
+  await page.route('**/api/resource-allocation/v1/submissions**', async (route) => route.fulfill({
+    json: { items: [], page: { ...emptyPage, limit: 50 } },
+  }));
   await page.addInitScript(({ key, value }) => {
     if (!window.localStorage.getItem(key)) window.localStorage.setItem(key, value);
   }, {

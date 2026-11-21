@@ -4,6 +4,7 @@ const accessPath = '**/api/resource-allocation/v1/access';
 const selectedProfileKey = 'pmo-hub.local-user-id';
 const adminApiPath = /\/api\/resource-allocation\/v1\/admin\//;
 const adminPeoplePath = /\/api\/resource-allocation\/v1\/admin\/people(?:\?|$)/;
+const emptySelectionPage = { nextCursor: null, limit: 100 };
 
 const adminPerson = {
   id: 'person-admin',
@@ -18,6 +19,18 @@ const adminPerson = {
 };
 
 async function openWithProfile(page: Page, profileId: string) {
+  await page.route('**/api/resource-allocation/v1/initiatives**', async (route) => route.fulfill({
+    json: { items: [], page: emptySelectionPage },
+  }));
+  await page.route('**/api/resource-allocation/v1/groups**', async (route) => route.fulfill({
+    json: { items: [], page: emptySelectionPage },
+  }));
+  await page.route('**/api/resource-allocation/v1/resource-profiles**', async (route) => route.fulfill({
+    json: { items: [], page: emptySelectionPage },
+  }));
+  await page.route('**/api/resource-allocation/v1/submissions**', async (route) => route.fulfill({
+    json: { items: [], page: { ...emptySelectionPage, limit: 50 } },
+  }));
   await page.addInitScript(({ key, value }) => {
     if (!window.localStorage.getItem(key)) window.localStorage.setItem(key, value);
   }, {
@@ -146,7 +159,7 @@ test('allows an Admin to remain ungrouped while exposing an optional primary gro
   await page.getByLabel('Email').fill('casey.admin@example.test');
   await page.getByLabel('Role').selectOption('ALLOCATION_ADMIN');
 
-  await expect(page.getByLabel('Group')).toBeVisible();
+  await expect(page.locator('#admin-groupId')).toBeVisible();
   await page.getByRole('button', { name: 'Save person' }).click();
 
   await expect(page.getByText('Casey Admin')).toBeVisible();
@@ -216,7 +229,7 @@ test('creates and conditionally edits an initiative through the admin form', asy
   await page.getByLabel('Code').fill('ITDM-9');
   await page.getByLabel('Name').fill('Client platform rollout');
   await page.getByRole('button', { name: 'Save initiative' }).click();
-  await expect(page.getByRole('alert')).toContainText('Try again.');
+  await expect(page.getByRole('region', { name: 'Administration' }).getByRole('alert')).toContainText('Try again.');
   await expect(page.getByLabel('Name')).toHaveValue('Client platform rollout');
   await page.getByRole('button', { name: 'Save initiative' }).click();
 

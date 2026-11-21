@@ -1727,6 +1727,365 @@
           "Tech Resource Allocation selections"
         ]
       }
+    },
+    "/api/resource-allocation/v1/submissions": {
+      "post": {
+        "operationId": "ResourceAllocationSubmissionController_receive",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "UUID identifying this exact submission envelope.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateResourceSubmissionRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceSubmissionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The envelope, line structure, or idempotency key is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active Resource Allocation person record is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The key was reused with changed content or a line attempt key already exists.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Durably receive a batch of resource request lines",
+        "tags": [
+          "Tech Resource Allocation submissions"
+        ]
+      },
+      "get": {
+        "operationId": "ResourceAllocationSubmissionController_list",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size (default 50, maximum 100).",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceSubmissionCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active Resource Allocation person record is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List the current user’s durable submission receipts",
+        "tags": [
+          "Tech Resource Allocation submissions"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/submissions/{id}/lines": {
+      "get": {
+        "operationId": "ResourceAllocationSubmissionController_listLines",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size (default 50, maximum 100).",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceSubmissionLineCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active Resource Allocation person record is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The submission does not exist for this user.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List the current user’s results for an accepted submission",
+        "tags": [
+          "Tech Resource Allocation submissions"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/submissions/{id}": {
+      "get": {
+        "operationId": "ResourceAllocationSubmissionController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceSubmissionLineResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active Resource Allocation person record is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The submission does not exist for this user.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Recover the current user’s durable submission receipt",
+        "tags": [
+          "Tech Resource Allocation submissions"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/operation-results/{attemptKey}": {
+      "get": {
+        "operationId": "ResourceAllocationOperationResultController_get",
+        "parameters": [
+          {
+            "name": "attemptKey",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operation",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "submission.create"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceSubmissionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The original operation identifier is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active Resource Allocation person record is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No result exists for this user and operation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Recover a result by its original line attempt key",
+        "tags": [
+          "Tech Resource Allocation operation results"
+        ]
+      }
     }
   },
   "info": {
@@ -2510,6 +2869,223 @@
         "required": [
           "page",
           "items"
+        ]
+      },
+      "CreateSubmissionLineRequestDto": {
+        "type": "object",
+        "properties": {
+          "attemptKey": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resourceProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2027-01-11"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2027-01-29"
+          },
+          "weeklyHours": {
+            "type": "number",
+            "example": 20
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "attemptKey",
+          "groupId",
+          "resourceProfileId",
+          "startDate",
+          "endDate",
+          "weeklyHours"
+        ]
+      },
+      "CreateResourceSubmissionRequestDto": {
+        "type": "object",
+        "properties": {
+          "initiativeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "DEMAND_ANALYSIS",
+              "POC_BBP",
+              "EXECUTION_PROJECT",
+              "EXECUTION_FAST_TRACK",
+              "EXECUTION_ENHANCEMENT"
+            ]
+          },
+          "lines": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreateSubmissionLineRequestDto"
+            }
+          }
+        },
+        "required": [
+          "initiativeId",
+          "category",
+          "lines"
+        ]
+      },
+      "SubmissionCountsDto": {
+        "type": "object",
+        "properties": {
+          "received": {
+            "type": "number"
+          },
+          "processing": {
+            "type": "number"
+          },
+          "succeeded": {
+            "type": "number"
+          },
+          "failed": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "received",
+          "processing",
+          "succeeded",
+          "failed"
+        ]
+      },
+      "ResourceSubmissionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lineCount": {
+            "type": "number"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/SubmissionCountsDto"
+          }
+        },
+        "required": [
+          "id",
+          "receivedAt",
+          "lineCount",
+          "counts"
+        ]
+      },
+      "ResourceSubmissionCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceSubmissionResponseDto"
+            }
+          },
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ]
+      },
+      "ResourceSubmissionLineResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptKey": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submittedConditions": {
+            "type": "object"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "RECEIVED",
+              "PROCESSING",
+              "SUCCEEDED",
+              "FAILED"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "problem": {
+            "type": "object"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestOutcome": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "attemptKey",
+          "submittedConditions",
+          "status",
+          "receivedAt"
+        ]
+      },
+      "ResourceSubmissionLineCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceSubmissionLineResponseDto"
+            }
+          },
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          }
+        },
+        "required": [
+          "items",
+          "page"
         ]
       }
     }

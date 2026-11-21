@@ -38,6 +38,8 @@ If that Hub profile is already recorded without an active Admin and no other act
 - `npm run openapi:generate --workspace @pmo-hub/resource-allocation-api` generates `openapi/resource-allocation-v1.json` from Nest Swagger decorators and response DTOs.
 - `npm run migration:run --workspace @pmo-hub/resource-allocation-api` applies pending TypeORM migrations explicitly.
 - `npm run prepare:first-admin --workspace @pmo-hub/resource-allocation-api` safely prepares the first Admin after migration.
+- `npm run worker --workspace @pmo-hub/resource-allocation-api` runs the submission processor in the background; it polls durable rows every ten seconds and recovers claims abandoned for at least a minute.
+- `npm run worker:once --workspace @pmo-hub/resource-allocation-api` processes one batch and exits. The workspace alias `npm run resource-allocation:worker` starts the background worker from the monorepo root.
 - `npm run test --workspace @pmo-hub/resource-allocation-api` validates the generated contract.
 - `npm run test:integration --workspace @pmo-hub/resource-allocation-api` runs Supertest against PostgreSQL 17 in Testcontainers; Docker is required.
 
