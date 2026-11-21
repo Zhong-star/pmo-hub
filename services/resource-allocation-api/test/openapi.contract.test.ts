@@ -131,11 +131,27 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
     expect(markAll.responses['409'].content).toHaveProperty('application/problem+json');
   });
 
-  it('documents revalidation and the conditional commands used by the request queue client', () => {
+  it('documents revalidation, requester-response, and the conditional commands used by the request queue client', () => {
     const root = '/api/resource-allocation/v1';
     const queues = contract.paths[`${root}/request-queues/{queueCode}`].get;
-    expect(queues.parameters?.find(({ name }) => name === 'queueCode')?.schema?.enum).toContain('revalidation');
+    expect(queues.parameters?.find(({ name }) => name === 'queueCode')?.schema?.enum).toEqual([
+      'presentation',
+      'team-decision',
+      'requester-response',
+      'exceptions',
+      'revalidation',
+    ]);
+    expect(queues.parameters?.find(({ name }) => name === 'decisionState')?.schema?.enum).toEqual(expect.arrayContaining([
+      'APPROVED_WITH_CHANGES',
+      'DENIED',
+    ]));
     expect(contract.components.schemas.RequestQueueItemDto.properties?.originState?.enum).toContain('APPROVED_WITH_CHANGES');
+    expect(contract.components.schemas.RequestQueueItemDto.properties?.nextResponsible).toMatchObject({
+      oneOf: expect.arrayContaining([
+        expect.objectContaining({ type: 'object' }),
+        expect.objectContaining({ type: 'array' }),
+      ]),
+    });
     expect(contract.components.schemas.CorrectRequestReferencesDto.properties).toHaveProperty('personId');
 
     for (const operation of ['referrals', 'reference-corrections']) {
@@ -153,7 +169,7 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
     expect(contract.components.schemas.RequestChangeReceiptDto.properties).toHaveProperty('version');
   });
 
-  it('documents receipt schema on GET /submissions/{id} and line schema on GET /operation-results/{attemptKey}', () => {
+  it('documents receipt schema on GET /submissions/{id} and generalized operation receipts without ETag on GET /operation-results/{attemptKey}', () => {
     const root = '/api/resource-allocation/v1';
     const submission = contract.paths[`${root}/submissions/{id}`].get;
     expect(submission.responses['200'].content).toMatchObject({
@@ -161,8 +177,59 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
     });
 
     const operationResult = contract.paths[`${root}/operation-results/{attemptKey}`].get;
+    const operationParam = operationResult.parameters?.find(({ name }) => name === 'operation');
+    expect(operationParam).toMatchObject({ required: true });
+    expect(operationParam?.schema?.enum).toEqual(expect.arrayContaining([
+      'submission.create',
+      'admin.createPerson',
+      'admin.createGroup',
+      'admin.createResourceProfile',
+      'admin.createInitiative',
+      'request.withdraw',
+      'request.refer',
+      'request.correctReferences',
+      'request.administrativeRemoval',
+      'request.approve',
+      'request.acceptChanges',
+      'request.deny',
+      'request.contestDenial',
+      'request.exception.escalate',
+      'request.exception.recordStrategy',
+      'request.exception.resolve',
+      'request.exception.cancel',
+      'request.cancelDenied',
+      'allocation.suspend',
+      'allocation.reserve',
+      'allocation.resume',
+      'allocation.activate',
+      'allocation.complete',
+      'allocation.cancel',
+      'notifications.mark-one-read',
+      'notifications.mark-all-read',
+    ]));
+    expect(operationParam?.schema?.enum).toHaveLength(26);
+    expect(operationResult.responses['200'].headers ?? {}).not.toHaveProperty('ETag');
     expect(operationResult.responses['200'].content).toMatchObject({
-      'application/json': { schema: { $ref: '#/components/schemas/ResourceSubmissionLineResponseDto' } },
+      'application/json': {
+        schema: {
+          oneOf: expect.arrayContaining([
+            { $ref: '#/components/schemas/ResourceSubmissionLineResponseDto' },
+            { $ref: '#/components/schemas/ResourceSubmissionResponseDto' },
+            { $ref: '#/components/schemas/ResourcePersonResponseDto' },
+            { $ref: '#/components/schemas/ResourceGroupResponseDto' },
+            { $ref: '#/components/schemas/ResourceProfileResponseDto' },
+            { $ref: '#/components/schemas/ResourceInitiativeResponseDto' },
+            { $ref: '#/components/schemas/ResourceRequestAuditEventResponseDto' },
+            { $ref: '#/components/schemas/RequestChangeReceiptDto' },
+            { $ref: '#/components/schemas/RemovedRequestReceiptDto' },
+            { $ref: '#/components/schemas/ApproveRequestResponseDto' },
+            { $ref: '#/components/schemas/RequestDecisionResponseDto' },
+            { $ref: '#/components/schemas/AllocationViewDto' },
+            { $ref: '#/components/schemas/ResourceNotificationDto' },
+            { $ref: '#/components/schemas/ResourceNotificationReadAllDto' },
+          ]),
+        },
+      },
     });
   });
 

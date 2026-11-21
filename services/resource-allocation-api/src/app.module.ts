@@ -6,6 +6,7 @@ import { ResourceAllocationAccessService } from './access/resource-allocation-ac
 import { HealthController } from './health.controller';
 import { ResourceAllocationAdministrationController } from './administration/resource-allocation-administration.controller';
 import { ResourceAllocationAdministrationService } from './administration/resource-allocation-administration.service';
+import { ResourceAllocationOperationResultService } from './administration/idempotency/resource-allocation-operation-result.service';
 import { ResourceAllocationSelectionController } from './administration/resource-allocation-selection.controller';
 import { ResourceAllocationApprovalController } from './approvals/resource-allocation-approval.controller';
 import { ResourceAllocationApprovalService } from './approvals/resource-allocation-approval.service';
@@ -44,6 +45,7 @@ import { ResourceAllocationDecisionService } from './decisions/resource-allocati
   providers: [
     ResourceAllocationAccessService,
     ResourceAllocationAdministrationService,
+    ResourceAllocationOperationResultService,
     ResourceAllocationSubmissionService,
     ResourceAllocationSubmissionWorker,
     ResourceAllocationNotificationService,

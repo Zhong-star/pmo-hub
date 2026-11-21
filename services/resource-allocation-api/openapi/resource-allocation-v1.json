@@ -2954,7 +2954,32 @@
             "in": "query",
             "schema": {
               "enum": [
-                "submission.create"
+                "submission.create",
+                "admin.createPerson",
+                "admin.createGroup",
+                "admin.createResourceProfile",
+                "admin.createInitiative",
+                "request.withdraw",
+                "request.refer",
+                "request.correctReferences",
+                "request.administrativeRemoval",
+                "request.approve",
+                "request.acceptChanges",
+                "request.deny",
+                "request.contestDenial",
+                "request.exception.escalate",
+                "request.exception.recordStrategy",
+                "request.exception.resolve",
+                "request.exception.cancel",
+                "request.cancelDenied",
+                "allocation.suspend",
+                "allocation.reserve",
+                "allocation.resume",
+                "allocation.activate",
+                "allocation.complete",
+                "allocation.cancel",
+                "notifications.mark-one-read",
+                "notifications.mark-all-read"
               ],
               "type": "string"
             }
@@ -2962,17 +2987,60 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "The stored result for the owning active actor without re-executing mutations or emitting a current ETag header.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResourceSubmissionLineResponseDto"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ResourceSubmissionLineResponseDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ResourceSubmissionResponseDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ResourcePersonResponseDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ResourceGroupResponseDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ResourceProfileResponseDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ResourceInitiativeResponseDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ResourceRequestAuditEventResponseDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RequestChangeReceiptDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RemovedRequestReceiptDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApproveRequestResponseDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RequestDecisionResponseDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AllocationViewDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ResourceNotificationDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ResourceNotificationReadAllDto"
+                    }
+                  ]
                 }
               }
             }
           },
           "400": {
-            "description": "The original operation identifier is required.",
+            "description": "The attempt key or operation identifier is invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3000,7 +3068,7 @@
             }
           },
           "403": {
-            "description": "An active Resource Allocation person record is required.",
+            "description": "An active profile with current access to this operation result is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3045,7 +3113,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Recover a result by its original line attempt key",
+        "summary": "Recover an authorized operation receipt by its original attempt or idempotency key",
         "tags": [
           "Tech Resource Allocation operation results"
         ]
@@ -3431,6 +3499,7 @@
               "enum": [
                 "presentation",
                 "team-decision",
+                "requester-response",
                 "exceptions",
                 "revalidation"
               ],
@@ -3442,6 +3511,17 @@
             "required": false,
             "in": "query",
             "schema": {
+              "enum": [
+                "WAITING_FOR_PRESENTATION",
+                "PENDING_TEAM_DECISION",
+                "APPROVED_WITH_CHANGES",
+                "APPROVED",
+                "DENIED",
+                "PRE_N3",
+                "ESCALATION",
+                "REQUIRES_REVALIDATION",
+                "CANCELLED"
+              ],
               "type": "string"
             }
           },
@@ -9127,6 +9207,425 @@
           "page"
         ]
       },
+      "ResourceRequestAuditEventResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "WITHDRAWN",
+              "ADMIN_REMOVED",
+              "EXPIRED"
+            ]
+          },
+          "requesterSnapshot": {
+            "type": "object"
+          },
+          "actorSnapshot": {
+            "type": "object"
+          },
+          "requestSnapshot": {
+            "type": "object"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "requestId",
+          "action",
+          "requesterSnapshot",
+          "actorSnapshot",
+          "requestSnapshot",
+          "reason",
+          "occurredAt",
+          "correlationId"
+        ]
+      },
+      "RequestChangeReceiptDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requester": {
+            "type": "object"
+          },
+          "requestedConditions": {
+            "type": "object"
+          },
+          "decisionState": {
+            "type": "string"
+          },
+          "originState": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "WAITING_FOR_PRESENTATION",
+              "PENDING_TEAM_DECISION",
+              "APPROVED_WITH_CHANGES"
+            ]
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stageEnteredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id",
+          "requester",
+          "requestedConditions",
+          "decisionState",
+          "receivedAt",
+          "stageEnteredAt",
+          "version"
+        ]
+      },
+      "RemovedRequestReceiptDto": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "ADMIN_REMOVED"
+            ]
+          },
+          "removedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "requestId",
+          "action",
+          "removedAt"
+        ]
+      },
+      "AllocationApprovalResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "person": {
+            "type": "object"
+          },
+          "group": {
+            "type": "object"
+          },
+          "initiative": {
+            "type": "object"
+          },
+          "resourceProfile": {
+            "type": "object"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "weeklyHours": {
+            "type": "number"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "NOT_STARTED",
+              "IN_PROGRESS"
+            ]
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "person",
+          "group",
+          "initiative",
+          "resourceProfile",
+          "startDate",
+          "endDate",
+          "weeklyHours",
+          "state",
+          "approvedAt",
+          "version"
+        ]
+      },
+      "ApproveRequestResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requester": {
+            "type": "object"
+          },
+          "requestedConditions": {
+            "type": "object"
+          },
+          "approvedConditions": {
+            "type": "object"
+          },
+          "allocation": {
+            "nullable": true,
+            "description": "Null while a changed proposal awaits requester acceptance.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AllocationApprovalResponseDto"
+              }
+            ]
+          },
+          "decisionState": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "APPROVED_WITH_CHANGES"
+            ]
+          },
+          "confirmationSource": {
+            "type": "string",
+            "enum": [
+              "REQUESTER_ACCEPTANCE",
+              "SYSTEM_DEADLINE"
+            ],
+            "nullable": true,
+            "description": "Identifies whether a proposal was confirmed explicitly by the requester or automatically at its deadline."
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stageEnteredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Acceptance deadline for a changed proposal."
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "requester",
+          "requestedConditions",
+          "approvedConditions",
+          "allocation",
+          "decisionState",
+          "receivedAt",
+          "stageEnteredAt",
+          "dueAt",
+          "version"
+        ]
+      },
+      "RequestDecisionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requesterSnapshot": {
+            "type": "object"
+          },
+          "requestedConditions": {
+            "type": "object"
+          },
+          "approvedConditions": {
+            "type": "object",
+            "nullable": true
+          },
+          "allocation": {
+            "type": "object",
+            "nullable": true
+          },
+          "resolutionStrategy": {
+            "type": "string",
+            "enum": [
+              "OUTSOURCE",
+              "WAIT_FOR_EMB_RESOURCE",
+              "DEPRIORITIZE_OTHER_DEMANDS"
+            ]
+          },
+          "affectedInitiativeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "decisionState": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stageEnteredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expirationDueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "requesterSnapshot",
+          "requestedConditions",
+          "decisionState",
+          "receivedAt",
+          "stageEnteredAt",
+          "expirationDueAt",
+          "version"
+        ]
+      },
+      "AllocationViewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "person": {
+            "type": "object"
+          },
+          "group": {
+            "type": "object"
+          },
+          "initiative": {
+            "type": "object"
+          },
+          "resourceProfile": {
+            "type": "object"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "weeklyHours": {
+            "type": "number"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "NOT_STARTED",
+              "IN_PROGRESS",
+              "SUSPENDED",
+              "ALLOCATED_WITHOUT_ACTION",
+              "DONE",
+              "CANCELED"
+            ]
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "number"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approvedPeriod": {
+            "type": "object",
+            "example": {
+              "startDate": "2027-01-05",
+              "endDate": "2027-01-19"
+            }
+          },
+          "availableActions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "SUSPEND",
+                "RESERVE",
+                "RESUME",
+                "ACTIVATE",
+                "COMPLETE",
+                "CANCEL"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "person",
+          "group",
+          "initiative",
+          "resourceProfile",
+          "startDate",
+          "endDate",
+          "weeklyHours",
+          "state",
+          "approvedAt",
+          "version",
+          "requestId",
+          "approvedPeriod",
+          "availableActions"
+        ]
+      },
       "ResourceNotificationTargetDto": {
         "type": "object",
         "properties": {
@@ -9216,6 +9715,24 @@
           "etag"
         ]
       },
+      "ResourceNotificationReadAllDto": {
+        "type": "object",
+        "properties": {
+          "cutoffAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Database cutoff captured with the transaction-visible inbox snapshot."
+          },
+          "markedCount": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "cutoffAt",
+          "markedCount"
+        ]
+      },
       "ResourceNotificationPageInfoDto": {
         "type": "object",
         "properties": {
@@ -9250,24 +9767,6 @@
         "required": [
           "items",
           "page"
-        ]
-      },
-      "ResourceNotificationReadAllDto": {
-        "type": "object",
-        "properties": {
-          "cutoffAt": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Database cutoff captured with the transaction-visible inbox snapshot."
-          },
-          "markedCount": {
-            "type": "number",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "cutoffAt",
-          "markedCount"
         ]
       },
       "RequestQueueItemDto": {
@@ -9340,7 +9839,34 @@
             }
           },
           "nextResponsible": {
-            "type": "object"
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "personId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            ]
           },
           "availableActions": {
             "example": [
@@ -9392,59 +9918,6 @@
         "type": "object",
         "properties": {}
       },
-      "RequestChangeReceiptDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "requester": {
-            "type": "object"
-          },
-          "requestedConditions": {
-            "type": "object"
-          },
-          "decisionState": {
-            "type": "string"
-          },
-          "originState": {
-            "type": "string",
-            "nullable": true,
-            "enum": [
-              "WAITING_FOR_PRESENTATION",
-              "PENDING_TEAM_DECISION",
-              "APPROVED_WITH_CHANGES"
-            ]
-          },
-          "receivedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "stageEnteredAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "dueAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "version": {
-            "type": "number",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "id",
-          "requester",
-          "requestedConditions",
-          "decisionState",
-          "receivedAt",
-          "stageEnteredAt",
-          "version"
-        ]
-      },
       "CorrectRequestReferencesDto": {
         "type": "object",
         "properties": {
@@ -9486,30 +9959,6 @@
         },
         "required": [
           "reason"
-        ]
-      },
-      "RemovedRequestReceiptDto": {
-        "type": "object",
-        "properties": {
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "ADMIN_REMOVED"
-            ]
-          },
-          "removedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "requestId",
-          "action",
-          "removedAt"
         ]
       },
       "ResourceRequestResponseDto": {
@@ -9676,54 +10125,6 @@
           "reason"
         ]
       },
-      "ResourceRequestAuditEventResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "WITHDRAWN",
-              "ADMIN_REMOVED",
-              "EXPIRED"
-            ]
-          },
-          "requesterSnapshot": {
-            "type": "object"
-          },
-          "actorSnapshot": {
-            "type": "object"
-          },
-          "requestSnapshot": {
-            "type": "object"
-          },
-          "reason": {
-            "type": "string",
-            "maxLength": 2000
-          },
-          "occurredAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "correlationId": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "id",
-          "action",
-          "requesterSnapshot",
-          "actorSnapshot",
-          "requestSnapshot",
-          "reason",
-          "occurredAt",
-          "correlationId"
-        ]
-      },
       "ResourceRequestAuditResponseDto": {
         "type": "object",
         "properties": {
@@ -9776,72 +10177,6 @@
         },
         "required": [
           "explanation"
-        ]
-      },
-      "RequestDecisionResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "requesterSnapshot": {
-            "type": "object"
-          },
-          "requestedConditions": {
-            "type": "object"
-          },
-          "approvedConditions": {
-            "type": "object",
-            "nullable": true
-          },
-          "allocation": {
-            "type": "object",
-            "nullable": true
-          },
-          "resolutionStrategy": {
-            "type": "string",
-            "enum": [
-              "OUTSOURCE",
-              "WAIT_FOR_EMB_RESOURCE",
-              "DEPRIORITIZE_OTHER_DEMANDS"
-            ]
-          },
-          "affectedInitiativeIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          "decisionState": {
-            "type": "string"
-          },
-          "receivedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "stageEnteredAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "expirationDueAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "version": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "requesterSnapshot",
-          "requestedConditions",
-          "decisionState",
-          "receivedAt",
-          "stageEnteredAt",
-          "expirationDueAt",
-          "version"
         ]
       },
       "ContestRequestDto": {
@@ -10123,232 +10458,9 @@
           "personId"
         ]
       },
-      "AllocationApprovalResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "person": {
-            "type": "object"
-          },
-          "group": {
-            "type": "object"
-          },
-          "initiative": {
-            "type": "object"
-          },
-          "resourceProfile": {
-            "type": "object"
-          },
-          "startDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "endDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "weeklyHours": {
-            "type": "number"
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "NOT_STARTED",
-              "IN_PROGRESS"
-            ]
-          },
-          "approvedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "version": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "person",
-          "group",
-          "initiative",
-          "resourceProfile",
-          "startDate",
-          "endDate",
-          "weeklyHours",
-          "state",
-          "approvedAt",
-          "version"
-        ]
-      },
-      "ApproveRequestResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "requester": {
-            "type": "object"
-          },
-          "requestedConditions": {
-            "type": "object"
-          },
-          "approvedConditions": {
-            "type": "object"
-          },
-          "allocation": {
-            "nullable": true,
-            "description": "Null while a changed proposal awaits requester acceptance.",
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AllocationApprovalResponseDto"
-              }
-            ]
-          },
-          "decisionState": {
-            "type": "string",
-            "enum": [
-              "APPROVED",
-              "APPROVED_WITH_CHANGES"
-            ]
-          },
-          "confirmationSource": {
-            "type": "string",
-            "enum": [
-              "REQUESTER_ACCEPTANCE",
-              "SYSTEM_DEADLINE"
-            ],
-            "nullable": true,
-            "description": "Identifies whether a proposal was confirmed explicitly by the requester or automatically at its deadline."
-          },
-          "receivedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "stageEnteredAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "dueAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "description": "Acceptance deadline for a changed proposal."
-          },
-          "version": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "requester",
-          "requestedConditions",
-          "approvedConditions",
-          "allocation",
-          "decisionState",
-          "receivedAt",
-          "stageEnteredAt",
-          "dueAt",
-          "version"
-        ]
-      },
       "AcceptRequestChangesDto": {
         "type": "object",
         "properties": {}
-      },
-      "AllocationViewDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "person": {
-            "type": "object"
-          },
-          "group": {
-            "type": "object"
-          },
-          "initiative": {
-            "type": "object"
-          },
-          "resourceProfile": {
-            "type": "object"
-          },
-          "startDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "endDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "weeklyHours": {
-            "type": "number"
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "NOT_STARTED",
-              "IN_PROGRESS",
-              "SUSPENDED",
-              "ALLOCATED_WITHOUT_ACTION",
-              "DONE",
-              "CANCELED"
-            ]
-          },
-          "approvedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "version": {
-            "type": "number"
-          },
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "approvedPeriod": {
-            "type": "object",
-            "example": {
-              "startDate": "2027-01-05",
-              "endDate": "2027-01-19"
-            }
-          },
-          "availableActions": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "SUSPEND",
-                "RESERVE",
-                "RESUME",
-                "ACTIVATE",
-                "COMPLETE",
-                "CANCEL"
-              ]
-            }
-          }
-        },
-        "required": [
-          "id",
-          "person",
-          "group",
-          "initiative",
-          "resourceProfile",
-          "startDate",
-          "endDate",
-          "weeklyHours",
-          "state",
-          "approvedAt",
-          "version",
-          "requestId",
-          "approvedPeriod",
-          "availableActions"
-        ]
       },
       "AllocationPageInfoDto": {
         "type": "object",

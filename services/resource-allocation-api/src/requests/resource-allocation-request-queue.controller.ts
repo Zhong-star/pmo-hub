@@ -26,6 +26,7 @@ import {
 } from '@nestjs/swagger';
 import { ProtectedResourceProblems } from '../access/problem-response.decorator';
 import { createValidationPipe, localProfileHeader } from '../access/resource-allocation-problem';
+import { ResourceRequestDecisionState } from '../submissions/submission-category';
 import {
   AdministrativeRequestRemovalDto,
   CorrectRequestReferencesDto,
@@ -68,14 +69,14 @@ export class ResourceAllocationRequestQueueController {
   @Get('request-queues/:queueCode')
   @ApiOperation({ summary: 'List request work visible to the current role and scope' })
   @ApiSecurity('localProfile')
-  @ApiParam({ name: 'queueCode', enum: ['presentation', 'team-decision', 'exceptions', 'revalidation'] })
+  @ApiParam({ name: 'queueCode', enum: ['presentation', 'team-decision', 'requester-response', 'exceptions', 'revalidation'] })
   @ApiOkResponse({ type: RequestQueueCollectionDto, description: 'Scoped cursor-paginated request queue.' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size (default 50, maximum 100).' })
   @ApiQuery({ name: 'cursor', required: false, type: String })
   @ApiQuery({ name: 'groupId', required: false, format: 'uuid' })
   @ApiQuery({ name: 'initiativeId', required: false, format: 'uuid' })
   @ApiQuery({ name: 'resourceProfileId', required: false, format: 'uuid' })
-  @ApiQuery({ name: 'decisionState', required: false, type: String })
+  @ApiQuery({ name: 'decisionState', required: false, enum: Object.values(ResourceRequestDecisionState) })
   @ApiForbiddenResponse({ description: 'The active role is not allowed to view this queue or group.' })
   @ApiResponse({ status: 400, description: 'The queue, filters, page size, or cursor is invalid.' })
   listQueue(

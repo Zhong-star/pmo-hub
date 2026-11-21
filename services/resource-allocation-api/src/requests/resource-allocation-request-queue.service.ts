@@ -16,6 +16,7 @@ import { ResourceRequest } from './resource-request.entity';
 import { ResourceRequestHistory } from './resource-request-history.entity';
 import { removeResourceRequest } from './remove-resource-request';
 import { runIdempotentOperation } from '../administration/idempotency/run-idempotent-operation';
+import { ResourceRequestDecisionState } from '../submissions/submission-category';
 import type {
   AdministrativeRequestRemovalDto,
   CorrectRequestReferencesDto,
@@ -26,7 +27,7 @@ const defaultPageSize = 50;
 const maximumPageSize = 100;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type RequestQueueCode = 'presentation' | 'team-decision' | 'exceptions' | 'revalidation';
+type RequestQueueCode = 'presentation' | 'team-decision' | 'requester-response' | 'exceptions' | 'revalidation';
 
 interface QueueFilters {
   limit?: string;
@@ -61,7 +62,9 @@ interface QueueRow {
   revalidation_decision_stage: string | null;
   received_at: Date;
   stage_entered_at: Date;
+  cursor_stage_entered_at: string;
   due_at: Date | null;
+  cursor_due_at: string | null;
   deadline_passed: boolean;
   approval_date_invalid: boolean;
   next_responsible: Array<{ personId: string; displayName: string; role: string }>;
@@ -93,14 +96,19 @@ export class ResourceAllocationRequestQueueService {
 
   async listQueue(localUserId: string | undefined, queueValue: string, filters: QueueFilters) {
     this.ensureDatabaseAvailable();
-    const queue = this.parseQueueCode(queueValue);
-    const pageSize = this.parsePageSize(filters.limit);
-    const normalizedFilters = this.normalizeFilters(filters);
 
     try {
       const actor = await this.requireActivePerson(this.dataSource.manager, localUserId);
+      const queue = this.parseQueueCode(queueValue);
+      const pageSize = this.parsePageSize(filters.limit);
+      const normalizedFilters = this.normalizeFilters(filters);
       const scope = await this.authorizeQueue(actor, queue, normalizedFilters.groupId);
-      const filterHash = this.hashPayload({ queue, filters: normalizedFilters, groupIds: scope.groupIds });
+      const filterHash = this.hashPayload({
+        queue,
+        filters: normalizedFilters,
+        groupIds: scope.groupIds,
+        requesterId: 'requesterId' in scope ? scope.requesterId : null,
+      });
       const cursor = filters.cursor ? this.decodeCursor(filters.cursor, queue, filterHash) : undefined;
       const decisionStates = Array.isArray(scope.decisionState) ? scope.decisionState : [scope.decisionState];
       const conditions = ['r.removed_at IS NULL', 'r.decision_state = ANY($1::text[])'];
@@ -110,6 +118,9 @@ export class ResourceAllocationRequestQueueService {
         return `$${parameters.length}`;
       };
 
+      if ('requesterId' in scope && scope.requesterId) {
+        conditions.push(`r.requester_id = ${bind(scope.requesterId)}::uuid`);
+      }
       if (scope.groupIds !== null) {
         if (scope.groupIds.length === 0) conditions.push('FALSE');
         else conditions.push(`r.requested_conditions->>'groupId' = ANY(${bind(scope.groupIds)}::text[])`);
@@ -127,8 +138,16 @@ export class ResourceAllocationRequestQueueService {
       if (queue === 'team-decision' || (queue === 'revalidation' && actor.role !== ResourceAllocationRole.Admin)) conditions.push('g.active = TRUE');
 
       if (cursor) {
-        if (queue === 'presentation') {
-          conditions.push(`(r.expiration_due_at, r.stage_entered_at, r.id) > (${bind(cursor.dueAt)}::timestamptz, ${bind(cursor.stageEnteredAt)}::timestamptz, ${bind(cursor.id)}::uuid)`);
+        if (queue === 'presentation' || queue === 'requester-response') {
+          if (cursor.dueAt !== null) {
+            conditions.push(
+              `(queue_deadline.due_at IS NULL OR (queue_deadline.due_at, r.stage_entered_at, r.id) > (${bind(cursor.dueAt)}::timestamptz, ${bind(cursor.stageEnteredAt)}::timestamptz, ${bind(cursor.id)}::uuid))`,
+            );
+          } else {
+            conditions.push(
+              `(queue_deadline.due_at IS NULL AND (r.stage_entered_at, r.id) > (${bind(cursor.stageEnteredAt)}::timestamptz, ${bind(cursor.id)}::uuid))`,
+            );
+          }
         } else {
           conditions.push(`(r.stage_entered_at, r.id) > (${bind(cursor.stageEnteredAt)}::timestamptz, ${bind(cursor.id)}::uuid)`);
         }
@@ -136,10 +155,19 @@ export class ResourceAllocationRequestQueueService {
 
       const limitParameter = bind(pageSize + 1);
       const rows = await this.dataSource.query(
-        `SELECT r.id, r.requester_id, r.requester_snapshot, r.requested_conditions, r.approved_conditions, r.decision_state,
+        `WITH operation_clock AS MATERIALIZED (
+           SELECT clock_timestamp() AS now
+         )
+         SELECT r.id, r.requester_id, r.requester_snapshot, r.requested_conditions, r.approved_conditions, r.decision_state,
                 r.revalidation_origin_state, r.revalidation_decision_stage,
                 r.received_at, r.stage_entered_at,
-                CASE WHEN r.decision_state = 'WAITING_FOR_PRESENTATION' THEN r.expiration_due_at ELSE NULL END AS due_at,
+                to_char(r.stage_entered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_stage_entered_at,
+                queue_deadline.due_at,
+                CASE
+                  WHEN queue_deadline.due_at IS NOT NULL
+                  THEN to_char(queue_deadline.due_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+                  ELSE NULL
+                END AS cursor_due_at,
                 (
                   SELECT history.after_snapshot->>'resolutionStrategy'
                   FROM resource_request_history AS history
@@ -174,12 +202,17 @@ export class ResourceAllocationRequestQueueService {
                   CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND p.active = TRUE AND p.group_id::text <> r.requested_conditions->>'groupId' THEN 'PROFILE_GROUP_MISMATCH' END,
                   CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND r.revalidation_origin_state = 'APPROVED_WITH_CHANGES' AND person.active IS DISTINCT FROM TRUE THEN 'PERSON_INACTIVE' END,
                   CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND r.revalidation_origin_state = 'APPROVED_WITH_CHANGES' AND person.active = TRUE AND person.group_id::text <> r.requested_conditions->>'groupId' THEN 'PERSON_LEFT_GROUP' END,
-                  CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND r.revalidation_origin_state = 'APPROVED_WITH_CHANGES' AND (r.approved_conditions->>'startDate') < (clock_timestamp() AT TIME ZONE 'America/Sao_Paulo')::date::text THEN 'PROPOSED_START_DATE_PASSED' END,
+                  CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND r.revalidation_origin_state = 'APPROVED_WITH_CHANGES' AND (r.approved_conditions->>'startDate') < (operation_clock.now AT TIME ZONE 'America/Sao_Paulo')::date::text THEN 'PROPOSED_START_DATE_PASSED' END,
                   CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND r.revalidation_origin_state = 'APPROVED_WITH_CHANGES' AND (r.approved_conditions->>'endDate') < (r.approved_conditions->>'startDate') THEN 'PROPOSAL_PERIOD_INVALID' END,
                   CASE WHEN r.decision_state = 'REQUIRES_REVALIDATION' AND r.revalidation_origin_state = 'APPROVED_WITH_CHANGES' AND ((r.approved_conditions->>'weeklyHours')::numeric <= 0 OR (r.approved_conditions->>'weeklyHours')::numeric > 40) THEN 'PROPOSAL_HOURS_INVALID' END
                 ], NULL::text) AS exception_impediments,
-                (r.decision_state = 'WAITING_FOR_PRESENTATION' AND r.expiration_due_at < clock_timestamp()) AS deadline_passed,
-                ((r.requested_conditions->>'startDate') < (clock_timestamp() AT TIME ZONE 'America/Sao_Paulo')::date::text) AS approval_date_invalid,
+                CASE
+                  WHEN r.decision_state = 'WAITING_FOR_PRESENTATION' THEN r.expiration_due_at < operation_clock.now
+                  WHEN r.decision_state = 'APPROVED_WITH_CHANGES' THEN (r.decision_response_due_at IS NULL OR operation_clock.now >= r.decision_response_due_at)
+                  WHEN r.decision_state = 'DENIED' THEN operation_clock.now > r.expiration_due_at
+                  ELSE FALSE
+                END AS deadline_passed,
+                ((r.requested_conditions->>'startDate') < (operation_clock.now AT TIME ZONE 'America/Sao_Paulo')::date::text) AS approval_date_invalid,
                 r.version,
                 COALESCE((
                   SELECT jsonb_agg(jsonb_build_object(
@@ -196,13 +229,22 @@ export class ResourceAllocationRequestQueueService {
                   )
                 ), '[]'::jsonb) AS next_responsible
          FROM resource_requests AS r
+         CROSS JOIN operation_clock
+         CROSS JOIN LATERAL (
+           SELECT CASE
+             WHEN r.decision_state = 'WAITING_FOR_PRESENTATION' THEN r.expiration_due_at
+             WHEN r.decision_state = 'APPROVED_WITH_CHANGES' THEN r.decision_response_due_at
+             WHEN r.decision_state = 'DENIED' THEN r.expiration_due_at
+             ELSE NULL
+           END AS due_at
+         ) AS queue_deadline
          LEFT JOIN resource_groups AS g ON g.id::text = r.requested_conditions->>'groupId'
          LEFT JOIN resource_initiatives AS i ON i.id::text = r.requested_conditions->>'initiativeId'
          LEFT JOIN resource_profiles AS p ON p.id::text = COALESCE(r.approved_conditions->>'resourceProfileId', r.requested_conditions->>'resourceProfileId')
          LEFT JOIN resource_people AS person ON person.id::text = r.approved_conditions->>'personId'
          WHERE ${conditions.join(' AND ')}
-         ORDER BY CASE WHEN r.decision_state = 'WAITING_FOR_PRESENTATION' THEN 0 ELSE 1 END ASC,
-                  CASE WHEN r.decision_state = 'WAITING_FOR_PRESENTATION' THEN r.expiration_due_at END ASC NULLS LAST,
+         ORDER BY CASE WHEN queue_deadline.due_at IS NOT NULL THEN 0 ELSE 1 END ASC,
+                  queue_deadline.due_at ASC NULLS LAST,
                   r.stage_entered_at ASC,
                   r.id ASC
          LIMIT ${limitParameter}`,
@@ -216,8 +258,8 @@ export class ResourceAllocationRequestQueueService {
         version: 1,
         queue,
         filterHash,
-        dueAt: last.due_at ? new Date(last.due_at).toISOString() : null,
-        stageEnteredAt: new Date(last.stage_entered_at).toISOString(),
+        dueAt: last.cursor_due_at,
+        stageEnteredAt: last.cursor_stage_entered_at,
         id: last.id,
       }) : null;
 
@@ -486,6 +528,14 @@ export class ResourceAllocationRequestQueueService {
       };
     }
 
+    if (queue === 'requester-response') {
+      return {
+        decisionState: [ResourceRequestDecisionState.ApprovedWithChanges, ResourceRequestDecisionState.Denied],
+        groupIds: null as string[] | null,
+        requesterId: actor.id,
+      };
+    }
+
     let groupIds: string[];
     switch (actor.role) {
       case ResourceAllocationRole.Moderator:
@@ -544,6 +594,13 @@ export class ResourceAllocationRequestQueueService {
       }
       return [];
     })();
+    const requesterResponseActions = row.deadline_passed
+      ? []
+      : row.decision_state === ResourceRequestDecisionState.ApprovedWithChanges
+        ? ['ACCEPT', 'CONTEST']
+        : row.decision_state === ResourceRequestDecisionState.Denied
+          ? ['CONTEST', 'CANCEL']
+          : [];
     return {
       id: row.id,
       requester: row.requester_snapshot,
@@ -559,11 +616,19 @@ export class ResourceAllocationRequestQueueService {
       dueAt: row.due_at ? new Date(row.due_at).toISOString() : null,
       impediments: queue === 'exceptions' || queue === 'revalidation'
         ? row.exception_impediments ?? []
-        : row.deadline_passed ? ['PRESENTATION_DEADLINE_PASSED'] : [],
-      nextResponsible: queue === 'team-decision' || queue === 'revalidation' && row.revalidation_origin_state === 'APPROVED_WITH_CHANGES' && row.revalidation_decision_stage === 'PENDING_TEAM_DECISION'
-        ? row.next_responsible
-        : { role: 'ALLOCATION_ADMIN' },
-      availableActions: queue === 'revalidation'
+        : queue === 'requester-response'
+          ? row.deadline_passed
+            ? [row.decision_state === ResourceRequestDecisionState.ApprovedWithChanges ? 'PROPOSAL_RESPONSE_EXPIRED' : 'DENIAL_RESPONSE_EXPIRED']
+            : []
+          : row.deadline_passed ? ['PRESENTATION_DEADLINE_PASSED'] : [],
+      nextResponsible: queue === 'requester-response'
+        ? [{ personId: actor.id, displayName: actor.displayName, role: actor.role }]
+        : queue === 'team-decision' || queue === 'revalidation' && row.revalidation_origin_state === 'APPROVED_WITH_CHANGES' && row.revalidation_decision_stage === 'PENDING_TEAM_DECISION'
+          ? row.next_responsible
+          : { role: 'ALLOCATION_ADMIN' },
+      availableActions: queue === 'requester-response'
+        ? requesterResponseActions
+        : queue === 'revalidation'
         ? revalidationActions
         : queue === 'exceptions'
         ? [...(row.exception_impediments?.length ? ['REFERENCE_CORRECTION'] : []), ...(!isRequester
@@ -765,8 +830,14 @@ export class ResourceAllocationRequestQueueService {
   }
 
   private parseQueueCode(value: string): RequestQueueCode {
-    if (value === 'presentation' || value === 'team-decision' || value === 'exceptions' || value === 'revalidation') return value;
-    throw this.validationError('queueCode must be presentation, team-decision, exceptions, or revalidation.');
+    if (
+      value === 'presentation' ||
+      value === 'team-decision' ||
+      value === 'requester-response' ||
+      value === 'exceptions' ||
+      value === 'revalidation'
+    ) return value;
+    throw this.validationError('queueCode must be presentation, team-decision, requester-response, exceptions, or revalidation.');
   }
 
   private parsePageSize(value: string | undefined): number {
@@ -783,11 +854,15 @@ export class ResourceAllocationRequestQueueService {
     resourceProfileId: string | undefined;
     decisionState: string | undefined;
   } {
+    const decisionState = this.normalizeOptionalString(filters.decisionState, 'decisionState', 40);
+    if (decisionState !== undefined && !Object.values(ResourceRequestDecisionState).includes(decisionState as ResourceRequestDecisionState)) {
+      throw this.validationError('decisionState must be a valid request decision state.');
+    }
     return {
       groupId: this.normalizeOptionalUuid(filters.groupId, 'groupId'),
       initiativeId: this.normalizeOptionalUuid(filters.initiativeId, 'initiativeId'),
       resourceProfileId: this.normalizeOptionalUuid(filters.resourceProfileId, 'resourceProfileId'),
-      decisionState: this.normalizeOptionalString(filters.decisionState, 'decisionState', 40),
+      decisionState,
     };
   }
 
@@ -807,9 +882,12 @@ export class ResourceAllocationRequestQueueService {
   private decodeCursor(value: string, queue: RequestQueueCode, filterHash: string): QueueCursor {
     try {
       const cursor = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as QueueCursor;
+      const requiresDueAt = queue === 'presentation';
+      const allowsDueAt = queue === 'presentation' || queue === 'requester-response';
       if (cursor.version !== 1 || cursor.queue !== queue || cursor.filterHash !== filterHash ||
         !uuidPattern.test(cursor.id) || !cursor.stageEnteredAt || Number.isNaN(Date.parse(cursor.stageEnteredAt)) ||
-        (queue === 'presentation' && (!cursor.dueAt || Number.isNaN(Date.parse(cursor.dueAt))))) {
+        (requiresDueAt && (!cursor.dueAt || Number.isNaN(Date.parse(cursor.dueAt)))) ||
+        (allowsDueAt && cursor.dueAt !== null && Number.isNaN(Date.parse(cursor.dueAt)))) {
         throw new Error('Invalid cursor.');
       }
       return cursor;

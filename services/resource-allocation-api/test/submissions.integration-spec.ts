@@ -426,4 +426,469 @@ describe('Tech Resource Allocation submissions (#60)', () => {
     expect(await dataSource!.query('SELECT id FROM resource_request_history')).toHaveLength(1);
     expect(await dataSource!.query('SELECT id FROM resource_allocation_notifications')).toHaveLength(1);
   });
+
+  it('recovers administrative and submission envelope operation receipts by attemptKey with actor isolation, current authorization, and no ETag', async () => {
+    const fixture = await setup();
+    const people = dataSource!.getRepository(ResourcePerson);
+    const secondAdmin = await people.save(people.create({
+      localUserId: 'second-op-admin', displayName: 'Second Admin', email: 'second-op-admin@example.test',
+      role: ResourceAllocationRole.Admin, active: true, coveredGroupIds: [], groupId: null,
+    }));
+
+    const initiativeKey = randomUUID();
+    const createdInitiative = await request(app!.getHttpServer())
+      .post('/api/resource-allocation/v1/admin/initiatives')
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('Idempotency-Key', initiativeKey)
+      .send({ code: 'ITDM-OP-1', name: 'Operation Receipt Initiative' })
+      .expect(201);
+
+    // Update initiative so its live version advances to 2; operation-results must NOT emit stale ETag "1".
+    await request(app!.getHttpServer())
+      .patch(`/api/resource-allocation/v1/admin/initiatives/${createdInitiative.body.id}`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Content-Type', 'application/merge-patch+json')
+      .send({ name: 'Renamed Receipt Initiative' })
+      .expect(200);
+
+    const recoveredInitiative = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${initiativeKey}?operation=admin.createInitiative`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(recoveredInitiative.headers.etag).toBeUndefined();
+    expect(recoveredInitiative.body).toEqual(createdInitiative.body);
+
+    const personKey = randomUUID();
+    const createdPerson = await request(app!.getHttpServer())
+      .post('/api/resource-allocation/v1/admin/people')
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('Idempotency-Key', personKey)
+      .send({
+        localUserId: 'op-created-person',
+        displayName: 'Op Created Person',
+        email: 'op-created@example.test',
+        role: ResourceAllocationRole.User,
+        groupId: fixture.group.id,
+      })
+      .expect(201);
+    const recoveredPerson = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${personKey}?operation=admin.createPerson`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(recoveredPerson.headers.etag).toBeUndefined();
+    expect(recoveredPerson.body).toEqual(createdPerson.body);
+
+    const groupKey = randomUUID();
+    const createdGroup = await request(app!.getHttpServer())
+      .post('/api/resource-allocation/v1/admin/groups')
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('Idempotency-Key', groupKey)
+      .send({ name: 'Receipt Group', active: false })
+      .expect(201);
+    const recoveredGroup = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${groupKey}?operation=admin.createGroup`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(recoveredGroup.headers.etag).toBeUndefined();
+    expect(recoveredGroup.body).toEqual(createdGroup.body);
+
+    const profileKey = randomUUID();
+    const createdProfile = await request(app!.getHttpServer())
+      .post('/api/resource-allocation/v1/admin/resource-profiles')
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('Idempotency-Key', profileKey)
+      .send({ name: 'Receipt Profile', groupId: fixture.group.id })
+      .expect(201);
+    const recoveredProfile = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${profileKey}?operation=admin.createResourceProfile`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(recoveredProfile.headers.etag).toBeUndefined();
+    expect(recoveredProfile.body).toEqual(createdProfile.body);
+
+    // Submission envelope idempotency key is also recoverable under submission.create.
+    const submissionEnvelopeKey = randomUUID();
+    const submissionPayload = bodyFor(fixture, 12);
+    const acceptedSubmission = await request(app!.getHttpServer())
+      .post('/api/resource-allocation/v1/submissions')
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('Idempotency-Key', submissionEnvelopeKey)
+      .send(submissionPayload)
+      .expect(202);
+    const recoveredEnvelope = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${submissionEnvelopeKey}?operation=submission.create`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(200);
+    expect(recoveredEnvelope.headers.etag).toBeUndefined();
+    expect(recoveredEnvelope.body).toEqual(acceptedSubmission.body);
+
+    // Actor isolation: another user or another Admin gets 404 (cannot inspect another actor's attemptKey).
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${initiativeKey}?operation=admin.createInitiative`)
+      .set('X-PMO-Local-User-ID', secondAdmin.localUserId)
+      .expect(404);
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${initiativeKey}?operation=admin.createInitiative`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(404);
+
+    // Unauthenticated & invalid operation checks.
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${initiativeKey}?operation=admin.createInitiative`)
+      .expect('WWW-Authenticate', /LocalProfile/)
+      .expect(401);
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${initiativeKey}?operation=unsupported.op`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(400);
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${initiativeKey}`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(400);
+
+    // Current authorization constraint: demoted Admin loses access to admin.* receipt (403).
+    await people.update(fixture.admin.id, { role: ResourceAllocationRole.User });
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${initiativeKey}?operation=admin.createInitiative`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(403);
+
+    // Deactivated actor loses access (403).
+    await people.update(fixture.requester.id, { active: false });
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${submissionEnvelopeKey}?operation=submission.create`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(403);
+  });
+
+  it('recovers request, decision, allocation, and notification operation receipts with current scope checks and zero re-execution', async () => {
+    const fixture = await setup();
+    const people = dataSource!.getRepository(ResourcePerson);
+    const groups = dataSource!.getRepository(ResourceGroup);
+    const secondGroup = await groups.save(groups.create({
+      name: 'Secondary Group', active: true, supervisorId: fixture.admin.id, managerId: fixture.admin.id,
+    }));
+    const moderator = await people.save(people.create({
+      localUserId: 'op-moderator', displayName: 'Op Moderator', email: 'op-mod@example.test',
+      role: ResourceAllocationRole.Moderator, active: true, coveredGroupIds: [], groupId: fixture.group.id,
+    }));
+    const supervisor = await people.save(people.create({
+      localUserId: 'op-supervisor', displayName: 'Op Supervisor', email: 'op-sup@example.test',
+      role: ResourceAllocationRole.Supervisor, active: true, coveredGroupIds: [fixture.group.id], groupId: null,
+    }));
+    await groups.update(fixture.group.id, { supervisorId: supervisor.id });
+
+    const submitAndProcess = async (requester: ResourcePerson, startOffset = 0, endOffset = 14) => {
+      const sub = await request(app!.getHttpServer())
+        .post('/api/resource-allocation/v1/submissions')
+        .set('X-PMO-Local-User-ID', requester.localUserId)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          initiativeId: fixture.initiative.id,
+          category: 'EXECUTION_PROJECT',
+          lines: [{
+            attemptKey: randomUUID(),
+            groupId: fixture.group.id,
+            resourceProfileId: fixture.profile.id,
+            startDate: futureDate(startOffset),
+            endDate: futureDate(endOffset),
+            weeklyHours: 20,
+          }],
+        })
+        .expect(202);
+      expect(await app!.get(ResourceAllocationSubmissionWorker).processBatch(1)).toBe(1);
+      const lines = await request(app!.getHttpServer())
+        .get(`/api/resource-allocation/v1/submissions/${sub.body.id}/lines`)
+        .set('X-PMO-Local-User-ID', requester.localUserId)
+        .expect(200);
+      return lines.body.items[0].requestId as string;
+    };
+
+    const assertReceipt = async (actor: ResourcePerson, key: string, operation: string, expectedBody: unknown) => {
+      const res = await request(app!.getHttpServer())
+        .get(`/api/resource-allocation/v1/operation-results/${key}?operation=${encodeURIComponent(operation)}`)
+        .set('X-PMO-Local-User-ID', actor.localUserId)
+        .expect(200);
+      expect(res.headers.etag).toBeUndefined();
+      expect(res.body).toEqual(expectedBody);
+    };
+
+    // 1. withdraw
+    const withdrawReqId = await submitAndProcess(fixture.requester);
+    const withdrawKey = randomUUID();
+    const withdrawn = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${withdrawReqId}/withdrawals`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', withdrawKey)
+      .send({ reason: 'No longer needed.' })
+      .expect(200);
+    await assertReceipt(fixture.requester, withdrawKey, 'request.withdraw', withdrawn.body);
+
+    // 2. administrativeRemoval
+    const adminRemoveReqId = await submitAndProcess(fixture.requester);
+    const adminRemoveKey = randomUUID();
+    const adminRemoved = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${adminRemoveReqId}/administrative-removals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', adminRemoveKey)
+      .send({ reason: 'Duplicate request.' })
+      .expect(200);
+    await assertReceipt(fixture.admin, adminRemoveKey, 'request.administrativeRemoval', adminRemoved.body);
+
+    // 3. correctReferences -> refer -> approve (with changes) -> acceptChanges -> allocation.*
+    const flowReqId = await submitAndProcess(fixture.requester, 0, 14);
+    const correctKey = randomUUID();
+    const corrected = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${flowReqId}/reference-corrections`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', correctKey)
+      .send({ groupId: fixture.group.id, resourceProfileId: fixture.profile.id, reason: 'Confirm references.' })
+      .expect(200);
+    await assertReceipt(fixture.admin, correctKey, 'request.correctReferences', corrected.body);
+
+    const referKey = randomUUID();
+    const referred = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${flowReqId}/referrals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', `"${corrected.body.version}"`)
+      .set('Idempotency-Key', referKey)
+      .send({})
+      .expect(200);
+    await assertReceipt(fixture.admin, referKey, 'request.refer', referred.body);
+
+    const approveKey = randomUUID();
+    const approvedProposal = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${flowReqId}/approvals`)
+      .set('X-PMO-Local-User-ID', moderator.localUserId)
+      .set('If-Match', `"${referred.body.version}"`)
+      .set('Idempotency-Key', approveKey)
+      .send({
+        personId: moderator.id,
+        startDate: futureDate(5),
+        endDate: futureDate(20),
+        weeklyHours: 16,
+        explanation: 'Shifted start date by 5 days.',
+      })
+      .expect(200);
+    await assertReceipt(moderator, approveKey, 'request.approve', approvedProposal.body);
+
+    // Scope loss blocks request.approve receipt; restoring scope restores access without mutating request.
+    await people.update(moderator.id, { groupId: secondGroup.id });
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${approveKey}?operation=request.approve`)
+      .set('X-PMO-Local-User-ID', moderator.localUserId)
+      .expect(403);
+    await people.update(moderator.id, { groupId: fixture.group.id });
+
+    const acceptKey = randomUUID();
+    const accepted = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${flowReqId}/acceptances`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('If-Match', `"${approvedProposal.body.version}"`)
+      .set('Idempotency-Key', acceptKey)
+      .send({})
+      .expect(200);
+    await assertReceipt(fixture.requester, acceptKey, 'request.acceptChanges', accepted.body);
+
+    // 4. deny -> contestDenial -> exception.recordStrategy -> exception.escalate -> exception.cancel
+    const deniedReqId = await submitAndProcess(fixture.requester);
+    const referDenied = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${deniedReqId}/referrals`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({})
+      .expect(200);
+    const denyKey = randomUUID();
+    const denied = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${deniedReqId}/denials`)
+      .set('X-PMO-Local-User-ID', moderator.localUserId)
+      .set('If-Match', `"${referDenied.body.version}"`)
+      .set('Idempotency-Key', denyKey)
+      .send({ explanation: 'No capacity in requested window.' })
+      .expect(200);
+    await assertReceipt(moderator, denyKey, 'request.deny', denied.body);
+
+    // Scope loss blocks request.deny receipt.
+    await people.update(moderator.id, { groupId: null });
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${denyKey}?operation=request.deny`)
+      .set('X-PMO-Local-User-ID', moderator.localUserId)
+      .expect(403);
+    await people.update(moderator.id, { groupId: fixture.group.id });
+
+    const contestKey = randomUUID();
+    const contested = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${deniedReqId}/contests`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('If-Match', `"${denied.body.version}"`)
+      .set('Idempotency-Key', contestKey)
+      .send({ explanation: 'Critical delivery milestone.' })
+      .expect(200);
+    await assertReceipt(fixture.requester, contestKey, 'request.contestDenial', contested.body);
+
+    const strategyKey = randomUUID();
+    const strategyRecorded = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${deniedReqId}/strategies`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', `"${contested.body.version}"`)
+      .set('Idempotency-Key', strategyKey)
+      .send({ strategy: 'OUTSOURCE', reason: 'Evaluating supplier.' })
+      .expect(200);
+    await assertReceipt(fixture.admin, strategyKey, 'request.exception.recordStrategy', strategyRecorded.body);
+
+    const escalateKey = randomUUID();
+    const escalated = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${deniedReqId}/escalations`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', `"${strategyRecorded.body.version}"`)
+      .set('Idempotency-Key', escalateKey)
+      .send({ reason: 'Requires escalation review.' })
+      .expect(200);
+    await assertReceipt(fixture.admin, escalateKey, 'request.exception.escalate', escalated.body);
+
+    const exceptionCancelKey = randomUUID();
+    const exceptionCancelled = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${deniedReqId}/cancellations`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', `"${escalated.body.version}"`)
+      .set('Idempotency-Key', exceptionCancelKey)
+      .send({ reason: 'Sponsor reprioritized.' })
+      .expect(200);
+    await assertReceipt(fixture.admin, exceptionCancelKey, 'request.exception.cancel', exceptionCancelled.body);
+
+    // 5. deny -> cancelDenied & another contested -> exception.resolve
+    const cancelDeniedReqId = await submitAndProcess(fixture.requester);
+    const deniedForCancel = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${cancelDeniedReqId}/denials`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ explanation: 'Denied during presentation.' })
+      .expect(200);
+    const cancelDeniedKey = randomUUID();
+    const cancelledByRequester = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${cancelDeniedReqId}/cancellations`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('If-Match', `"${deniedForCancel.body.version}"`)
+      .set('Idempotency-Key', cancelDeniedKey)
+      .send({ reason: 'Acknowledged denial.' })
+      .expect(200);
+    await assertReceipt(fixture.requester, cancelDeniedKey, 'request.cancelDenied', cancelledByRequester.body);
+
+    const resolveReqId = await submitAndProcess(fixture.requester);
+    const deniedForResolve = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resolveReqId}/denials`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ explanation: 'Denied initially.' })
+      .expect(200);
+    const contestedForResolve = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resolveReqId}/contests`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('If-Match', `"${deniedForResolve.body.version}"`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ explanation: 'Need exception approval.' })
+      .expect(200);
+    const resolveKey = randomUUID();
+    const resolved = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${resolveReqId}/resolutions`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', `"${contestedForResolve.body.version}"`)
+      .set('Idempotency-Key', resolveKey)
+      .send({
+        strategy: 'OUTSOURCE',
+        reason: 'Approved via external contractor.',
+        personId: moderator.id,
+        resourceProfileId: fixture.profile.id,
+        startDate: futureDate(0),
+        endDate: futureDate(14),
+        weeklyHours: 20,
+      })
+      .expect(200);
+    await assertReceipt(fixture.admin, resolveKey, 'request.exception.resolve', resolved.body);
+
+    // 6. All 6 allocation commands + scope re-verification without mutating history
+    const allocId = resolved.body.allocation.id as string;
+    const allocPath = `/api/resource-allocation/v1/allocations/${allocId}`;
+    const runAllocCmd = async (actor: ResourcePerson, command: string, version: number) => {
+      const key = randomUUID();
+      const res = await request(app!.getHttpServer())
+        .post(`${allocPath}/${command}`)
+        .set('X-PMO-Local-User-ID', actor.localUserId)
+        .set('If-Match', `"${version}"`)
+        .set('Idempotency-Key', key)
+        .send({ reason: `Executing ${command}.` })
+        .expect(200);
+      return { key, body: res.body };
+    };
+    const suspend = await runAllocCmd(supervisor, 'suspensions', 1);
+    const reserve = await runAllocCmd(supervisor, 'reservations', suspend.body.version);
+    const activate = await runAllocCmd(supervisor, 'activations', reserve.body.version);
+    const suspend2 = await runAllocCmd(supervisor, 'suspensions', activate.body.version);
+    const resume = await runAllocCmd(supervisor, 'resumptions', suspend2.body.version);
+    const complete = await runAllocCmd(moderator, 'completions', resume.body.version);
+
+    await assertReceipt(supervisor, suspend.key, 'allocation.suspend', suspend.body);
+    await assertReceipt(supervisor, reserve.key, 'allocation.reserve', reserve.body);
+    await assertReceipt(supervisor, activate.key, 'allocation.activate', activate.body);
+    await assertReceipt(supervisor, resume.key, 'allocation.resume', resume.body);
+    await assertReceipt(moderator, complete.key, 'allocation.complete', complete.body);
+
+    // Second allocation for allocation.cancel
+    const cancelAllocId = accepted.body.allocation.id as string;
+    const cancelKey = randomUUID();
+    const canceledAlloc = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/allocations/${cancelAllocId}/cancellations`)
+      .set('X-PMO-Local-User-ID', supervisor.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', cancelKey)
+      .send({ reason: 'Cancelled before start.' })
+      .expect(200);
+    await assertReceipt(supervisor, cancelKey, 'allocation.cancel', canceledAlloc.body);
+
+    // Supervisor loses group scope (and group reference) -> 403 on allocation receipt; allocated person keeps access.
+    await groups.update(fixture.group.id, { supervisorId: fixture.admin.id });
+    await people.update(supervisor.id, { coveredGroupIds: [] });
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${suspend.key}?operation=allocation.suspend`)
+      .set('X-PMO-Local-User-ID', supervisor.localUserId)
+      .expect(403);
+    // Allocated person (moderator) still sees their own allocation receipt even if moved to another group.
+    await people.update(moderator.id, { groupId: secondGroup.id, role: ResourceAllocationRole.User });
+    await assertReceipt(moderator, complete.key, 'allocation.complete', complete.body);
+    expect(await dataSource!.query('SELECT id FROM resource_allocation_history WHERE allocation_id = $1', [allocId])).toHaveLength(6);
+
+    // 7. Notifications mark-one-read & mark-all-read
+    const inbox = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/notifications')
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(200);
+    expect(inbox.body.items.length).toBeGreaterThanOrEqual(2);
+    const markOneKey = randomUUID();
+    const markedOne = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/notifications/${inbox.body.items[0].id}/readings`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('If-Match', inbox.body.items[0].etag)
+      .set('Idempotency-Key', markOneKey)
+      .expect(200);
+    await assertReceipt(fixture.requester, markOneKey, 'notifications.mark-one-read', markedOne.body);
+
+    const markAllKey = randomUUID();
+    const markedAll = await request(app!.getHttpServer())
+      .post('/api/resource-allocation/v1/notification-readings')
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .set('Idempotency-Key', markAllKey)
+      .expect(200);
+    await assertReceipt(fixture.requester, markAllKey, 'notifications.mark-all-read', markedAll.body);
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/operation-results/${markAllKey}?operation=notifications.mark-all-read`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(404);
+  });
 });

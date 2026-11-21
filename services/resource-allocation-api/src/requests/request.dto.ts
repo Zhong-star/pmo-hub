@@ -120,6 +120,7 @@ export class ResourceRequestCollectionResponseDto {
 
 export class ResourceRequestAuditEventResponseDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) requestId!: string;
   @ApiProperty({ enum: ['WITHDRAWN', 'ADMIN_REMOVED', 'EXPIRED'] }) action!: string;
   @ApiProperty({ type: Object }) requesterSnapshot!: Record<string, unknown>;
   @ApiProperty({ type: Object }) actorSnapshot!: Record<string, unknown>;

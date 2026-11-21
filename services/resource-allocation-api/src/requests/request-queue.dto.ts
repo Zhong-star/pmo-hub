@@ -41,7 +41,22 @@ export class RequestQueueItemDto {
   @ApiProperty({ type: [String], example: [] })
   impediments!: string[];
 
-  @ApiProperty({ type: Object })
+  @ApiProperty({
+    oneOf: [
+      { type: 'object', properties: { role: { type: 'string' } } },
+      {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            personId: { type: 'string', format: 'uuid' },
+            displayName: { type: 'string' },
+            role: { type: 'string' },
+          },
+        },
+      },
+    ],
+  })
   nextResponsible!: Record<string, unknown> | Array<Record<string, unknown>>;
 
   @ApiProperty({ type: [String], example: ['REFER', 'ADMINISTRATIVE_REMOVE'] })

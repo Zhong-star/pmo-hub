@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiAcceptedResponse,
+  ApiExtraModels,
   ApiForbiddenResponse,
   ApiHeader,
   ApiNotFoundResponse,
@@ -23,9 +24,26 @@ import {
   ApiResponse,
   ApiSecurity,
   ApiTags,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { ProtectedResourceProblems } from '../access/problem-response.decorator';
 import { createValidationPipe, localProfileHeader } from '../access/resource-allocation-problem';
+import {
+  ResourceAllocationOperationResultService,
+  supportedIdempotentOperations,
+} from '../administration/idempotency/resource-allocation-operation-result.service';
+import {
+  ResourceGroupResponseDto,
+  ResourcePersonResponseDto,
+  ResourceProfileResponseDto,
+} from '../administration/resource-administration.dto';
+import { AllocationViewDto } from '../allocations/allocation.dto';
+import { ApproveRequestResponseDto } from '../approvals/approve-request.dto';
+import { RequestDecisionResponseDto } from '../decisions/request-decision.dto';
+import { ResourceInitiativeResponseDto } from '../initiatives/initiative-request.dto';
+import { ResourceNotificationDto, ResourceNotificationReadAllDto } from '../notifications/resource-allocation-notification.dto';
+import { RemovedRequestReceiptDto, RequestChangeReceiptDto } from '../requests/request-queue.dto';
+import { ResourceRequestAuditEventResponseDto } from '../requests/request.dto';
 import { ResourceAllocationSubmissionService } from './resource-allocation-submission.service';
 import {
   CreateResourceSubmissionRequestDto,
@@ -121,28 +139,51 @@ export class ResourceAllocationSubmissionController {
   }
 }
 
+const operationResultResponseDtos = [
+  ResourceSubmissionLineResponseDto,
+  ResourceSubmissionResponseDto,
+  ResourcePersonResponseDto,
+  ResourceGroupResponseDto,
+  ResourceProfileResponseDto,
+  ResourceInitiativeResponseDto,
+  ResourceRequestAuditEventResponseDto,
+  RequestChangeReceiptDto,
+  RemovedRequestReceiptDto,
+  ApproveRequestResponseDto,
+  RequestDecisionResponseDto,
+  AllocationViewDto,
+  ResourceNotificationDto,
+  ResourceNotificationReadAllDto,
+] as const;
+
 @ApiTags('Tech Resource Allocation operation results')
 @ProtectedResourceProblems()
+@ApiExtraModels(...operationResultResponseDtos)
 @Controller('operation-results')
 export class ResourceAllocationOperationResultController {
   constructor(
-    @Inject(ResourceAllocationSubmissionService)
-    private readonly submissionService: ResourceAllocationSubmissionService,
+    @Inject(ResourceAllocationOperationResultService)
+    private readonly operationResultService: ResourceAllocationOperationResultService,
   ) {}
 
   @Get(':attemptKey')
-  @ApiOperation({ summary: 'Recover a result by its original line attempt key' })
+  @ApiOperation({ summary: 'Recover an authorized operation receipt by its original attempt or idempotency key' })
   @ApiSecurity('localProfile')
-  @ApiOkResponse({ type: ResourceSubmissionLineResponseDto })
-  @ApiQuery({ name: 'operation', required: true, enum: ['submission.create'] })
-  @ApiForbiddenResponse({ description: 'An active Resource Allocation person record is required.' })
+  @ApiOkResponse({
+    description: 'The stored result for the owning active actor without re-executing mutations or emitting a current ETag header.',
+    schema: {
+      oneOf: operationResultResponseDtos.map((dto) => ({ $ref: getSchemaPath(dto) })),
+    },
+  })
+  @ApiQuery({ name: 'operation', required: true, enum: [...supportedIdempotentOperations] })
+  @ApiForbiddenResponse({ description: 'An active profile with current access to this operation result is required.' })
   @ApiNotFoundResponse({ description: 'No result exists for this user and operation.' })
-  @ApiResponse({ status: 400, description: 'The original operation identifier is required.' })
+  @ApiResponse({ status: 400, description: 'The attempt key or operation identifier is invalid.' })
   get(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Param('attemptKey', new ParseUUIDPipe()) attemptKey: string,
     @Query('operation') operation?: string,
   ) {
-    return this.submissionService.getOperationResult(localUserId, attemptKey, operation);
+    return this.operationResultService.getOperationResult(localUserId, attemptKey, operation);
   }
 }

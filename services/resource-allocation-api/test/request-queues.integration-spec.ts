@@ -161,6 +161,7 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
       receivedAt,
       stageEnteredAt,
       expirationDueAt: new Date(receivedAt.getTime() + 21 * 86_400_000),
+      decisionResponseDueAt: options.state === 'APPROVED_WITH_CHANGES' ? new Date(now + 3 * 86_400_000) : null,
       removedAt: null,
     }));
     await lines.update(line.id, {
@@ -549,5 +550,275 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
     expect(unexpectedReferralField.body.errors).toEqual([
       { path: 'unexpectedField', code: 'WHITELIST_VALIDATION', message: expect.any(String) },
     ]);
+  });
+
+  it('exposes requester-response queue scoped to active own APPROVED_WITH_CHANGES and DENIED requests with accurate dueAt, nextResponsible, and availableActions', async () => {
+    const fixture = await setup();
+    const path = '/api/resource-allocation/v1/request-queues/requester-response';
+
+    // Unauthenticated -> 401 with WWW-Authenticate
+    await request(app!.getHttpServer())
+      .get(path)
+      .expect('WWW-Authenticate', /LocalProfile/)
+      .expect(401);
+
+    // Requests in APPROVED_WITH_CHANGES and DENIED created through real HTTP decisions
+    const proposalReq = await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'PENDING_TEAM_DECISION' });
+    const approvedWithChanges = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${proposalReq.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.moderatorA.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        personId: fixture.moderatorA.id,
+        startDate: '2027-02-01',
+        endDate: '2027-02-19',
+        weeklyHours: 16,
+        explanation: 'Shifted dates for team capacity.',
+      })
+      .expect(200);
+
+    const deniedReq = await createRequest(fixture.requesterA, fixture.groupB, fixture.profileB, fixture.initiative, { state: 'PENDING_TEAM_DECISION' });
+    const denied = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${deniedReq.id}/denials`)
+      .set('X-PMO-Local-User-ID', fixture.moderatorB.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ explanation: 'No capacity in group B.' })
+      .expect(200);
+
+    // Other requests belonging to requesterA that must NOT appear in requester-response
+    await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'WAITING_FOR_PRESENTATION' });
+    await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'PENDING_TEAM_DECISION' });
+    await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'PRE_N3' });
+    await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'ESCALATION' });
+    await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'REQUIRES_REVALIDATION' });
+    await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'APPROVED' });
+    await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'CANCELLED' });
+
+    // Soft-removed request owned by requesterA must be excluded
+    const softRemoved = await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'DENIED' });
+    await dataSource!.getRepository(ResourceRequest).update(softRemoved.id, { removedAt: new Date() });
+
+    // Another requester's DENIED / APPROVED_WITH_CHANGES requests must NOT leak (even to an Admin!)
+    const otherDenied = await createRequest(fixture.requesterB, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'PENDING_TEAM_DECISION' });
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${otherDenied.id}/denials`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ explanation: 'Denied requester B.' })
+      .expect(200);
+
+    // Admin owns their own denied request -> Admin sees only their own in requester-response
+    const adminOwnReq = await createRequest(fixture.admin, fixture.groupB, fixture.profileB, fixture.initiative, { state: 'PENDING_TEAM_DECISION' });
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${adminOwnReq.id}/denials`)
+      .set('X-PMO-Local-User-ID', fixture.moderatorB.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({ explanation: 'Denied admin own request.' })
+      .expect(200);
+
+    const requesterResponse = await request(app!.getHttpServer())
+      .get(path)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(200);
+
+    expect(requesterResponse.body.items).toHaveLength(2);
+    expect(requesterResponse.body.items[0]).toMatchObject({
+      id: proposalReq.id,
+      decisionState: 'APPROVED_WITH_CHANGES',
+      dueAt: approvedWithChanges.body.dueAt,
+      approvedConditions: expect.objectContaining({ weeklyHours: 16 }),
+      nextResponsible: [{
+        personId: fixture.requesterA.id,
+        displayName: fixture.requesterA.displayName,
+        role: fixture.requesterA.role,
+      }],
+      availableActions: ['ACCEPT', 'CONTEST'],
+    });
+    expect(requesterResponse.body.items[1]).toMatchObject({
+      id: deniedReq.id,
+      decisionState: 'DENIED',
+      dueAt: denied.body.expirationDueAt,
+      nextResponsible: [{
+        personId: fixture.requesterA.id,
+        displayName: fixture.requesterA.displayName,
+        role: fixture.requesterA.role,
+      }],
+      availableActions: ['CONTEST', 'CANCEL'],
+    });
+
+    const adminQueue = await request(app!.getHttpServer())
+      .get(path)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(adminQueue.body.items.map((item: { id: string }) => item.id)).toEqual([adminOwnReq.id]);
+
+    // When deadlines have elapsed (before worker runs), availableActions become [] consistently with command endpoints
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET decision_response_due_at = clock_timestamp() - INTERVAL '1 second'
+      WHERE id = $1
+    `, [proposalReq.id]);
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET expiration_due_at = clock_timestamp() - INTERVAL '1 second'
+      WHERE id = $1
+    `, [deniedReq.id]);
+
+    const expiredResponse = await request(app!.getHttpServer())
+      .get(path)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(200);
+    const expiredProposalItem = expiredResponse.body.items.find((item: { id: string }) => item.id === proposalReq.id);
+    const expiredDeniedItem = expiredResponse.body.items.find((item: { id: string }) => item.id === deniedReq.id);
+    expect(expiredProposalItem.availableActions).toEqual([]);
+    expect(expiredDeniedItem.availableActions).toEqual([]);
+
+    // Confirm command endpoints also reject expired contest / cancel
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${proposalReq.id}/contests`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .set('If-Match', `"${approvedWithChanges.body.version}"`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ explanation: 'Too late.' })
+      .expect(422);
+    await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${deniedReq.id}/cancellations`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .set('If-Match', `"${denied.body.version}"`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ reason: 'Too late.' })
+      .expect(422);
+
+    // Inactive user -> 403
+    await dataSource!.getRepository(ResourcePerson).update(fixture.requesterA.id, { active: false });
+    await request(app!.getHttpServer())
+      .get(path)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(403);
+  });
+
+  it('orders requester-response deterministically by nearest deadline, stageEnteredAt, and id, with filter-bound cursor pagination', async () => {
+    const fixture = await setup();
+    const initiativeB = await dataSource!.getRepository(ResourceInitiative).save({
+      code: 'ITDM-62-RESP', name: 'Second Initiative', active: true,
+    });
+    const path = '/api/resource-allocation/v1/request-queues/requester-response';
+
+    // Create 4 requests for requesterA with distinct and tied deadlines:
+    // 1. DENIED expiring soonest (in 10 hours)
+    const deniedSoonest = await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, { state: 'DENIED' });
+    // 2 & 3. Two APPROVED_WITH_CHANGES sharing identical due_at (+48 hours), tie-broken by stage_entered_at ASC
+    const proposalTieLaterStage = await createRequest(fixture.requesterA, fixture.groupB, fixture.profileB, initiativeB, { state: 'APPROVED_WITH_CHANGES' });
+    const proposalTieEarlierStage = await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, initiativeB, { state: 'APPROVED_WITH_CHANGES' });
+    // 4 & 5. Two DENIED sharing identical due_at (+10 days) AND identical stage_entered_at, tie-broken by id ASC
+    const deniedTieIdOne = await createRequest(fixture.requesterA, fixture.groupB, fixture.profileB, fixture.initiative, { state: 'DENIED' });
+    const deniedTieIdTwo = await createRequest(fixture.requesterA, fixture.groupB, fixture.profileB, initiativeB, { state: 'DENIED' });
+
+    const [smallerId, largerId] = [deniedTieIdOne.id, deniedTieIdTwo.id].sort();
+    await dataSource!.query(`
+      UPDATE resource_requests
+      SET expiration_due_at = clock_timestamp() + INTERVAL '10 hours',
+          stage_entered_at = clock_timestamp() - INTERVAL '2 days'
+      WHERE id = $1
+    `, [deniedSoonest.id]);
+    await dataSource!.query(`
+      WITH anchor AS (SELECT clock_timestamp() AS t)
+      UPDATE resource_requests
+      SET decision_response_due_at = anchor.t + INTERVAL '48 hours',
+          stage_entered_at = CASE WHEN id = $1 THEN anchor.t - INTERVAL '3 days' ELSE anchor.t - INTERVAL '1 day' END
+      FROM anchor
+      WHERE id IN ($1, $2)
+    `, [proposalTieEarlierStage.id, proposalTieLaterStage.id]);
+    await dataSource!.query(`
+      WITH anchor AS (SELECT clock_timestamp() AS t)
+      UPDATE resource_requests
+      SET expiration_due_at = anchor.t + INTERVAL '10 days',
+          stage_entered_at = anchor.t - INTERVAL '12 hours'
+      FROM anchor
+      WHERE id IN ($1, $2)
+    `, [smallerId, largerId]);
+
+    const expectedOrder = [deniedSoonest.id, proposalTieEarlierStage.id, proposalTieLaterStage.id, smallerId, largerId];
+
+    // Full list order check
+    const all = await request(app!.getHttpServer())
+      .get(path)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(200);
+    expect(all.body.items.map((item: { id: string }) => item.id)).toEqual(expectedOrder);
+
+    // Multi-page cursor pagination across limit=2
+    const page1 = await request(app!.getHttpServer())
+      .get(`${path}?limit=2`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(200);
+    expect(page1.body.items.map((item: { id: string }) => item.id)).toEqual(expectedOrder.slice(0, 2));
+    expect(page1.body.page.nextCursor).toEqual(expect.any(String));
+
+    const page2 = await request(app!.getHttpServer())
+      .get(`${path}?limit=2&cursor=${encodeURIComponent(page1.body.page.nextCursor)}`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(200);
+    expect(page2.body.items.map((item: { id: string }) => item.id)).toEqual(expectedOrder.slice(2, 4));
+    expect(page2.body.page.nextCursor).toEqual(expect.any(String));
+
+    const page3 = await request(app!.getHttpServer())
+      .get(`${path}?limit=2&cursor=${encodeURIComponent(page2.body.page.nextCursor)}`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(200);
+    expect(page3.body.items.map((item: { id: string }) => item.id)).toEqual(expectedOrder.slice(4, 5));
+    expect(page3.body.page.nextCursor).toBeNull();
+
+    // Cursor bound to filters & queue: changing any filter or queue rejects cursor with 400
+    const cursor = page1.body.page.nextCursor as string;
+    await request(app!.getHttpServer())
+      .get(`${path}?limit=2&initiativeId=${initiativeB.id}&cursor=${encodeURIComponent(cursor)}`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(400);
+    await request(app!.getHttpServer())
+      .get(`${path}?limit=2&groupId=${fixture.groupA.id}&cursor=${encodeURIComponent(cursor)}`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(400);
+    await request(app!.getHttpServer())
+      .get(`${path}?limit=2&resourceProfileId=${fixture.profileA.id}&cursor=${encodeURIComponent(cursor)}`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(400);
+    await request(app!.getHttpServer())
+      .get(`${path}?limit=2&decisionState=DENIED&cursor=${encodeURIComponent(cursor)}`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(400);
+    await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/request-queues/presentation?limit=2&cursor=${encodeURIComponent(cursor)}`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(400);
+
+    // Filters: initiativeId, groupId, resourceProfileId, decisionState, plus pagination with matching filters
+    const filteredProposal = await request(app!.getHttpServer())
+      .get(`${path}?initiativeId=${initiativeB.id}&groupId=${fixture.groupA.id}&resourceProfileId=${fixture.profileA.id}&decisionState=APPROVED_WITH_CHANGES`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(200);
+    expect(filteredProposal.body.items.map((item: { id: string }) => item.id)).toEqual([proposalTieEarlierStage.id]);
+
+    const filteredDeniedPage1 = await request(app!.getHttpServer())
+      .get(`${path}?groupId=${fixture.groupB.id}&decisionState=DENIED&limit=1`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(200);
+    expect(filteredDeniedPage1.body.items.map((item: { id: string }) => item.id)).toEqual([smallerId]);
+    const filteredDeniedPage2 = await request(app!.getHttpServer())
+      .get(`${path}?groupId=${fixture.groupB.id}&decisionState=DENIED&limit=1&cursor=${encodeURIComponent(filteredDeniedPage1.body.page.nextCursor)}`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(200);
+    expect(filteredDeniedPage2.body.items.map((item: { id: string }) => item.id)).toEqual([largerId]);
+    expect(filteredDeniedPage2.body.page.nextCursor).toBeNull();
+
+    // Invalid decisionState -> 400
+    await request(app!.getHttpServer())
+      .get(`${path}?decisionState=INVALID_STATE`)
+      .set('X-PMO-Local-User-ID', fixture.requesterA.localUserId)
+      .expect(400);
   });
 });

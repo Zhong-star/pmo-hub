@@ -219,18 +219,6 @@ export class ResourceAllocationSubmissionService {
     };
   }
 
-  async getOperationResult(localUserId: string | undefined, attemptKey: string, operation: string | undefined) {
-    const actor = await this.requireActiveRequesterOutsideTransaction(localUserId);
-    if (operation !== submissionOperation) {
-      throw this.validationError('operation must identify the original submission.create operation.');
-    }
-    const line = await this.dataSource.getRepository(ResourceSubmissionLine).findOne({
-      where: { requesterId: actor.id, attemptKey: attemptKey.toLowerCase() },
-    });
-    if (!line) throw this.notFound('Operation result');
-    return this.toLineResponse(line);
-  }
-
   private async requireActiveRequesterOutsideTransaction(localUserId: string | undefined) {
     this.ensureDatabaseAvailable();
     try {
@@ -288,20 +276,6 @@ export class ResourceAllocationSubmissionService {
         succeeded: 'succeeded' in counts ? counts.succeeded : counts.SUCCEEDED ?? 0,
         failed: 'failed' in counts ? counts.failed : counts.FAILED ?? 0,
       },
-    };
-  }
-
-  private toLineResponse(line: ResourceSubmissionLine) {
-    return {
-      id: line.id,
-      attemptKey: line.attemptKey,
-      submittedConditions: line.submittedConditions,
-      status: line.status,
-      ...(line.requestId ? { requestId: line.requestId } : {}),
-      ...(line.problem ? { problem: line.problem } : {}),
-      receivedAt: line.receivedAt.toISOString(),
-      ...(line.completedAt ? { completedAt: line.completedAt.toISOString() } : {}),
-      ...(line.requestOutcome ? { requestOutcome: line.requestOutcome } : {}),
     };
   }
 
