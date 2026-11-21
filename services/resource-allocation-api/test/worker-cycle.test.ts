@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   RESOURCE_ALLOCATION_WORKER_INTERVAL_MS,
+  createResourceAllocationWorkerJobs,
   runResourceAllocationWorkerCycle,
 } from '../src/workers/resource-allocation-worker-cycle';
 
@@ -12,15 +13,23 @@ describe('Resource Allocation worker cycle', () => {
 
   it('continues to deadline jobs when a submission batch fails', async () => {
     const deadlineBatch = vi.fn(async () => 1);
+    const deniedBatch = vi.fn(async () => 1);
+    const proposalBatch = vi.fn(async () => 1);
     const reportFailure = vi.fn();
 
-    const failures = await runResourceAllocationWorkerCycle([
-      { name: 'submissions', runBatch: async () => { throw new Error('database timeout'); } },
-      { name: 'waiting deadlines', runBatch: deadlineBatch },
-    ], reportFailure);
+    const jobs = createResourceAllocationWorkerJobs({
+      processSubmissions: async () => { throw new Error('database timeout'); },
+      processWaitingDeadlines: deadlineBatch,
+      expireDeniedRequests: deniedBatch,
+      processProposalDeadlines: proposalBatch,
+    });
+    const failures = await runResourceAllocationWorkerCycle(jobs, reportFailure);
 
     expect(failures).toBe(1);
     expect(deadlineBatch).toHaveBeenCalledOnce();
-    expect(reportFailure).toHaveBeenCalledWith('submissions', expect.any(Error));
+    expect(deniedBatch).toHaveBeenCalledOnce();
+    expect(proposalBatch).toHaveBeenCalledOnce();
+    expect(jobs.map((job) => job.name)).toEqual(['submission', 'waiting deadline', 'denied response deadline', 'changed proposal deadline']);
+    expect(reportFailure).toHaveBeenCalledWith('submission', expect.any(Error));
   });
 });

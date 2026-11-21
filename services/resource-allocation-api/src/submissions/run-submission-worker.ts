@@ -3,10 +3,13 @@ import { DataSource } from 'typeorm';
 import { createResourceAllocationDataSourceOptions, getResourceAllocationDatabaseUrl, RESOURCE_ALLOCATION_DATABASE_URL_ENV } from '../database/database-options';
 import { ResourceAllocationSubmissionWorker } from './resource-allocation-submission.worker';
 import { ResourceAllocationDeadlineWorker } from '../deadlines/resource-allocation-deadline.worker';
+import { ResourceAllocationProposalWorker } from '../deadlines/resource-allocation-proposal.worker';
+import { ResourceAllocationApprovalService } from '../approvals/resource-allocation-approval.service';
+import { ResourceAllocationDecisionService } from '../decisions/resource-allocation-decision.service';
 import {
   RESOURCE_ALLOCATION_WORKER_INTERVAL_MS,
+  createResourceAllocationWorkerJobs,
   runResourceAllocationWorkerCycle,
-  type ResourceAllocationWorkerJob,
 } from '../workers/resource-allocation-worker-cycle';
 
 async function main() {
@@ -17,10 +20,14 @@ async function main() {
   await dataSource.initialize();
   const submissionWorker = new ResourceAllocationSubmissionWorker(dataSource);
   const deadlineWorker = new ResourceAllocationDeadlineWorker(dataSource);
-  const jobs: ResourceAllocationWorkerJob[] = [
-    { name: 'submission', runBatch: () => submissionWorker.processBatch() },
-    { name: 'waiting deadline', runBatch: () => deadlineWorker.processBatch() },
-  ];
+  const decisions = new ResourceAllocationDecisionService(dataSource, true);
+  const proposalWorker = new ResourceAllocationProposalWorker(new ResourceAllocationApprovalService(dataSource, true));
+  const jobs = createResourceAllocationWorkerJobs({
+    processSubmissions: () => submissionWorker.processBatch(),
+    processWaitingDeadlines: () => deadlineWorker.processBatch(),
+    expireDeniedRequests: () => decisions.expireDeniedRequests(),
+    processProposalDeadlines: () => proposalWorker.processBatch(),
+  });
   const once = process.argv.includes('--once');
   let stopping = false;
   const stop = () => { stopping = true; };
@@ -50,6 +57,6 @@ function reportWorkerFailure(jobName: string, error: unknown): void {
 }
 
 void main().catch((error: unknown) => {
-  process.stderr.write(`Resource Allocation submission worker could not start: ${safeErrorName(error)}\n`);
+  process.stderr.write(`Resource Allocation worker could not start: ${safeErrorName(error)}\n`);
   process.exitCode = 1;
 });

@@ -3535,6 +3535,506 @@
         ]
       }
     },
+    "/api/resource-allocation/v1/requests/{id}/denials": {
+      "post": {
+        "operationId": "ResourceAllocationDecisionController_deny",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "UUID for this exact denial action.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Current strong request ETag.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DenyRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"2\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestDecisionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match, Idempotency-Key, correlation ID, or explanation is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The actor is not a current in-scope decision maker or is the requester.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The request is no longer operational.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Idempotency-Key was reused with different request content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The request version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request is not awaiting a decision or its deadline has passed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Deny a request awaiting a decision with an explanation",
+        "tags": [
+          "Tech Resource Allocation decisions"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/requests/{id}/contests": {
+      "post": {
+        "operationId": "ResourceAllocationDecisionController_contest",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "UUID for this exact contest action.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Current strong request ETag.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContestRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"3\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestDecisionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match, Idempotency-Key, correlation ID, or explanation is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the current requester can contest the denial.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The request is no longer operational or does not belong to the requester.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Idempotency-Key was reused with different request content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The request version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request is not denied or the 14-day response deadline has passed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Contest a denied request and send it to Pre N3",
+        "tags": [
+          "Tech Resource Allocation decisions"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/requests/{id}/cancellations": {
+      "post": {
+        "operationId": "ResourceAllocationDecisionController_cancelDenied",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "UUID for this exact cancellation action.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Current strong request ETag.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelDeniedRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"3\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestDecisionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match, Idempotency-Key, correlation ID, or reason is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the current requester can cancel a denied request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The request is no longer operational or does not belong to the requester.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Idempotency-Key was reused with different request content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The request version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request is not denied or the 14-day response deadline has passed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Cancel a denied request with a reason",
+        "tags": [
+          "Tech Resource Allocation decisions"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/requests/{id}/history": {
+      "get": {
+        "operationId": "ResourceAllocationDecisionController_getHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size (default 50, maximum 100).",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestHistoryCollectionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The page cursor or limit is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active Resource Allocation person record is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The request is not operational or does not belong to this requester.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Read request history as its requester",
+        "tags": [
+          "Tech Resource Allocation decisions"
+        ]
+      }
+    },
     "/api/resource-allocation/v1/requests/{id}/approval-candidates": {
       "get": {
         "operationId": "ResourceAllocationApprovalController_listApprovalCandidates",
@@ -3754,6 +4254,144 @@
           }
         ],
         "summary": "Approve a request with the requested period and hours",
+        "tags": [
+          "Tech Resource Allocation approvals"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/requests/{id}/acceptances": {
+      "post": {
+        "operationId": "ResourceAllocationApprovalController_acceptChanges",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "UUID for this exact acceptance action.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Current strong request ETag.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptRequestChangesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"3\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApproveRequestResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match, Idempotency-Key, correlation ID, or body is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the requester may accept this proposal.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The current request was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The idempotency key was reused with different content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The request version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request has no pending proposal. At the deadline the automatic transition takes precedence.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Accept a changed proposal before its deadline, or apply the automatic deadline transition",
         "tags": [
           "Tech Resource Allocation approvals"
         ]
@@ -5093,6 +5731,21 @@
             "type": "string",
             "format": "date-time"
           },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "72-hour requester response deadline when a date or hours proposal is awaiting acceptance."
+          },
+          "availableActions": {
+            "example": [
+              "ACCEPT"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "version": {
             "type": "number"
           }
@@ -5105,6 +5758,8 @@
           "receivedAt",
           "stageEnteredAt",
           "expirationDueAt",
+          "dueAt",
+          "availableActions",
           "version"
         ]
       },
@@ -5277,6 +5932,174 @@
           "page"
         ]
       },
+      "DenyRequestDto": {
+        "type": "object",
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "explanation"
+        ]
+      },
+      "RequestDecisionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requesterSnapshot": {
+            "type": "object"
+          },
+          "requestedConditions": {
+            "type": "object"
+          },
+          "decisionState": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stageEnteredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expirationDueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "requesterSnapshot",
+          "requestedConditions",
+          "decisionState",
+          "receivedAt",
+          "stageEnteredAt",
+          "expirationDueAt",
+          "version"
+        ]
+      },
+      "ContestRequestDto": {
+        "type": "object",
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "explanation"
+        ]
+      },
+      "CancelDeniedRequestDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "RequestHistoryEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string"
+          },
+          "actorSnapshot": {
+            "type": "object"
+          },
+          "before": {
+            "type": "object"
+          },
+          "after": {
+            "type": "object"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "actorSnapshot",
+          "before",
+          "after",
+          "reason",
+          "occurredAt",
+          "correlationId"
+        ]
+      },
+      "RequestHistoryCollectionDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestHistoryEventDto"
+            }
+          },
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          },
+          "latestDenial": {
+            "nullable": true,
+            "description": "Most recent denial event, independent of the page cursor.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RequestHistoryEventDto"
+              }
+            ]
+          },
+          "latestResponse": {
+            "nullable": true,
+            "description": "Most recent contest or cancellation event, independent of the page cursor.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RequestHistoryEventDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ]
+      },
       "ApprovalCandidateDto": {
         "type": "object",
         "properties": {
@@ -5332,10 +6155,26 @@
             "format": "uuid",
             "description": "Defaults to the requested profile. Choose a different profile only to correct it."
           },
+          "startDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Proposed start date. An acceptance-pending proposal must start on or after its 72-hour deadline in the business calendar."
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Proposed inclusive end date."
+          },
+          "weeklyHours": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 40,
+            "description": "Proposed weekly hours, rounded to one decimal place."
+          },
           "explanation": {
             "type": "string",
             "maxLength": 2000,
-            "description": "Required when the approved profile differs from the requested profile."
+            "description": "Required when proposed dates or weekly hours differ from the request, or when correcting the approved profile."
           }
         },
         "required": [
@@ -5418,13 +6257,30 @@
             "type": "object"
           },
           "allocation": {
-            "$ref": "#/components/schemas/AllocationApprovalResponseDto"
+            "nullable": true,
+            "description": "Null while a changed proposal awaits requester acceptance.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AllocationApprovalResponseDto"
+              }
+            ]
           },
           "decisionState": {
             "type": "string",
             "enum": [
-              "APPROVED"
+              "APPROVED",
+              "APPROVED_WITH_CHANGES"
             ]
+          },
+          "confirmationSource": {
+            "type": "string",
+            "enum": [
+              "REQUESTER_ACCEPTANCE",
+              "SYSTEM_DEADLINE"
+            ],
+            "nullable": true,
+            "description": "Identifies whether a proposal was confirmed explicitly by the requester or automatically at its deadline."
           },
           "receivedAt": {
             "type": "string",
@@ -5433,6 +6289,12 @@
           "stageEnteredAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Acceptance deadline for a changed proposal."
           },
           "version": {
             "type": "number"
@@ -5447,8 +6309,13 @@
           "decisionState",
           "receivedAt",
           "stageEnteredAt",
+          "dueAt",
           "version"
         ]
+      },
+      "AcceptRequestChangesDto": {
+        "type": "object",
+        "properties": {}
       }
     }
   }

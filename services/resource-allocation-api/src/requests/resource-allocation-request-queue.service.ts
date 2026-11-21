@@ -375,7 +375,8 @@ export class ResourceAllocationRequestQueueService {
   }
 
   private toQueueItem(row: QueueRow, queue: RequestQueueCode, actor: ResourcePerson) {
-    const canApprove = row.requester_id !== actor.id && !row.deadline_passed && !row.approval_date_invalid;
+    const canDecide = row.requester_id !== actor.id && !row.deadline_passed;
+    const canApprove = canDecide && !row.approval_date_invalid;
     return {
       id: row.id,
       requester: row.requester_snapshot,
@@ -388,9 +389,11 @@ export class ResourceAllocationRequestQueueService {
       nextResponsible: queue === 'team-decision'
         ? row.next_responsible
         : { role: 'ALLOCATION_ADMIN' },
-      availableActions: queue === 'presentation' && !row.deadline_passed
-        ? ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', ...(canApprove ? ['APPROVE'] : [])]
-        : queue === 'team-decision' && canApprove ? ['APPROVE'] : [],
+      availableActions: queue === 'presentation'
+        ? !row.deadline_passed
+          ? ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', ...(canApprove ? ['APPROVE'] : []), ...(canDecide ? ['DENY'] : [])]
+          : []
+        : [...(canApprove ? ['APPROVE'] : []), ...(canDecide ? ['DENY'] : [])],
       version: Number(row.version),
     };
   }

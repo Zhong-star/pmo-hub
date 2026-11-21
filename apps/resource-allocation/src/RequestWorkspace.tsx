@@ -15,6 +15,7 @@ import {
   type RequestFilters,
   type ResourceRequestItem,
 } from './requestApi';
+import { DeniedRequestResponse } from './DeniedRequestResponse';
 
 interface RequestWorkspaceProps {
   localUserId: string;
@@ -454,6 +455,18 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
         void selectedRequest.refetch();
         return;
       }
+      if (error instanceof RequestApiError && error.status === 422 && error.problem?.code === 'INVALID_REQUEST_TRANSITION') {
+        const latest = await selectedRequest.refetch();
+        if (latest.isError || !latest.data
+          || (latest.data.decisionState === 'APPROVED_WITH_CHANGES' && latest.data.availableActions?.includes('ACCEPT'))) {
+          setAcceptError(issueMutationError(error));
+        } else {
+          setAcceptError('');
+          setNotice('This proposal is no longer awaiting acceptance. The current request status has been loaded.');
+        }
+        await invalidateRequestSurfaces(currentItem.id, true);
+        return;
+      }
       setAcceptError(issueMutationError(error));
     }
   }
@@ -621,6 +634,19 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
                     <h4>Requires revalidation</h4>
                     <p>This request requires revalidation. The previous proposal cannot be accepted. A decision maker must review eligible conditions before a new decision is issued.</p>
                   </section>
+                )}
+                {(currentItem.decisionState === 'DENIED' || currentItem.decisionState === 'PRE_N3' || currentItem.decisionState === 'CANCELLED') && (
+                  <DeniedRequestResponse
+                    localUserId={localUserId}
+                    item={currentItem}
+                    disabled={selectedRequest.isFetching || requestsQuery.isError || formVersionChanged}
+                    onChanged={(updated) => {
+                      queryClient.setQueryData([...REQUESTS_QUERY_ROOT, localUserId, 'detail', updated.id], updated);
+                      setFormVersion(updated.version);
+                      void invalidateRequestSurfaces(updated.id);
+                    }}
+                    onAccessDenied={onAccessDenied}
+                  />
                 )}
                 <section className="request-detail-outcome" aria-label="Requested conditions">
                   <h4>Requested conditions</h4>

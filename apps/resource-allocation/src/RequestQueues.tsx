@@ -3,6 +3,8 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import { useForm, useWatch } from 'react-hook-form';
 import type { ResourceAllocationRole } from './accessApi';
 import { approveRequest, getQueueSelections, getRequestQueue, correctRequestReferences, referRequest, removeRequestAdministratively, REQUEST_QUEUES_QUERY_ROOT, RequestQueueRequestError, type RequestQueueCode, type RequestQueueItem, type QueueSelections } from './requestQueueApi';
+import { denyRequest, RequestDecisionApiError } from './requestDecisionApi';
+import { DenialAction } from './DenialAction';
 import { SUBMISSIONS_QUERY_ROOT, type SelectionItem } from './submissionApi';
 
 interface RequestQueuesProps {
@@ -107,7 +109,7 @@ function optionLabel(item: SelectionItem): string {
 }
 
 function accessDenied(error: unknown): boolean {
-  return error instanceof RequestQueueRequestError && (error.status === 401 || error.status === 403);
+  return (error instanceof RequestQueueRequestError || error instanceof RequestDecisionApiError) && (error.status === 401 || error.status === 403);
 }
 
 const pendingActionKeys = new Map<string, Promise<string>>();
@@ -163,6 +165,7 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
   const activeQueue = queues.includes(selectedQueue) ? selectedQueue : initialQueue(queues);
   const [openCorrectionId, setOpenCorrectionId] = useState<string | null>(null);
   const [openRemovalId, setOpenRemovalId] = useState<string | null>(null);
+  const [openDenialId, setOpenDenialId] = useState<string | null>(null);
   const [openApprovalId, setOpenApprovalId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
@@ -233,6 +236,7 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
       queryClient.invalidateQueries({ queryKey: REQUEST_QUEUES_QUERY_ROOT }),
       queryClient.invalidateQueries({ queryKey: ['resource-allocation-requests'] }),
       queryClient.invalidateQueries({ queryKey: SUBMISSIONS_QUERY_ROOT }),
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'resource-allocation-notifications' }),
     ]);
   }
 
@@ -255,10 +259,11 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
       await invalidateRequestSurfaces();
       setOpenCorrectionId(null);
       setOpenRemovalId(null);
+      setOpenDenialId(null);
       setOpenApprovalId(null);
     } catch (error) {
       if (accessDenied(error)) onAccessDenied();
-      if (error instanceof RequestQueueRequestError && error.status === 412) {
+      if ((error instanceof RequestQueueRequestError || error instanceof RequestDecisionApiError) && error.status === 412) {
         setActionError('This request changed after you opened it. Review the current details before trying again.');
         void invalidateRequestSurfaces();
       } else if (!accessDenied(error)) {
@@ -340,22 +345,32 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
                 actionsBlocked={queueQuery.isError && !queueQuery.isFetchNextPageError}
                 openCorrection={openCorrectionId === item.id}
                 openRemoval={openRemovalId === item.id}
+                openDenial={openDenialId === item.id}
                 openApproval={openApprovalId === item.id}
                 busy={pendingRequestId === item.id}
                 highlighted={item.id === selectedRequestId}
                 onCorrectionToggle={() => {
                   setOpenApprovalId(null);
+                  setOpenDenialId(null);
                   setOpenRemovalId(null);
                   setOpenCorrectionId(openCorrectionId === item.id ? null : item.id);
                 }}
                 onRemovalToggle={() => {
                   setOpenCorrectionId(null);
                   setOpenApprovalId(null);
+                  setOpenDenialId(null);
                   setOpenRemovalId(openRemovalId === item.id ? null : item.id);
+                }}
+                onDenialToggle={() => {
+                  setOpenCorrectionId(null);
+                  setOpenRemovalId(null);
+                  setOpenApprovalId(null);
+                  setOpenDenialId(openDenialId === item.id ? null : item.id);
                 }}
                 onApprovalToggle={() => {
                   setOpenCorrectionId(null);
                   setOpenRemovalId(null);
+                  setOpenDenialId(null);
                   setOpenApprovalId(openApprovalId === item.id ? null : item.id);
                 }}
                 onRefer={() => void performAction(item.id, async () => referRequest(
@@ -381,6 +396,13 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
                     reason,
                   ));
                 }}
+                onDeny={(explanation) => performAction(item.id, async () => denyRequest(
+                  localUserId,
+                  item.id,
+                  item.version,
+                  await requestActionKey(localUserId, item.id, item.version, 'denial', { explanation }),
+                  explanation,
+                ))}
                 onApprove={(approval) => performAction(item.id, async () => approveRequest(
                   localUserId,
                   item.id,
@@ -422,15 +444,18 @@ interface RequestQueueCardProps {
   actionsBlocked: boolean;
   openCorrection: boolean;
   openRemoval: boolean;
+  openDenial: boolean;
   openApproval: boolean;
   busy: boolean;
   highlighted: boolean;
   onCorrectionToggle: () => void;
   onRemovalToggle: () => void;
+  onDenialToggle: () => void;
   onApprovalToggle: () => void;
   onRefer: () => void;
   onCorrect: (input: { initiativeId?: string; groupId?: string; resourceProfileId?: string; reason: string }) => Promise<void>;
   onRemove: (reason: string) => Promise<void>;
+  onDeny: (explanation: string) => Promise<void>;
   onApprove: (approval: ApprovalDecision) => Promise<void>;
 }
 
@@ -444,15 +469,18 @@ function RequestQueueCard({
   actionsBlocked,
   openCorrection,
   openRemoval,
+  openDenial,
   openApproval,
   busy,
   highlighted,
   onCorrectionToggle,
   onRemovalToggle,
+  onDenialToggle,
   onApprovalToggle,
   onRefer,
   onCorrect,
   onRemove,
+  onDeny,
   onApprove,
 }: RequestQueueCardProps) {
   const responsible = Array.isArray(item.nextResponsible)
@@ -503,6 +531,16 @@ function RequestQueueCard({
             </button>
           )}
         </div>
+      )}
+
+      {item.availableActions.includes('DENY') && (
+        <DenialAction
+          item={item}
+          disabled={actionDisabled}
+          open={openDenial}
+          onToggle={onDenialToggle}
+          onSubmit={onDeny}
+        />
       )}
 
       {item.availableActions.includes('APPROVE') && (
