@@ -10,6 +10,8 @@ import { ResourceAllocationSelectionController } from './administration/resource
 import { ResourceAllocationSubmissionController, ResourceAllocationOperationResultController } from './submissions/resource-allocation-submission.controller';
 import { ResourceAllocationSubmissionService } from './submissions/resource-allocation-submission.service';
 import { ResourceAllocationSubmissionWorker } from './submissions/resource-allocation-submission.worker';
+import { ResourceAllocationNotificationController } from './notifications/resource-allocation-notification.controller';
+import { ResourceAllocationNotificationService } from './notifications/resource-allocation-notification.service';
 import { ResourceAllocationRequestQueueController } from './requests/resource-allocation-request-queue.controller';
 import { ResourceAllocationRequestQueueService } from './requests/resource-allocation-request-queue.service';
 import { ResourceAllocationRequestAuditController, ResourceAllocationRequestController } from './requests/resource-allocation-request.controller';
@@ -24,6 +26,7 @@ import { ResourceAllocationDeadlineWorker } from './deadlines/resource-allocatio
     ResourceAllocationSelectionController,
     ResourceAllocationSubmissionController,
     ResourceAllocationOperationResultController,
+    ResourceAllocationNotificationController,
     ResourceAllocationRequestQueueController,
     ResourceAllocationRequestController,
     ResourceAllocationRequestAuditController,
@@ -33,6 +36,7 @@ import { ResourceAllocationDeadlineWorker } from './deadlines/resource-allocatio
     ResourceAllocationAdministrationService,
     ResourceAllocationSubmissionService,
     ResourceAllocationSubmissionWorker,
+    ResourceAllocationNotificationService,
     ResourceAllocationRequestQueueService,
     ResourceAllocationRequestService,
     ResourceAllocationDeadlineWorker,

@@ -127,7 +127,8 @@ export function RequestQueues({ localUserId, role, groupId, onAccessDenied }: Re
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const selectedRequestId = new URLSearchParams(window.location.search).get('requestId');
+  const locationQuery = new URLSearchParams(window.location.search);
+  const selectedRequestId = locationQuery.has('queue') ? locationQuery.get('requestId') : null;
 
   const queueQuery = useInfiniteQuery({
     queryKey: [...REQUEST_QUEUES_QUERY_ROOT, localUserId, activeQueue],

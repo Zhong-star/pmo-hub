@@ -26,6 +26,8 @@ export function createOpenApiDocument(app: INestApplication) {
   for (const [path, pathItem] of Object.entries(document.paths)) {
     if (!path.startsWith('/api/resource-allocation/v1/admin/') &&
       !path.startsWith('/api/resource-allocation/v1/submissions') &&
+      !path.startsWith('/api/resource-allocation/v1/notifications') &&
+      path !== '/api/resource-allocation/v1/notification-readings' &&
       !path.startsWith('/api/resource-allocation/v1/requests') &&
       !path.startsWith('/api/resource-allocation/v1/request-queues/') &&
       !path.startsWith('/api/resource-allocation/v1/request-audits') &&

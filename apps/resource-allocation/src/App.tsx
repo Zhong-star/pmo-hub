@@ -7,6 +7,7 @@ import {
   readSelectedProfileId,
 } from './accessApi';
 import { Administration } from './Administration';
+import { NotificationsInbox } from './NotificationsInbox';
 import { RequestQueues } from './RequestQueues';
 import { SubmissionWorkspace } from './SubmissionWorkspace';
 import { RequestWorkspace } from './RequestWorkspace';
@@ -46,6 +47,7 @@ export function App() {
         || query.queryKey[0] === 'resource-allocation-selections'
         || query.queryKey[0] === 'resource-allocation-request-queues'
         || query.queryKey[0] === 'resource-allocation-submissions'
+        || query.queryKey[0] === 'resource-allocation-notifications'
         || query.queryKey[0] === 'resource-allocation-requests',
     });
     setAdminAccessBlocked(false);
@@ -86,6 +88,7 @@ export function App() {
           || query.queryKey[0] === 'resource-allocation-selections'
           || query.queryKey[0] === 'resource-allocation-request-queues'
           || query.queryKey[0] === 'resource-allocation-submissions'
+          || query.queryKey[0] === 'resource-allocation-notifications'
           || query.queryKey[0] === 'resource-allocation-requests',
       });
       return;
@@ -216,6 +219,10 @@ export function App() {
 
           {canUseModuleData && profileId && (
             <SubmissionWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
+          )}
+
+          {canUseModuleData && profileId && (
+            <NotificationsInbox localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
           )}
 
           {canUseModuleData && profileId && (

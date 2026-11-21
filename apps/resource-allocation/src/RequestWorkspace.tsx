@@ -58,7 +58,8 @@ function rowsFromPages<T>(data: { pages: Array<{ items: T[] }> } | undefined): T
 }
 
 function querySelectedRequestId(): string | null {
-  return new URLSearchParams(window.location.search).get('requestId');
+  const params = new URLSearchParams(window.location.search);
+  return params.has('queue') ? null : params.get('requestId');
 }
 
 function querySelectedAuditId(): string | null {
@@ -67,7 +68,10 @@ function querySelectedAuditId(): string | null {
 
 function updateRequestUrl(requestId: string | null) {
   const url = new URL(window.location.href);
-  if (requestId) url.searchParams.set('requestId', requestId);
+  if (requestId) {
+    url.searchParams.delete('queue');
+    url.searchParams.set('requestId', requestId);
+  }
   else url.searchParams.delete('requestId');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 }
