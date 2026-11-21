@@ -38,22 +38,23 @@ export class ResourceAllocationDeadlineWorker {
       throw new RangeError(`The deadline worker batch limit must be between 1 and ${maximumBatchSize}.`);
     }
 
+    const clocks = await this.dataSource.query('SELECT clock_timestamp()::text AS "currentTime"') as Array<{ currentTime: string }>;
     const candidates = await this.dataSource.query(`
       SELECT request.id
       FROM resource_requests AS request
       WHERE request.decision_state = $2
         AND request.removed_at IS NULL
         AND (
-          request.expiration_due_at < clock_timestamp()
+          request.expiration_due_at < $1::timestamptz
           OR (
-            request.received_at + INTERVAL '168 hours' <= clock_timestamp()
+            request.received_at <= $1::timestamptz - INTERVAL '168 hours'
             AND NOT EXISTS (
               SELECT 1 FROM resource_allocation_notifications AS notice
               WHERE notice.source_request_id = request.id AND notice.event_code = 'REQUEST_WAITING_REMINDER_7D'
             )
           )
           OR (
-            request.received_at + INTERVAL '336 hours' <= clock_timestamp()
+            request.received_at <= $1::timestamptz - INTERVAL '336 hours'
             AND NOT EXISTS (
               SELECT 1 FROM resource_allocation_notifications AS notice
               WHERE notice.source_request_id = request.id AND notice.event_code = 'REQUEST_WAITING_REMINDER_14D'
@@ -61,8 +62,8 @@ export class ResourceAllocationDeadlineWorker {
           )
         )
       ORDER BY request.received_at ASC, request.id ASC
-      LIMIT $1
-    `, [limit, ResourceRequestDecisionState.WaitingForPresentation]) as Array<{ id: string }>;
+      LIMIT $3
+    `, [clocks[0].currentTime, ResourceRequestDecisionState.WaitingForPresentation, limit]) as Array<{ id: string }>;
 
     let processed = 0;
     for (const { id } of candidates) {
