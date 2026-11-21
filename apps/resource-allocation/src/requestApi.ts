@@ -15,6 +15,8 @@ export type RequestDecisionState =
   | 'REQUIRES_REVALIDATION'
   | 'CANCELLED';
 
+export type RequestConfirmationSource = 'REQUESTER_ACCEPTANCE' | 'SYSTEM_DEADLINE' | null;
+
 export interface RequestedConditions {
   initiativeId: string;
   initiativeCode: string;
@@ -68,9 +70,19 @@ export interface ResourceRequestItem {
   receivedAt: string;
   stageEnteredAt: string;
   expirationDueAt: string;
+  dueAt?: string | null;
+  availableActions?: string[];
+  confirmationSource?: RequestConfirmationSource;
   approvedConditions?: ApprovedRequestConditions;
   allocation?: RequestAllocation;
   version: number;
+}
+
+export interface RequestAcceptanceResult {
+  id: string;
+  decisionState: RequestDecisionState;
+  version: number;
+  confirmationSource?: RequestConfirmationSource;
 }
 
 export interface ResourceRequestCollection {
@@ -196,6 +208,27 @@ export async function withdrawRequest(
   try {
     const response = await api.post<RequestAuditEvent>(`${API_ROOT}/requests/${encodeURIComponent(requestId)}/withdrawals`, { reason }, {
       headers: { ...headers(localUserId), 'If-Match': `"${version}"`, 'Idempotency-Key': idempotencyKey },
+    });
+    return response.data;
+  } catch (error) {
+    return throwRequestError(error);
+  }
+}
+
+export async function acceptRequest(
+  localUserId: string,
+  requestId: string,
+  version: number,
+  idempotencyKey: string,
+): Promise<RequestAcceptanceResult> {
+  try {
+    const response = await api.post<RequestAcceptanceResult>(`${API_ROOT}/requests/${encodeURIComponent(requestId)}/acceptances`, {}, {
+      headers: {
+        ...headers(localUserId),
+        'If-Match': `"${version}"`,
+        'Idempotency-Key': idempotencyKey,
+        'X-Correlation-ID': crypto.randomUUID(),
+      },
     });
     return response.data;
   } catch (error) {

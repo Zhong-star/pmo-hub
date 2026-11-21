@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { getSelectionCollection, type SelectionItem } from './submissionApi';
-import type { ApprovedRequestConditions, RequestAllocation } from './requestApi';
+import type { ApprovedRequestConditions, RequestAllocation, RequestConfirmationSource } from './requestApi';
 
 export const REQUEST_QUEUES_QUERY_ROOT = ['resource-allocation-request-queues'] as const;
 const API_ROOT = '/api/resource-allocation/v1';
@@ -30,6 +30,7 @@ export interface RequestQueueItem {
   impediments?: string[];
   nextResponsible: { role?: string } | Array<{ personId: string; displayName: string; role: string }>;
   availableActions: string[];
+  confirmationSource?: RequestConfirmationSource;
   approvedConditions?: ApprovedRequestConditions;
   allocation?: RequestAllocation;
   version: number;
@@ -164,7 +165,7 @@ async function postAction<T>(
   action: 'referrals' | 'reference-corrections' | 'administrative-removals' | 'approvals',
   version: number,
   idempotencyKey: string,
-  body: Record<string, string | undefined>,
+  body: Record<string, string | number | undefined>,
 ): Promise<T> {
   try {
     const response = await api.post<T>(`${API_ROOT}/requests/${encodeURIComponent(requestId)}/${action}`, body, {
@@ -190,7 +191,14 @@ export function approveRequest(
   requestId: string,
   version: number,
   idempotencyKey: string,
-  approval: { personId: string; resourceProfileId?: string; explanation?: string },
+  approval: {
+    personId: string;
+    resourceProfileId?: string;
+    startDate?: string;
+    endDate?: string;
+    weeklyHours?: number;
+    explanation?: string;
+  },
 ) {
   return postAction<RequestActionResult>(localUserId, requestId, 'approvals', version, idempotencyKey, approval);
 }

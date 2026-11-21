@@ -454,9 +454,15 @@ h1 {
 .request-detail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .request-detail-heading h3 { margin: 0; color: #162536; font-size: 22px; }
 .request-detail-heading p:last-child { margin: 7px 0 0; color: #526979; font-size: 12px; overflow-wrap: anywhere; }
-.request-metadata { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 14px; border-radius: 9px; background: #f3f7f8; }
+.request-metadata { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; padding: 14px; border-radius: 9px; background: #f3f7f8; }
 .request-metadata span { display: grid; gap: 5px; color: #526979; font-size: 13px; }
 .request-metadata strong { color: #263d4b; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.request-detail-outcome { padding: 18px; border: 1px solid #dce5e9; border-radius: 10px; background: #f8fafb; }
+.request-detail-outcome h4 { margin: 0; color: #193b4a; font-size: 16px; }
+.request-detail-outcome > p { color: #526979; line-height: 1.5; }
+.request-proposal-status { border-color: #c6dce5; background: #f1f8fa; }
+.request-proposal-status .primary-button { margin-top: 4px; }
+.request-proposal-pending { margin-bottom: 0; }
 .request-readonly-message { margin: 0; padding: 12px 14px; border-radius: 8px; background: #f3f7f8; }
 .request-edit-form { display: grid; gap: 18px; }
 .request-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
@@ -580,6 +586,10 @@ h1 {
 .request-queue-action-form h4, .request-queue-action-form > p { grid-column: 1 / -1; margin: 0; }
 .request-queue-action-form h4 { color: #193b4a; font-size: 17px; }
 .request-queue-action-form > p { margin-top: -10px; color: #526979; font-size: 13px; line-height: 1.5; }
+.request-approval-comparison { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.request-approval-comparison section { min-width: 0; padding: 14px; border: 1px solid #dce5e9; border-radius: 8px; background: #f8fafb; }
+.request-approval-comparison h5 { margin: 0; color: #193b4a; font-size: 14px; }
+.request-approval-comparison .request-queue-details { grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
 .request-queue-reason-field { grid-column: 1 / -1; }
 .request-queue-action-form .form-actions { grid-column: 1 / -1; }
 .request-queue-load-more { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 18px; }
@@ -598,6 +608,7 @@ h1 {
   .request-queue-card-heading { align-items: stretch; flex-direction: column; }
   .request-queue-details { grid-template-columns: 1fr; }
   .request-queue-action-form { grid-template-columns: 1fr; }
+  .request-approval-comparison { grid-template-columns: 1fr; }
   .request-queue-action-form h4, .request-queue-action-form > p, .request-queue-reason-field, .request-queue-action-form .form-actions { grid-column: 1; }
   .request-queue-actions { align-items: stretch; flex-direction: column; }
   .request-queue-actions button { width: 100%; }
