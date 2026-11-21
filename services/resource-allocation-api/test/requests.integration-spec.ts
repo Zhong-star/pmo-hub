@@ -15,6 +15,7 @@ import { ResourceGroup } from '../src/groups/resource-group.entity';
 import { ResourceProfile } from '../src/resource-profiles/resource-profile.entity';
 import { ResourceInitiative } from '../src/initiatives/resource-initiative.entity';
 import { ResourceAllocationSubmissionWorker } from '../src/submissions/resource-allocation-submission.worker';
+import { ResourceRequest } from '../src/requests/resource-request.entity';
 
 describe('Tech Resource Allocation requests (#61)', () => {
   let container: StartedPostgreSqlContainer | undefined;
@@ -162,6 +163,91 @@ describe('Tech Resource Allocation requests (#61)', () => {
     await request(app!.getHttpServer())
       .get(`${path}/${first.id}`)
       .set('X-PMO-Local-User-ID', fixture.other.localUserId)
+      .expect(404);
+  });
+
+  it('lets current leadership and Admin consult operational requests and history in their current scope without owner actions', async () => {
+    const fixture = await setup();
+    const people = dataSource!.getRepository(ResourcePerson);
+    const supervisor = await people.save(people.create({
+      localUserId: 'request-supervisor', displayName: 'Request Supervisor', email: 'supervisor@example.test',
+      role: ResourceAllocationRole.Supervisor, active: true, coveredGroupIds: [fixture.firstGroup.id], groupId: null,
+    }));
+    const moderator = await people.save(people.create({
+      localUserId: 'request-moderator', displayName: 'Request Moderator', email: 'moderator@example.test',
+      role: ResourceAllocationRole.Moderator, active: true, coveredGroupIds: [], groupId: fixture.firstGroup.id,
+    }));
+    const requestRepo = dataSource!.getRepository(ResourceRequest);
+    const inScope: Array<{ id: string; state: string }> = [];
+    for (const state of ['DENIED', 'APPROVED_WITH_CHANGES', 'APPROVED', 'CANCELLED']) {
+      const created = await createRequest(fixture, fixture.other.localUserId);
+      await requestRepo.update({ id: created.id }, {
+        decisionState: state as ResourceRequest['decisionState'],
+        version: 2,
+        ...(state === 'APPROVED_WITH_CHANGES' ? { decisionResponseDueAt: new Date(Date.now() + 60_000) } : {}),
+      });
+      inScope.push({ id: created.id, state });
+    }
+    const outOfScope = await createRequest(fixture, fixture.other.localUserId, {
+      groupId: fixture.secondGroup.id,
+      resourceProfileId: fixture.secondProfile.id,
+    });
+    const path = '/api/resource-allocation/v1/requests';
+
+    const ownDefault = await request(app!.getHttpServer())
+      .get(path)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(200);
+    expect(ownDefault.body.items).toHaveLength(0);
+    await request(app!.getHttpServer())
+      .get(`${path}?scope=visible`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(403);
+
+    const visible = await request(app!.getHttpServer())
+      .get(`${path}?scope=visible`)
+      .set('X-PMO-Local-User-ID', supervisor.localUserId)
+      .expect(200);
+    expect(visible.body.items.map((item: { id: string }) => item.id).sort())
+      .toEqual(inScope.map((item) => item.id).sort());
+    for (const item of inScope) {
+      const detail = await request(app!.getHttpServer())
+        .get(`${path}/${item.id}`)
+        .set('X-PMO-Local-User-ID', supervisor.localUserId)
+        .expect(200);
+      expect(detail.body).toMatchObject({ decisionState: item.state, availableActions: [] });
+      const history = await request(app!.getHttpServer())
+        .get(`${path}/${item.id}/history`)
+        .set('X-PMO-Local-User-ID', supervisor.localUserId)
+        .expect(200);
+      expect(history.body.items).toContainEqual(expect.objectContaining({ action: 'SUBMITTED' }));
+    }
+    await request(app!.getHttpServer())
+      .get(`${path}?scope=visible&groupId=${fixture.secondGroup.id}`)
+      .set('X-PMO-Local-User-ID', supervisor.localUserId)
+      .expect(403);
+    await request(app!.getHttpServer())
+      .get(`${path}/${outOfScope.id}`)
+      .set('X-PMO-Local-User-ID', supervisor.localUserId)
+      .expect(404);
+    await request(app!.getHttpServer())
+      .get(`${path}/${outOfScope.id}/history`)
+      .set('X-PMO-Local-User-ID', supervisor.localUserId)
+      .expect(404);
+    await request(app!.getHttpServer())
+      .get(`${path}/${inScope[0].id}`)
+      .set('X-PMO-Local-User-ID', moderator.localUserId)
+      .expect(200);
+    const global = await request(app!.getHttpServer())
+      .get(`${path}?scope=visible`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(global.body.items).toHaveLength(5);
+
+    await people.update({ id: supervisor.id }, { coveredGroupIds: [] });
+    await request(app!.getHttpServer())
+      .get(`${path}/${inScope[0].id}`)
+      .set('X-PMO-Local-User-ID', supervisor.localUserId)
       .expect(404);
   });
 

@@ -64,13 +64,14 @@ export class ResourceAllocationRequestController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'List the current requester’s operational requests' })
+  @ApiOperation({ summary: 'List the current requester’s operational requests or requests visible to current leadership scope' })
   @ApiSecurity('localProfile')
   @ApiOkResponse({ type: ResourceRequestCollectionResponseDto })
   @ApiQuery({ name: 'initiativeId', required: false, type: String, format: 'uuid' })
   @ApiQuery({ name: 'decisionState', required: false, enum: ['WAITING_FOR_PRESENTATION', 'PENDING_TEAM_DECISION', 'APPROVED_WITH_CHANGES', 'APPROVED', 'DENIED', 'PRE_N3', 'ESCALATION', 'REQUIRES_REVALIDATION', 'CANCELLED'] })
   @ApiQuery({ name: 'groupId', required: false, type: String, format: 'uuid' })
   @ApiQuery({ name: 'resourceProfileId', required: false, type: String, format: 'uuid' })
+  @ApiQuery({ name: 'scope', required: false, enum: ['visible'], description: 'Opt into requests visible to the current leadership scope or Admin global scope. Defaults to own requests.' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size (default 50, maximum 100).' })
   @ApiQuery({ name: 'cursor', required: false, type: String })
   @ApiForbiddenResponse({ description: 'An active Resource Allocation person record is required.' })
@@ -83,11 +84,11 @@ export class ResourceAllocationRequestController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Read a current requester’s operational request' })
+  @ApiOperation({ summary: 'Read an operational request owned by the caller or visible to their current leadership/Admin scope' })
   @ApiSecurity('localProfile')
   @ApiOkResponse({ type: ResourceRequestResponseDto, headers: { ETag: { schema: { type: 'string', example: '"1"' } } } })
   @ApiForbiddenResponse({ description: 'An active Resource Allocation person record is required.' })
-  @ApiNotFoundResponse({ description: 'The request is not operational or does not belong to this requester.' })
+  @ApiNotFoundResponse({ description: 'The request is not operational or is outside the caller’s current read scope.' })
   async get(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Param('id', new ParseUUIDPipe()) id: string,

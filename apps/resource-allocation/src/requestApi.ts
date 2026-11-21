@@ -105,6 +105,8 @@ export interface RequestFilters {
   resourceProfileId?: string;
 }
 
+export type RequestScope = 'mine' | 'visible';
+
 export interface RequestAuditEvent {
   id: string;
   requestId: string;
@@ -167,11 +169,12 @@ export async function getRequestCollection(
   localUserId: string,
   filters: RequestFilters,
   cursor: string | null,
+  scope: RequestScope = 'mine',
 ): Promise<ResourceRequestCollection> {
   try {
     const response = await api.get<ResourceRequestCollection>(`${API_ROOT}/requests`, {
       headers: headers(localUserId),
-      params: { ...filters, limit: 50, ...(cursor ? { cursor } : {}) },
+      params: { ...filters, ...(scope === 'visible' ? { scope } : {}), limit: 50, ...(cursor ? { cursor } : {}) },
     });
     return response.data;
   } catch (error) {

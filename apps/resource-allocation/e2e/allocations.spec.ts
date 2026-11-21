@@ -302,3 +302,62 @@ test('retries a lost allocation command with the same idempotency key and reason
     'Pause for the deployment window.',
   ]);
 });
+
+test('refreshes allocation views every 30 seconds and pauses actions when background refreshes fail', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-21T12:00:00.000Z') });
+  await installBaseRoutes(page);
+  let currentAllocation = allocation(7, 'IN_PROGRESS', ['SUSPEND']);
+  let unavailable = false;
+  const reads = { list: 0, detail: 0, history: 0, load: 0 };
+  const serviceUnavailable = {
+    status: 503,
+    contentType: 'application/problem+json',
+    json: { status: 503, code: 'DEPENDENCY_UNAVAILABLE', detail: 'The allocation service is temporarily unavailable.' },
+  };
+  await page.route(`${apiRoot}/allocations**`, async (route: Route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() !== 'GET') return route.fallback();
+    if (url.pathname.endsWith(`/allocations/${allocationId}/history`)) {
+      reads.history += 1;
+      await route.fulfill(unavailable ? serviceUnavailable : { json: { items: [], page: emptyPage } });
+      return;
+    }
+    if (url.pathname.endsWith(`/allocations/${allocationId}`)) {
+      reads.detail += 1;
+      await route.fulfill(unavailable ? serviceUnavailable : { headers: { etag: `"${currentAllocation.version}"` }, json: currentAllocation });
+      return;
+    }
+    if (url.pathname.endsWith('/allocations')) {
+      reads.list += 1;
+      await route.fulfill(unavailable ? serviceUnavailable : { json: { items: [currentAllocation], page: emptyPage } });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route(`${apiRoot}/allocation-load**`, async (route: Route) => {
+    reads.load += 1;
+    await route.fulfill(unavailable ? serviceUnavailable : { json: { date: '2026-11-21', items: [], page: emptyPage } });
+  });
+
+  await page.goto('/resource-allocation/');
+  const panel = page.getByRole('region', { name: 'Allocations and capacity' });
+  await panel.getByRole('button', { name: 'View allocation ITDM-69' }).click();
+  const detail = panel.getByRole('region', { name: 'Allocation details' });
+  await expect(detail.getByText('Version 7')).toBeVisible();
+  await expect.poll(() => Object.values(reads).every((count) => count === 1)).toBeTruthy();
+
+  currentAllocation = allocation(8, 'SUSPENDED', ['RESUME']);
+  await page.clock.fastForward(30_000);
+  await expect(detail.getByText('Version 8')).toBeVisible();
+  await expect(detail.getByRole('button', { name: 'Resume' })).toBeEnabled();
+
+  unavailable = true;
+  await page.clock.fastForward(30_000);
+  await expect(panel.getByRole('alert').filter({ hasText: 'temporarily unavailable' }).first()).toBeVisible();
+  await expect(detail.getByRole('button', { name: 'Resume' })).toBeDisabled();
+  expect(reads.list).toBeGreaterThan(1);
+  expect(reads.load).toBeGreaterThan(1);
+  expect(reads.detail).toBeGreaterThan(1);
+  expect(reads.history).toBeGreaterThan(1);
+});

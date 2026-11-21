@@ -175,6 +175,9 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
     queryFn: ({ pageParam }) => getAllocations(localUserId, filters, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.page.nextCursor ?? undefined,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     retry: false,
   });
   const allocations = rowsFromPages(allocationQuery.data);
@@ -183,6 +186,9 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
     queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId, 'load', loadDate],
     queryFn: () => getAllocationLoad(localUserId, loadDate),
     enabled: /^\d{4}-\d{2}-\d{2}$/.test(loadDate),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     retry: false,
   });
 
@@ -190,6 +196,9 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
     queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId, selectedAllocationId],
     queryFn: () => getAllocation(localUserId, selectedAllocationId!),
     enabled: selectedAllocationId !== null,
+    refetchInterval: selectedAllocationId ? 30_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     retry: false,
   });
   const allocation = detailQuery.data?.allocation;
@@ -197,6 +206,9 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
     queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId, selectedAllocationId, 'history'],
     queryFn: () => getAllocationHistory(localUserId, selectedAllocationId!),
     enabled: selectedAllocationId !== null,
+    refetchInterval: selectedAllocationId ? 30_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     retry: false,
   });
 
@@ -230,6 +242,9 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
     },
   });
   const { reset: resetChangeMutation } = changeMutation;
+  const collectionRefreshFailed = allocationQuery.isError && !allocationQuery.isFetchNextPageError;
+  const detailRefreshFailed = detailQuery.isError;
+  const currentAllocationRefreshFailed = collectionRefreshFailed || detailRefreshFailed;
   const reasonField = actionForm.register('reason', {
     validate: (value) => value.trim().length > 0 || 'Enter a reason for this change.',
     maxLength: { value: 2000, message: 'Reason must be 2,000 characters or fewer.' },
@@ -253,6 +268,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
   }
 
   function startAction(action: AllocationAction) {
+    if (currentAllocationRefreshFailed) return;
     setSelectedAction(action);
     setAttempt(null);
     setIsStale(false);
@@ -262,7 +278,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
   }
 
   function submitAction(values: AllocationActionForm) {
-    if (!allocation || !selectedAction || !detailQuery.data) return;
+    if (!allocation || !selectedAction || !detailQuery.data || currentAllocationRefreshFailed) return;
     const command = attempt && attempt.allocationId === allocation.id && attempt.action === selectedAction && attempt.reason === values.reason.trim()
       ? attempt
       : createAttempt(allocation, selectedAction, values.reason.trim(), detailQuery.data.etag);
@@ -487,12 +503,15 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
               </dl>
 
               {actionMessage && <p className="allocation-action-message" role="status">{actionMessage}</p>}
+              {currentAllocationRefreshFailed && (
+                <p className="allocation-action-message" role="status">Actions are paused until the current allocation refreshes successfully.</p>
+              )}
               {allocation.availableActions.some(isAllocationAction) && (
                 <div className="allocation-actions" aria-label="Available allocation actions">
                   <h4>Available actions</h4>
                   <div className="allocation-action-buttons">
                     {allocation.availableActions.filter(isAllocationAction).map((action) => (
-                      <button key={action} type="button" className="secondary-button" onClick={() => startAction(action)}>
+                      <button key={action} type="button" className="secondary-button" onClick={() => startAction(action)} disabled={currentAllocationRefreshFailed}>
                         {actionLabels[action]}
                       </button>
                     ))}
@@ -534,7 +553,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
                     <div className="form-error" role="alert">
                       <p>{errorText(changeMutation.error)} Your reason is still available.</p>
                       {attempt && (
-                        <button type="button" className="text-button" onClick={() => changeMutation.mutate(attempt)} disabled={changeMutation.isPending}>
+                        <button type="button" className="text-button" onClick={() => changeMutation.mutate(attempt)} disabled={changeMutation.isPending || currentAllocationRefreshFailed}>
                           Retry change
                         </button>
                       )}
@@ -544,7 +563,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
                     <button
                       type="submit"
                       className="primary-button"
-                      disabled={changeMutation.isPending || isStale || !allocation.availableActions.includes(selectedAction)}
+                      disabled={changeMutation.isPending || isStale || currentAllocationRefreshFailed || !allocation.availableActions.includes(selectedAction)}
                     >
                       {changeMutation.isPending ? 'Saving…' : 'Save change'}
                     </button>

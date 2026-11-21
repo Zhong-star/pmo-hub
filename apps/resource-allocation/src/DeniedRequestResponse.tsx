@@ -7,6 +7,7 @@ import { REQUESTS_QUERY_ROOT, type ResourceRequestItem } from './requestApi';
 interface DeniedRequestResponseProps {
   localUserId: string;
   item: ResourceRequestItem;
+  readOnly?: boolean;
   disabled: boolean;
   onChanged: (item: ResourceRequestItem) => void;
   onAccessDenied: () => void;
@@ -41,7 +42,7 @@ function actionKey(localUserId: string, item: ResourceRequestItem, action: Respo
   return createIdempotencyKey(encodeURIComponent(canonical));
 }
 
-export function DeniedRequestResponse({ localUserId, item, disabled, onChanged, onAccessDenied }: DeniedRequestResponseProps) {
+export function DeniedRequestResponse({ localUserId, item, readOnly = false, disabled, onChanged, onAccessDenied }: DeniedRequestResponseProps) {
   const queryClient = useQueryClient();
   const changedProposal = item.decisionState === 'APPROVED_WITH_CHANGES';
   const requiresRevalidation = item.decisionState === 'REQUIRES_REVALIDATION';
@@ -51,8 +52,8 @@ export function DeniedRequestResponse({ localUserId, item, disabled, onChanged, 
   const canContestDenial = item.decisionState === 'DENIED' && canContest;
   const canCancelDenial = item.decisionState === 'DENIED' && canCancel;
   const canCancelRevalidation = requiresRevalidation && canCancel;
-  const showResponseActions = canContestChangedProposal || canContestDenial || canCancelDenial || canCancelRevalidation;
-  const needsHistory = !changedProposal && !requiresRevalidation;
+  const showResponseActions = !readOnly && (canContestChangedProposal || canContestDenial || canCancelDenial || canCancelRevalidation);
+  const needsHistory = readOnly || (!changedProposal && !requiresRevalidation);
   const [activeAction, setActiveAction] = useState<ResponseAction | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const form = useForm<ResponseValues>({ defaultValues: { explanation: '' }, mode: 'onSubmit', reValidateMode: 'onChange' });
@@ -106,7 +107,7 @@ export function DeniedRequestResponse({ localUserId, item, disabled, onChanged, 
 
   return (
     <section className="request-denial-response" aria-labelledby={`denial-response-title-${item.id}`}>
-      <h4 id={`denial-response-title-${item.id}`}>{requiresRevalidation ? 'Revalidation response' : changedProposal ? 'Respond to proposed conditions' : 'Decision history'}</h4>
+      <h4 id={`denial-response-title-${item.id}`}>{readOnly ? 'Request history' : requiresRevalidation ? 'Revalidation response' : changedProposal ? 'Respond to proposed conditions' : 'Decision history'}</h4>
       {needsHistory && historyQuery.isPending && <p role="status">Loading decision history…</p>}
       {needsHistory && historyQuery.isError && (
         <div className="form-error" role="alert">
@@ -114,14 +115,21 @@ export function DeniedRequestResponse({ localUserId, item, disabled, onChanged, 
           <button type="button" className="secondary-button" onClick={() => void historyQuery.refetch()} disabled={historyQuery.isFetching}>Try again</button>
         </div>
       )}
-      {needsHistory && denialEvent && (
+      {readOnly && historyQuery.data?.items.map((event) => (
+        <article className="request-denial-response-event" key={event.id}>
+          <p><strong>{event.action.replaceAll('_', ' ')}:</strong> {event.reason ?? 'No reason was recorded.'}</p>
+          <p><strong>By:</strong> {String(event.actorSnapshot.displayName ?? 'System')}</p>
+          <p><strong>When:</strong> {new Date(event.occurredAt).toLocaleString()}</p>
+        </article>
+      ))}
+      {!readOnly && needsHistory && denialEvent && (
         <article className="request-denial-explanation">
           <p><strong>Denied by:</strong> {String(denialEvent.actorSnapshot.displayName ?? 'Decision maker')}</p>
           <p><strong>When:</strong> {new Date(denialEvent.occurredAt).toLocaleString()}</p>
           <p><strong>Explanation:</strong> {denialEvent.reason ?? 'No explanation was recorded.'}</p>
         </article>
       )}
-      {needsHistory && responseEvents.map((event) => (
+      {!readOnly && needsHistory && responseEvents.map((event) => (
         <article className="request-denial-response-event" key={event.id}>
           <p><strong>{event.action.replaceAll('_', ' ')}:</strong> {event.reason ?? 'No reason was recorded.'}</p>
           <p><strong>When:</strong> {new Date(event.occurredAt).toLocaleString()}</p>

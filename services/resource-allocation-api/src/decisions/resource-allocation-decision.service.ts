@@ -507,10 +507,9 @@ export class ResourceAllocationDecisionService {
     this.ensureDatabaseAvailable();
     try {
       const actor = await this.requireActivePerson(this.dataSource.manager, localUserId);
-      const item = await this.dataSource.getRepository(ResourceRequest).findOne({
-        where: { id: requestId, requesterId: actor.id },
-      });
+      const item = await this.dataSource.getRepository(ResourceRequest).findOne({ where: { id: requestId } });
       if (!item || item.removedAt) throw this.notFound('Request');
+      if (item.requesterId !== actor.id && !this.canConsultRequest(actor, item)) throw this.notFound('Request');
 
       const limit = query.limit ?? 50;
       const cursor = query.cursor ? this.decodeHistoryCursor(query.cursor) : undefined;
@@ -672,6 +671,15 @@ export class ResourceAllocationDecisionService {
     if (actor.id !== item.requesterId) {
       throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'Only the requester may respond to this decision.');
     }
+  }
+
+  private canConsultRequest(actor: ResourcePerson, item: ResourceRequest): boolean {
+    if (actor.role === ResourceAllocationRole.Admin) return true;
+    const groupId = this.groupId(item);
+    if (!groupId) return false;
+    return (actor.role === ResourceAllocationRole.Moderator && actor.groupId?.toLowerCase() === groupId)
+      || ((actor.role === ResourceAllocationRole.Supervisor || actor.role === ResourceAllocationRole.Manager)
+        && actor.coveredGroupIds.some((id) => id.toLowerCase() === groupId));
   }
 
   private requireVersion(item: ResourceRequest, expectedVersion: number): void {

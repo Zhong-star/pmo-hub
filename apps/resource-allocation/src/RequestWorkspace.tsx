@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { getSelectionCollection, type RequestCategory, type SelectionItem, SubmissionRequestError } from './submissionApi';
+import type { ResourceAllocationRole } from './accessApi';
 import {
   acceptRequest,
   getRequest,
@@ -13,6 +14,7 @@ import {
   withdrawRequest,
   type RequestDecisionState,
   type RequestFilters,
+  type RequestScope,
   type ResourceRequestItem,
 } from './requestApi';
 import { DeniedRequestResponse } from './DeniedRequestResponse';
@@ -20,6 +22,8 @@ import { requestResponsibleLabel, revalidationImpedimentLabel, revalidationOrigi
 
 interface RequestWorkspaceProps {
   localUserId: string;
+  personId: string;
+  role: ResourceAllocationRole;
   onAccessDenied: () => void;
 }
 
@@ -183,9 +187,12 @@ function useSelectionQuery(localUserId: string, collection: 'groups' | 'resource
   });
 }
 
-export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspaceProps) {
+export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }: RequestWorkspaceProps) {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<RequestFilters>({});
+  const [requestScope, setRequestScope] = useState<RequestScope>('mine');
+  const canSwitchRequestScope = role !== 'ALLOCATION_USER';
+  const effectiveRequestScope = canSwitchRequestScope ? requestScope : 'mine';
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(() => querySelectedRequestId());
   const [auditRequestId, setAuditRequestId] = useState<string | null>(() => querySelectedAuditId());
   const [withdrawalOpen, setWithdrawalOpen] = useState(false);
@@ -204,8 +211,8 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
   const { handleSubmit: handleWithdrawalSubmit } = withdrawalForm;
   const values = useWatch({ control: editForm.control }) as RequestFormValues;
   const requestsQuery = useInfiniteQuery({
-    queryKey: [...REQUESTS_QUERY_ROOT, localUserId, filters],
-    queryFn: ({ pageParam }) => getRequestCollection(localUserId, filters, pageParam),
+    queryKey: [...REQUESTS_QUERY_ROOT, localUserId, effectiveRequestScope, filters],
+    queryFn: ({ pageParam }) => getRequestCollection(localUserId, filters, pageParam, effectiveRequestScope),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.page.nextCursor ?? undefined,
     refetchInterval: 30_000,
@@ -240,8 +247,10 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
   const groupProfiles = profiles.filter((profile) => profile.groupId === selectedGroupId);
   const isDetailNotFound = selectedRequest.error instanceof RequestApiError && selectedRequest.error.status === 404;
   const currentItem = isDetailNotFound ? undefined : selectedRequest.data;
+  const isRequester = currentItem?.requesterSnapshot.personId === personId;
   const formVersionChanged = currentItem !== undefined && formVersion !== null && currentItem.version !== formVersion;
   const canAcceptProposal = currentItem?.decisionState === 'APPROVED_WITH_CHANGES'
+    && isRequester
     && currentItem.availableActions?.includes('ACCEPT') === true
     && currentItem.dueAt !== null
     && currentItem.dueAt !== undefined;
@@ -252,6 +261,7 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
     || selectedRequest.isError
     || requestsQuery.isError;
   const canEdit = currentItem?.decisionState === 'WAITING_FOR_PRESENTATION'
+    && isRequester
     && !selectedRequest.isFetching
     && !selectedRequest.isError
     && !requestsQuery.isError
@@ -488,6 +498,9 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
   }
 
   const selectedListItem = requests.find((item) => item.id === selectedRequestId);
+  const scopeTitle = effectiveRequestScope === 'visible'
+    ? role === 'ALLOCATION_ADMIN' ? 'All requests' : 'Requests in my scope'
+    : 'My requests';
   const currentConditions = currentItem?.requestedConditions;
   const confirmationLabel = currentItem?.confirmationSource === 'SYSTEM_DEADLINE'
     ? 'Automatically confirmed at deadline'
@@ -499,11 +512,30 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
       <div className="request-panel">
         <div className="request-panel-heading">
           <div>
-            <p className="eyebrow">Your operational requests</p>
-            <h2 id="my-requests-title">My requests</h2>
-            <p>Review your requests, update a request that is waiting for presentation, or withdraw it with a reason.</p>
+            <p className="eyebrow">Operational requests</p>
+            <h2 id="my-requests-title">{scopeTitle}</h2>
+            <p>{effectiveRequestScope === 'visible'
+              ? 'Consult operational requests in the groups currently visible to your role. Other requesters’ records are read-only.'
+              : 'Review your requests, update a request that is waiting for presentation, or withdraw it with a reason.'}</p>
           </div>
         </div>
+
+        {canSwitchRequestScope && (
+          <label className="form-field request-scope-control">
+            <span>Request view</span>
+            <select aria-label="Request view" value={requestScope} onChange={(event) => {
+              const nextScope = event.target.value as RequestScope;
+              setRequestScope(nextScope);
+              setSelectedRequestId(null);
+              setFormVersion(null);
+              lastFormRequestId.current = null;
+              updateRequestUrl(null);
+            }}>
+              <option value="mine">My requests</option>
+              <option value="visible">{role === 'ALLOCATION_ADMIN' ? 'All requests' : 'Requests in my scope'}</option>
+            </select>
+          </label>
+        )}
 
         {notice && <p className="inline-success" role="status">{notice}</p>}
 
@@ -538,16 +570,16 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
           </label>
         </div>
 
-        {requestsQuery.isPending && <p className="supporting-copy" role="status">Loading your requests…</p>}
+        {requestsQuery.isPending && <p className="supporting-copy" role="status">Loading {effectiveRequestScope === 'mine' ? 'your' : 'visible'} requests…</p>}
         {requestsQuery.isError && !requestsQuery.isFetchNextPageError && (
           <div className="form-error" role="alert">
-            <p>Your requests could not be refreshed. Loaded requests and form values are still available; actions that need the current version are paused.</p>
+            <p>The request list could not be refreshed. Loaded requests and form values are still available; actions that need the current version are paused.</p>
             <button type="button" className="secondary-button" onClick={() => void requestsQuery.refetch()} disabled={requestsQuery.isFetching}>Try again</button>
           </div>
         )}
         {!requestsQuery.isPending && requests.length === 0 && !requestsQuery.isError && <p className="empty-state">No operational requests match these filters.</p>}
         {requests.length > 0 && (
-          <div className="request-list" aria-label="Your requests">
+          <div className="request-list" aria-label={scopeTitle}>
             {requests.map((item) => (
               <button
                 type="button"
@@ -569,7 +601,7 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
             type="button"
             className="secondary-button request-load-more"
             onClick={() => void requestsQuery.fetchNextPage()}
-            disabled={requestsQuery.isFetchingNextPage || (requestsQuery.isError && !requestsQuery.isFetchNextPageError)}
+            disabled={requestsQuery.isFetching || (requestsQuery.isError && !requestsQuery.isFetchNextPageError)}
           >
             {requestsQuery.isFetchingNextPage ? 'Loading…' : 'Load more requests'}
           </button>
@@ -611,7 +643,7 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
                   {confirmationLabel && <span><strong>Confirmation</strong>{confirmationLabel}</span>}
                   <span><strong>Version</strong>{currentItem.version}</span>
                 </div>
-                {currentItem.decisionState === 'APPROVED_WITH_CHANGES' && (
+                {isRequester && currentItem.decisionState === 'APPROVED_WITH_CHANGES' && (
                   <section className="request-detail-outcome request-proposal-status" aria-label="Proposal response">
                     <h4>Respond to proposed conditions</h4>
                     <p>No allocation exists until you accept the proposal or the 72-hour response window ends.</p>
@@ -650,12 +682,14 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
                     )}
                   </section>
                 )}
-                {(currentItem.decisionState === 'DENIED' || currentItem.decisionState === 'PRE_N3' || currentItem.decisionState === 'CANCELLED'
+                {((isRequester && (currentItem.decisionState === 'DENIED' || currentItem.decisionState === 'PRE_N3' || currentItem.decisionState === 'CANCELLED'
                   || currentItem.decisionState === 'REQUIRES_REVALIDATION'
-                  || (currentItem.decisionState === 'APPROVED_WITH_CHANGES' && currentItem.availableActions?.includes('CONTEST') === true)) && (
+                  || (currentItem.decisionState === 'APPROVED_WITH_CHANGES' && currentItem.availableActions?.includes('CONTEST') === true)))
+                  || !isRequester) && (
                   <DeniedRequestResponse
                     localUserId={localUserId}
                     item={currentItem}
+                    readOnly={!isRequester}
                     disabled={selectedRequest.isFetching || requestsQuery.isError || formVersionChanged}
                     onChanged={(updated) => {
                       queryClient.setQueryData([...REQUESTS_QUERY_ROOT, localUserId, 'detail', updated.id], updated);
@@ -708,16 +742,18 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
                     </dl>
                   </section>
                 )}
-                {currentItem.decisionState !== 'WAITING_FOR_PRESENTATION' && (
+                {isRequester && currentItem.decisionState !== 'WAITING_FOR_PRESENTATION' && (
                   <p className="field-help request-readonly-message">This request can no longer be edited or withdrawn because it has left the presentation-waiting stage.</p>
                 )}
-                {formVersionChanged && (
+                {isRequester && formVersionChanged && (
                   <div className="form-error" role="alert">
                     <p>A newer version is available. Your form values are preserved; reload the latest version before editing or withdrawing.</p>
                     <button type="button" className="secondary-button" onClick={() => void reloadLatestRequest()} disabled={selectedRequest.isFetching}>Load current request</button>
                   </div>
                 )}
-                {requestsQuery.isError && !requestsQuery.isFetchNextPageError && <p className="field-help">Actions are paused until your request list refreshes successfully.</p>}
+                {isRequester && requestsQuery.isError && !requestsQuery.isFetchNextPageError && <p className="field-help">Actions are paused until your request list refreshes successfully.</p>}
+                {!isRequester && <p className="field-help request-readonly-message">Consultation only. Mutations and requester response actions are available only to the request owner.</p>}
+                {isRequester && (
                 <form className="request-edit-form" onSubmit={editForm.handleSubmit(onEdit)}>
                   <div className="request-form-grid">
                     <label className="form-field">
@@ -787,6 +823,7 @@ export function RequestWorkspace({ localUserId, onAccessDenied }: RequestWorkspa
                     </button>
                   </div>
                 </form>
+                )}
               </>
             )}
           </section>

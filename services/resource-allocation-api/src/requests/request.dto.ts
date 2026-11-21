@@ -1,9 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 import { ResourceRequestCategory, ResourceRequestDecisionState } from '../submissions/submission-category';
 
 export class RequestCollectionQueryDto {
+  @ApiPropertyOptional({ enum: ['visible'], description: 'Read requests across the caller’s current group scope. Requires a leadership role or Admin; the default is the caller’s own requests.' })
+  @IsOptional()
+  @IsIn(['visible'])
+  scope?: 'visible';
+
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()
   @IsUUID()

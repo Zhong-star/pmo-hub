@@ -48,4 +48,10 @@ If that Hub profile is already recorded without an active Admin and no other act
 
 Health routes are `GET /health/live`, `/health/ready`, and `/health/startup`. These routes report API process/dependency/migration health independently of the worker. Use `worker:status` for processing health. Swagger UI is available at `/api/resource-allocation/v1/docs`.
 
+## Request consultation scope
+
+`GET /requests` defaults to the current person's own operational requests. Leadership can opt into `GET /requests?scope=visible`; Admins use the same opt-in for the global operational list. The API resolves each request's current group against the caller's current module role and group assignment: Moderators see their group, Supervisors and Managers see covered groups, and Admins see all groups. The scope applies across operational decision states, including denied, approved with changes, approved, and cancelled requests. A user role cannot request the visible scope.
+
+The same current scope authorizes `GET /requests/{id}` and `GET /requests/{id}/history`. A non-owner can consult those records but receives no requester actions in `availableActions`; requester edits, withdrawal, acceptance, contest, and denial cancellation remain owner-only. Reads of removed-request audit records stay restricted to the requester and Admin. The browser's My requests view remains the default and offers a view switch to leadership and Admin profiles.
+
 The local Kubernetes backend release includes a separate `resource-allocation-worker` Deployment that reuses the API image and database secret. It has no Service or API health probe. Without `--with-postgres`, the Deployment stays at zero replicas; the release and rollback continue to manage the API and worker together.

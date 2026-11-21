@@ -224,13 +224,13 @@ export class ResourceAllocationDecisionController {
   }
 
   @Get('requests/:id/history')
-  @ApiOperation({ summary: 'Read request history as its requester' })
+  @ApiOperation({ summary: 'Read request history as its requester or a leader/Admin currently authorized to consult the request' })
   @ApiOkResponse({ type: RequestHistoryCollectionDto })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size (default 50, maximum 100).' })
   @ApiQuery({ name: 'cursor', required: false, type: String })
   @ApiBadRequestResponse({ description: 'The page cursor or limit is invalid.' })
   @ApiForbiddenResponse({ description: 'An active Resource Allocation person record is required.' })
-  @ApiNotFoundResponse({ description: 'The request is not operational or does not belong to this requester.' })
+  @ApiNotFoundResponse({ description: 'The request is not operational or is outside the caller’s current read scope.' })
   getHistory(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Param('id', new ParseUUIDPipe()) id: string,

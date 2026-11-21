@@ -223,7 +223,12 @@ export function App() {
               />
               <SubmissionWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
               <NotificationsInbox localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
-              <RequestWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
+              <RequestWorkspace
+                localUserId={profileId}
+                personId={accessQuery.data.person.id}
+                role={accessQuery.data.person.role}
+                onAccessDenied={handleModuleDataAccessDenied}
+              />
               <AllocationsWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />
             </Fragment>
           )}

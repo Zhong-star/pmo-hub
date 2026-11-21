@@ -31,6 +31,7 @@ interface RequestCursor {
   receivedAt: string;
   id: string;
   filters: {
+    scope?: 'visible';
     initiativeId?: string;
     decisionState?: ResourceRequestDecisionState;
     groupId?: string;
@@ -62,6 +63,7 @@ export class ResourceAllocationRequestService {
   async list(localUserId: string | undefined, query: RequestCollectionQueryDto) {
     const actor = await this.requireActivePersonOutsideTransaction(localUserId);
     const filters = {
+      ...(query.scope ? { scope: query.scope } : {}),
       ...(query.initiativeId ? { initiativeId: query.initiativeId.toLowerCase() } : {}),
       ...(query.decisionState ? { decisionState: query.decisionState } : {}),
       ...(query.groupId ? { groupId: query.groupId.toLowerCase() } : {}),
@@ -69,7 +71,21 @@ export class ResourceAllocationRequestService {
     };
     const page = this.parsePage(query, filters);
     const builder = this.dataSource.getRepository(ResourceRequest).createQueryBuilder('request')
-      .where('request.requester_id = :requesterId AND request.removed_at IS NULL', { requesterId: actor.id });
+      .where('request.removed_at IS NULL');
+    if (query.scope === 'visible') {
+      if (actor.role === ResourceAllocationRole.Admin) {
+        // Admins may consult every operational request.
+      } else {
+        const groupIds = this.consultationGroupIds(actor);
+        if (filters.groupId && !groupIds.includes(filters.groupId)) {
+          throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'The requested group is outside your active scope.');
+        }
+        if (groupIds.length === 0) builder.andWhere('1 = 0');
+        else builder.andWhere("request.requested_conditions ->> 'groupId' = ANY(CAST(:scopeGroupIds AS text[]))", { scopeGroupIds: groupIds });
+      }
+    } else {
+      builder.andWhere('request.requester_id = :requesterId', { requesterId: actor.id });
+    }
     if (filters.initiativeId) builder.andWhere("request.requested_conditions ->> 'initiativeId' = :initiativeId", { initiativeId: filters.initiativeId });
     if (filters.decisionState) builder.andWhere('request.decision_state = :decisionState', { decisionState: filters.decisionState });
     if (filters.groupId) builder.andWhere("request.requested_conditions ->> 'groupId' = :groupId", { groupId: filters.groupId });
@@ -90,7 +106,7 @@ export class ResourceAllocationRequestService {
     const items = found.slice(0, page.limit);
     const lastItem = items[items.length - 1];
     return {
-      items: items.map((item) => this.toRequestResponse(item, now)),
+      items: items.map((item) => this.toRequestResponse(item, now, item.requesterId === actor.id)),
       page: {
         nextCursor: hasNext && lastItem
           ? this.encodeCursor({
@@ -108,16 +124,16 @@ export class ResourceAllocationRequestService {
   async get(localUserId: string | undefined, id: string) {
     const actor = await this.requireActivePersonOutsideTransaction(localUserId);
     const request = await this.dataSource.getRepository(ResourceRequest).createQueryBuilder('request')
-      .where('request.id = :id AND request.requester_id = :requesterId AND request.removed_at IS NULL', { id, requesterId: actor.id })
+      .where('request.id = :id AND request.removed_at IS NULL', { id })
       .getOne();
-    if (!request) throw this.notFound('Request');
+    if (!request || !this.canConsultRequest(actor, request)) throw this.notFound('Request');
     const allocation = await this.dataSource.getRepository(ResourceAllocation).findOne({ where: { sourceRequestId: request.id } });
     const now = await this.databaseNow();
     return {
       request,
       allocation: allocation ? allocationResponse(allocation) : null,
       dueAt: this.actionableDeadline(request)?.toISOString() ?? null,
-      availableActions: this.availableActions(request, now),
+      availableActions: request.requesterId === actor.id ? this.availableActions(request, now) : [],
       revalidation: await getRequestRevalidationSummary(this.dataSource.manager, request),
     };
   }
@@ -348,6 +364,23 @@ export class ResourceAllocationRequestService {
     return events;
   }
 
+  private consultationGroupIds(actor: ResourcePerson): string[] {
+    if (actor.role === ResourceAllocationRole.Moderator) return actor.groupId ? [actor.groupId.toLowerCase()] : [];
+    if (actor.role === ResourceAllocationRole.Supervisor || actor.role === ResourceAllocationRole.Manager) {
+      return [...new Set(actor.coveredGroupIds.map((id) => id.toLowerCase()))];
+    }
+    throw new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'Only leadership and Admin profiles can consult requests across their visible scope.');
+  }
+
+  private canConsultRequest(actor: ResourcePerson, request: ResourceRequest): boolean {
+    if (request.requesterId === actor.id || actor.role === ResourceAllocationRole.Admin) return true;
+    if (actor.role === ResourceAllocationRole.User) return false;
+    const groupId = typeof request.requestedConditions.groupId === 'string'
+      ? request.requestedConditions.groupId.toLowerCase()
+      : '';
+    return groupId !== '' && this.consultationGroupIds(actor).includes(groupId);
+  }
+
   private parsePage(query: RequestCollectionQueryDto, filters: RequestCursor['filters']) {
     const limit = query.limit === undefined ? defaultPageSize : Number(query.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > maximumPageSize) throw this.validationError('limit must be an integer between 1 and 100.');
@@ -447,7 +480,7 @@ export class ResourceAllocationRequestService {
     return { personId: person.id, displayName: person.displayName, role: person.role };
   }
 
-  private toRequestResponse(request: ResourceRequest, now: Date) {
+  private toRequestResponse(request: ResourceRequest, now: Date, isRequester = true) {
     return {
       id: request.id,
       requesterSnapshot: request.requesterSnapshot,
@@ -458,7 +491,7 @@ export class ResourceAllocationRequestService {
       stageEnteredAt: request.stageEnteredAt.toISOString(),
       expirationDueAt: request.expirationDueAt.toISOString(),
       dueAt: this.actionableDeadline(request)?.toISOString() ?? null,
-      availableActions: this.availableActions(request, now),
+      availableActions: isRequester ? this.availableActions(request, now) : [],
       version: request.version,
     };
   }
@@ -471,6 +504,9 @@ export class ResourceAllocationRequestService {
 
   private availableActions(request: ResourceRequest, now: Date): string[] {
     if (request.decisionState === ResourceRequestDecisionState.RequiresRevalidation) return ['CANCEL'];
+    if (request.decisionState === ResourceRequestDecisionState.Denied && now <= request.expirationDueAt) {
+      return ['CONTEST', 'CANCEL'];
+    }
     if (request.decisionState === ResourceRequestDecisionState.ApprovedWithChanges &&
       request.decisionResponseDueAt && now < request.decisionResponseDueAt) {
       return ['ACCEPT', 'CONTEST'];

@@ -772,7 +772,7 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
         </div>
 
         {submissionsQuery.isPending && <p role="status">Loading your submissions…</p>}
-        {submissionsQuery.isError && !hasAccessError(submissionsQuery.error) && (
+        {submissionsQuery.isError && !submissionsQuery.isFetchNextPageError && !hasAccessError(submissionsQuery.error) && (
           <div className="form-error" role="alert">
             <p>Saved submissions could not be loaded. You can retry without losing the current form.</p>
             <button type="button" className="text-button" onClick={() => void submissionsQuery.refetch()}>Try again</button>
@@ -807,7 +807,7 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
                 type="button"
                 className="secondary-button load-submissions-button"
                 onClick={() => void submissionsQuery.fetchNextPage()}
-                disabled={submissionsQuery.isFetchingNextPage || (submissionsQuery.isError && !submissionsQuery.isFetchNextPageError)}
+                disabled={submissionsQuery.isFetching || (submissionsQuery.isError && !submissionsQuery.isFetchNextPageError)}
               >
                 {submissionsQuery.isFetchingNextPage ? 'Loading…' : 'Load more submissions'}
               </button>

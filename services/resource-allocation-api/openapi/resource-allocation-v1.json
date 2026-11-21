@@ -3009,6 +3009,18 @@
         "operationId": "ResourceAllocationRequestController_list",
         "parameters": [
           {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "description": "Opt into requests visible to the current leadership scope or Admin global scope. Defaults to own requests.",
+            "schema": {
+              "enum": [
+                "visible"
+              ],
+              "type": "string"
+            }
+          },
+          {
             "name": "initiativeId",
             "required": false,
             "in": "query",
@@ -3112,7 +3124,7 @@
             "localProfile": []
           }
         ],
-        "summary": "List the current requester’s operational requests",
+        "summary": "List the current requester’s operational requests or requests visible to current leadership scope",
         "tags": [
           "Tech Resource Allocation requests"
         ]
@@ -3161,7 +3173,7 @@
             }
           },
           "404": {
-            "description": "The request is not operational or does not belong to this requester.",
+            "description": "The request is not operational or is outside the caller’s current read scope.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3176,7 +3188,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Read a current requester’s operational request",
+        "summary": "Read an operational request owned by the caller or visible to their current leadership/Admin scope",
         "tags": [
           "Tech Resource Allocation requests"
         ]
@@ -4446,7 +4458,7 @@
             }
           },
           "404": {
-            "description": "The request is not operational or does not belong to this requester.",
+            "description": "The request is not operational or is outside the caller’s current read scope.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4461,7 +4473,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Read request history as its requester",
+        "summary": "Read request history as its requester or a leader/Admin currently authorized to consult the request",
         "tags": [
           "Tech Resource Allocation decisions"
         ]

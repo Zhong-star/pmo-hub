@@ -44,8 +44,8 @@ function record(version = 1, comment = 'Original scope.'): Record<string, unknow
   };
 }
 
-async function installAccessAndSelections(page: Page) {
-  await page.route(`${apiRoot}/access`, async (route) => route.fulfill({ json: { person: user } }));
+async function installAccessAndSelections(page: Page, profile = user) {
+  await page.route(`${apiRoot}/access`, async (route) => route.fulfill({ json: { person: profile } }));
   await page.route(`${apiRoot}/initiatives**`, async (route) => route.fulfill({
     json: { items: [{ id: initiativeId, code: 'ITDM-61', name: 'Resource planning' }], page: emptyPage },
   }));
@@ -63,7 +63,7 @@ async function installAccessAndSelections(page: Page) {
   }));
   await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), {
     key: profileStorageKey,
-    value: userId,
+    value: profile.localUserId,
   });
 }
 
@@ -620,4 +620,76 @@ test('preserves edited text after temporary and version-conflict failures until 
   await page.getByRole('button', { name: 'Load current request' }).click();
   await expect(comment).toHaveValue('A newer saved scope.');
   expect(patchCount).toBe(2);
+});
+
+test('lets leadership switch to visible requests and consult denied or changed decisions without requester actions', async ({ page }) => {
+  const supervisor = {
+    ...user,
+    id: '987ad5bc-1c84-4fb7-a39c-7ee24189b197',
+    localUserId: 'profile-supervisor',
+    role: 'ALLOCATION_SUPERVISOR',
+    coveredGroupIds: [groupId],
+  };
+  await installAccessAndSelections(page, supervisor);
+  const owner = { personId: '51d06fed-25a0-4d31-9c9f-892f530e8bdc', displayName: 'Morgan Owner', role: 'ALLOCATION_USER' };
+  const deniedId = 'a03d478f-144d-4a4d-9799-4041e27823ad';
+  const changedId = 'd02b47b0-60b8-472a-9c14-cde7ec5c7c01';
+  const observed = [
+    { ...record(), id: deniedId, requesterSnapshot: owner, decisionState: 'DENIED', availableActions: [] },
+    {
+      ...record(), id: changedId, requesterSnapshot: owner, decisionState: 'APPROVED_WITH_CHANGES', availableActions: [],
+      dueAt: '2026-11-25T12:00:00.000Z',
+      approvedConditions: {
+        personId: '4cc62240-f5fa-4b60-a973-caa7910612b6', personName: 'Jordan Resource',
+        resourceProfileId: profileId, resourceProfileName: 'API Engineering', groupId, groupName: 'Platform Engineering',
+        initiativeId, initiativeCode: 'ITDM-61', initiativeName: 'Resource planning', startDate: '2027-01-06',
+        endDate: '2027-01-29', weeklyHours: 10, explanation: 'The start date was moved.',
+      },
+    },
+  ];
+  const histories = new Map([
+    [deniedId, { action: 'DENIED', reason: 'The requested capacity is unavailable.' }],
+    [changedId, { action: 'APPROVED_WITH_CHANGES', reason: 'The start date was moved.' }],
+  ]);
+  await page.route(`${apiRoot}/requests**`, async (route: Route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const historyId = url.pathname.match(/\/requests\/([^/]+)\/history$/)?.[1];
+    const detailId = url.pathname.match(/\/requests\/([^/]+)$/)?.[1];
+    if (request.method() === 'GET' && historyId) {
+      const event = histories.get(historyId);
+      await route.fulfill({ json: {
+        items: [{ id: `event-${historyId}`, action: event?.action ?? 'SUBMITTED', actorSnapshot: { displayName: 'Casey Lead' }, before: {}, after: {}, reason: event?.reason ?? null, occurredAt: '2026-11-21T12:00:00.000Z', correlationId: 'ed190827-3ba4-415f-960f-4581c9d8f2d1' }],
+        page: { nextCursor: null, limit: 50 }, latestDenial: null, latestResponse: null,
+      } });
+      return;
+    }
+    if (request.method() === 'GET' && detailId && observed.some((item) => item.id === detailId)) {
+      await route.fulfill({ json: observed.find((item) => item.id === detailId) });
+      return;
+    }
+    if (request.method() === 'GET' && url.pathname.endsWith('/requests')) {
+      await route.fulfill({ json: { items: url.searchParams.get('scope') === 'visible' ? observed : [], page: { nextCursor: null, limit: 50 } } });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto('/resource-allocation/');
+  await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible();
+  const requestView = page.getByRole('combobox', { name: 'Request view' });
+  await expect(requestView).toBeVisible();
+  await requestView.selectOption('visible');
+  await expect(page.getByRole('heading', { name: 'Requests in my scope' })).toBeVisible();
+  await page.getByRole('button', { name: /ITDM-61.*Denied/s }).click();
+  const deniedDetail = page.getByRole('region', { name: 'ITDM-61' });
+  await expect(deniedDetail.getByText('Consultation only.')).toBeVisible();
+  await expect(deniedDetail.getByText('The requested capacity is unavailable.')).toBeVisible();
+  await expect(deniedDetail.getByRole('button', { name: /Contest denial|Cancel request|Save request changes|Withdraw request/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Close detail' }).click();
+  await page.getByRole('button', { name: /ITDM-61.*Approved with changes/s }).click();
+  const changedDetail = page.getByRole('region', { name: 'ITDM-61' });
+  await expect(changedDetail.getByText('Consultation only.')).toBeVisible();
+  await expect(changedDetail).toContainText('The start date was moved.');
+  await expect(changedDetail.getByRole('button', { name: /Accept proposed conditions|Contest proposed changes|Cancel request|Save request changes|Withdraw request/ })).toHaveCount(0);
 });

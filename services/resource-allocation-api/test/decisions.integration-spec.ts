@@ -188,6 +188,12 @@ describe('Tech Resource Allocation denials and exception resolution (#65/#66)', 
     expect(denied.headers.etag).toBe('"2"');
     expect(denied.body).toMatchObject({ id: resourceRequest.id, decisionState: 'DENIED', version: 2 });
 
+    const detail = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/requests/${resourceRequest.id}`)
+      .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
+      .expect(200);
+    expect(detail.body.availableActions).toEqual(['CONTEST', 'CANCEL']);
+
     const history = await request(app!.getHttpServer())
       .get(`/api/resource-allocation/v1/requests/${resourceRequest.id}/history`)
       .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
