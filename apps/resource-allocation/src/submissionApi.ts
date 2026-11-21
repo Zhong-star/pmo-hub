@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 export const SUBMISSIONS_QUERY_ROOT = ['resource-allocation-submissions'] as const;
+export const SELECTIONS_QUERY_ROOT = ['resource-allocation-selections'] as const;
 const API_ROOT = '/api/resource-allocation/v1';
 
 export type RequestCategory =

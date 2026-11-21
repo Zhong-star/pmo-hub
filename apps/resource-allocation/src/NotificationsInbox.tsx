@@ -229,7 +229,7 @@ export function NotificationsInbox({ localUserId, onAccessDenied }: Notification
               type="button"
               className="text-button"
               onClick={() => void notificationQuery.fetchNextPage()}
-              disabled={notificationQuery.isFetchingNextPage}
+              disabled={notificationQuery.isFetching || (notificationQuery.isError && !notificationQuery.isFetchNextPageError)}
             >
               Retry loading more
             </button>

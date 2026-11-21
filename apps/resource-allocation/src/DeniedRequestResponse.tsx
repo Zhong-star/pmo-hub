@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
 import { cancelRequest, contestRequest, getRequestHistory, RequestDecisionApiError } from './requestDecisionApi';
 import { REQUESTS_QUERY_ROOT, type ResourceRequestItem } from './requestApi';
+import { REQUEST_QUEUES_QUERY_ROOT } from './requestQueueApi';
+import { SUBMISSIONS_QUERY_ROOT } from './submissionApi';
 
 interface DeniedRequestResponseProps {
   localUserId: string;
@@ -90,7 +93,9 @@ export function DeniedRequestResponse({ localUserId, item, readOnly = false, dis
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: [...REQUESTS_QUERY_ROOT, localUserId, 'history', item.id] }),
         queryClient.invalidateQueries({ queryKey: REQUESTS_QUERY_ROOT }),
-        queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'resource-allocation-notifications' }),
+        queryClient.invalidateQueries({ queryKey: REQUEST_QUEUES_QUERY_ROOT }),
+        queryClient.invalidateQueries({ queryKey: SUBMISSIONS_QUERY_ROOT }),
+        queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_ROOT }),
       ]);
     } catch (error) {
       if (hasAccessError(error)) {

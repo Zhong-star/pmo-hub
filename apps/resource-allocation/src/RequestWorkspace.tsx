@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
-import { getSelectionCollection, type RequestCategory, type SelectionItem, SubmissionRequestError } from './submissionApi';
+import { ALLOCATIONS_QUERY_ROOT } from './allocationApi';
+import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
+import { getSelectionCollection, SELECTIONS_QUERY_ROOT, SUBMISSIONS_QUERY_ROOT, type RequestCategory, type SelectionItem, SubmissionRequestError } from './submissionApi';
+import { REQUEST_QUEUES_QUERY_ROOT } from './requestQueueApi';
 import type { ResourceAllocationRole } from './accessApi';
 import {
   acceptRequest,
@@ -176,7 +179,7 @@ function formatTimestamp(value: string): string {
 
 function useSelectionQuery(localUserId: string, collection: 'groups' | 'resource-profiles' | 'initiatives') {
   return useInfiniteQuery({
-    queryKey: ['resource-allocation-selections', localUserId, collection],
+    queryKey: [...SELECTIONS_QUERY_ROOT, localUserId, collection],
     queryFn: ({ pageParam }) => getSelectionCollection(collection, localUserId, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.page.nextCursor ?? undefined,
@@ -340,12 +343,14 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
     updateRequestUrl(null);
   }
 
-  async function invalidateRequestSurfaces(requestId: string, preserveDetail = false) {
-    await queryClient.invalidateQueries({ queryKey: REQUESTS_QUERY_ROOT });
-    await queryClient.invalidateQueries({ queryKey: ['resource-allocation-submissions', localUserId] });
-    await queryClient.invalidateQueries({
-      predicate: (query) => query.queryKey[0] === 'resource-allocation-notifications',
-    });
+  async function invalidateRequestSurfaces(requestId: string, preserveDetail = false, includeAllocations = false) {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: REQUESTS_QUERY_ROOT }),
+      queryClient.invalidateQueries({ queryKey: REQUEST_QUEUES_QUERY_ROOT }),
+      queryClient.invalidateQueries({ queryKey: SUBMISSIONS_QUERY_ROOT }),
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_ROOT }),
+      ...(includeAllocations ? [queryClient.invalidateQueries({ queryKey: ALLOCATIONS_QUERY_ROOT })] : []),
+    ]);
     if (!preserveDetail) {
       await queryClient.removeQueries({ queryKey: [...REQUESTS_QUERY_ROOT, localUserId, 'detail', requestId] });
     }
@@ -455,7 +460,7 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
         : accepted.confirmationSource === 'REQUESTER_ACCEPTANCE'
           ? 'You accepted the proposed conditions.'
           : 'The request status was updated.');
-      await invalidateRequestSurfaces(currentItem.id, true);
+      await invalidateRequestSurfaces(currentItem.id, true, true);
     } catch (error) {
       if (hasAccessError(error)) {
         onAccessDenied();
@@ -475,7 +480,7 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
           setAcceptError('');
           setNotice('This proposal is no longer awaiting acceptance. The current request status has been loaded.');
         }
-        await invalidateRequestSurfaces(currentItem.id, true);
+        await invalidateRequestSurfaces(currentItem.id, true, true);
         return;
       }
       setAcceptError(issueMutationError(error));
@@ -609,7 +614,14 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
         {requestsQuery.isFetchNextPageError && (
           <div className="form-error request-load-more-error" role="alert">
             <p>More requests could not be loaded. Previously loaded requests remain available.</p>
-            <button type="button" className="text-button" onClick={() => void requestsQuery.fetchNextPage()}>Try again</button>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => void requestsQuery.fetchNextPage()}
+              disabled={requestsQuery.isFetching || (requestsQuery.isError && !requestsQuery.isFetchNextPageError)}
+            >
+              Try again
+            </button>
           </div>
         )}
 
