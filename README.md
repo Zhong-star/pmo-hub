@@ -8,7 +8,7 @@ Specs ficam em `docs/<feature>/`, junto ao código que descrevem. O acompanhamen
 
 ## Hub local
 
-O Hub, Lessons Learned e Tech Resource Allocation têm frontends React/Vite e APIs NestJS próprios. Na raiz do monorepo, execute `npm ci` e `npm run build`. Prepare o [PostgreSQL de Tech Resource Allocation](services/resource-allocation-api/README.md#local-postgresql), execute as migrações e [prepare o primeiro Admin](services/resource-allocation-api/README.md#prepare-the-first-admin). O PostgreSQL de Lessons Learned é opcional. Quando usado, siga a [preparação do banco de Lessons Learned](services/lessons-learned-api/README.md).
+O Hub, Lessons Learned e Tech Resource Allocation têm frontends React/Vite e APIs NestJS próprios. Na raiz do monorepo, execute `npm ci` e `npm run build`. Prepare o [PostgreSQL de Tech Resource Allocation](services/resource-allocation-api/README.md#local-postgresql), execute as migrações, [prepare o primeiro Admin](services/resource-allocation-api/README.md#prepare-the-first-admin) e [prepare os cadastros mínimos operacionais](services/resource-allocation-api/README.md#prepare-minimal-operational-records) (com [massa opcional de demonstração](services/resource-allocation-api/README.md#prepare-optional-demo-data), se desejar). O PostgreSQL de Lessons Learned é opcional. Quando usado, siga a [preparação do banco de Lessons Learned](services/lessons-learned-api/README.md).
 
 Inicie cada componente em um terminal separado a partir da raiz. Defina a URL do banco do módulo nos terminais da respectiva API e do worker.
 
