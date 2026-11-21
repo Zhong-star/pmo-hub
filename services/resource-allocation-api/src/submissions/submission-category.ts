@@ -15,4 +15,12 @@ export enum ResourceSubmissionLineStatus {
 
 export enum ResourceRequestDecisionState {
   WaitingForPresentation = 'WAITING_FOR_PRESENTATION',
+  PendingTeamDecision = 'PENDING_TEAM_DECISION',
+  ApprovedWithChanges = 'APPROVED_WITH_CHANGES',
+  Approved = 'APPROVED',
+  Denied = 'DENIED',
+  PreN3 = 'PRE_N3',
+  Escalation = 'ESCALATION',
+  RequiresRevalidation = 'REQUIRES_REVALIDATION',
+  Cancelled = 'CANCELLED',
 }

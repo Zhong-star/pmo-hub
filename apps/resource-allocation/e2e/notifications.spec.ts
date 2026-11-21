@@ -13,12 +13,13 @@ const user = {
   coveredGroupIds: [],
 };
 
-async function installModuleFixtures(page: Page) {
-  await page.route(`${apiRoot}/access`, async (route) => route.fulfill({ json: { person: user } }));
+async function installModuleFixtures(page: Page, person = user) {
+  await page.route(`${apiRoot}/access`, async (route) => route.fulfill({ json: { person } }));
   await page.route(`${apiRoot}/groups**`, async (route) => route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 100 } } }));
   await page.route(`${apiRoot}/resource-profiles**`, async (route) => route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 100 } } }));
   await page.route(`${apiRoot}/initiatives**`, async (route) => route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 100 } } }));
   await page.route(`${apiRoot}/submissions**`, async (route) => route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 50 } } }));
+  await page.route(`${apiRoot}/requests**`, async (route) => route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 50 } } }));
 }
 
 function notification(id: string, title: string, available: boolean, readAt: string | null = null) {
@@ -131,6 +132,53 @@ test('filters and reads inbox items while hiding unavailable targets', async ({ 
   await expect(page.getByRole('heading', { name: 'Your request was received' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'A request is unavailable' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'A team request needs review' })).toBeVisible();
+});
+
+test('opens an owned notification in the scoped request detail view', async ({ page }) => {
+  const requester = { ...user, id: 'person-owner', role: 'ALLOCATION_USER' };
+  await installModuleFixtures(page, requester);
+  const ownedRequest = {
+    id: requestId,
+    requesterSnapshot: { personId: requester.id, displayName: requester.displayName, role: requester.role },
+    requestedConditions: {
+      initiativeId: '20000000-0000-4000-8000-000000000075',
+      initiativeCode: 'ITDM-70',
+      initiativeName: 'Notification navigation',
+      category: 'EXECUTION_PROJECT',
+      groupId: '20000000-0000-4000-8000-000000000076',
+      groupName: 'Platform Engineering',
+      resourceProfileId: '20000000-0000-4000-8000-000000000077',
+      resourceProfileName: 'API Engineering',
+      startDate: '2027-01-05',
+      endDate: '2027-01-19',
+      weeklyHours: 8,
+      comment: 'Original request text.',
+    },
+    decisionState: 'WAITING_FOR_PRESENTATION',
+    receivedAt: '2026-11-20T12:00:00.000Z',
+    stageEnteredAt: '2026-11-20T12:00:00.000Z',
+    expirationDueAt: '2026-12-11T12:00:00.000Z',
+    version: 1,
+  };
+  await page.route(`${apiRoot}/notifications**`, async (route) => route.fulfill({
+    json: { items: [notification(notificationId, 'Your request was received', true)], page: { nextCursor: null, limit: 50 } },
+  }));
+  await page.route(`${apiRoot}/requests**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith(`/requests/${requestId}`)) {
+      await route.fulfill({ headers: { etag: '"1"' }, json: ownedRequest });
+    } else {
+      await route.fulfill({ json: { items: [ownedRequest], page: { nextCursor: null, limit: 50 } } });
+    }
+  });
+
+  await openAsUser(page);
+  await page.getByRole('link', { name: 'Open related request' }).click();
+  await expect(page).toHaveURL(new RegExp(`requestId=${requestId}`));
+  await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible();
+  const requestDetail = page.getByRole('region', { name: 'ITDM-70' });
+  await expect(requestDetail).toBeVisible();
+  await expect(requestDetail.getByRole('textbox', { name: /Comment/ })).toHaveValue('Original request text.');
 });
 
 test('refreshes every 30 seconds while visible and when the user returns to the tab', async ({ page }) => {

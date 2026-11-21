@@ -2454,6 +2454,555 @@
           "Tech Resource Allocation notifications"
         ]
       }
+    },
+    "/api/resource-allocation/v1/requests": {
+      "get": {
+        "operationId": "ResourceAllocationRequestController_list",
+        "parameters": [
+          {
+            "name": "initiativeId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "decisionState",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "WAITING_FOR_PRESENTATION",
+                "PENDING_TEAM_DECISION",
+                "APPROVED_WITH_CHANGES",
+                "APPROVED",
+                "DENIED",
+                "PRE_N3",
+                "ESCALATION",
+                "REQUIRES_REVALIDATION",
+                "CANCELLED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "groupId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceProfileId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size (default 50, maximum 100).",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceRequestCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A filter, limit, or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active Resource Allocation person record is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List the current requester’s operational requests",
+        "tags": [
+          "Tech Resource Allocation requests"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/requests/{id}": {
+      "get": {
+        "operationId": "ResourceAllocationRequestController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"1\""
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceRequestResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active Resource Allocation person record is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The request is not operational or does not belong to this requester.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Read a current requester’s operational request",
+        "tags": [
+          "Tech Resource Allocation requests"
+        ]
+      },
+      "patch": {
+        "operationId": "ResourceAllocationRequestController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Strong ETag version from the latest request response.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRequestedConditionsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"2\""
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceRequestResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match or requested conditions are invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The current profile is not active.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The request is not operational or does not belong to this requester.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The request version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request is no longer waiting or selected references/dates are ineligible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Edit requested conditions while waiting for presentation",
+        "tags": [
+          "Tech Resource Allocation requests"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/requests/{id}/withdrawals": {
+      "post": {
+        "operationId": "ResourceAllocationRequestController_withdraw",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "UUID identifying this withdrawal command.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawResourceRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceRequestAuditEventResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match, Idempotency-Key, or reason is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The current profile is not active.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The request is not operational or does not belong to this requester.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The idempotency key was reused for different content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The request version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request is no longer waiting for presentation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Withdraw a request while it is waiting for presentation",
+        "tags": [
+          "Tech Resource Allocation requests"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/request-audits/{id}": {
+      "get": {
+        "operationId": "ResourceAllocationRequestAuditController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceRequestAuditResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active Resource Allocation person record is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The audit does not exist or the current profile is not allowed to read it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Read audit history for a removed request",
+        "tags": [
+          "Tech Resource Allocation request audits"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/request-audits/{id}/events": {
+      "get": {
+        "operationId": "ResourceAllocationRequestAuditController_listEvents",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size (default 50, maximum 100).",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceRequestAuditCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active Resource Allocation person record is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The audit does not exist or the current profile is not allowed to read it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List immutable events for a removed request audit",
+        "tags": [
+          "Tech Resource Allocation request audits"
+        ]
+      }
     }
   },
   "info": {
@@ -3589,6 +4138,229 @@
         "required": [
           "cutoffAt",
           "markedCount"
+        ]
+      },
+      "ResourceRequestResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requesterSnapshot": {
+            "type": "object"
+          },
+          "requestedConditions": {
+            "type": "object"
+          },
+          "decisionState": {
+            "type": "string",
+            "enum": [
+              "WAITING_FOR_PRESENTATION",
+              "PENDING_TEAM_DECISION",
+              "APPROVED_WITH_CHANGES",
+              "APPROVED",
+              "DENIED",
+              "PRE_N3",
+              "ESCALATION",
+              "REQUIRES_REVALIDATION",
+              "CANCELLED"
+            ]
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stageEnteredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expirationDueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "requesterSnapshot",
+          "requestedConditions",
+          "decisionState",
+          "receivedAt",
+          "stageEnteredAt",
+          "expirationDueAt",
+          "version"
+        ]
+      },
+      "ResourceRequestCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceRequestResponseDto"
+            }
+          },
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ]
+      },
+      "UpdateRequestedConditionsDto": {
+        "type": "object",
+        "properties": {
+          "initiativeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "DEMAND_ANALYSIS",
+              "POC_BBP",
+              "EXECUTION_PROJECT",
+              "EXECUTION_FAST_TRACK",
+              "EXECUTION_ENHANCEMENT"
+            ]
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resourceProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "weeklyHours": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 40,
+            "description": "Rounded by the server to one decimal place."
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
+      },
+      "WithdrawResourceRequestDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "ResourceRequestAuditEventResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "WITHDRAWN",
+              "ADMIN_REMOVED",
+              "EXPIRED"
+            ]
+          },
+          "requesterSnapshot": {
+            "type": "object"
+          },
+          "actorSnapshot": {
+            "type": "object"
+          },
+          "requestSnapshot": {
+            "type": "object"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "requesterSnapshot",
+          "actorSnapshot",
+          "requestSnapshot",
+          "reason",
+          "occurredAt",
+          "correlationId"
+        ]
+      },
+      "ResourceRequestAuditResponseDto": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceRequestAuditEventResponseDto"
+            }
+          }
+        },
+        "required": [
+          "requestId",
+          "events"
+        ]
+      },
+      "ResourceRequestAuditCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceRequestAuditEventResponseDto"
+            }
+          },
+          "page": {
+            "type": "object",
+            "example": {
+              "nextCursor": null,
+              "limit": 50
+            }
+          }
+        },
+        "required": [
+          "items",
+          "page"
         ]
       }
     }

@@ -79,6 +79,30 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
     expect(peopleSchema.properties).not.toHaveProperty('role');
   });
 
+  it('documents requester filtering, conditional edits, idempotent withdrawal, and protected audit reads', () => {
+    const collection = contract.paths['/api/resource-allocation/v1/requests'];
+    expect(collection.get.responses['200'].content).toHaveProperty('application/json');
+    expect(collection.get.responses['200'].headers ?? {}).not.toHaveProperty('ETag');
+    expect(collection.get.responses['400'].content).toHaveProperty('application/problem+json');
+
+    const item = contract.paths['/api/resource-allocation/v1/requests/{id}'];
+    expect(item.get.responses['200'].headers).toHaveProperty('ETag');
+    expect(item.patch.parameters).toContainEqual(expect.objectContaining({ name: 'If-Match', required: true }));
+    expect(item.patch.requestBody?.content).toHaveProperty('application/merge-patch+json');
+    expect(item.patch.responses['200'].headers).toHaveProperty('ETag');
+    expect(item.patch.responses['400'].content).toHaveProperty('application/problem+json');
+    expect(item.patch.responses['412'].content).toHaveProperty('application/problem+json');
+
+    const withdraw = contract.paths['/api/resource-allocation/v1/requests/{id}/withdrawals'].post;
+    expect(withdraw.parameters).toContainEqual(expect.objectContaining({ name: 'If-Match', required: true }));
+    expect(withdraw.parameters).toContainEqual(expect.objectContaining({ name: 'Idempotency-Key', required: true }));
+    expect(withdraw.responses['409'].content).toHaveProperty('application/problem+json');
+
+    const audit = contract.paths['/api/resource-allocation/v1/request-audits/{id}'].get;
+    expect(audit.responses['200'].content).toHaveProperty('application/json');
+    expect(audit.responses['404'].content).toHaveProperty('application/problem+json');
+  });
+
   it('documents scoped notification reads, conditional marking, and whole-inbox idempotency', () => {
     const collection = contract.paths['/api/resource-allocation/v1/notifications'];
     expect(collection.get.parameters).toContainEqual(expect.objectContaining({ name: 'read', required: false }));

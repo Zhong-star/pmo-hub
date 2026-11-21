@@ -91,6 +91,10 @@ export interface SubmissionLine {
   receivedAt: string;
   completedAt?: string;
   requestOutcome?: string | {
+    status?: string;
+    action?: string;
+    reason?: string;
+    removedAt?: string;
     decisionState?: string;
     requestedConditions?: Partial<SubmittedConditions>;
   };

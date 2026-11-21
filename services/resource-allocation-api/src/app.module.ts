@@ -12,6 +12,8 @@ import { ResourceAllocationSubmissionService } from './submissions/resource-allo
 import { ResourceAllocationSubmissionWorker } from './submissions/resource-allocation-submission.worker';
 import { ResourceAllocationNotificationController } from './notifications/resource-allocation-notification.controller';
 import { ResourceAllocationNotificationService } from './notifications/resource-allocation-notification.service';
+import { ResourceAllocationRequestAuditController, ResourceAllocationRequestController } from './requests/resource-allocation-request.controller';
+import { ResourceAllocationRequestService } from './requests/resource-allocation-request.service';
 
 @Module({
   controllers: [
@@ -22,6 +24,8 @@ import { ResourceAllocationNotificationService } from './notifications/resource-
     ResourceAllocationSubmissionController,
     ResourceAllocationOperationResultController,
     ResourceAllocationNotificationController,
+    ResourceAllocationRequestController,
+    ResourceAllocationRequestAuditController,
   ],
   providers: [
     ResourceAllocationAccessService,
@@ -29,6 +33,7 @@ import { ResourceAllocationNotificationService } from './notifications/resource-
     ResourceAllocationSubmissionService,
     ResourceAllocationSubmissionWorker,
     ResourceAllocationNotificationService,
+    ResourceAllocationRequestService,
   ],
 })
 export class AppModule {

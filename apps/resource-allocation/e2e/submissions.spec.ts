@@ -36,6 +36,9 @@ async function installSelectionFixtures(page: Page) {
   await page.route(`${apiRoot}/resource-profiles**`, async (route) => route.fulfill({
     json: { items: [profile], page: emptyPage },
   }));
+  await page.route(`${apiRoot}/requests**`, async (route) => route.fulfill({
+    json: { items: [], page: { nextCursor: null, limit: 50 } },
+  }));
 }
 
 function dateAfter(days: number) {
