@@ -73,7 +73,7 @@ async function installCommonRoutes(page: Page, profileId: string, person: typeof
     });
   }
   await page.route(`${apiRoot}/submissions**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
-  await page.route(`${apiRoot}/requests`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
+  await page.route(/\/api\/resource-allocation\/v1\/requests(?:\?|$)/, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/admin/**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), {
     key: profileStorageKey,
@@ -248,7 +248,7 @@ test('reuses a pending action key after a lost result and page reload', async ({
 
   await page.goto('/resource-allocation/');
   await page.getByRole('button', { name: 'Refer to group decision' }).click();
-  await expect(page.getByRole('alert')).toContainText('Temporary service interruption.');
+  await expect(page.getByRole('alert').filter({ hasText: 'Temporary service interruption.' })).toBeVisible();
   await page.reload();
   await page.getByRole('button', { name: 'Refer to group decision' }).click();
 

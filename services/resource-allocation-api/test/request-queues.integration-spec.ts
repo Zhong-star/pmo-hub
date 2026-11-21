@@ -294,6 +294,15 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
     expect(first.headers.etag).toBe('"2"');
     expect(first.body).toMatchObject({ id: resourceRequest.id, decisionState: 'PENDING_TEAM_DECISION', version: 2 });
 
+    await request(app!.getHttpServer())
+      .patch(`/api/resource-allocation/v1/requests/${resourceRequest.id}`)
+      .set('X-PMO-Local-User-ID', fixture.requesterB.localUserId)
+      .set('If-Match', '"2"')
+      .set('Content-Type', 'application/merge-patch+json')
+      .send({ comment: 'Changes are no longer permitted.' })
+      .expect(422)
+      .expect((response) => expect(response.body.code).toBe('INVALID_REQUEST_TRANSITION'));
+
     const replay = await request(app!.getHttpServer())
       .post(path)
       .set('X-PMO-Local-User-ID', fixture.admin.localUserId)

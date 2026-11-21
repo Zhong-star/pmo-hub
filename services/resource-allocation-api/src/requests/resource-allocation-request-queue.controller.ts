@@ -79,6 +79,8 @@ export class ResourceAllocationRequestQueueController {
   @ApiQuery({ name: 'decisionState', required: false, type: String })
   @ApiForbiddenResponse({ description: 'The active role is not allowed to view this queue or group.' })
   @ApiResponse({ status: 400, description: 'The queue, filters, page size, or cursor is invalid.' })
+  @ApiResponse({ status: 401, description: 'A selected local profile is required.' })
+  @ApiResponse({ status: 503, description: 'The Resource Allocation database is unavailable.' })
   listQueue(
     @Headers(localProfileHeader) localUserId: string | undefined,
     @Param('queueCode') queueCode: string,

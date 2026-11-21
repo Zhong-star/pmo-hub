@@ -383,7 +383,10 @@ function SubmissionResults({
           {lines.map((line, index) => {
             const outcomeState = typeof line.requestOutcome === 'string'
               ? line.requestOutcome
-              : line.requestOutcome?.decisionState;
+              : line.requestOutcome?.decisionState
+                ?? (line.requestOutcome?.status === 'REMOVED'
+                  ? `Removed from operation${line.requestOutcome.action ? ` · ${line.requestOutcome.action.toLowerCase().replaceAll('_', ' ')}` : ''}`
+                  : line.requestOutcome?.status);
             const outcomeConditions = typeof line.requestOutcome === 'object'
               ? line.requestOutcome.requestedConditions
               : undefined;
@@ -407,6 +410,12 @@ function SubmissionResults({
                 {line.submittedConditions.comment && <p className="submission-result-comment">{line.submittedConditions.comment}</p>}
                 {line.status === 'SUCCEEDED' && line.requestId && <p className="submission-result-detail">Request created: <code>{line.requestId}</code></p>}
                 {line.status === 'SUCCEEDED' && outcomeState && <p className="submission-result-detail">Current outcome: {outcomeState}</p>}
+                {line.requestOutcome && typeof line.requestOutcome === 'object' && line.requestOutcome.status === 'REMOVED' && line.requestId && (
+                  <>
+                    {line.requestOutcome.reason && <p className="submission-result-detail">Removal reason: {line.requestOutcome.reason}</p>}
+                    <p className="submission-result-detail"><a href={`/resource-allocation/?auditId=${encodeURIComponent(line.requestId)}`}>Open retained audit record</a></p>
+                  </>
+                )}
                 {line.status === 'FAILED' && (
                   <div className="submission-failure-detail">
                     <p>{line.problem?.detail ?? line.problem?.title ?? 'This request line failed and can be corrected.'}</p>

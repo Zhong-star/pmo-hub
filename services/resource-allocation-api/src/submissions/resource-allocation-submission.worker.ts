@@ -13,6 +13,7 @@ import { ResourceSubmission } from './resource-submission.entity';
 import { ResourceSubmissionLine } from './resource-submission-line.entity';
 import { ResourceRequest } from '../requests/resource-request.entity';
 import { ResourceRequestHistory } from '../requests/resource-request-history.entity';
+import { normalizeRequestedWeeklyHours } from '../requests/requested-weekly-hours';
 import { ResourceAllocationNotification } from '../notifications/resource-allocation-notification.entity';
 import { ResourceRequestCategory, ResourceRequestDecisionState, ResourceSubmissionLineStatus } from './submission-category';
 import { lockResourceAllocationAdministrationWrites } from '../administration/resource-allocation-write-lock';
@@ -165,7 +166,7 @@ export class ResourceAllocationSubmissionWorker {
     }
 
     this.validateDates(conditions, await this.localToday(manager));
-    const weeklyHours = normalizeWeeklyHours(conditions.weeklyHours);
+    const weeklyHours = normalizeRequestedWeeklyHours(conditions.weeklyHours);
     await markInitiativeUsedForRequest(manager, initiative.id);
 
     const requestedConditions = {
@@ -246,22 +247,4 @@ export class ResourceAllocationSubmissionWorker {
   private isDefinitiveBusinessFailure(error: unknown): error is ResourceAllocationException {
     return error instanceof ResourceAllocationException && [400, 403, 404, 409, 422].includes(error.getStatus());
   }
-}
-
-function normalizeWeeklyHours(value: number): number {
-  if (!Number.isFinite(value) || value <= 0 || value > 40) {
-    throw new ResourceAllocationException('INVALID_WEEKLY_HOURS', 'Invalid weekly hours', 422, 'Weekly hours must be greater than zero and no more than 40 before rounding. Review the value and submit a corrected attempt.');
-  }
-  const decimal = value.toString().toLowerCase();
-  const [coefficient, exponentText] = decimal.split('e');
-  const [whole, fraction = ''] = coefficient.split('.');
-  const exponent = Number(exponentText ?? 0) - fraction.length + 1;
-  const digits = BigInt(`${whole}${fraction}`);
-  const tenths = exponent >= 0
-    ? digits * (10n ** BigInt(exponent))
-    : (2n * digits + 10n ** BigInt(-exponent)) / (2n * (10n ** BigInt(-exponent)));
-  if (tenths <= 0n) {
-    throw new ResourceAllocationException('INVALID_WEEKLY_HOURS', 'Invalid weekly hours', 422, 'Weekly hours must round to at least 0.1. Review the value and submit a corrected attempt.');
-  }
-  return Number(tenths) / 10;
 }
