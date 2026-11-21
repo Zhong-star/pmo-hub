@@ -1,0 +1,247 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #162536;
+  background: #f1f5f7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: #f1f5f7;
+  color: #162536;
+}
+
+button, a { font: inherit; }
+
+a { color: #075a78; }
+
+a:hover { color: #063c50; }
+
+a:focus-visible,
+button:focus-visible,
+main:focus-visible {
+  outline: 3px solid #075a78;
+  outline-offset: 4px;
+}
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 2;
+  top: 8px;
+  left: 8px;
+  padding: 12px 16px;
+  transform: translateY(-160%);
+  border-radius: 7px;
+  background: #fff;
+  color: #162536;
+}
+
+.skip-link:focus { transform: translateY(0); }
+
+.topbar {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  gap: 28px;
+  padding: 0 clamp(20px, 5vw, 64px);
+  border-bottom: 1px solid #dce5e9;
+  background: #fff;
+}
+
+.brand {
+  color: #133c50;
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -.02em;
+  text-decoration: none;
+}
+
+.product-label {
+  color: #526979;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .12em;
+}
+
+.return-link {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.main-content {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: 52px 24px;
+}
+
+.access-card {
+  width: min(100%, 660px);
+  min-height: 320px;
+  padding: clamp(28px, 6vw, 54px);
+  border: 1px solid #dce5e9;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 16px 42px rgb(31 57 72 / 8%);
+}
+
+.card-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  margin-bottom: 28px;
+  border-radius: 12px;
+  background: #e1f0f2;
+  color: #075a78;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .07em;
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  color: #526979;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+h1 {
+  max-width: 530px;
+  margin: 0;
+  color: #162536;
+  font-size: clamp(29px, 5vw, 40px);
+  font-weight: 720;
+  letter-spacing: -.04em;
+  line-height: 1.12;
+}
+
+.supporting-copy {
+  max-width: 480px;
+  margin: 18px 0 0;
+  color: #4e6270;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.profile-summary {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-top: 28px;
+  padding: 18px;
+  border: 1px solid #cfdfdf;
+  border-radius: 12px;
+  background: #f5faf9;
+}
+
+.status-dot {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #168064;
+  box-shadow: 0 0 0 4px #d9eee7;
+}
+
+.profile-name {
+  margin: 0;
+  color: #1b3441;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.profile-role {
+  margin: 5px 0 0;
+  color: #526979;
+  font-size: 13px;
+}
+
+.access-message {
+  margin-top: 22px;
+  color: #3b4d58;
+  line-height: 1.55;
+}
+
+.access-message > p:first-child { margin-top: 0; }
+
+.contact-list {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contact-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 14px;
+  align-items: baseline;
+  padding: 13px 15px;
+  border: 1px solid #dce5e9;
+  border-radius: 10px;
+  background: #fbfcfc;
+}
+
+.contact-list span { font-weight: 700; }
+
+.fallback-copy {
+  padding: 13px 15px;
+  border-left: 3px solid #c78020;
+  background: #fff8eb;
+}
+
+.access-message button {
+  min-height: 46px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 8px;
+  background: #075a78;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.access-message button:hover { background: #063f56; }
+.access-message button:disabled { cursor: wait; opacity: .7; }
+
+.page-footer {
+  padding: 16px 24px 24px;
+  color: #637583;
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .topbar { min-height: 64px; gap: 12px; padding: 0 16px; }
+  .product-label { display: none; }
+  .return-link { font-size: 13px; }
+  .main-content { padding: 28px 16px; }
+  .access-card { min-height: 280px; border-radius: 14px; }
+  .contact-list li { display: grid; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skip-link { transition: transform 120ms ease; }
+}

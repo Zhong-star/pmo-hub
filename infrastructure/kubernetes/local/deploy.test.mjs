@@ -33,6 +33,9 @@ function activateRepresentationTokens(previousWithPostgres) {
     env: {
       ...process.env,
       LESSONS_LEARNED_TOKEN_FORMAT: 'representation',
+      RESOURCE_ALLOCATION_FIRST_ADMIN_LOCAL_USER_ID: 'local-developer',
+      RESOURCE_ALLOCATION_FIRST_ADMIN_DISPLAY_NAME: 'Local Developer',
+      RESOURCE_ALLOCATION_FIRST_ADMIN_EMAIL: 'local-developer@example.test',
       TEST_PREVIOUS_POSTGRES: String(previousWithPostgres),
     },
   });

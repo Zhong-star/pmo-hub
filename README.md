@@ -17,7 +17,7 @@ npm run dev --workspace @pmo-hub/lessons-learned
 npm run dev --workspace @pmo-hub/hub
 ```
 
-Abra [PMO Hub](http://127.0.0.1:5173) e selecione um perfil para abrir Lessons Learned pelo catálogo. Também é possível abrir [Lessons Learned](http://127.0.0.1:5173/lessons-learned/) diretamente pela mesma origem. O Access Check usa o perfil selecionado no Hub e verifica as permissões do módulo antes de mostrar a Home.
+Abra [PMO Hub](http://127.0.0.1:5173) e selecione um perfil para abrir os módulos pelo catálogo. Lessons Learned e Tech Resource Allocation também podem ser abertos diretamente em /lessons-learned/ e /resource-allocation/ pela mesma origem. Cada módulo valida o perfil do Hub contra seu próprio cadastro.
 
 `npm run contracts:generate` gera os contratos OpenAPI, os tipos do Hub e o cliente de Lessons Learned. Use `npm test`, `npm run typecheck` e `npm run lint` para verificar os workspaces.
 

@@ -1,0 +1,19 @@
+services:
+  resource-allocation-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-resource_allocation}
+      POSTGRES_USER: ${POSTGRES_USER:-resource_allocation}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-resource_allocation_dev}
+    ports:
+      - "127.0.0.1:${RESOURCE_ALLOCATION_DB_PORT:-5434}:5432"
+    volumes:
+      - resource-allocation-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  resource-allocation-postgres-data:

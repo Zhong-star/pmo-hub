@@ -20,6 +20,6 @@ export const hubCatalogConfig: HubCatalogModule[] = [
     name: 'Tech Resource Allocation',
     description: 'Request and coordinate technology resources across projects.',
     route: '/resource-allocation',
-    enabled: false,
+    enabled: true,
   },
 ];

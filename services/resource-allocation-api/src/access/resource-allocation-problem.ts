@@ -1,0 +1,72 @@
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import type { AdministratorContactDto } from './access-response.dto';
+
+export const localProfileHeader = 'X-PMO-Local-User-ID';
+export const localProfileChallenge = 'LocalProfile realm="Tech Resource Allocation"';
+
+export class ResourceAllocationException extends HttpException {
+  constructor(
+    readonly code: string,
+    readonly title: string,
+    status: number,
+    readonly detail: string,
+    readonly administrators?: AdministratorContactDto[],
+    cause?: unknown,
+  ) {
+    super(detail, status, { cause });
+  }
+}
+
+interface ProblemResponse {
+  setHeader(name: string, value: string): void;
+  status(code: number): ProblemResponse;
+  json(body: Record<string, unknown>): void;
+}
+
+interface ProblemRequest {
+  path: string;
+  headers: Record<string, unknown>;
+}
+
+function standardProblem(status: number): { code: string; title: string; detail: string } {
+  if (status === 400) return { code: 'VALIDATION_ERROR', title: 'Request validation failed', detail: 'One or more fields are invalid.' };
+  if (status === 401) return { code: 'AUTHENTICATION_REQUIRED', title: 'Local profile required', detail: 'Select a local Hub profile.' };
+  if (status === 403) return { code: 'ACCESS_DENIED', title: 'Access denied', detail: 'You do not have permission to access this resource.' };
+  if (status === 404) return { code: 'RESOURCE_NOT_FOUND', title: 'Resource not found', detail: 'The requested resource was not found.' };
+  if (status === 503) return { code: 'DEPENDENCY_UNAVAILABLE', title: 'Dependency unavailable', detail: 'A required service is unavailable.' };
+  return { code: 'INTERNAL_ERROR', title: 'Internal Server Error', detail: 'Internal Server Error' };
+}
+
+@Catch()
+export class ResourceAllocationProblemFilter implements ExceptionFilter {
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const http = host.switchToHttp();
+    const request = http.getRequest<ProblemRequest>();
+    const response = http.getResponse<ProblemResponse>();
+    const status = exception instanceof HttpException ? exception.getStatus() : 500;
+    const defaults = standardProblem(status);
+    const problem = exception instanceof ResourceAllocationException
+      ? exception
+      : undefined;
+    const suppliedId = request.headers['x-correlation-id'];
+    const correlationId = typeof suppliedId === 'string' &&
+      /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(suppliedId)
+      ? suppliedId : randomUUID();
+
+    response.setHeader('Content-Type', 'application/problem+json');
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('X-Correlation-ID', correlationId);
+    if (status === 401) response.setHeader('WWW-Authenticate', localProfileChallenge);
+    response.status(status).json({
+      type: `https://pmo-hub.example/problems/${(problem?.code ?? defaults.code).toLowerCase().replaceAll('_', '-')}`,
+      title: problem?.title ?? defaults.title,
+      status,
+      detail: problem?.detail ?? defaults.detail,
+      instance: request.path,
+      code: problem?.code ?? defaults.code,
+      correlationId,
+      ...(problem?.administrators ? { administrators: problem.administrators } : {}),
+    });
+  }
+}

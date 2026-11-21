@@ -1,0 +1,348 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/health/live": {
+      "get": {
+        "operationId": "HealthController_getLive",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationHealthResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Check that the API process is running",
+        "tags": [
+          "Tech Resource Allocation health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "HealthController_getReady",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationHealthResponseDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A required dependency is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Check that required Resource Allocation dependencies are usable",
+        "tags": [
+          "Tech Resource Allocation health"
+        ]
+      }
+    },
+    "/health/startup": {
+      "get": {
+        "operationId": "HealthController_getStartup",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationHealthResponseDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Startup dependencies or database migrations are incomplete.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Check that required initialization and migrations are complete",
+        "tags": [
+          "Tech Resource Allocation health"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/access": {
+      "get": {
+        "operationId": "ResourceAllocationAccessController_getAccess",
+        "parameters": [
+          {
+            "name": "X-PMO-Local-User-ID",
+            "required": false,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAccessResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The profile is not active in this module; active Admin contacts are included.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The access database or local identity mode is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          },
+          {}
+        ],
+        "summary": "Resolve the selected Hub profile against Tech Resource Allocation access",
+        "tags": [
+          "Tech Resource Allocation access"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Tech Resource Allocation API",
+    "description": "Local access and initial API contract for Tech Resource Allocation.",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "Tech Resource Allocation access",
+      "description": ""
+    },
+    {
+      "name": "Tech Resource Allocation health",
+      "description": ""
+    }
+  ],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "localProfile": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-PMO-Local-User-ID"
+      }
+    },
+    "schemas": {
+      "AdministratorContactDto": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "example": "Allocation Admin"
+          },
+          "email": {
+            "type": "string",
+            "example": "admin@example.test"
+          }
+        },
+        "required": [
+          "displayName",
+          "email"
+        ]
+      },
+      "ResourceAllocationProblemDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "example": "https://pmo-hub.example/problems/access-denied"
+          },
+          "title": {
+            "type": "string",
+            "example": "Access denied"
+          },
+          "status": {
+            "type": "number",
+            "example": 403
+          },
+          "detail": {
+            "type": "string",
+            "example": "You do not have active Tech Resource Allocation access. Contact an active Admin."
+          },
+          "instance": {
+            "type": "string",
+            "example": "/api/resource-allocation/v1/access"
+          },
+          "code": {
+            "type": "string",
+            "example": "ACCESS_DENIED"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "administrators": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdministratorContactDto"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "instance",
+          "code",
+          "correlationId"
+        ]
+      },
+      "ResourceAllocationHealthResponseDto": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "example": "resource-allocation-api"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "live",
+              "ready"
+            ],
+            "example": "ready"
+          },
+          "version": {
+            "type": "string",
+            "example": "0.1.0"
+          }
+        },
+        "required": [
+          "service",
+          "status",
+          "version"
+        ]
+      },
+      "ResourcePersonAccessDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "localUserId": {
+            "type": "string",
+            "example": "local-developer"
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Local Developer"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ALLOCATION_USER",
+              "ALLOCATION_MODERATOR",
+              "ALLOCATION_SUPERVISOR",
+              "ALLOCATION_MANAGER",
+              "ALLOCATION_ADMIN"
+            ]
+          },
+          "coveredGroupIds": {
+            "example": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "localUserId",
+          "displayName",
+          "role",
+          "coveredGroupIds"
+        ]
+      },
+      "ResourceAccessResponseDto": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "$ref": "#/components/schemas/ResourcePersonAccessDto"
+          }
+        },
+        "required": [
+          "person"
+        ]
+      }
+    }
+  }
+}

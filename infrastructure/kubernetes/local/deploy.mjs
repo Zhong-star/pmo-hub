@@ -6,17 +6,21 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const router = fileURLToPath(new URL('./router.yaml', import.meta.url));
 const postgres = fileURLToPath(new URL('./postgres.yaml', import.meta.url));
+const resourceAllocationPostgres = fileURLToPath(new URL('./resource-allocation-postgres.yaml', import.meta.url));
 const cluster = 'pmo-hub';
 const namespace = 'pmo-hub';
 const databaseSecret = 'lessons-learned-postgres';
+const resourceAllocationDatabaseSecret = 'resource-allocation-postgres';
 const layers = {
   frontend: [
     { name: 'hub', port: 8080, path: '/' },
     { name: 'lessons-learned', port: 8080, path: '/lessons-learned/' },
+    { name: 'resource-allocation', port: 8080, path: '/resource-allocation/' },
   ],
   backend: [
     { name: 'hub-api', port: 3001, path: '/api/hub/v1/status' },
     { name: 'lessons-learned-api', port: 3002, path: '/api/lessons-learned/v1/health' },
+    { name: 'resource-allocation-api', port: 3003, path: '/health/startup' },
   ],
 };
 
@@ -45,6 +49,24 @@ function databaseEnv() {
   }];
 }
 
+function resourceAllocationDatabaseEnv() {
+  return [{
+    name: 'RESOURCE_ALLOCATION_DATABASE_URL',
+    valueFrom: { secretKeyRef: { name: resourceAllocationDatabaseSecret, key: 'url' } },
+  }];
+}
+
+function firstAdminFromEnvironment() {
+  const firstAdmin = {
+    localUserId: process.env.RESOURCE_ALLOCATION_FIRST_ADMIN_LOCAL_USER_ID?.trim(),
+    displayName: process.env.RESOURCE_ALLOCATION_FIRST_ADMIN_DISPLAY_NAME?.trim(),
+    email: process.env.RESOURCE_ALLOCATION_FIRST_ADMIN_EMAIL?.trim(),
+  };
+  if (!firstAdmin.localUserId || !firstAdmin.displayName || !firstAdmin.email) {
+    throw new Error('Set RESOURCE_ALLOCATION_FIRST_ADMIN_LOCAL_USER_ID, RESOURCE_ALLOCATION_FIRST_ADMIN_DISPLAY_NAME, and RESOURCE_ALLOCATION_FIRST_ADMIN_EMAIL before deploying the backend with PostgreSQL.');
+  }
+  return firstAdmin;
+}
 function migrateDatabase(image, version) {
   if (!kubectl(['get', 'secret', databaseSecret, '--ignore-not-found', '-o', 'name'])) {
     const password = randomUUID();
@@ -95,6 +117,106 @@ function migrateDatabase(image, version) {
   console.log(kubectl(['logs', `job/${name}`]));
 }
 
+function migrateResourceAllocationDatabase(image, version, firstAdmin) {
+  if (!kubectl(['get', 'secret', resourceAllocationDatabaseSecret, '--ignore-not-found', '-o', 'name'])) {
+    const password = randomUUID();
+    kubectl(['create', '-f', '-'], JSON.stringify({
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: { name: resourceAllocationDatabaseSecret },
+      immutable: true,
+      data: {
+        password: Buffer.from(password).toString('base64'),
+        url: Buffer.from(`postgresql://resource_allocation:${password}@${resourceAllocationDatabaseSecret}:5432/resource_allocation`).toString('base64'),
+      },
+    }));
+  }
+  kubectl(['apply', '-f', resourceAllocationPostgres]);
+  kubectl(['rollout', 'status', `statefulset/${resourceAllocationDatabaseSecret}`, '--timeout=120s']);
+
+  const migrationName = `resource-allocation-migrate-${version}`;
+  kubectl(['create', '-f', '-'], JSON.stringify({
+    apiVersion: 'batch/v1',
+    kind: 'Job',
+    metadata: { name: migrationName },
+    spec: {
+      backoffLimit: 0,
+      activeDeadlineSeconds: 90,
+      ttlSecondsAfterFinished: 3600,
+      template: {
+        spec: {
+          restartPolicy: 'Never',
+          containers: [{
+            name: 'migrate',
+            image,
+            imagePullPolicy: 'Never',
+            command: ['node', '/app/node_modules/typeorm/cli.js', 'migration:run', '-d', 'dist/database/data-source.js'],
+            env: resourceAllocationDatabaseEnv(),
+          }],
+        },
+      },
+    },
+  }));
+  try {
+    kubectl(['wait', '--for=condition=complete', `job/${migrationName}`, '--timeout=100s']);
+  } catch (error) {
+    throw new Error(`Migration job ${migrationName} did not complete. Inspect its status and logs in namespace ${namespace}.`, { cause: error });
+  }
+  console.log(kubectl(['logs', `job/${migrationName}`]));
+
+  const secretName = `resource-allocation-first-admin-${version}`;
+  const secretData = Object.fromEntries(Object.entries(firstAdmin).map(([key, value]) => [key, Buffer.from(value).toString('base64')]));
+  kubectl(['create', '-f', '-'], JSON.stringify({
+    apiVersion: 'v1',
+    kind: 'Secret',
+    metadata: { name: secretName },
+    immutable: true,
+    data: secretData,
+  }));
+  const preparationName = `resource-allocation-prepare-admin-${version}`;
+  try {
+    kubectl(['create', '-f', '-'], JSON.stringify({
+      apiVersion: 'batch/v1',
+      kind: 'Job',
+      metadata: { name: preparationName },
+      spec: {
+        backoffLimit: 0,
+        activeDeadlineSeconds: 90,
+        ttlSecondsAfterFinished: 3600,
+        template: {
+          spec: {
+            restartPolicy: 'Never',
+            containers: [{
+              name: 'prepare-first-admin',
+              image,
+              imagePullPolicy: 'Never',
+              command: ['node', 'dist/database/prepare-first-admin.js'],
+              env: [
+                ...resourceAllocationDatabaseEnv(),
+                ...Object.entries({
+                  RESOURCE_ALLOCATION_FIRST_ADMIN_LOCAL_USER_ID: 'localUserId',
+                  RESOURCE_ALLOCATION_FIRST_ADMIN_DISPLAY_NAME: 'displayName',
+                  RESOURCE_ALLOCATION_FIRST_ADMIN_EMAIL: 'email',
+                }).map(([name, key]) => ({
+                  name,
+                  valueFrom: { secretKeyRef: { name: secretName, key } },
+                })),
+              ],
+            }],
+          },
+        },
+      },
+    }));
+    try {
+      kubectl(['wait', '--for=condition=complete', `job/${preparationName}`, '--timeout=100s']);
+    } catch (error) {
+      throw new Error(`First Admin preparation job ${preparationName} did not complete. Inspect its status and logs in namespace ${namespace}.`, { cause: error });
+    }
+    console.log(kubectl(['logs', `job/${preparationName}`]));
+  } finally {
+    kubectl(['delete', 'secret', secretName, '--ignore-not-found']);
+  }
+}
 function resources(layer, { images, withPostgres, lessonTokenFormat }) {
   const items = layers[layer].flatMap(({ name, port, path }) => {
     const labels = { app: name, layer };
@@ -125,8 +247,14 @@ function resources(layer, { images, withPostgres, lessonTokenFormat }) {
                     ...(withPostgres ? databaseEnv() : []),
                   ],
                 } : {}),
+                ...(name === 'resource-allocation-api' ? {
+                  env: [
+                    { name: 'RESOURCE_ALLOCATION_LOCAL_AUTH_ENABLED', value: 'true' },
+                    ...(withPostgres ? resourceAllocationDatabaseEnv() : []),
+                  ],
+                } : {}),
                 ports: [{ name: 'http', containerPort: port }],
-                readinessProbe: { httpGet: { path, port: 'http' }, periodSeconds: 2 },
+                readinessProbe: { httpGet: { path: name === 'resource-allocation-api' && !withPostgres ? '/health/live' : path, port: 'http' }, periodSeconds: 2 },
               }],
             },
           },
@@ -145,6 +273,7 @@ function release(layer, configuration) {
 }
 
 function deploy(layer, failureTarget, withPostgres) {
+  const firstAdmin = layer === 'backend' && withPostgres ? firstAdminFromEnvironment() : undefined;
   const names = layers[layer].map(({ name }) => name);
   const lessonTokenFormat = layer === 'backend' ? process.env.LESSONS_LEARNED_TOKEN_FORMAT ?? 'legacy' : undefined;
   if (lessonTokenFormat && !['legacy', 'representation'].includes(lessonTokenFormat)) {
@@ -177,7 +306,10 @@ function deploy(layer, failureTarget, withPostgres) {
     if (lessonTokenFormat === 'representation' && withPostgres && previous?.withPostgres !== 'true') {
       throw new Error('The rollback release must have PostgreSQL enabled before enabling representation tokens with PostgreSQL.');
     }
-    if (withPostgres) migrateDatabase(images['lessons-learned-api'], version);
+    if (withPostgres) {
+      migrateDatabase(images['lessons-learned-api'], version);
+      migrateResourceAllocationDatabase(images['resource-allocation-api'], version, firstAdmin);
+    }
     try {
       release(layer, { images, withPostgres, lessonTokenFormat });
       apply({
