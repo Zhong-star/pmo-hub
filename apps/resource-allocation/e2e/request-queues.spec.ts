@@ -956,3 +956,126 @@ test('requires an explanation and proposes changed dates and hours for requester
   expect(approval?.headers['if-match']).toBe('"1"');
   expect(approval?.headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i);
 });
+
+test('guides deciders to propose a future period with explanation when the requested start date has passed in presentation queue', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-21T12:00:00.000Z') });
+  await installCommonRoutes(page, admin.localUserId, admin);
+  let queueItem: ReturnType<typeof requestItem> | null = requestItem({
+    decisionState: 'WAITING_FOR_PRESENTATION',
+    availableActions: ['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', 'APPROVE', 'DENY'],
+    requestedConditions: {
+      ...requestItem().requestedConditions,
+      startDate: '2026-11-18',
+      endDate: '2026-11-29',
+    },
+  });
+  let approvalBody: Record<string, unknown> | null = null;
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: { items: path.endsWith('/presentation') && queueItem ? [queueItem] : [], page: emptyPage } });
+  });
+  await page.route(`${apiRoot}/requests/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() !== 'POST') {
+      if (path.endsWith('/approval-candidates')) {
+        await route.fulfill({ json: { items: [{ id: 'person-a', displayName: 'Alex Resource', groupId: 'group-a' }], page: emptyPage } });
+        return;
+      }
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+    approvalBody = route.request().postDataJSON() as Record<string, unknown>;
+    queueItem = null;
+    await route.fulfill({
+      json: requestItem({
+        decisionState: 'APPROVED_WITH_CHANGES',
+        dueAt: '2026-11-24T15:00:00.000Z',
+        version: 2,
+      }),
+    });
+  });
+
+  await page.goto('/resource-allocation/');
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await expect(card.getByText(/requested start date has already passed/i)).toBeVisible();
+  await card.getByRole('button', { name: 'Approve request' }).click();
+
+  const form = card.getByRole('form', { name: 'Approve request request-a' });
+  await expect(form.getByText(/requested start date has already passed/i)).toBeVisible();
+  await expect(form.getByLabel('Approved start date')).toHaveAttribute('min', '2026-11-24');
+  await form.getByLabel('Eligible person').selectOption('person-a');
+  await form.getByRole('button', { name: 'Approve request' }).click();
+  await expect(form.getByText('Propose a start date on or after the 72-hour acceptance deadline.')).toBeVisible();
+  await expect(form.getByText('Explain the proposed date or hours changes.')).toBeVisible();
+  expect(approvalBody).toBeNull();
+
+  await form.getByLabel('Approved start date').fill('2026-11-25');
+  await form.getByLabel('Approved end date').fill('2026-12-05');
+  await form.getByLabel('Explanation').fill('The requested start date has passed; proposing a future period.');
+  await form.getByRole('button', { name: 'Approve request' }).click();
+
+  await expect(page.getByText('There are no requests in this queue.')).toBeVisible();
+  expect(approvalBody).toEqual({
+    personId: 'person-a',
+    startDate: '2026-11-25',
+    endDate: '2026-12-05',
+    explanation: 'The requested start date has passed; proposing a future period.',
+  });
+});
+
+test('does not expose administrative removal on the Admin’s own request in the presentation queue', async ({ page }) => {
+  await installCommonRoutes(page, admin.localUserId, admin);
+  const ownItem = requestItem({
+    id: 'request-own',
+    requester: { personId: admin.id, displayName: admin.displayName, role: admin.role },
+    availableActions: ['REFER', 'REFERENCE_CORRECTION'],
+  });
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: { items: path.endsWith('/presentation') ? [ownItem] : [], page: emptyPage } });
+  });
+
+  await page.goto('/resource-allocation/');
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await expect(card.getByRole('button', { name: 'Refer to group decision' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Correct references' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Remove request' })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: 'Approve request' })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: 'Deny request' })).toHaveCount(0);
+});
+
+test('shows readable guidance for PROPOSED_START_DATE_PASSED and opens approval form in revalidation queue', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-21T12:00:00.000Z') });
+  await installCommonRoutes(page, moderator.localUserId, moderator);
+  const revalidationItem = requestItem({
+    decisionState: 'REQUIRES_REVALIDATION',
+    originState: 'APPROVED_WITH_CHANGES',
+    dueAt: null,
+    impediments: ['PROPOSED_START_DATE_PASSED'],
+    availableActions: ['DENY', 'APPROVE'],
+    requestedConditions: {
+      ...requestItem().requestedConditions,
+      startDate: '2026-11-18',
+      endDate: '2026-11-29',
+    },
+  });
+  await page.route(`${apiRoot}/request-queues/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({ json: { items: path.endsWith('/revalidation') ? [revalidationItem] : [], page: emptyPage } });
+  });
+  await page.route(`${apiRoot}/requests/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/approval-candidates')) {
+      await route.fulfill({ json: { items: [{ id: 'person-a', displayName: 'Alex Resource', groupId: 'group-a' }], page: emptyPage } });
+      return;
+    }
+    await route.fulfill({ json: { items: [], page: emptyPage } });
+  });
+
+  await page.goto('/resource-allocation/?queue=revalidation');
+  const card = page.getByRole('article', { name: /ITDM-62/ });
+  await expect(card.getByText('The proposed start date has already passed.')).toBeVisible();
+  await expect(card.getByText(/requested start date has already passed/i)).toBeVisible();
+  await card.getByRole('button', { name: 'Approve request' }).click();
+  await expect(card.getByRole('form', { name: 'Approve request request-a' }).getByLabel('Approved start date')).toHaveAttribute('min', '2026-11-24');
+});

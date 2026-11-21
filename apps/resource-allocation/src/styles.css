@@ -695,6 +695,8 @@ h1 {
 .request-exception-recorded-strategy { margin: 18px 0 0; padding: 12px 14px; border-left: 3px solid var(--warning-accent); background: var(--warning-background); color: var(--warning-text); }
 .request-exception-recorded-strategy p { margin: 0; }
 .request-exception-recorded-strategy p + p { margin-top: 7px; }
+.request-queue-guidance { grid-column: 1 / -1; margin: 16px 0 0; padding: 12px 14px; border-left: 3px solid var(--warning-accent); background: var(--warning-background); color: var(--warning-text); font-size: 13px; line-height: 1.5; }
+.request-queue-action-form > .request-queue-guidance { margin-top: 0; color: var(--warning-text); }
 .request-exception-impediments { margin: 18px 0 0; }
 .request-exception-impediments p { margin: 0; }
 .request-exception-impediments ul { margin: 8px 0 0; padding-left: 20px; }

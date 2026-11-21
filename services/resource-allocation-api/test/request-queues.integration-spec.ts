@@ -108,7 +108,7 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
     group: ResourceGroup,
     profile: ResourceProfile,
     initiative: ResourceInitiative,
-    options: { state?: string; receivedDaysAgo?: number; stageDaysAgo?: number } = {},
+    options: { state?: string; receivedDaysAgo?: number; stageDaysAgo?: number; startDate?: string; endDate?: string } = {},
   ) {
     const correlationId = randomUUID();
     const submissions = dataSource!.getRepository(ResourceSubmission);
@@ -146,8 +146,8 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
       groupName: group.name,
       resourceProfileId: profile.id,
       resourceProfileName: profile.name,
-      startDate: '2027-01-11',
-      endDate: '2027-01-29',
+      startDate: options.startDate ?? '2027-01-11',
+      endDate: options.endDate ?? '2027-01-29',
       weeklyHours: 20,
       comment: 'Support delivery.',
     };
@@ -537,5 +537,109 @@ describe('Tech Resource Allocation request queues and referrals (#62)', () => {
       .set('Idempotency-Key', randomUUID())
       .send({ reason: 'I cannot remove my own request.' })
       .expect(403);
+  });
+
+  it('keeps APPROVE available for eligible requests with a past requested start date across queues so deciders can propose future dates', async () => {
+    const fixture = await setup();
+    const assignee = await addPerson('assignee-a', ResourceAllocationRole.User, fixture.groupA.id);
+    const presentationRequest = await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, {
+      state: 'WAITING_FOR_PRESENTATION',
+      startDate: '2025-01-01',
+      endDate: '2025-01-31',
+    });
+    const teamRequest = await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, {
+      state: 'PENDING_TEAM_DECISION',
+      startDate: '2025-01-01',
+      endDate: '2025-01-31',
+    });
+    const revalidationRequest = await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative, {
+      state: 'REQUIRES_REVALIDATION',
+      startDate: '2025-01-01',
+      endDate: '2025-01-31',
+    });
+    await dataSource!.getRepository(ResourceRequest).update(revalidationRequest.id, {
+      revalidationOriginState: 'APPROVED_WITH_CHANGES',
+      revalidationDecisionStage: 'PENDING_TEAM_DECISION',
+      approvedConditions: {
+        personId: assignee.id,
+        groupId: fixture.groupA.id,
+        resourceProfileId: fixture.profileA.id,
+        initiativeId: fixture.initiative.id,
+        startDate: '2025-01-01',
+        endDate: '2025-01-31',
+        weeklyHours: 20,
+      },
+    });
+
+    const presentationQueue = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/request-queues/presentation')
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+    expect(presentationQueue.body.items.find((item: { id: string }) => item.id === presentationRequest.id).availableActions)
+      .toEqual(['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', 'APPROVE', 'DENY']);
+
+    const teamQueue = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/request-queues/team-decision')
+      .set('X-PMO-Local-User-ID', fixture.moderatorA.localUserId)
+      .expect(200);
+    expect(teamQueue.body.items.find((item: { id: string }) => item.id === teamRequest.id).availableActions)
+      .toEqual(['APPROVE', 'DENY']);
+
+    const revalidationQueue = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/request-queues/revalidation')
+      .set('X-PMO-Local-User-ID', fixture.moderatorA.localUserId)
+      .expect(200);
+    expect(revalidationQueue.body.items.find((item: { id: string }) => item.id === revalidationRequest.id))
+      .toMatchObject({
+        impediments: ['PROPOSED_START_DATE_PASSED'],
+        availableActions: ['DENY', 'APPROVE'],
+      });
+
+    const dateRows = await dataSource!.query(`
+      SELECT ((clock_timestamp() + INTERVAL '72 hours') AT TIME ZONE 'America/Sao_Paulo')::date::text AS due_date
+    `) as Array<{ due_date: string }>;
+    const proposedStart = dateRows[0].due_date;
+    const proposedEnd = new Date(new Date(`${proposedStart}T00:00:00.000Z`).getTime() + 14 * 86_400_000).toISOString().slice(0, 10);
+
+    const approved = await request(app!.getHttpServer())
+      .post(`/api/resource-allocation/v1/requests/${teamRequest.id}/approvals`)
+      .set('X-PMO-Local-User-ID', fixture.moderatorA.localUserId)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Correlation-ID', randomUUID())
+      .send({
+        personId: assignee.id,
+        startDate: proposedStart,
+        endDate: proposedEnd,
+        weeklyHours: 20,
+        explanation: 'Requested start date has passed; proposing a future period.',
+      })
+      .expect(200);
+
+    expect(approved.body).toMatchObject({
+      decisionState: 'APPROVED_WITH_CHANGES',
+      approvedConditions: {
+        personId: assignee.id,
+        startDate: proposedStart,
+        endDate: proposedEnd,
+        weeklyHours: 20,
+      },
+    });
+  });
+
+  it('omits ADMINISTRATIVE_REMOVE, APPROVE, and DENY from presentation availableActions on the Admin’s own request', async () => {
+    const fixture = await setup();
+    const otherRequest = await createRequest(fixture.requesterA, fixture.groupA, fixture.profileA, fixture.initiative);
+    const ownRequest = await createRequest(fixture.admin, fixture.groupA, fixture.profileA, fixture.initiative);
+
+    const queue = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/request-queues/presentation')
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .expect(200);
+
+    expect(queue.body.items.find((item: { id: string }) => item.id === otherRequest.id).availableActions)
+      .toEqual(['REFER', 'REFERENCE_CORRECTION', 'ADMINISTRATIVE_REMOVE', 'APPROVE', 'DENY']);
+    expect(queue.body.items.find((item: { id: string }) => item.id === ownRequest.id).availableActions)
+      .toEqual(['REFER', 'REFERENCE_CORRECTION']);
   });
 });

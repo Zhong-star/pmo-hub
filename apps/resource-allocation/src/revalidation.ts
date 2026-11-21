@@ -21,6 +21,9 @@ const impedimentLabels: Record<string, string> = {
   PROFILE_GROUP_MISMATCH: 'The resource profile no longer belongs to the request group.',
   PERSON_INACTIVE: 'The proposed person is inactive.',
   PERSON_LEFT_GROUP: 'The proposed person has left the request group.',
+  PROPOSED_START_DATE_PASSED: 'The proposed start date has already passed.',
+  PROPOSAL_PERIOD_INVALID: 'The proposed period is invalid.',
+  PROPOSAL_HOURS_INVALID: 'The proposed weekly hours are invalid.',
 };
 
 export function revalidationOriginLabel(origin: RevalidationOriginState | undefined): string {

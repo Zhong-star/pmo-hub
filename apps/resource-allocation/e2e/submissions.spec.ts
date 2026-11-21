@@ -321,3 +321,64 @@ test('retries an unconfirmed envelope after reload with the same durable keys an
   expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
   expect(requestBodies[1]).toEqual(requestBodies[0]);
 });
+
+test('displays the real worker failure reason from problem.message, problem.detail, or problem.title on failed lines', async ({ page }) => {
+  await installSelectionFixtures(page);
+  const submission = {
+    id: 'submission-problems',
+    initiativeId: initiative.id,
+    category: 'EXECUTION_PROJECT',
+    receivedAt: '2026-11-20T12:00:00Z',
+    lineCount: 3,
+    counts: { received: 0, processing: 0, succeeded: 0, failed: 3 },
+  };
+  await page.route(`${apiRoot}/submissions**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/submissions')) {
+      await route.fulfill({ json: { items: [submission], page: emptyPage } });
+      return;
+    }
+    if (url.pathname.endsWith(`/submissions/${submission.id}/lines`)) {
+      await route.fulfill({
+        json: {
+          items: [
+            {
+              id: 'line-message',
+              attemptKey: 'attempt-message',
+              submittedConditions: { groupId: group.id, resourceProfileId: profile.id, startDate: dateAfter(-1), endDate: dateAfter(5), weeklyHours: 12 },
+              status: 'FAILED',
+              problem: { code: 'INVALID_BUSINESS_DATE', message: 'The request dates must start today or later.' },
+            },
+            {
+              id: 'line-detail',
+              attemptKey: 'attempt-detail',
+              submittedConditions: { groupId: group.id, resourceProfileId: profile.id, startDate: dateAfter(2), endDate: dateAfter(5), weeklyHours: 0.04 },
+              status: 'FAILED',
+              problem: { code: 'INVALID_WEEKLY_HOURS', detail: 'Weekly hours must round to at least 0.1.' },
+            },
+            {
+              id: 'line-title',
+              attemptKey: 'attempt-title',
+              submittedConditions: { groupId: group.id, resourceProfileId: profile.id, startDate: dateAfter(2), endDate: dateAfter(5), weeklyHours: 10 },
+              status: 'FAILED',
+              problem: { code: 'INELIGIBLE_REFERENCE', title: 'Selected profile is inactive.' },
+            },
+          ],
+          page: emptyPage,
+        },
+      });
+      return;
+    }
+    if (url.pathname.endsWith(`/submissions/${submission.id}`)) {
+      await route.fulfill({ json: submission });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await openAsUser(page);
+  await expect(page.getByText('The request dates must start today or later.')).toBeVisible();
+  await expect(page.getByText('Weekly hours must round to at least 0.1.')).toBeVisible();
+  await expect(page.getByText('Selected profile is inactive.')).toBeVisible();
+  await expect(page.getByText('This request line failed and can be corrected.')).toHaveCount(0);
+});

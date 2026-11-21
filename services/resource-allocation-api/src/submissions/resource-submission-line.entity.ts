@@ -31,7 +31,7 @@ export class ResourceSubmissionLine {
   requestId!: string | null;
 
   @Column({ type: 'jsonb', nullable: true })
-  problem!: { code: string; message: string } | null;
+  problem!: { code: string; message: string; detail?: string; title?: string } | null;
 
   @Column({ name: 'request_outcome', type: 'jsonb', nullable: true })
   requestOutcome!: Record<string, unknown> | null;

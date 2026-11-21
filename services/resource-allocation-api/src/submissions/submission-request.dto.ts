@@ -87,7 +87,7 @@ export class ResourceSubmissionLineResponseDto {
   @ApiProperty({ type: Object }) submittedConditions!: Record<string, unknown>;
   @ApiProperty({ enum: ['RECEIVED', 'PROCESSING', 'SUCCEEDED', 'FAILED'] }) status!: string;
   @ApiPropertyOptional({ type: String, format: 'uuid' }) requestId?: string;
-  @ApiPropertyOptional({ type: Object }) problem?: { code: string; message: string };
+  @ApiPropertyOptional({ type: Object }) problem?: { code: string; message: string; detail?: string; title?: string };
   @ApiProperty({ type: String, format: 'date-time' }) receivedAt!: string;
   @ApiPropertyOptional({ type: String, format: 'date-time' }) completedAt?: string;
   @ApiPropertyOptional({ type: Object }) requestOutcome?: Record<string, unknown>;
