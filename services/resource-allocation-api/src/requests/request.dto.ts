@@ -101,6 +101,8 @@ export class ResourceRequestResponseDto {
   @ApiProperty({ type: String, format: 'date-time' }) receivedAt!: string;
   @ApiProperty({ type: String, format: 'date-time' }) stageEnteredAt!: string;
   @ApiProperty({ type: String, format: 'date-time' }) expirationDueAt!: string;
+  @ApiProperty({ type: String, format: 'date-time', nullable: true, description: '72-hour requester response deadline when a date or hours proposal is awaiting acceptance.' }) dueAt!: string | null;
+  @ApiProperty({ type: [String], example: ['ACCEPT'] }) availableActions!: string[];
   @ApiProperty({ type: Number }) version!: number;
 }
 
