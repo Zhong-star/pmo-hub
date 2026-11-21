@@ -58,6 +58,9 @@ async function installAccessAndSelections(page: Page) {
   await page.route(`${apiRoot}/submissions**`, async (route) => route.fulfill({
     json: { items: [], page: { nextCursor: null, limit: 50 } },
   }));
+  await page.route(`${apiRoot}/notifications**`, async (route) => route.fulfill({
+    json: { items: [], page: { nextCursor: null, limit: 50 } },
+  }));
   await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), {
     key: profileStorageKey,
     value: userId,
