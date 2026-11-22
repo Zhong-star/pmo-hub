@@ -187,7 +187,7 @@ export function RequestEditWithdrawal({
       {formVersionChanged && (
         <div className="form-error" role="alert">
           <p>A newer version is available. Your form values are preserved; reload the latest version before editing or withdrawing.</p>
-          <button type="button" className="secondary-button" onClick={() => void reloadLatestRequest()} disabled={updateMutation.isPending}>Load current request</button>
+          <button type="button" className="secondary-button" onClick={() => void reloadLatestRequest()} disabled={editForm.formState.isSubmitting}>Load current request</button>
         </div>
       )}
       {listRefreshFailed && <p className="field-help">Actions are paused until your request list refreshes successfully.</p>}
@@ -195,7 +195,7 @@ export function RequestEditWithdrawal({
         <div className="request-form-grid">
           <label className="form-field">
             <span>ITDM</span>
-            <select value={values?.initiativeId ?? ''} disabled={!canEdit || updateMutation.isPending} {...editForm.register('initiativeId', { required: 'Select an ITDM.' })}>
+            <select value={values?.initiativeId ?? ''} disabled={!canEdit || editForm.formState.isSubmitting} {...editForm.register('initiativeId', { required: 'Select an ITDM.' })}>
               <option value="">Select an ITDM</option>
               {initiatives.map((initiative) => <option key={initiative.id} value={initiative.id}>{initiative.code} · {initiative.name}</option>)}
             </select>
@@ -203,13 +203,13 @@ export function RequestEditWithdrawal({
           </label>
           <label className="form-field">
             <span>Category</span>
-            <select value={values?.category ?? 'EXECUTION_PROJECT'} disabled={!canEdit || updateMutation.isPending} {...editForm.register('category', { required: 'Select a category.' })}>
+            <select value={values?.category ?? 'EXECUTION_PROJECT'} disabled={!canEdit || editForm.formState.isSubmitting} {...editForm.register('category', { required: 'Select a category.' })}>
               {categoryOptions.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
             </select>
           </label>
           <label className="form-field">
             <span>Group</span>
-            <select value={values?.groupId ?? ''} disabled={!canEdit || updateMutation.isPending} {...editForm.register('groupId', { required: 'Select a group.' })}>
+            <select value={values?.groupId ?? ''} disabled={!canEdit || editForm.formState.isSubmitting} {...editForm.register('groupId', { required: 'Select a group.' })}>
               <option value="">Select a group</option>
               {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
             </select>
@@ -217,7 +217,7 @@ export function RequestEditWithdrawal({
           </label>
           <label className="form-field">
             <span>Resource profile</span>
-            <select value={values?.resourceProfileId ?? ''} disabled={!canEdit || updateMutation.isPending} {...editForm.register('resourceProfileId', { required: 'Select a resource profile.' })}>
+            <select value={values?.resourceProfileId ?? ''} disabled={!canEdit || editForm.formState.isSubmitting} {...editForm.register('resourceProfileId', { required: 'Select a resource profile.' })}>
               <option value="">Select a resource profile</option>
               {groupProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
             </select>
@@ -225,19 +225,19 @@ export function RequestEditWithdrawal({
           </label>
           <label className="form-field">
             <span>Start date</span>
-            <input type="date" disabled={!canEdit || updateMutation.isPending} {...editForm.register('startDate', { required: 'Enter a start date.' })} />
+            <input type="date" disabled={!canEdit || editForm.formState.isSubmitting} {...editForm.register('startDate', { required: 'Enter a start date.' })} />
             {editForm.formState.errors.startDate?.message && <span className="field-error">{editForm.formState.errors.startDate.message}</span>}
           </label>
           <label className="form-field">
             <span>End date</span>
-            <input type="date" disabled={!canEdit || updateMutation.isPending} {...editForm.register('endDate', { required: 'Enter an end date.' })} />
+            <input type="date" disabled={!canEdit || editForm.formState.isSubmitting} {...editForm.register('endDate', { required: 'Enter an end date.' })} />
             {editForm.formState.errors.endDate?.message && <span className="field-error">{editForm.formState.errors.endDate.message}</span>}
           </label>
           <label className="form-field">
             <span>Weekly hours</span>
             <input
               inputMode="decimal"
-              disabled={!canEdit || updateMutation.isPending}
+              disabled={!canEdit || editForm.formState.isSubmitting}
               aria-invalid={Boolean(editForm.formState.errors.weeklyHours)}
               {...editForm.register('weeklyHours', { required: 'Enter weekly hours.', validate: (raw) => normalizeWeeklyHours(raw).error ?? true })}
             />
@@ -246,16 +246,16 @@ export function RequestEditWithdrawal({
           </label>
           <label className="form-field request-comment-field">
             <span>Comment <span className="optional-label">(optional)</span></span>
-            <textarea maxLength={2000} disabled={!canEdit || updateMutation.isPending} {...editForm.register('comment')} />
+            <textarea maxLength={2000} disabled={!canEdit || editForm.formState.isSubmitting} {...editForm.register('comment')} />
             <span className="field-help">Up to 2,000 characters.</span>
           </label>
         </div>
         {editError && <div className="form-error" role="alert"><p>{editError}</p></div>}
         <div className="form-actions request-actions">
-          <button type="submit" className="primary-button" disabled={!canEdit || updateMutation.isPending}>
-            {updateMutation.isPending ? 'Saving…' : 'Save request changes'}
+          <button type="submit" className="primary-button" disabled={!canEdit || editForm.formState.isSubmitting}>
+            {editForm.formState.isSubmitting ? 'Saving…' : 'Save request changes'}
           </button>
-          <button ref={withdrawButtonRef} type="button" className="secondary-button" disabled={!canEdit || withdrawMutation.isPending} onClick={() => { setWithdrawalError(''); setWithdrawalOpen(true); }}>
+          <button ref={withdrawButtonRef} type="button" className="secondary-button" disabled={!canEdit || withdrawalForm.formState.isSubmitting} onClick={() => { setWithdrawalError(''); setWithdrawalOpen(true); }}>
             Withdraw request
           </button>
         </div>
@@ -272,7 +272,7 @@ export function RequestEditWithdrawal({
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 event.preventDefault();
-                if (!withdrawMutation.isPending) setWithdrawalOpen(false);
+                if (!withdrawalForm.formState.isSubmitting) setWithdrawalOpen(false);
                 return;
               }
               if (event.key !== 'Tab') return;
@@ -304,9 +304,9 @@ export function RequestEditWithdrawal({
               </label>
               {withdrawalError && <div className="form-error" role="alert"><p>{withdrawalError}</p></div>}
               <div className="form-actions request-actions">
-                <button type="button" className="secondary-button" onClick={() => setWithdrawalOpen(false)} disabled={withdrawMutation.isPending}>Keep request</button>
-                <button type="submit" className="primary-button" disabled={!canEdit || withdrawMutation.isPending}>
-                  {withdrawMutation.isPending ? 'Withdrawing…' : 'Confirm withdrawal'}
+                <button type="button" className="secondary-button" onClick={() => setWithdrawalOpen(false)} disabled={withdrawalForm.formState.isSubmitting}>Keep request</button>
+                <button type="submit" className="primary-button" disabled={!canEdit || withdrawalForm.formState.isSubmitting}>
+                  {withdrawalForm.formState.isSubmitting ? 'Withdrawing…' : 'Confirm withdrawal'}
                 </button>
               </div>
             </form>

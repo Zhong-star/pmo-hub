@@ -266,7 +266,15 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
     changeMutation.reset();
   }
 
-  function submitAction(values: AllocationActionForm) {
+  async function sendChange(command: CommandAttempt) {
+    try {
+      await changeMutation.mutateAsync(command);
+    } catch {
+      // The mutation callback exposes the error and preserves the attempt for retry.
+    }
+  }
+
+  async function submitAction(values: AllocationActionForm) {
     if (!allocation || !selectedAction || !detailQuery.data || currentAllocationRefreshFailed) return;
     const command = attempt && attempt.allocationId === allocation.id && attempt.action === selectedAction && attempt.reason === values.reason.trim()
       ? attempt
@@ -276,7 +284,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
       return;
     }
     setAttempt(command);
-    changeMutation.mutate(command);
+    await sendChange(command);
   }
 
   function selectAllocation(nextId: string) {
@@ -549,7 +557,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
                     <div className="form-error" role="alert">
                       <p>{errorText(changeMutation.error)} Your reason is still available.</p>
                       {attempt && (
-                        <button type="button" className="text-button" onClick={() => changeMutation.mutate(attempt)} disabled={changeMutation.isPending || currentAllocationRefreshFailed}>
+                        <button type="button" className="text-button" onClick={actionForm.handleSubmit(() => sendChange(attempt))} disabled={actionForm.formState.isSubmitting || currentAllocationRefreshFailed}>
                           Retry change
                         </button>
                       )}
@@ -559,9 +567,9 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
                     <button
                       type="submit"
                       className="primary-button"
-                      disabled={changeMutation.isPending || isStale || currentAllocationRefreshFailed || !allocation.availableActions.includes(selectedAction)}
+                      disabled={actionForm.formState.isSubmitting || isStale || currentAllocationRefreshFailed || !allocation.availableActions.includes(selectedAction)}
                     >
-                      {changeMutation.isPending ? 'Saving…' : 'Save change'}
+                      {actionForm.formState.isSubmitting ? 'Saving…' : 'Save change'}
                     </button>
                       <button type="button" className="secondary-button" onClick={() => { setSelectedAction(null); setAttempt(null); resetChangeMutation(); }}>
                       Close
