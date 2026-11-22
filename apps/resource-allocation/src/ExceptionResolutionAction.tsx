@@ -1,3 +1,4 @@
+import { hasNonBlankText } from './formValidation';
 import { useForm, useWatch } from 'react-hook-form';
 import type { ApprovedRequestConditions } from './requestApi';
 import type { ExceptionResolutionStrategy, ExceptionResolutionInput, ExceptionStrategyInput, QueueSelections, RequestQueueItem } from './requestQueueApi';
@@ -135,7 +136,7 @@ export function ExceptionResolutionAction({
               aria-invalid={Boolean(form.formState.errors.reason)}
               {...form.register('reason', {
                 required: 'Provide a reason.',
-                validate: (value) => Boolean(value.trim()) || 'Provide a reason.',
+                validate: (value) => hasNonBlankText(value) || 'Provide a reason.',
               })}
               disabled={disabled}
             />

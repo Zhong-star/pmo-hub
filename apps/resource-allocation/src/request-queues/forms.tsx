@@ -1,3 +1,4 @@
+import { hasNonBlankText } from '../formValidation';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import type { QueueSelections, RequestQueueItem } from '../requestQueueApi';
@@ -206,7 +207,7 @@ export function ApprovalForm({
         <textarea
           {...register('explanation', {
             maxLength: { value: 2000, message: 'Use no more than 2,000 characters.' },
-            validate: (value) => !explanationRequired || Boolean(value.trim()) || (mustProposeChangedPeriod
+            validate: (value) => !explanationRequired || hasNonBlankText(value) || (mustProposeChangedPeriod
               ? 'Explain the proposed date or hours changes.'
               : 'Provide an explanation when correcting the resource profile.'),
           })}
@@ -299,7 +300,7 @@ export function ReferenceCorrectionForm({
       )}
       <label className="form-field request-queue-reason-field">
         <span>Reason</span>
-        <textarea {...register('reason', { required: 'Provide a reason.', maxLength: { value: 2000, message: 'Use no more than 2,000 characters.' }, validate: (value) => Boolean(value.trim()) || 'Provide a reason.' })} maxLength={2000} disabled={disabled} />
+        <textarea {...register('reason', { required: 'Provide a reason.', maxLength: { value: 2000, message: 'Use no more than 2,000 characters.' }, validate: (value) => hasNonBlankText(value) || 'Provide a reason.' })} maxLength={2000} disabled={disabled} />
         {errors.reason && <span className="field-error">{errors.reason.message}</span>}
       </label>
       <div className="form-actions">
@@ -318,7 +319,7 @@ export function AdministrativeRemovalForm({ disabled: actionDisabled, onSubmit }
       <p>The requester will be notified. The request and its submission reference remain available in the audit.</p>
       <label className="form-field request-queue-reason-field">
         <span>Reason</span>
-        <textarea {...register('reason', { required: 'Provide a reason.', maxLength: { value: 2000, message: 'Use no more than 2,000 characters.' }, validate: (value) => Boolean(value.trim()) || 'Provide a reason.' })} maxLength={2000} disabled={disabled} />
+        <textarea {...register('reason', { required: 'Provide a reason.', maxLength: { value: 2000, message: 'Use no more than 2,000 characters.' }, validate: (value) => hasNonBlankText(value) || 'Provide a reason.' })} maxLength={2000} disabled={disabled} />
         {errors.reason && <span className="field-error">{errors.reason.message}</span>}
       </label>
       <div className="form-actions">

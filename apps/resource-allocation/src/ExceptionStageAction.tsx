@@ -1,3 +1,4 @@
+import { hasNonBlankText } from './formValidation';
 import { useForm } from 'react-hook-form';
 import type { RequestQueueItem } from './requestQueueApi';
 
@@ -44,7 +45,7 @@ export function ExceptionStageAction({ item, action, disabled, open, onToggle, o
               aria-invalid={Boolean(form.formState.errors.reason)}
               {...form.register('reason', {
                 required: 'Provide a reason.',
-                validate: (value) => Boolean(value.trim()) || 'Provide a reason.',
+                validate: (value) => hasNonBlankText(value) || 'Provide a reason.',
               })}
               disabled={disabled}
             />
