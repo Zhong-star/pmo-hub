@@ -406,7 +406,7 @@ function SubmissionResults({
                 {line.requestOutcome && typeof line.requestOutcome === 'object' && line.requestOutcome.status === 'REMOVED' && line.requestId && (
                   <>
                     {line.requestOutcome.reason && <p className="submission-result-detail">Removal reason: {line.requestOutcome.reason}</p>}
-                    <p className="submission-result-detail"><a href={`/resource-allocation/?auditId=${encodeURIComponent(line.requestId)}`}>Open retained audit record</a></p>
+                    <p className="submission-result-detail"><a href={`/resource-allocation/?page=requests&auditId=${encodeURIComponent(line.requestId)}`}>Open retained audit record</a></p>
                   </>
                 )}
                 {line.status === 'FAILED' && (

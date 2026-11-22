@@ -50,7 +50,7 @@ async function installBaseRoutes(page: Page) {
   });
 }
 
-test('removes mounted requests and allocations when an allocation refresh confirms access was revoked', async ({ page }) => {
+test('keeps Requests unmounted and clears Allocations when a refresh confirms access was revoked', async ({ page }) => {
   await installBaseRoutes(page);
   let revoked = false;
   const denied = { status: 403, contentType: 'application/problem+json', json: { code: 'ACCESS_DENIED', status: 403 } };
@@ -62,10 +62,10 @@ test('removes mounted requests and allocations when an allocation refresh confir
     json: { date: '2026-11-21', items: [], page: emptyPage },
   }));
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=allocations');
   const requests = page.getByRole('heading', { name: 'My requests' });
   const allocations = page.getByRole('heading', { name: 'Allocations and capacity' });
-  await expect(requests).toBeVisible();
+  await expect(requests).toHaveCount(0);
   await expect(allocations).toBeVisible();
   await expect(page.getByRole('button', { name: 'View allocation ITDM-69' })).toBeVisible();
 
@@ -99,7 +99,7 @@ test('opens an authorized allocation detail from a notification', async ({ page 
     return route.fulfill({ json: { items: [], page: emptyPage } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=notifications');
   await page.getByRole('link', { name: 'Open related allocation' }).click();
   await expect(page).toHaveURL(new RegExp(`allocationId=${allocationId}`));
   const detail = page.getByRole('region', { name: 'Allocation details' });
@@ -152,7 +152,7 @@ test('filters authorized allocations by inclusive effective overlap and shows we
     await route.fallback();
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=allocations');
   const panel = page.getByRole('region', { name: 'Allocations and capacity' });
   await expect(panel.getByRole('heading', { name: 'Allocations and capacity' })).toBeVisible();
   await expect(panel.getByText('25 hours/week', { exact: true })).toBeVisible();
@@ -221,7 +221,7 @@ test('preserves the reason after a stale version and refreshes before another co
     await route.fallback();
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=allocations');
   const panel = page.getByRole('region', { name: 'Allocations and capacity' });
   await panel.getByRole('button', { name: 'View allocation ITDM-69' }).click();
   const detail = panel.getByRole('region', { name: 'Allocation details' });
@@ -284,7 +284,7 @@ test('retries a lost allocation command with the same idempotency key and reason
     await route.fallback();
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=allocations');
   const panel = page.getByRole('region', { name: 'Allocations and capacity' });
   await panel.getByRole('button', { name: 'View allocation ITDM-69' }).click();
   const detail = panel.getByRole('region', { name: 'Allocation details' });
@@ -340,7 +340,7 @@ test('refreshes allocation views every 30 seconds and pauses actions when backgr
     await route.fulfill(unavailable ? serviceUnavailable : { json: { date: '2026-11-21', items: [], page: emptyPage } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=allocations');
   const panel = page.getByRole('region', { name: 'Allocations and capacity' });
   await panel.getByRole('button', { name: 'View allocation ITDM-69' }).click();
   const detail = panel.getByRole('region', { name: 'Allocation details' });

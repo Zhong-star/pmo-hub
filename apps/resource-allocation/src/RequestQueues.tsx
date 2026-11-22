@@ -40,6 +40,7 @@ function initialQueue(queues: RequestQueueCode[]): RequestQueueCode {
 
 function updateQueueLocation(queue: RequestQueueCode) {
   const params = new URLSearchParams(window.location.search);
+  params.set('page', 'request-queues');
   params.set('queue', queue);
   params.delete('requestId');
   if (queue !== 'exceptions' && queue !== 'revalidation') {
@@ -49,7 +50,7 @@ function updateQueueLocation(queue: RequestQueueCode) {
   }
   if (queue !== 'exceptions') params.delete('decisionState');
   const search = params.toString();
-  window.history.replaceState(null, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
+  window.history.replaceState(window.history.state, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
 }
 
 export function RequestQueues({ localUserId, personId, role, groupId, onAccessDenied }: RequestQueuesProps) {

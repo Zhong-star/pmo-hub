@@ -283,10 +283,10 @@ function NotificationCard({
 function notificationTargetHref(notification: ResourceNotification): string {
   const { destination, requestId, allocationId } = notification.target;
   if (destination === 'ALLOCATION_DETAIL' && allocationId) {
-    return `/resource-allocation/?${new URLSearchParams({ allocationId })}`;
+    return `/resource-allocation/?${new URLSearchParams({ page: 'allocations', allocationId })}`;
   }
   if (destination === 'REQUEST_DETAIL') {
-    return `/resource-allocation/?${new URLSearchParams({ requestId })}`;
+    return `/resource-allocation/?${new URLSearchParams({ page: 'requests', requestId })}`;
   }
   const queue = destination === 'PRESENTATION_QUEUE'
     ? 'presentation'
@@ -294,6 +294,6 @@ function notificationTargetHref(notification: ResourceNotification): string {
       ? 'team-decision'
       : null;
   return queue
-    ? `/resource-allocation/?${new URLSearchParams({ queue, requestId })}`
-    : '/resource-allocation/';
+    ? `/resource-allocation/?${new URLSearchParams({ page: 'request-queues', queue, requestId })}`
+    : '/resource-allocation/?page=requests';
 }

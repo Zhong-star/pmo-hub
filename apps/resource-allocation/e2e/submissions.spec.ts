@@ -22,7 +22,7 @@ async function openAsUser(page: Page) {
   await page.addInitScript(({ key }) => window.localStorage.setItem(key, 'profile-user'), {
     key: profileStorageKey,
   });
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=new-request');
 }
 
 async function installSelectionFixtures(page: Page) {
@@ -264,7 +264,7 @@ test('recovers a submitted request that later expired and opens its retained aud
   await expect(page.getByText('Request created:', { exact: false })).toContainText(requestId);
   await expect(page.getByText('Current outcome: Removed from operation · expired')).toBeVisible();
   await expect(page.getByRole('button', { name: /Correct and retry/ })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Open retained audit record' })).toHaveAttribute('href', `/resource-allocation/?auditId=${requestId}`);
+  await expect(page.getByRole('link', { name: 'Open retained audit record' })).toHaveAttribute('href', `/resource-allocation/?page=requests&auditId=${requestId}`);
   expect(submissionAttempts).toBe(0);
 
   await page.getByRole('link', { name: 'Open retained audit record' }).click();

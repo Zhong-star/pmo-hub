@@ -23,7 +23,7 @@ test('submits through the real API and shows the PostgreSQL worker result', asyn
   await page.addInitScript(({ key }) => window.localStorage.setItem(key, 'local-contributor'), {
     key: profileStorageKey,
   });
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=new-request');
 
   await expect(page.getByRole('heading', { name: 'New request batch' })).toBeVisible();
   await page.getByRole('combobox', { name: 'Initiative', exact: true }).selectOption({

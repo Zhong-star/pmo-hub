@@ -43,7 +43,7 @@ async function openWithProfile(page: Page, profileId: string) {
     key: selectedProfileKey,
     value: profileId,
   });
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=administration');
 }
 
 async function installAdminAccess(page: Page) {

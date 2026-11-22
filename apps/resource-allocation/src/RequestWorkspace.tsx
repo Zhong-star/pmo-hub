@@ -23,20 +23,22 @@ function querySelectedAuditId(): string | null {
 
 function updateRequestUrl(requestId: string | null) {
   const url = new URL(window.location.href);
+  url.searchParams.set('page', 'requests');
   if (requestId) {
     url.searchParams.delete('queue');
     url.searchParams.set('requestId', requestId);
   } else {
     url.searchParams.delete('requestId');
   }
-  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
 function updateAuditUrl(requestId: string | null) {
   const url = new URL(window.location.href);
+  url.searchParams.set('page', 'requests');
   if (requestId) url.searchParams.set('auditId', requestId);
   else url.searchParams.delete('auditId');
-  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
 export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }: RequestWorkspaceProps) {

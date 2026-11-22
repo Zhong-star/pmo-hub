@@ -296,8 +296,9 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
     resetChangeMutation();
     setSelectedAllocationId(nextId);
     const url = new URL(window.location.href);
+    url.searchParams.set('page', 'allocations');
     url.searchParams.set('allocationId', nextId);
-    window.history.replaceState(null, '', url);
+    window.history.replaceState(window.history.state, '', url);
   }
 
   function closeDetails() {
@@ -309,8 +310,9 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
     resetChangeMutation();
     setSelectedAllocationId(null);
     const url = new URL(window.location.href);
+    url.searchParams.set('page', 'allocations');
     url.searchParams.delete('allocationId');
-    window.history.replaceState(null, '', url);
+    window.history.replaceState(window.history.state, '', url);
   }
 
   return (
