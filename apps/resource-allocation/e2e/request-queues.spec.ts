@@ -133,6 +133,48 @@ test('moves between request queues with the tablist arrow keys', async ({ page }
   await expect(page).toHaveURL(/queue=team-decision/);
 });
 
+test('blocks area, Hub and profile navigation until a direct referral completes', async ({ page }) => {
+  await installCommonRoutes(page, admin.localUserId, admin);
+  const item = requestItem({ availableActions: ['REFER'] });
+  let items = [item];
+  let releaseReferral = () => {};
+  const referralResponse = new Promise<void>((resolve) => { releaseReferral = resolve; });
+  let referralCount = 0;
+  await page.route(`${apiRoot}/request-queues/**`, (route) => route.fulfill({ json: { items, page: emptyPage } }));
+  await page.route(`${apiRoot}/requests/*/referrals`, async (route) => {
+    referralCount += 1;
+    await referralResponse;
+    items = [];
+    await route.fulfill({ json: { ...item, decisionState: 'PENDING_TEAM_DECISION', version: 2 } });
+  });
+  await page.goto('/resource-allocation/?page=request-queues');
+  const navigation = page.getByRole('navigation', { name: 'Tech Resource Allocation' });
+  const card = page.locator('#resource-request-request-a');
+  const requestSent = page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith('/requests/request-a/referrals'));
+  try {
+    await card.getByRole('button', { name: 'Refer to group decision' }).click();
+    await requestSent;
+    await expect(card.getByRole('button', { name: 'Updating request…' })).toBeDisabled();
+    await navigation.getByRole('link', { name: 'Requests', exact: true }).click();
+    await expect(page).toHaveURL(/\?page=request-queues$/);
+    await expect(page.getByRole('status').filter({ hasText: 'A save is in progress' })).toBeVisible();
+    await page.getByRole('link', { name: 'PMO Hub', exact: true }).click();
+    await expect(page).toHaveURL(/\?page=request-queues$/);
+    await page.getByRole('button', { name: 'Morgan Admin', exact: true }).click();
+    await page.getByRole('button', { name: 'Change profile', exact: true }).click();
+    await expect(page).toHaveURL(/\?page=request-queues$/);
+    expect(await page.evaluate((key) => localStorage.getItem(key), profileStorageKey)).toBe(admin.localUserId);
+  } finally {
+    releaseReferral();
+  }
+  await expect(card).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: 'A save is in progress' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Morgan Admin', exact: true }).click();
+  await navigation.getByRole('link', { name: 'Requests', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'My requests', exact: true })).toBeVisible();
+  expect(referralCount).toBe(1);
+});
+
 test('corrects eligible references, preserves the deadline, and refers the request with the current ETag', async ({ page }) => {
   await installCommonRoutes(page, admin.localUserId, admin);
   let queueItem = requestItem();

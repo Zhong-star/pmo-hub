@@ -43,7 +43,7 @@ function updateLocation(filters: QueueFilterValues, stage: ExceptionStage) {
     else params.delete(name);
   }
   const search = params.toString();
-  window.history.replaceState(null, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
+  window.history.replaceState(window.history.state, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
 }
 
 export function ExceptionsQueue(props: QueueVerticalProps) {

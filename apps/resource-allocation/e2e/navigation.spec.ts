@@ -215,6 +215,47 @@ test('keeps profile and form focus when profile change is canceled', async ({ pa
   expect(await page.evaluate((key) => window.localStorage.getItem(key), profileStorageKey)).toBe(user.localUserId);
 });
 
+for (const queue of ['Admin exceptions', 'Revalidation queue']) {
+  test(`preserves a draft when forward to filtered ${queue} is canceled`, async ({ page }) => {
+    await openWithProfile(page, admin, '/resource-allocation/?page=new-request');
+    await page.route(`${apiRoot}/groups**`, (route) => route.fulfill({
+      json: { items: [{ id: 'group-a', name: 'Platform Engineering' }], page: emptyPage },
+    }));
+    const navigation = page.getByRole('navigation', { name: 'Tech Resource Allocation' });
+    await navigation.getByRole('link', { name: 'Request queues', exact: true }).click();
+    await page.getByRole('tab', { name: queue, exact: true }).click();
+    if (queue === 'Admin exceptions') {
+      await page.getByRole('tab', { name: 'Pre N3', exact: true }).click();
+    } else {
+      await page.getByRole('group', { name: 'Filter revalidation requests' }).getByRole('combobox', { name: 'Group', exact: true }).selectOption({ label: 'Platform Engineering' });
+    }
+    const queueUrl = page.url();
+    await navigation.getByRole('link', { name: 'Notifications', exact: true }).click();
+    await page.goBack();
+    await page.goBack();
+    await expect(page).toHaveURL(/\?page=new-request$/);
+    const hours = page.getByLabel('Weekly hours for line 1');
+    await hours.fill('6.5');
+
+    const canceledPrompt = page.waitForEvent('dialog');
+    await page.evaluate(() => window.history.forward());
+    await (await canceledPrompt).dismiss();
+    await expect(page).toHaveURL(/\?page=new-request$/);
+    await expect(hours).toHaveValue('6.5');
+    await hours.focus();
+    await expect(hours).toBeFocused();
+
+    const confirmedPrompt = page.waitForEvent('dialog');
+    await page.evaluate(() => window.history.forward());
+    await (await confirmedPrompt).accept();
+    await expect(page).toHaveURL(queueUrl);
+    await expect(page.getByRole('tab', { name: queue, exact: true })).toHaveAttribute('aria-selected', 'true');
+    await expect(hours).toHaveCount(0);
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: 'Notifications', exact: true })).toBeVisible();
+  });
+}
+
 test('protects the PMO Hub brand link and native reload with the current draft', async ({ page }) => {
   await openWithProfile(page, user, '/resource-allocation/?page=new-request');
   const weeklyHours = page.getByLabel('Weekly hours for line 1');

@@ -27,7 +27,7 @@ function updateLocation(filters: QueueFilterValues) {
     else params.delete(name);
   }
   const search = params.toString();
-  window.history.replaceState(null, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
+  window.history.replaceState(window.history.state, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
 }
 
 export function RevalidationQueue(props: QueueVerticalProps) {

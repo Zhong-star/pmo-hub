@@ -10,6 +10,7 @@ import { RequestDecisionApiError } from '../requestDecisionApi';
 import { invalidateRequestSurfaces } from '../requestSurfaces';
 import { businessDate, formatBusinessTimestamp } from '../timeAndHours';
 import { requestResponsibleLabel } from '../revalidation';
+import { useNavigationFormProtection } from '../NavigationProtection';
 
 export type QueueFilterValues = Omit<RequestQueueFilters, 'decisionState'>;
 
@@ -150,6 +151,7 @@ export function useQueueActionRunner(localUserId: string, onAccessDenied: () => 
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingRequestIds, setPendingRequestIds] = useState<ReadonlySet<string>>(() => new Set());
+  useNavigationFormProtection('queue actions', false, pendingRequestIds.size > 0);
 
   async function performAction(
     item: RequestQueueItem,

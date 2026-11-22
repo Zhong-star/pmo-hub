@@ -262,15 +262,20 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
     }
   }
 
+  function resetAllocationAction() {
+    setSelectedAction(null);
+    setAttempt(null);
+    setIsStale(false);
+    setActionMessage('');
+    resetActionForm({ reason: '' });
+    resetChangeMutation();
+  }
+
   function startAction(action: AllocationAction) {
     if (currentAllocationRefreshFailed) return;
     guardActionClose(() => {
+      resetAllocationAction();
       setSelectedAction(action);
-      setAttempt(null);
-      setIsStale(false);
-      setActionMessage('');
-      resetActionForm({ reason: '' });
-      changeMutation.reset();
     });
   }
 
@@ -298,12 +303,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
   function selectAllocation(nextId: string) {
     if (nextId === selectedAllocationId) return;
     guardActionClose(() => {
-      setSelectedAction(null);
-      setAttempt(null);
-      setIsStale(false);
-      setActionMessage('');
-      resetActionForm({ reason: '' });
-      resetChangeMutation();
+      resetAllocationAction();
       setSelectedAllocationId(nextId);
       const url = new URL(window.location.href);
       url.searchParams.set('page', 'allocations');
@@ -314,12 +314,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
 
   function closeDetails() {
     guardActionClose(() => {
-      setSelectedAction(null);
-      setAttempt(null);
-      setIsStale(false);
-      setActionMessage('');
-      resetActionForm({ reason: '' });
-      resetChangeMutation();
+      resetAllocationAction();
       setSelectedAllocationId(null);
       const url = new URL(window.location.href);
       url.searchParams.set('page', 'allocations');
@@ -586,14 +581,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
                     >
                       {actionForm.formState.isSubmitting ? 'Saving…' : 'Save change'}
                     </button>
-                      <button type="button" className="secondary-button" onClick={() => guardActionClose(() => {
-                        setSelectedAction(null);
-                        setAttempt(null);
-                        setIsStale(false);
-                        setActionMessage('');
-                        resetActionForm({ reason: '' });
-                        resetChangeMutation();
-                      })}>
+                      <button type="button" className="secondary-button" onClick={() => guardActionClose(resetAllocationAction)}>
                       Close
                     </button>
                   </div>
