@@ -264,12 +264,14 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
 
   function startAction(action: AllocationAction) {
     if (currentAllocationRefreshFailed) return;
-    setSelectedAction(action);
-    setAttempt(null);
-    setIsStale(false);
-    setActionMessage('');
-    resetActionForm({ reason: '' });
-    changeMutation.reset();
+    guardActionClose(() => {
+      setSelectedAction(action);
+      setAttempt(null);
+      setIsStale(false);
+      setActionMessage('');
+      resetActionForm({ reason: '' });
+      changeMutation.reset();
+    });
   }
 
   async function sendChange(command: CommandAttempt) {
@@ -584,7 +586,14 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
                     >
                       {actionForm.formState.isSubmitting ? 'Saving…' : 'Save change'}
                     </button>
-                      <button type="button" className="secondary-button" onClick={() => { setSelectedAction(null); setAttempt(null); resetChangeMutation(); }}>
+                      <button type="button" className="secondary-button" onClick={() => guardActionClose(() => {
+                        setSelectedAction(null);
+                        setAttempt(null);
+                        setIsStale(false);
+                        setActionMessage('');
+                        resetActionForm({ reason: '' });
+                        resetChangeMutation();
+                      })}>
                       Close
                     </button>
                   </div>
