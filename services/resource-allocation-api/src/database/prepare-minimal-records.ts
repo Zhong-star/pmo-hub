@@ -567,6 +567,7 @@ async function run(): Promise<void> {
     const result = await prepareMinimalRecords(ResourceAllocationDataSource, options);
     if (!result.operational) {
       console.error(`Minimal Tech Resource Allocation baseline is not operational: ${result.diagnostics.join(' ')}`);
+      process.exitCode = 1;
       return;
     }
     const createdTotal =

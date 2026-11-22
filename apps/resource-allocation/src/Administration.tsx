@@ -575,9 +575,13 @@ function RecordEditor({
     },
   });
 
-  const onSubmit = handleSubmit((values) => {
+  const onSubmit = handleSubmit(async (values) => {
     setSubmissionError('');
-    mutation.mutate(values);
+    try {
+      await mutation.mutateAsync(values);
+    } catch {
+      // The mutation's onError reports the failure on the form.
+    }
   });
 
   const groupOptions = groups.filter((group) => group.active);
@@ -750,9 +754,9 @@ function RecordEditor({
         </label>
 
         <div className="form-actions">
-          <button className="secondary-button" type="button" onClick={onClose} disabled={mutation.isPending}>Cancel</button>
-          <button className="primary-button" type="submit" disabled={mutation.isPending || (editor.mode === 'edit' && !detail?.etag)}>
-            {mutation.isPending ? 'Saving…' : `Save ${collectionSingularLabels[editor.collection]}`}
+          <button className="secondary-button" type="button" onClick={onClose} disabled={formState.isSubmitting}>Cancel</button>
+          <button className="primary-button" type="submit" disabled={formState.isSubmitting || (editor.mode === 'edit' && !detail?.etag)}>
+            {formState.isSubmitting ? 'Saving…' : `Save ${collectionSingularLabels[editor.collection]}`}
           </button>
         </div>
       </form>

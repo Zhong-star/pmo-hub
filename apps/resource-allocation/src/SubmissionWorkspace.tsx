@@ -447,7 +447,7 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
     mode: 'onSubmit',
     reValidateMode: 'onChange',
   });
-  const { control, register, setValue, getValues, handleSubmit, reset, setError, formState: { errors } } = form;
+  const { control, register, setValue, getValues, handleSubmit, reset, setError, formState: { errors, isSubmitting } } = form;
   const values = useWatch({ control }) as SubmissionFormValues;
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
 
@@ -628,8 +628,8 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
               <p>The server may have received this batch. Its saved copy is locked until the same send can be recovered safely.</p>
               <p>{outbox.payload.lines.length} request line{outbox.payload.lines.length === 1 ? '' : 's'} · key <code>{outbox.idempotencyKey}</code></p>
             </div>
-            <button type="button" className="primary-button" onClick={() => void recoverOutbox()} disabled={createMutation.isPending}>
-              {createMutation.isPending ? 'Checking receipt…' : 'Recover unconfirmed submission'}
+            <button type="button" className="primary-button" onClick={() => void recoverOutbox()} disabled={isSubmitting || createMutation.isPending}>
+              {isSubmitting || createMutation.isPending ? 'Checking receipt…' : 'Recover unconfirmed submission'}
             </button>
           </div>
         )}
@@ -675,7 +675,7 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
         )}
 
         {!outbox && !selectionLoading && (
-          <form className="submission-form" onSubmit={(event) => event.preventDefault()}>
+          <form className="submission-form" onSubmit={(event) => void (reviewMode ? onSend(event) : onReview(event))} noValidate>
             {!reviewMode ? (
               <>
                 <div className="submission-global-fields">
@@ -741,7 +741,7 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
                 </div>
                 <p className="submission-limits">Comments can contain up to 2,000 characters. Dates start today or later, and the end date cannot be before the start date.</p>
                 <div className="form-actions submission-actions">
-                  <button type="button" className="primary-button" onClick={() => void onReview()} disabled={createMutation.isPending}>
+                  <button type="submit" className="primary-button" disabled={isSubmitting}>
                     Review submission
                   </button>
                 </div>
@@ -776,11 +776,11 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
                 </div>
                 <p className="field-help">The displayed hours are the values that will be saved. Successful lines will not be resent when you correct a failed line.</p>
                 <div className="form-actions submission-actions">
-                  <button type="button" className="secondary-button" onClick={() => setReviewMode(false)}>
+                  <button type="button" className="secondary-button" onClick={() => setReviewMode(false)} disabled={isSubmitting}>
                     Edit requests
                   </button>
-                  <button type="button" className="primary-button" onClick={() => void onSend()} disabled={createMutation.isPending}>
-                    {createMutation.isPending ? 'Sending…' : `Send ${values.lines.length} request${values.lines.length === 1 ? '' : 's'}`}
+                  <button type="submit" className="primary-button" disabled={isSubmitting}>
+                    {isSubmitting ? 'Sending…' : `Send ${values.lines.length} request${values.lines.length === 1 ? '' : 's'}`}
                   </button>
                 </div>
               </section>

@@ -462,8 +462,10 @@ describe('Tech Resource Allocation local preparation scripts (#75)', () => {
       ...process.env,
       RESOURCE_ALLOCATION_DATABASE_URL: container!.getConnectionUri(),
     };
-    const cliResult = await runNpmScript('prepare:minimal', cliEnv);
-    expect(`${cliResult.stdout}\n${cliResult.stderr}`).toContain('baseline is not operational');
+    await expect(runNpmScript('prepare:minimal', cliEnv)).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining('baseline is not operational'),
+    });
     expect(await dataSource!.getRepository(ResourceGroup).find({ where: { active: true } })).toHaveLength(0);
     expect(await dataSource!.getRepository(ResourceProfile).find({ where: { active: true } })).toHaveLength(0);
     expect(await dataSource!.getRepository(ResourceInitiative).find({ where: { active: true } })).toHaveLength(0);
