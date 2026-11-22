@@ -1,6 +1,7 @@
 import { hasNonBlankText } from './formValidation';
 import { useForm } from 'react-hook-form';
 import type { RequestQueueItem } from './requestQueueApi';
+import { useNavigationFormProtection } from './NavigationProtection';
 
 interface DenialActionProps {
   item: RequestQueueItem;
@@ -14,13 +15,25 @@ interface DenialValues { explanation: string; }
 
 export function DenialAction({ item, disabled, open, onToggle, onSubmit }: DenialActionProps) {
   const form = useForm<DenialValues>({ defaultValues: { explanation: '' }, mode: 'onSubmit', reValidateMode: 'onChange' });
+  const guardFormClose = useNavigationFormProtection('denial action', form.formState.isDirty, form.formState.isSubmitting);
 
   const isBlocked = disabled || form.formState.isSubmitting;
+
+  function toggleAction() {
+    if (!open) {
+      onToggle();
+      return;
+    }
+    guardFormClose(() => {
+      form.reset({ explanation: '' });
+      onToggle();
+    });
+  }
 
   return (
     <div className="request-denial-action">
       {!open && (
-        <button type="button" className="secondary-button" aria-expanded="false" onClick={onToggle} disabled={isBlocked}>
+        <button type="button" className="secondary-button" aria-expanded="false" onClick={toggleAction} disabled={isBlocked}>
           Deny request
         </button>
       )}
@@ -43,7 +56,7 @@ export function DenialAction({ item, disabled, open, onToggle, onSubmit }: Denia
             {form.formState.errors.explanation?.message && <span className="field-error">{form.formState.errors.explanation.message}</span>}
           </label>
           <div className="form-actions request-queue-action-buttons">
-            <button type="button" className="secondary-button" onClick={onToggle} disabled={isBlocked}>Keep request in queue</button>
+            <button type="button" className="secondary-button" onClick={toggleAction} disabled={isBlocked}>Keep request in queue</button>
             <button type="submit" className="primary-button" disabled={isBlocked}>
               {form.formState.isSubmitting ? 'Denying…' : 'Confirm denial'}
             </button>

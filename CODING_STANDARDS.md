@@ -20,6 +20,13 @@ Judgement-call conventions enforced during `/code-review` across `apps/` and `se
 
 - Organize controllers, services, and UI views around cohesive feature verticals. Split a module when unrelated verticals cause repeated edits for separate reasons (*Divergent Change*).
 
+## Shared Module Interface & Theme
+
+- Frontend entry points import `apps/shared-ui/src/theme.css` before app-specific styles. Keep the shared palette, type, surface, radius, and shadow tokens in that file and consume them through CSS variables; define module-only status colors in the module stylesheet.
+- Reuse `HubHeader`, `WorkspaceSidebar`, and `useThemePreference` for module chrome, permission-filtered navigation, and theme selection.
+- Keep module layout and control styles inside app stylesheets. Shared UI styles stay component-scoped; avoid global button, input, or select overrides that change existing applications.
+- For module interface changes, follow the workspace's `docs/standards/frontend-conventions.md` and record browser evidence for every area in both themes, desktop and narrow layouts, keyboard/focus, and 200% zoom. Check text and action contrast in the actual rendered states and verify Hub/Lessons Learned when shared theme or components change.
+
 ## HTTP & OpenAPI Boundaries
 
 - Pair every database-backed controller with RFC 9457 `application/problem+json` error translation so unexpected persistence failures return structured problem responses without leaking internal details.

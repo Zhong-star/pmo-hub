@@ -4,7 +4,7 @@ import './HubHeader.css';
 
 export interface HubHeaderProps {
   profileName?: string;
-  onChangeProfile?: () => void;
+  onChangeProfile?: () => void | boolean;
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
   actions?: ReactNode;
@@ -73,8 +73,7 @@ export function HubHeader({ profileName, onChangeProfile, theme, onThemeChange, 
                 <button
                   type="button"
                   onClick={() => {
-                    setIsProfileMenuOpen(false);
-                    onChangeProfile();
+                    if (onChangeProfile() !== false) setIsProfileMenuOpen(false);
                   }}
                 >
                   Change profile

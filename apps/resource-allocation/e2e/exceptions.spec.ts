@@ -172,7 +172,7 @@ test('does not expose the global exception queue to a requester', async ({ page 
   await page.route(`${apiRoot}/notifications**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/requests**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), { key: profileStorageKey, value: requester.localUserId });
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
 
   await expect(page.getByRole('tab', { name: 'Admin exceptions' })).toHaveCount(0);
   await expect(page.getByRole('tab', { name: 'Pre N3' })).toHaveCount(0);

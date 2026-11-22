@@ -4,6 +4,7 @@ import { useFieldArray, useForm, useWatch, type Control, type FieldErrors, type 
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
 import { REQUESTS_QUERY_ROOT } from './requestApi';
 import { REQUEST_QUEUES_QUERY_ROOT } from './requestQueueApi';
+import { useNavigationFormProtection } from './NavigationProtection';
 import { businessDate, formatBusinessTimestamp, normalizeWeeklyHours } from './timeAndHours';
 import {
   createSubmission,
@@ -406,7 +407,7 @@ function SubmissionResults({
                 {line.requestOutcome && typeof line.requestOutcome === 'object' && line.requestOutcome.status === 'REMOVED' && line.requestId && (
                   <>
                     {line.requestOutcome.reason && <p className="submission-result-detail">Removal reason: {line.requestOutcome.reason}</p>}
-                    <p className="submission-result-detail"><a href={`/resource-allocation/?auditId=${encodeURIComponent(line.requestId)}`}>Open retained audit record</a></p>
+                    <p className="submission-result-detail"><a href={`/resource-allocation/?page=requests&auditId=${encodeURIComponent(line.requestId)}`}>Open retained audit record</a></p>
                   </>
                 )}
                 {line.status === 'FAILED' && (
@@ -447,7 +448,7 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
     mode: 'onSubmit',
     reValidateMode: 'onChange',
   });
-  const { control, register, setValue, getValues, handleSubmit, reset, setError, formState: { errors, isSubmitting } } = form;
+  const { control, register, setValue, getValues, handleSubmit, reset, setError, formState: { errors, isSubmitting, isDirty } } = form;
   const values = useWatch({ control }) as SubmissionFormValues;
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
 
@@ -473,6 +474,7 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
   const createMutation = useMutation({
     mutationFn: (envelope: StoredEnvelope) => createSubmission(localUserId, envelope.payload, envelope.idempotencyKey),
   });
+  const guardSubmissionClose = useNavigationFormProtection('submission', isDirty, createMutation.isPending);
 
   const selectionAccessError = hasAccessError(groupsQuery.error)
     || hasAccessError(profilesQuery.error)
@@ -567,20 +569,22 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
     const initiativeId = line.submittedConditions.initiativeId;
     const category = line.submittedConditions.category;
     if (outbox || line.status !== 'FAILED' || !initiativeId || !category) return;
-    setSendError('');
-    setNotice('');
-    setReviewMode(false);
-    setValue('initiativeId', initiativeId, { shouldDirty: true, shouldValidate: true });
-    setValue('category', category, { shouldDirty: true, shouldValidate: true });
-    replace([{
-      groupId: line.submittedConditions.groupId,
-      resourceProfileId: line.submittedConditions.resourceProfileId,
-      startDate: line.submittedConditions.startDate,
-      endDate: line.submittedConditions.endDate,
-      weeklyHours: String(line.submittedConditions.weeklyHours),
-      comment: line.submittedConditions.comment ?? '',
-    }]);
-    document.getElementById('new-request-batch')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    guardSubmissionClose(() => {
+      setSendError('');
+      setNotice('');
+      setReviewMode(false);
+      setValue('initiativeId', initiativeId, { shouldDirty: true, shouldValidate: true });
+      setValue('category', category, { shouldDirty: true, shouldValidate: true });
+      replace([{
+        groupId: line.submittedConditions.groupId,
+        resourceProfileId: line.submittedConditions.resourceProfileId,
+        startDate: line.submittedConditions.startDate,
+        endDate: line.submittedConditions.endDate,
+        weeklyHours: String(line.submittedConditions.weeklyHours),
+        comment: line.submittedConditions.comment ?? '',
+      }]);
+      document.getElementById('new-request-batch')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   async function recoverOutbox() {

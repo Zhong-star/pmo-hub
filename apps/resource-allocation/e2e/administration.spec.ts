@@ -43,7 +43,7 @@ async function openWithProfile(page: Page, profileId: string) {
     key: selectedProfileKey,
     value: profileId,
   });
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=administration');
 }
 
 async function installAdminAccess(page: Page) {
@@ -101,6 +101,34 @@ test('moves through administrative collections with the tablist arrow keys', asy
   await page.keyboard.press('Home');
   await expect(people).toBeFocused();
   await expect(page.getByRole('heading', { name: 'People' })).toBeVisible();
+});
+
+test('asks before closing an unsaved editor or changing administrative collections', async ({ page }) => {
+  await installAdminAccess(page);
+  await installEmptyAdminCollections(page);
+  await openWithProfile(page, 'profile-admin');
+
+  await page.getByRole('button', { name: 'Add person' }).click();
+  const displayName = page.getByLabel('Display name');
+  await displayName.fill('Unsaved administrator');
+
+  const closePrompt = page.waitForEvent('dialog');
+  const closeClick = page.getByRole('button', { name: 'Close form' }).click();
+  const closeDialog = await closePrompt;
+  expect(closeDialog.message()).toMatch(/unsaved changes/i);
+  await closeDialog.dismiss();
+  await closeClick;
+  await expect(displayName).toHaveValue('Unsaved administrator');
+  await expect(page.getByRole('button', { name: 'Close form' })).toBeFocused();
+
+  const tabPrompt = page.waitForEvent('dialog');
+  const tabClick = page.getByRole('tab', { name: 'Groups' }).click();
+  const tabDialog = await tabPrompt;
+  await tabDialog.accept();
+  await tabClick;
+  await expect(page.getByRole('heading', { name: 'Groups' })).toBeVisible();
+  await expect(page.getByLabel('Display name')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add group' })).toBeVisible();
 });
 
 test('does not request or display administrative records for a non-Admin', async ({ page }) => {

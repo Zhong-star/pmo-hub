@@ -50,7 +50,7 @@ async function installBaseRoutes(page: Page) {
   });
 }
 
-test('removes mounted requests and allocations when an allocation refresh confirms access was revoked', async ({ page }) => {
+test('keeps Requests unmounted and clears Allocations when a refresh confirms access was revoked', async ({ page }) => {
   await installBaseRoutes(page);
   let revoked = false;
   const denied = { status: 403, contentType: 'application/problem+json', json: { code: 'ACCESS_DENIED', status: 403 } };
@@ -62,10 +62,10 @@ test('removes mounted requests and allocations when an allocation refresh confir
     json: { date: '2026-11-21', items: [], page: emptyPage },
   }));
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=allocations');
   const requests = page.getByRole('heading', { name: 'My requests' });
   const allocations = page.getByRole('heading', { name: 'Allocations and capacity' });
-  await expect(requests).toBeVisible();
+  await expect(requests).toHaveCount(0);
   await expect(allocations).toBeVisible();
   await expect(page.getByRole('button', { name: 'View allocation ITDM-69' })).toBeVisible();
 
@@ -99,7 +99,7 @@ test('opens an authorized allocation detail from a notification', async ({ page 
     return route.fulfill({ json: { items: [], page: emptyPage } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=notifications');
   await page.getByRole('link', { name: 'Open related allocation' }).click();
   await expect(page).toHaveURL(new RegExp(`allocationId=${allocationId}`));
   const detail = page.getByRole('region', { name: 'Allocation details' });
@@ -152,7 +152,7 @@ test('filters authorized allocations by inclusive effective overlap and shows we
     await route.fallback();
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=allocations');
   const panel = page.getByRole('region', { name: 'Allocations and capacity' });
   await expect(panel.getByRole('heading', { name: 'Allocations and capacity' })).toBeVisible();
   await expect(panel.getByText('25 hours/week', { exact: true })).toBeVisible();
@@ -174,6 +174,146 @@ test('filters authorized allocations by inclusive effective overlap and shows we
   await expect(detail.getByText('Nov 18, 2026 – Dec 20, 2026')).toBeVisible();
   await expect(detail.getByRole('button', { name: 'Suspend' })).toBeVisible();
   await expect(detail.getByRole('button', { name: 'Reserve without action' })).toHaveCount(0);
+});
+
+test('protects a dirty allocation action before closing or switching actions', async ({ page }) => {
+  await installBaseRoutes(page);
+  const currentAllocation = allocation(7, 'SUSPENDED', ['RESUME', 'CANCEL', 'COMPLETE']);
+  const dialogMessages: string[] = [];
+  let nextDialogAction: 'dismiss' | 'accept' = 'dismiss';
+
+  await page.on('dialog', async (dialog) => {
+    dialogMessages.push(dialog.message());
+    if (nextDialogAction === 'dismiss') await dialog.dismiss();
+    else await dialog.accept();
+  });
+  await page.route(`${apiRoot}/allocation-load**`, async (route) => route.fulfill({
+    json: { date: '2026-11-21', items: [], page: emptyPage },
+  }));
+  await page.route(`${apiRoot}/allocations**`, async (route: Route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() !== 'GET') return route.fallback();
+    if (url.pathname.endsWith(`/allocations/${allocationId}/history`)) {
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+    if (url.pathname.endsWith(`/allocations/${allocationId}`)) {
+      await route.fulfill({ headers: { etag: '"7"' }, json: currentAllocation });
+      return;
+    }
+    if (url.pathname.endsWith('/allocations')) {
+      await route.fulfill({ json: { items: [currentAllocation], page: emptyPage } });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto('/resource-allocation/?page=allocations');
+  const panel = page.getByRole('region', { name: 'Allocations and capacity' });
+  await panel.getByRole('button', { name: 'View allocation ITDM-69' }).click();
+  const detail = panel.getByRole('region', { name: 'Allocation details' });
+  await detail.getByRole('button', { name: 'Resume' }).click();
+  const actionForm = detail.locator('form.allocation-action-form');
+  const reason = actionForm.getByRole('textbox', { name: 'Reason' });
+  await reason.fill('Wait until the maintenance window is approved.');
+
+  const closeAction = actionForm.getByRole('button', { name: 'Close', exact: true });
+  await closeAction.click();
+  await expect(reason).toHaveValue('Wait until the maintenance window is approved.');
+  await expect(actionForm.getByRole('heading', { name: 'Resume allocation' })).toBeVisible();
+  await expect(closeAction).toBeFocused();
+  expect(dialogMessages).toEqual(['You have unsaved changes. Discard them and continue?']);
+
+  const switchAction = detail.getByRole('button', { name: 'Cancel', exact: true });
+  await switchAction.click();
+  await expect(reason).toHaveValue('Wait until the maintenance window is approved.');
+  await expect(actionForm.getByRole('heading', { name: 'Resume allocation' })).toBeVisible();
+  await expect(switchAction).toBeFocused();
+  expect(dialogMessages).toHaveLength(2);
+
+  nextDialogAction = 'accept';
+  await switchAction.click();
+  await expect(actionForm.getByRole('heading', { name: 'Cancel allocation' })).toBeVisible();
+  await expect(actionForm.getByRole('textbox', { name: 'Reason' })).toHaveValue('');
+  expect(dialogMessages).toHaveLength(3);
+
+  const newReason = actionForm.getByRole('textbox', { name: 'Reason' });
+  await newReason.fill('Close the suspended allocation after approval.');
+  await actionForm.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(actionForm).toHaveCount(0);
+  expect(dialogMessages).toHaveLength(4);
+
+  await page.getByRole('link', { name: 'Requests' }).click();
+  await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible();
+  expect(dialogMessages).toHaveLength(4);
+});
+
+test('blocks closing or switching allocation actions while a save is pending', async ({ page }) => {
+  await installBaseRoutes(page);
+  let currentAllocation = allocation(7, 'SUSPENDED', ['RESUME', 'CANCEL', 'COMPLETE']);
+  let releaseSave: () => void = () => {};
+  let signalSaveStarted: () => void = () => {};
+  const saveStarted = new Promise<void>((resolve) => { signalSaveStarted = resolve; });
+  const dialogMessages: string[] = [];
+
+  page.on('dialog', async (dialog) => {
+    dialogMessages.push(dialog.message());
+    await dialog.dismiss();
+  });
+  await page.route(`${apiRoot}/allocation-load**`, async (route) => route.fulfill({
+    json: { date: '2026-11-21', items: [], page: emptyPage },
+  }));
+  await page.route(`${apiRoot}/allocations**`, async (route: Route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === 'POST' && url.pathname.endsWith(`/allocations/${allocationId}/resumptions`)) {
+      signalSaveStarted();
+      await new Promise<void>((resolve) => { releaseSave = resolve; });
+      currentAllocation = allocation(8, 'IN_PROGRESS', ['SUSPEND']);
+      await route.fulfill({ headers: { etag: '"8"' }, json: currentAllocation });
+      return;
+    }
+    if (request.method() !== 'GET') return route.fallback();
+    if (url.pathname.endsWith(`/allocations/${allocationId}/history`)) {
+      await route.fulfill({ json: { items: [], page: emptyPage } });
+      return;
+    }
+    if (url.pathname.endsWith(`/allocations/${allocationId}`)) {
+      await route.fulfill({ headers: { etag: `"${currentAllocation.version}"` }, json: currentAllocation });
+      return;
+    }
+    if (url.pathname.endsWith('/allocations')) {
+      await route.fulfill({ json: { items: [currentAllocation], page: emptyPage } });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto('/resource-allocation/?page=allocations');
+  const panel = page.getByRole('region', { name: 'Allocations and capacity' });
+  await panel.getByRole('button', { name: 'View allocation ITDM-69' }).click();
+  const detail = panel.getByRole('region', { name: 'Allocation details' });
+  await detail.getByRole('button', { name: 'Resume' }).click();
+  const actionForm = detail.locator('form.allocation-action-form');
+  const reason = actionForm.getByRole('textbox', { name: 'Reason' });
+  await reason.fill('Resume after maintenance approval.');
+  await actionForm.getByRole('button', { name: 'Save change' }).click();
+  await saveStarted;
+  await expect(actionForm.getByRole('button', { name: 'Saving…' })).toBeVisible();
+
+  await actionForm.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(actionForm.getByRole('heading', { name: 'Resume allocation' })).toBeVisible();
+  await expect(reason).toHaveValue('Resume after maintenance approval.');
+  await detail.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(actionForm.getByRole('heading', { name: 'Resume allocation' })).toBeVisible();
+  await expect(reason).toHaveValue('Resume after maintenance approval.');
+  expect(dialogMessages).toEqual([]);
+
+  releaseSave();
+  await expect(actionForm).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: 'Suspend' })).toBeVisible();
+  expect(dialogMessages).toEqual([]);
 });
 
 test('preserves the reason after a stale version and refreshes before another command', async ({ page }) => {
@@ -221,7 +361,7 @@ test('preserves the reason after a stale version and refreshes before another co
     await route.fallback();
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=allocations');
   const panel = page.getByRole('region', { name: 'Allocations and capacity' });
   await panel.getByRole('button', { name: 'View allocation ITDM-69' }).click();
   const detail = panel.getByRole('region', { name: 'Allocation details' });
@@ -284,7 +424,7 @@ test('retries a lost allocation command with the same idempotency key and reason
     await route.fallback();
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=allocations');
   const panel = page.getByRole('region', { name: 'Allocations and capacity' });
   await panel.getByRole('button', { name: 'View allocation ITDM-69' }).click();
   const detail = panel.getByRole('region', { name: 'Allocation details' });
@@ -340,7 +480,7 @@ test('refreshes allocation views every 30 seconds and pauses actions when backgr
     await route.fulfill(unavailable ? serviceUnavailable : { json: { date: '2026-11-21', items: [], page: emptyPage } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=allocations');
   const panel = page.getByRole('region', { name: 'Allocations and capacity' });
   await panel.getByRole('button', { name: 'View allocation ITDM-69' }).click();
   const detail = panel.getByRole('region', { name: 'Allocation details' });

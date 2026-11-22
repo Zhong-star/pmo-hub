@@ -45,7 +45,7 @@ async function openAsUser(page: Page) {
   await page.addInitScript(({ key }) => window.localStorage.setItem(key, 'profile-user'), {
     key: profileStorageKey,
   });
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=notifications');
 }
 
 test('filters and reads inbox items while hiding unavailable targets', async ({ page }) => {
@@ -111,10 +111,10 @@ test('filters and reads inbox items while hiding unavailable targets', async ({ 
   await expect(page.getByRole('heading', { name: 'Your request was received' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'A request is unavailable' })).toBeVisible();
   const availableLink = page.getByRole('link', { name: 'Open related request' });
-  await expect(availableLink.nth(0)).toHaveAttribute('href', `/resource-allocation/?requestId=${requestId}`);
+  await expect(availableLink.nth(0)).toHaveAttribute('href', `/resource-allocation/?page=requests&requestId=${requestId}`);
   await expect(availableLink.nth(1)).toHaveAttribute(
     'href',
-    '/resource-allocation/?queue=team-decision&requestId=20000000-0000-4000-8000-000000000074',
+    '/resource-allocation/?page=request-queues&queue=team-decision&requestId=20000000-0000-4000-8000-000000000074',
   );
   await expect(page.getByText('This request is no longer available to you.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open related request' })).toHaveCount(2);
@@ -221,7 +221,7 @@ test('opens the scoped team queue from a notice without requesting private owner
 
   await openAsUser(page);
   await page.getByRole('link', { name: 'Open related request' }).click();
-  await expect(page).toHaveURL(new RegExp(`queue=team-decision&requestId=${requestId}`));
+  await expect(page).toHaveURL(new RegExp(`page=request-queues&queue=team-decision&requestId=${requestId}`));
   const item = page.locator(`[id="resource-request-${requestId}"]`);
   await expect(item).toContainText('Team planning');
   await expect(item).toBeFocused();

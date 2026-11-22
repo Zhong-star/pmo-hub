@@ -1,5 +1,6 @@
 import { hasNonBlankText } from './formValidation';
 import { useForm, useWatch } from 'react-hook-form';
+import { useNavigationFormProtection } from './NavigationProtection';
 import type { ApprovedRequestConditions } from './requestApi';
 import type { ExceptionResolutionStrategy, ExceptionResolutionInput, ExceptionStrategyInput, QueueSelections, RequestQueueItem } from './requestQueueApi';
 import { businessDate, normalizeWeeklyHours } from './timeAndHours';
@@ -70,11 +71,23 @@ export function ExceptionResolutionAction({
     mode: 'onSubmit',
     reValidateMode: 'onChange',
   });
+  const guardFormClose = useNavigationFormProtection('exception resolution', form.formState.isDirty, form.formState.isSubmitting);
   const strategy = useWatch({ control: form.control, name: 'strategy' });
   const resolutionAction = useWatch({ control: form.control, name: 'resolutionAction' });
   const selectedStartDate = useWatch({ control: form.control, name: 'startDate' });
   const eligiblePeople = selections.people.filter((person) => person.groupId === item.requestedConditions.groupId);
   const eligibleProfiles = selections.profiles.filter((profile) => profile.groupId === item.requestedConditions.groupId);
+
+  function toggleAction() {
+    if (!open) {
+      onToggle();
+      return;
+    }
+    guardFormClose(() => {
+      form.reset();
+      onToggle();
+    });
+  }
 
   async function submit(values: ResolutionValues) {
     const common: ExceptionStrategyInput = {
@@ -105,7 +118,7 @@ export function ExceptionResolutionAction({
   return (
     <div className="request-exception-resolution">
       {!open && (
-        <button type="button" className="secondary-button" aria-expanded="false" onClick={onToggle} disabled={disabled}>
+        <button type="button" className="secondary-button" aria-expanded="false" onClick={toggleAction} disabled={disabled}>
           {canRecord ? 'Record strategy' : 'Resolve exception'}
         </button>
       )}
@@ -254,7 +267,7 @@ export function ExceptionResolutionAction({
           )}
 
           <div className="form-actions">
-            <button type="button" className="secondary-button" onClick={onToggle} disabled={disabled}>Keep request in queue</button>
+            <button type="button" className="secondary-button" onClick={toggleAction} disabled={disabled}>Keep request in queue</button>
             {canRecord && resolutionAction === 'record' && (
               <button type="submit" className="primary-button" disabled={disabled || form.formState.isSubmitting || (strategy === 'DEPRIORITIZE_OTHER_DEMANDS' && selections.initiatives.length === 0)}>
                 {form.formState.isSubmitting ? 'Recording strategy…' : 'Record strategy'}

@@ -4,6 +4,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import type { QueueSelections, RequestQueueItem } from '../requestQueueApi';
 import { businessDate, businessDateAfterHours, normalizeWeeklyHours } from '../timeAndHours';
 import { optionLabel, readRequestValue } from './shared';
+import { useNavigationFormProtection } from '../NavigationProtection';
 
 interface ApprovalValues {
   personId: string;
@@ -48,7 +49,7 @@ export function ApprovalForm({
   onSubmit: (approval: ApprovalDecision) => Promise<void>;
 }) {
   const conditions = item.requestedConditions;
-  const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<ApprovalValues>({
+  const { register, handleSubmit, control, formState: { errors, isSubmitting, isDirty } } = useForm<ApprovalValues>({
     defaultValues: {
       personId: '',
       resourceProfileId: readValue(item, 'resourceProfileId'),
@@ -58,6 +59,7 @@ export function ApprovalForm({
       explanation: '',
     },
   });
+  useNavigationFormProtection('queue approval', isDirty, isSubmitting);
   const disabled = actionDisabled || isSubmitting;
   const selectedProfileId = useWatch({ control, name: 'resourceProfileId' });
   const selectedStartDate = useWatch({ control, name: 'startDate' });
@@ -236,9 +238,10 @@ export function ReferenceCorrectionForm({
   disabled: boolean;
   onSubmit: (correction: ReferenceCorrectionValues) => Promise<void>;
 }) {
-  const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<ReferenceCorrectionValues>({
+  const { register, handleSubmit, control, formState: { errors, isSubmitting, isDirty } } = useForm<ReferenceCorrectionValues>({
     defaultValues: { initiativeId: '', groupId: '', resourceProfileId: '', personId: '', reason: '' },
   });
+  useNavigationFormProtection('queue reference correction', isDirty, isSubmitting);
   const disabled = actionDisabled || isSubmitting;
   const selectedGroupId = useWatch({ control, name: 'groupId' });
   const currentGroupId = readValue(item, 'groupId');
@@ -311,7 +314,8 @@ export function ReferenceCorrectionForm({
 }
 
 export function AdministrativeRemovalForm({ disabled: actionDisabled, onSubmit }: { disabled: boolean; onSubmit: (reason: string) => Promise<void> }) {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<RemovalValues>({ defaultValues: { reason: '' } });
+  const { register, handleSubmit, formState: { errors, isSubmitting, isDirty } } = useForm<RemovalValues>({ defaultValues: { reason: '' } });
+  useNavigationFormProtection('administrative removal', isDirty, isSubmitting);
   const disabled = actionDisabled || isSubmitting;
   return (
     <form className="request-queue-action-form" aria-label="Administrative request removal" onSubmit={handleSubmit((values) => onSubmit(values.reason.trim()))}>

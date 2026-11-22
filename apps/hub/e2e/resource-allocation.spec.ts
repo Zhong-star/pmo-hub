@@ -31,19 +31,23 @@ test('opens Resource Allocation from the Hub, survives refresh, returns, and fol
   await expect(resourceAllocationLink).toHaveAttribute('href', '/resource-allocation');
   await resourceAllocationLink.click();
 
-  await expect(page).toHaveURL(/\/resource-allocation\/?$/);
+  await expect(page).toHaveURL(/\/resource-allocation\/?\?page=requests$/);
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.getByText('Local Developer')).toBeVisible();
   await expect(page.getByText('ALLOCATION_USER')).toBeVisible();
   await page.reload();
   await expect(page.getByText('Local Developer')).toBeVisible();
 
-  await page.getByRole('link', { name: 'Return to PMO Hub' }).click();
+  await page.getByRole('link', { name: 'PMO Hub' }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
 
+  await page.getByRole('link', { name: 'Open Tech Resource Allocation' }).click();
+  await expect(page).toHaveURL(/\/resource-allocation\/?\?page=requests$/);
   await page.getByRole('button', { name: 'Local Developer' }).click();
   await page.getByRole('button', { name: 'Change profile' }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole('combobox', { name: 'Local profile' })).toHaveValue('');
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-contributor');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Welcome, Local Contributor' })).toBeVisible();
@@ -67,7 +71,7 @@ test('direct access without a selected profile returns users to the Hub', async 
   await page.goto('/resource-allocation/');
   await expect(page.getByRole('heading', { name: 'Select a local profile in PMO Hub' })).toBeVisible();
   expect(accessRequests).toBe(0);
-  await page.getByRole('link', { name: 'Return to PMO Hub' }).click();
+  await page.getByRole('link', { name: 'PMO Hub' }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('combobox', { name: 'Local profile' })).toBeVisible();
 });

@@ -100,7 +100,7 @@ test('keeps a request card blocked while a referral on another card completes', 
     await route.fulfill({ json: { ...item, decisionState: 'PENDING_TEAM_DECISION', version: 2 } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   const firstCard = page.locator('#resource-request-request-a');
   const secondCard = page.locator('#resource-request-request-b');
   try {
@@ -120,7 +120,7 @@ test('moves between request queues with the tablist arrow keys', async ({ page }
   await page.route(`${apiRoot}/request-queues/**`, async (route) => {
     await route.fulfill({ json: { items: [], page: emptyPage } });
   });
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
 
   const presentation = page.getByRole('tab', { name: 'Presentation queue' });
   const teamDecision = page.getByRole('tab', { name: 'Group decision queue' });
@@ -131,6 +131,48 @@ test('moves between request queues with the tablist arrow keys', async ({ page }
   await expect(teamDecision).toBeFocused();
   await expect(teamDecision).toHaveAttribute('aria-selected', 'true');
   await expect(page).toHaveURL(/queue=team-decision/);
+});
+
+test('blocks area, Hub and profile navigation until a direct referral completes', async ({ page }) => {
+  await installCommonRoutes(page, admin.localUserId, admin);
+  const item = requestItem({ availableActions: ['REFER'] });
+  let items = [item];
+  let releaseReferral = () => {};
+  const referralResponse = new Promise<void>((resolve) => { releaseReferral = resolve; });
+  let referralCount = 0;
+  await page.route(`${apiRoot}/request-queues/**`, (route) => route.fulfill({ json: { items, page: emptyPage } }));
+  await page.route(`${apiRoot}/requests/*/referrals`, async (route) => {
+    referralCount += 1;
+    await referralResponse;
+    items = [];
+    await route.fulfill({ json: { ...item, decisionState: 'PENDING_TEAM_DECISION', version: 2 } });
+  });
+  await page.goto('/resource-allocation/?page=request-queues');
+  const navigation = page.getByRole('navigation', { name: 'Tech Resource Allocation' });
+  const card = page.locator('#resource-request-request-a');
+  const requestSent = page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith('/requests/request-a/referrals'));
+  try {
+    await card.getByRole('button', { name: 'Refer to group decision' }).click();
+    await requestSent;
+    await expect(card.getByRole('button', { name: 'Updating request…' })).toBeDisabled();
+    await navigation.getByRole('link', { name: 'Requests', exact: true }).click();
+    await expect(page).toHaveURL(/\?page=request-queues$/);
+    await expect(page.getByRole('status').filter({ hasText: 'A save is in progress' })).toBeVisible();
+    await page.getByRole('link', { name: 'PMO Hub', exact: true }).click();
+    await expect(page).toHaveURL(/\?page=request-queues$/);
+    await page.getByRole('button', { name: 'Morgan Admin', exact: true }).click();
+    await page.getByRole('button', { name: 'Change profile', exact: true }).click();
+    await expect(page).toHaveURL(/\?page=request-queues$/);
+    expect(await page.evaluate((key) => localStorage.getItem(key), profileStorageKey)).toBe(admin.localUserId);
+  } finally {
+    releaseReferral();
+  }
+  await expect(card).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: 'A save is in progress' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Morgan Admin', exact: true }).click();
+  await navigation.getByRole('link', { name: 'Requests', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'My requests', exact: true })).toBeVisible();
+  expect(referralCount).toBe(1);
 });
 
 test('corrects eligible references, preserves the deadline, and refers the request with the current ETag', async ({ page }) => {
@@ -187,7 +229,7 @@ test('corrects eligible references, preserves the deadline, and refers the reque
     await route.fulfill({ status: 404, json: { status: 404, code: 'RESOURCE_NOT_FOUND' } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   await expect(page.getByRole('heading', { name: 'Request queues' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'ITDM-62 — Resource allocation' })).toBeVisible();
   await expect(page.getByText('Presentation deadline')).toBeVisible();
@@ -576,7 +618,7 @@ test('confirms administrative removal and displays its required reason form', as
     await route.fulfill({ json: { requestId: 'request-a', action: 'ADMIN_REMOVED', removedAt: '2026-11-21T15:00:00.000Z' } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   await page.getByRole('button', { name: 'Remove request' }).click();
   await page.getByLabel('Reason').fill('The requester asked Admin to remove the duplicate.');
   page.once('dialog', (dialog) => dialog.accept());
@@ -608,7 +650,7 @@ test('shows only the scoped decision queue to a Moderator', async ({ page }) => 
   const ownGroupRequest = requestItem({ id: 'request-own', requestedConditions: { ...requestItem().requestedConditions, groupId: 'group-a', groupName: 'Platform Engineering' }, availableActions: [] });
   await page.route(`${apiRoot}/request-queues/**`, async (route) => route.fulfill({ json: { items: [ownGroupRequest], page: emptyPage } }));
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   await expect(page.getByRole('tab', { name: 'Group decision queue' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Presentation queue' })).toHaveCount(0);
   await expect(page.getByRole('tabpanel').getByText('Platform Engineering')).toBeVisible();
@@ -637,7 +679,7 @@ test('reuses a pending action key after a lost result and page reload', async ({
     await route.fulfill({ json: requestItem({ decisionState: 'PENDING_TEAM_DECISION', dueAt: null, version: 2, availableActions: [] }) });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   await page.getByRole('button', { name: 'Refer to group decision' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Temporary service interruption.' })).toBeVisible();
   await page.reload();
@@ -661,7 +703,7 @@ test('keeps cached requests visible and pauses actions when a queue refresh fail
     await route.fulfill({ json: { items: [queueItem], page: emptyPage } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   const queue = page.getByRole('region', { name: 'Request queues' });
   await expect(queue.getByRole('heading', { name: 'ITDM-62 — Resource allocation' })).toBeVisible();
   failNextRefresh = true;
@@ -708,7 +750,7 @@ test('approves the requested period for an eligible person from the queue action
     await route.fulfill({ json: { ...requestItem(), decisionState: 'APPROVED', version: 2 } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   const card = page.getByRole('article', { name: /ITDM-62/ });
   await expect(card.getByRole('button', { name: 'Approve request' })).toBeVisible();
   await card.getByRole('button', { name: 'Approve request' }).click();
@@ -755,7 +797,7 @@ test('offers approval from the Admin presentation queue when the server allows i
     await route.fulfill({ json: { ...requestItem(), decisionState: 'APPROVED', version: 2 } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   const card = page.getByRole('article', { name: /ITDM-62/ });
   await expect(card.getByRole('button', { name: 'Approve request' })).toBeVisible();
   await card.getByRole('button', { name: 'Approve request' }).click();
@@ -794,7 +836,7 @@ test('requires a reason when approval changes only the resource profile', async 
     await route.fulfill({ json: { ...requestItem(), decisionState: 'APPROVED', version: 2 } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   const card = page.getByRole('article', { name: /ITDM-62/ });
   await card.getByRole('button', { name: 'Approve request' }).click();
   const form = card.getByRole('form', { name: 'Approve request request-a' });
@@ -831,7 +873,7 @@ test('preserves approval input after a stale-version response', async ({ page })
     await route.fulfill({ status: 412, json: { status: 412, code: 'PRECONDITION_FAILED', detail: 'The request changed.' } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   const card = page.getByRole('article', { name: /ITDM-62/ });
   await card.getByRole('button', { name: 'Approve request' }).click();
   const form = card.getByRole('form', { name: 'Approve request request-a' });
@@ -879,7 +921,7 @@ test('reuses the approval attempt key after a lost response and page reload', as
     await route.fulfill({ json: { ...requestItem(), decisionState: 'APPROVED', version: 2 } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   await page.getByRole('button', { name: 'Approve request' }).first().click();
   let form = page.getByRole('form', { name: 'Approve request request-a' });
   await form.getByLabel('Eligible person').selectOption('person-a');
@@ -956,7 +998,7 @@ test('requires an explanation and proposes changed dates and hours for requester
     });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   const card = page.getByRole('article', { name: /ITDM-62/ });
   await card.getByRole('button', { name: 'Approve request' }).click();
   const form = card.getByRole('form', { name: 'Approve request request-a' });
@@ -1027,7 +1069,7 @@ test('guides deciders to propose a future period with explanation when the reque
     });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   const card = page.getByRole('article', { name: /ITDM-62/ });
   await expect(card.getByText(/requested start date has already passed/i)).toBeVisible();
   await card.getByRole('button', { name: 'Approve request' }).click();
@@ -1067,7 +1109,7 @@ test('does not expose administrative removal on the Admin’s own request in the
     await route.fulfill({ json: { items: path.endsWith('/presentation') ? [ownItem] : [], page: emptyPage } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=request-queues');
   const card = page.getByRole('article', { name: /ITDM-62/ });
   await expect(card.getByRole('button', { name: 'Refer to group decision' })).toBeVisible();
   await expect(card.getByRole('button', { name: 'Correct references' })).toBeVisible();

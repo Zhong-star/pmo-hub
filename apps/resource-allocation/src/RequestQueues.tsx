@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { handleTabListKeyDown } from './tabNavigation';
+import { useNavigationProtection } from './NavigationProtection';
 import type { ResourceAllocationRole } from './accessApi';
 import type { RequestQueueCode } from './requestQueueApi';
 import { ExceptionsQueue } from './request-queues/ExceptionsQueue';
@@ -40,6 +41,7 @@ function initialQueue(queues: RequestQueueCode[]): RequestQueueCode {
 
 function updateQueueLocation(queue: RequestQueueCode) {
   const params = new URLSearchParams(window.location.search);
+  params.set('page', 'request-queues');
   params.set('queue', queue);
   params.delete('requestId');
   if (queue !== 'exceptions' && queue !== 'revalidation') {
@@ -49,10 +51,11 @@ function updateQueueLocation(queue: RequestQueueCode) {
   }
   if (queue !== 'exceptions') params.delete('decisionState');
   const search = params.toString();
-  window.history.replaceState(null, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
+  window.history.replaceState(window.history.state, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
 }
 
 export function RequestQueues({ localUserId, personId, role, groupId, onAccessDenied }: RequestQueuesProps) {
+  const { guardNavigation } = useNavigationProtection();
   const queues = useMemo(() => queuesFor(role, groupId), [role, groupId]);
   const [selectedQueue, setSelectedQueue] = useState<RequestQueueCode>(() => initialQueue(queues));
   const activeQueue = queues.includes(selectedQueue) ? selectedQueue : initialQueue(queues);
@@ -92,8 +95,10 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
             key={queue}
             onKeyDown={handleTabListKeyDown}
             onClick={() => {
-              setSelectedQueue(queue);
-              updateQueueLocation(queue);
+              guardNavigation(() => {
+                setSelectedQueue(queue);
+                updateQueueLocation(queue);
+              });
             }}
           >
             {queueLabels[queue]}

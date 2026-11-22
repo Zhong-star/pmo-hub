@@ -22,7 +22,7 @@ async function openAsUser(page: Page) {
   await page.addInitScript(({ key }) => window.localStorage.setItem(key, 'profile-user'), {
     key: profileStorageKey,
   });
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=new-request');
 }
 
 async function installSelectionFixtures(page: Page) {
@@ -106,6 +106,56 @@ test('reviews a batch, normalizes decimal commas, and rejects invalid hours befo
     lines: [{ groupId: group.id, resourceProfileId: profile.id, weeklyHours: 1.3 }],
   });
   expect((postedBody?.lines as Array<Record<string, unknown>>)[0]?.attemptKey).toMatch(/^[0-9a-f-]{36}$/i);
+});
+
+test('blocks area changes until the submission receipt and does not resend accepted requests', async ({ page }) => {
+  await installSelectionFixtures(page);
+  let releasePost: () => void = () => {};
+  let releaseRefresh: () => void = () => {};
+  let signalPostStarted: () => void = () => {};
+  const postStarted = new Promise<void>((resolve) => { signalPostStarted = resolve; });
+  let postCount = 0;
+  let postResponded = false;
+  await page.route(`${apiRoot}/submissions**`, async (route) => {
+    if (route.request().method() === 'POST') {
+      postCount += 1;
+      signalPostStarted();
+      await new Promise<void>((resolve) => { releasePost = resolve; });
+      postResponded = true;
+      await route.fulfill({
+        status: 202,
+        headers: { location: '/api/resource-allocation/v1/submissions/submission-pending' },
+        json: { id: 'submission-pending', receivedAt: '2026-11-20T12:00:00Z', lineCount: 1, counts: { received: 1, processing: 0, succeeded: 0, failed: 0 } },
+      });
+      return;
+    }
+    if (postResponded) await new Promise<void>((resolve) => { releaseRefresh = resolve; });
+    await route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 50 } } });
+  });
+
+  await openAsUser(page);
+  await page.getByRole('combobox', { name: 'Initiative', exact: true }).selectOption(initiative.id);
+  await page.getByLabel('Category').selectOption('EXECUTION_PROJECT');
+  await page.getByLabel('Group for line 1').selectOption(group.id);
+  await page.getByLabel('Resource profile for line 1').selectOption(profile.id);
+  await page.getByLabel('Start date for line 1').fill(dateAfter(2));
+  await page.getByLabel('End date for line 1').fill(dateAfter(9));
+  await page.getByLabel('Weekly hours for line 1').fill('4');
+  await page.getByRole('button', { name: 'Review submission' }).click();
+  await page.getByRole('button', { name: 'Send 1 request' }).click();
+  await postStarted;
+  await expect(page.getByRole('heading', { name: 'Receipt not confirmed' })).toBeVisible();
+
+  await page.getByRole('navigation', { name: 'Tech Resource Allocation' }).getByRole('link', { name: 'Requests' }).click();
+  await expect(page).toHaveURL(/\?page=new-request$/);
+  await expect(page.getByText('A save is in progress. Navigation will be available when it finishes.')).toBeVisible();
+
+  releasePost();
+  await expect(page.getByText(/Submission submission-pending was received/i)).toBeVisible();
+  await page.getByRole('navigation', { name: 'Tech Resource Allocation' }).getByRole('link', { name: 'Requests' }).click();
+  await expect(page).toHaveURL(/\?page=requests$/);
+  releaseRefresh();
+  expect(postCount).toBe(1);
 });
 
 test('recovers a durable submission after reload and offers correction only for failed lines', async ({ page }) => {
@@ -264,7 +314,7 @@ test('recovers a submitted request that later expired and opens its retained aud
   await expect(page.getByText('Request created:', { exact: false })).toContainText(requestId);
   await expect(page.getByText('Current outcome: Removed from operation · expired')).toBeVisible();
   await expect(page.getByRole('button', { name: /Correct and retry/ })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Open retained audit record' })).toHaveAttribute('href', `/resource-allocation/?auditId=${requestId}`);
+  await expect(page.getByRole('link', { name: 'Open retained audit record' })).toHaveAttribute('href', `/resource-allocation/?page=requests&auditId=${requestId}`);
   expect(submissionAttempts).toBe(0);
 
   await page.getByRole('link', { name: 'Open retained audit record' }).click();

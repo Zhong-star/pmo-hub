@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { acceptRequest, RequestApiError, type RequestConfirmationSource, type ResourceRequestItem } from '../requestApi';
 import { invalidateRequestSurfaces } from '../requestSurfaces';
+import { useNavigationFormProtection } from '../NavigationProtection';
 
 const pendingAcceptanceKeys = new Map<string, Promise<string>>();
 
@@ -65,6 +66,7 @@ export function ProposalResponse({
     mutationFn: (input: { requestId: string; version: number; idempotencyKey: string }) =>
       acceptRequest(localUserId, input.requestId, input.version, input.idempotencyKey),
   });
+  useNavigationFormProtection('proposal acceptance', false, acceptMutation.isPending);
 
   async function acceptProposal() {
     if (!canAccept || disabled || acceptMutation.isPending) return;

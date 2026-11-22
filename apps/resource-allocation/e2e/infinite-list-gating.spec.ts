@@ -77,7 +77,7 @@ test('keeps loaded selection options without a top-level banner on next-page fai
     await route.fulfill({ json: { items: [{ id: 'group-1', name: 'Platform Engineering' }], page: emptySelectionPage } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=new-request');
   const batchPanel = page.locator('#new-request-batch');
   const initiativeSelect = batchPanel.getByRole('combobox', { name: 'Initiative', exact: true });
   const loadMoreButton = batchPanel.getByRole('button', { name: /Load more selection options|Loading more selection options/i });
@@ -213,7 +213,7 @@ test('gates My submissions Load more and Try again buttons during active fetches
     await route.fulfill({ json: { items: [submissionItem('sub-1')], page: { nextCursor: 'sub-page-2', limit: 50 } } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=new-request');
   const panel = page.getByRole('region', { name: 'My submissions' });
   const loadMoreButton = panel.locator('.load-submissions-button');
 
@@ -299,7 +299,7 @@ test('keeps loaded notifications visible and gates pagination retry while anothe
     await route.fulfill({ json: { items: [notification], page: { nextCursor: 'notification-page-2', limit: 50 } } });
   });
 
-  await page.goto('/resource-allocation/');
+  await page.goto('/resource-allocation/?page=notifications');
   const inbox = page.getByRole('region', { name: 'Notifications' });
   const loadMore = inbox.locator('.notification-load-more').getByRole('button').first();
   await expect(inbox.getByRole('heading', { name: 'Current inbox item' })).toBeVisible();

@@ -21,7 +21,7 @@ const people = {
   },
 };
 
-async function openWithProfile(page: Page, profileId: string) {
+async function openWithProfile(page: Page, profileId: string, url = '/resource-allocation/') {
   await page.route('**/api/resource-allocation/v1/initiatives**', async (route) => route.fulfill({
     json: { items: [], page: emptyPage },
   }));
@@ -46,7 +46,7 @@ async function openWithProfile(page: Page, profileId: string) {
     key: selectedProfileKey,
     value: profileId,
   });
-  await page.goto('/resource-allocation/');
+  await page.goto(url);
 }
 
 async function measureInterfaceContrast(page: Page) {
@@ -63,9 +63,9 @@ async function measureInterfaceContrast(page: Page) {
       return (values[0] + 0.05) / (values[1] + 0.05);
     };
     const body = getComputedStyle(document.body);
-    const topbar = getComputedStyle(document.querySelector('.topbar')!);
-    const brand = getComputedStyle(document.querySelector('.brand')!);
-    const control = getComputedStyle(document.querySelector('.submission-panel select')!);
+    const topbar = getComputedStyle(document.querySelector('.hub-header')!);
+    const brand = getComputedStyle(document.querySelector('.hub-header__brand')!);
+    const control = getComputedStyle(document.querySelector('#new-request-batch select')!);
     const focus = getComputedStyle(document.querySelector('.skip-link')!);
     return {
       body: ratio(body.color, body.backgroundColor),
@@ -88,7 +88,7 @@ test('opens with the selected Hub profile and links back to the catalog', async 
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.getByText('Taylor User')).toBeVisible();
   await expect(page.getByText('ALLOCATION_USER')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Return to PMO Hub' })).toHaveAttribute('href', '/');
+  await expect(page.getByRole('link', { name: 'PMO Hub' })).toHaveAttribute('href', '/');
   expect(sentProfile).toBe('profile-user');
 });
 
@@ -102,7 +102,7 @@ test('asks for a Hub profile before contacting the access API', async ({ page })
   await page.goto('/resource-allocation/');
 
   await expect(page.getByRole('heading', { name: 'Select a local profile in PMO Hub' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Return to PMO Hub' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'PMO Hub' })).toBeVisible();
   expect(requestCount).toBe(0);
 });
 
@@ -146,7 +146,7 @@ test('can retry after a network failure', async ({ page }) => {
     await route.fulfill({ json: { person: people['profile-user'] } });
   });
 
-  await openWithProfile(page, 'profile-user');
+  await openWithProfile(page, 'profile-user', '/resource-allocation/?page=new-request');
 
   await expect(page.getByRole('heading', { name: 'Could not reach Tech Resource Allocation' })).toBeVisible();
   const attemptsBeforeRetry = requestCount;
@@ -186,11 +186,11 @@ test('uses the shared theme preference already saved in this tab', async ({ page
     await route.fulfill({ json: { person: people['profile-user'] } });
   });
 
-  await openWithProfile(page, 'profile-user');
+  await openWithProfile(page, 'profile-user', '/resource-allocation/?page=new-request');
 
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(17, 24, 32)');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(16, 18, 20)');
   await expect(page.getByLabel('Initiative', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Category', { exact: true })).toBeVisible();
 
@@ -204,7 +204,7 @@ test('uses the shared theme preference already saved in this tab', async ({ page
   await page.evaluate(() => sessionStorage.setItem('pmo-hub.theme', 'light'));
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(241, 245, 247)');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   await expect(page.getByLabel('Initiative', { exact: true })).toBeVisible();
   await page.keyboard.press('Tab');
   const lightContrast = await measureInterfaceContrast(page);
@@ -218,7 +218,7 @@ test('skip link moves keyboard focus to the main content', async ({ page }) => {
   await page.route(accessPath, async (route) => {
     await route.fulfill({ json: { person: people['profile-user'] } });
   });
-  await openWithProfile(page, 'profile-user');
+  await openWithProfile(page, 'profile-user', '/resource-allocation/?page=new-request');
 
   const skipLink = page.getByRole('link', { name: 'Skip to main content' });
   await expect(skipLink).toBeAttached();

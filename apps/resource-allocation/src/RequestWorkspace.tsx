@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ResourceAllocationRole } from './accessApi';
 import type { RequestAuditEvent, ResourceRequestCollection } from './requestApi';
+import { useNavigationProtection } from './NavigationProtection';
 import { RequestAudit } from './request-workspace/RequestAudit';
 import { RequestCollection } from './request-workspace/RequestCollection';
 import { RequestDetail } from './request-workspace/RequestDetail';
@@ -23,23 +24,26 @@ function querySelectedAuditId(): string | null {
 
 function updateRequestUrl(requestId: string | null) {
   const url = new URL(window.location.href);
+  url.searchParams.set('page', 'requests');
   if (requestId) {
     url.searchParams.delete('queue');
     url.searchParams.set('requestId', requestId);
   } else {
     url.searchParams.delete('requestId');
   }
-  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
 function updateAuditUrl(requestId: string | null) {
   const url = new URL(window.location.href);
+  url.searchParams.set('page', 'requests');
   if (requestId) url.searchParams.set('auditId', requestId);
   else url.searchParams.delete('auditId');
-  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
 export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }: RequestWorkspaceProps) {
+  const { guardNavigation } = useNavigationProtection();
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(() => querySelectedRequestId());
   const [selectedSummaryItem, setSelectedSummaryItem] = useState<ResourceRequestCollection['items'][number] | null>(null);
   const [auditRequestId, setAuditRequestId] = useState<string | null>(() => querySelectedAuditId());
@@ -58,24 +62,31 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
   }, []);
 
   function openRequest(item: ResourceRequestCollection['items'][number]) {
-    setSelectedRequestId(item.id);
-    setSelectedSummaryItem(item);
-    setAuditRequestId(null);
-    setNotice('');
-    updateRequestUrl(item.id);
-    updateAuditUrl(null);
+    if (item.id === selectedRequestId) return;
+    guardNavigation(() => {
+      setSelectedRequestId(item.id);
+      setSelectedSummaryItem(item);
+      setAuditRequestId(null);
+      setNotice('');
+      updateRequestUrl(item.id);
+      updateAuditUrl(null);
+    });
   }
 
   function closeRequest() {
-    setSelectedRequestId(null);
-    setSelectedSummaryItem(null);
-    updateRequestUrl(null);
+    guardNavigation(() => {
+      setSelectedRequestId(null);
+      setSelectedSummaryItem(null);
+      updateRequestUrl(null);
+    });
   }
 
   function clearSelection() {
-    setSelectedRequestId(null);
-    setSelectedSummaryItem(null);
-    updateRequestUrl(null);
+    guardNavigation(() => {
+      setSelectedRequestId(null);
+      setSelectedSummaryItem(null);
+      updateRequestUrl(null);
+    });
   }
 
   function onWithdrawn(event: RequestAuditEvent) {

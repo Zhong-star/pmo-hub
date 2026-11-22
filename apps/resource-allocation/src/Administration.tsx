@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
+import { useNavigationFormProtection, useNavigationProtection } from './NavigationProtection';
 import { handleTabListKeyDown } from './tabNavigation';
 import { ALLOCATIONS_QUERY_ROOT } from './allocationApi';
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
@@ -210,6 +211,7 @@ function createPageQuery<C extends AdminCollection>(collection: C, localUserId: 
 }
 
 function Administration({ localUserId, onAccessDenied }: AdministrationProps) {
+  const { guardNavigation } = useNavigationProtection();
   const peopleQuery = useInfiniteQuery(createPageQuery('people', localUserId));
   const groupsQuery = useInfiniteQuery(createPageQuery('groups', localUserId));
   const profilesQuery = useInfiniteQuery(createPageQuery('resource-profiles', localUserId));
@@ -252,8 +254,10 @@ function Administration({ localUserId, onAccessDenied }: AdministrationProps) {
   const hasInitialError = currentQuery.isError && !currentQuery.isFetchNextPageError;
 
   function openEditor(nextEditor: EditorState) {
-    setNotice('');
-    setEditor(nextEditor);
+    guardNavigation(() => {
+      setNotice('');
+      setEditor(nextEditor);
+    });
   }
 
   function closeEditor() {
@@ -261,9 +265,11 @@ function Administration({ localUserId, onAccessDenied }: AdministrationProps) {
   }
 
   function openCollection(collection: AdminCollection) {
-    setSelectedCollection(collection);
-    setEditor(null);
-    setNotice('');
+    guardNavigation(() => {
+      setSelectedCollection(collection);
+      setEditor(null);
+      setNotice('');
+    });
   }
 
   return (
@@ -536,6 +542,7 @@ function RecordEditor({
     retry: false,
   });
   const { register, handleSubmit, reset, control, setError, formState } = useForm<FormValues>({ defaultValues });
+  const guardEditorClose = useNavigationFormProtection('administration editor', formState.isDirty, formState.isSubmitting);
   const role = useWatch({ control, name: 'role' });
   const active = useWatch({ control, name: 'active' });
   const [submissionError, setSubmissionError] = useState('');
@@ -662,6 +669,13 @@ function RecordEditor({
     );
   }
 
+  function requestEditorClose() {
+    guardEditorClose(() => {
+      reset(defaultValues);
+      onClose();
+    });
+  }
+
   return (
     <section className="editor-panel" aria-labelledby="editor-title">
       <div className="editor-heading">
@@ -669,7 +683,7 @@ function RecordEditor({
           <h4 id="editor-title">{heading}</h4>
           <p>Fields marked with an asterisk are required.</p>
         </div>
-        <button className="icon-button" type="button" aria-label="Close form" onClick={onClose}>Close</button>
+        <button className="icon-button" type="button" aria-label="Close form" onClick={requestEditorClose}>Close</button>
       </div>
 
       {submissionError && <p className="form-error" role="alert">{submissionError}</p>}
@@ -754,7 +768,7 @@ function RecordEditor({
         </label>
 
         <div className="form-actions">
-          <button className="secondary-button" type="button" onClick={onClose} disabled={formState.isSubmitting}>Cancel</button>
+          <button className="secondary-button" type="button" onClick={requestEditorClose} disabled={formState.isSubmitting}>Cancel</button>
           <button className="primary-button" type="submit" disabled={formState.isSubmitting || (editor.mode === 'edit' && !detail?.etag)}>
             {formState.isSubmitting ? 'Saving…' : `Save ${collectionSingularLabels[editor.collection]}`}
           </button>
