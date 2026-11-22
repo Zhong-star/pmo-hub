@@ -190,7 +190,7 @@ test('uses the shared theme preference already saved in this tab', async ({ page
 
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(17, 24, 32)');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(16, 18, 20)');
   await expect(page.getByLabel('Initiative', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Category', { exact: true })).toBeVisible();
 
@@ -204,7 +204,7 @@ test('uses the shared theme preference already saved in this tab', async ({ page
   await page.evaluate(() => sessionStorage.setItem('pmo-hub.theme', 'light'));
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(241, 245, 247)');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   await expect(page.getByLabel('Initiative', { exact: true })).toBeVisible();
   await page.keyboard.press('Tab');
   const lightContrast = await measureInterfaceContrast(page);
