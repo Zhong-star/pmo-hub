@@ -8,24 +8,33 @@ Specs ficam em `docs/<feature>/`, junto ao código que descrevem. O acompanhamen
 
 ## Hub local
 
-O Hub e Lessons Learned têm frontends React/Vite e APIs NestJS próprios. Na raiz do monorepo, execute `npm ci` e `npm run build`. Inicie cada componente em um terminal separado, a partir da raiz:
+O Hub, Lessons Learned e Tech Resource Allocation têm frontends React/Vite e APIs NestJS próprios. Na raiz do monorepo, execute `npm ci` e `npm run build`. Prepare o [PostgreSQL de Tech Resource Allocation](services/resource-allocation-api/README.md#local-postgresql), execute as migrações, [prepare o primeiro Admin](services/resource-allocation-api/README.md#prepare-the-first-admin) e [prepare os cadastros mínimos operacionais](services/resource-allocation-api/README.md#prepare-minimal-operational-records) (com [massa opcional de demonstração](services/resource-allocation-api/README.md#prepare-optional-demo-data), se desejar). O PostgreSQL de Lessons Learned é opcional. Quando usado, siga a [preparação do banco de Lessons Learned](services/lessons-learned-api/README.md).
+
+Inicie cada componente em um terminal separado a partir da raiz. Defina a URL do banco do módulo nos terminais da respectiva API e do worker.
 
 ```sh
 npm run start --workspace @pmo-hub/hub-api
 npm run start --workspace @pmo-hub/lessons-learned-api
+npm run start --workspace @pmo-hub/resource-allocation-api
+npm run resource-allocation:worker
 npm run dev --workspace @pmo-hub/lessons-learned
+npm run dev --workspace @pmo-hub/resource-allocation
 npm run dev --workspace @pmo-hub/hub
 ```
 
-Abra [PMO Hub](http://127.0.0.1:5173) e selecione um perfil para abrir Lessons Learned pelo catálogo. Também é possível abrir [Lessons Learned](http://127.0.0.1:5173/lessons-learned/) diretamente pela mesma origem. O Access Check usa o perfil selecionado no Hub e verifica as permissões do módulo antes de mostrar a Home.
+Abra [PMO Hub](http://127.0.0.1:5173) e selecione um perfil para abrir os módulos pelo catálogo. Os módulos e suas APIs passam pela mesma origem do Hub. Os caminhos de entrada são `/lessons-learned/` e `/resource-allocation/`. Cada módulo valida o perfil contra seu próprio cadastro.
 
 `npm run contracts:generate` gera os contratos OpenAPI, os tipos do Hub e o cliente de Lessons Learned. Use `npm test`, `npm run typecheck` e `npm run lint` para verificar os workspaces.
 
-O PostgreSQL local de Lessons Learned é opcional e pertence ao serviço `services/lessons-learned-api`. Consulte o README do serviço para iniciar o Compose e executar `npm run migration:run`. O teste PostgreSQL isolado usa Testcontainers e é executado separadamente com `npm run test:integration --workspace @pmo-hub/lessons-learned-api` (requer Docker).
+As suítes PostgreSQL usam Testcontainers e requerem Docker. Execute `npm run test:integration --workspace @pmo-hub/lessons-learned-api` ou `npm run test:integration --workspace @pmo-hub/resource-allocation-api`.
 
-Para verificar a navegação no navegador, encerre os servidores de desenvolvimento e execute `npm run test:e2e --workspace @pmo-hub/hub` para o Hub e `npm run test:e2e:lessons-learned --workspace @pmo-hub/hub` para Lessons Learned. Se o Chromium do Playwright ainda não estiver instalado, execute `npx playwright install chromium` primeiro.
+Para executar as suítes de navegador, encerre os servidores de desenvolvimento. Se necessário, instale o Chromium do Playwright com `npx playwright install chromium`.
 
-Consulte os READMEs do [Hub API](services/hub-api/README.md) e da [Lessons Learned API](services/lessons-learned-api/README.md) para configurar os perfis locais e os papéis do módulo.
+- `npm run test:e2e --workspace @pmo-hub/hub` para o Hub.
+- `npm run test:e2e:lessons-learned --workspace @pmo-hub/hub` para Lessons Learned.
+- `npm run test:e2e --workspace @pmo-hub/resource-allocation` para Tech Resource Allocation.
+
+Consulte os READMEs da [Hub API](services/hub-api/README.md), da [Lessons Learned API](services/lessons-learned-api/README.md) e da [Tech Resource Allocation API](services/resource-allocation-api/README.md) para configurar perfis locais e papéis.
 
 ## Kubernetes local
 

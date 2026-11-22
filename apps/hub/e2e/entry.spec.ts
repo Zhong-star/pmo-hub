@@ -34,15 +34,15 @@ test('selecting a configured local profile opens the module catalog', async ({ p
   await expect(page.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.getByText('Request and coordinate technology resources across projects.')).toBeVisible();
-  await expect(page.getByText('Unavailable')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open Tech Resource Allocation' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Open Tech Resource Allocation' })).toHaveAttribute('href', '/resource-allocation');
   await expect(page.getByText('Hub available')).toBeVisible();
 
   const navigation = page.getByRole('navigation', { name: 'Available modules' });
   const sidebar = page.getByRole('complementary', { name: 'Hub navigation' });
   const panel = page.getByRole('main');
   await expect(navigation.getByRole('link', { name: 'Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
-  await expect(navigation.getByRole('link')).toHaveCount(1);
+  await expect(navigation.getByRole('link', { name: 'Tech Resource Allocation' })).toHaveAttribute('href', '/resource-allocation');
+  await expect(navigation.getByRole('link')).toHaveCount(2);
   const sidebarBounds = (await sidebar.boundingBox())!;
   const panelBounds = (await panel.boundingBox())!;
   expect(sidebarBounds.x).toBe(0);
@@ -101,7 +101,9 @@ test('the linked module card opens when clicked near its outer edge', async ({ p
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
 
-  await page.locator('.module-card-linked').click({ position: { x: 4, y: 32 } });
+  await page.locator('.module-card-linked')
+    .filter({ has: page.getByRole('heading', { name: 'Lessons Learned' }) })
+    .click({ position: { x: 4, y: 32 } });
 
   await expect(page).toHaveURL(/\/lessons-learned\/?$/);
 });
@@ -204,7 +206,7 @@ test('switches profiles only after selecting and validating a different profile'
   await expect(page.getByRole('heading', { name: 'Lessons Learned' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
-  await expect(page.getByText('Unavailable')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open Tech Resource Allocation' })).toHaveAttribute('href', '/resource-allocation');
   await expect(page.evaluate(() => localStorage.getItem('pmo-hub.local-user-id'))).resolves.toBe('local-reviewer');
 });
 

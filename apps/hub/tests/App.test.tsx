@@ -87,12 +87,11 @@ describe('Hub entry', () => {
     expect(lessonsLearnedCard).toContainElement(screen.getByRole('heading', { name: 'Lessons Learned' }));
     expect(lessonsLearnedCard).toContainElement(screen.getByText('Capture, review, and reuse lessons from project experience.'));
     expect(lessonsLearnedCard).toContainElement(screen.getByText('Open Lessons Learned'));
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Open Tech Resource Allocation' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Tech Resource Allocation' })).toHaveAttribute('href', '/resource-allocation');
     expect(mockedGet).toHaveBeenCalledWith('/api/hub/v1/local-users/dev-1', { timeout: HUB_API_TIMEOUT_MS });
   });
 
-  it('uses the catalog configuration to enable Lessons Learned and show Tech Resource Allocation as unavailable', async () => {
+  it('uses the catalog configuration to enable both implemented modules', async () => {
     mockedGet.mockImplementation(async (path: string) => {
       if (path.endsWith('/status')) return { data: { status: 'available' } };
       if (path.endsWith('/local-users')) return { data: [{ id: 'dev-1', displayName: 'Avery Chen' }] };
@@ -108,10 +107,9 @@ describe('Hub entry', () => {
     const lessonsLearned = hubCatalogConfig.find((module) => module.code === 'lessons-learned');
     const resourceAllocation = hubCatalogConfig.find((module) => module.code === 'resource-allocation');
     expect(lessonsLearned?.enabled).toBe(true);
-    expect(resourceAllocation?.enabled).toBe(false);
+    expect(resourceAllocation?.enabled).toBe(true);
     expect(screen.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Tech Resource Allocation' }).parentElement?.querySelector('a, button')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open Tech Resource Allocation' })).toHaveAttribute('href', '/resource-allocation');
   });
 
   it('keeps entry blocked and offers retry when local profiles cannot be loaded', async () => {
@@ -246,7 +244,7 @@ describe('Hub entry', () => {
     expect(screen.getByRole('heading', { name: 'Lessons Learned' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open Lessons Learned' })).toHaveAttribute('href', '/lessons-learned');
     expect(screen.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeInTheDocument();
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Tech Resource Allocation' })).toHaveAttribute('href', '/resource-allocation');
     expect(window.localStorage.getItem('pmo-hub.local-user-id')).toBe('dev-2');
   });
 

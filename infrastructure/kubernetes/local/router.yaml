@@ -14,6 +14,11 @@ data:
       ~^GET\|[^|]*text/html[^|]*\|(document)?$ 1;
     }
 
+    map "$request_method|$http_accept|$http_sec_fetch_dest" $resource_allocation_html_navigation {
+      default 0;
+      ~^GET\|[^|]*text/html[^|]*\|(document)?$ 1;
+    }
+
     include /etc/nginx/runtime/resolver.conf;
     resolver_timeout 2s;
 
@@ -54,6 +59,44 @@ data:
         error_page 404 500 501 502 503 504 505 506 507 508 510 511 = @lessons_learned_unavailable;
       }
 
+      location = /resource-allocation {
+        rewrite ^ /resource-allocation/ last;
+      }
+
+      location = /resource-allocation/ {
+        set $resource_allocation_frontend resource-allocation.pmo-hub.svc.cluster.local:8080;
+        proxy_pass http://$resource_allocation_frontend$uri$is_args$args;
+        proxy_intercept_errors on;
+        error_page 400 401 402 403 404 405 406 407 408 409 410 411 412 413 414 415 416 417 418 421 422 423 424 425 426 428 429 431 451 500 501 502 503 504 505 506 507 508 510 511 = @resource_allocation_unavailable;
+      }
+
+      location ^~ /resource-allocation/ {
+        set $resource_allocation_frontend resource-allocation.pmo-hub.svc.cluster.local:8080;
+        proxy_pass http://$resource_allocation_frontend$request_uri;
+        proxy_intercept_errors on;
+        error_page 404 500 501 502 503 504 505 506 507 508 510 511 = @resource_allocation_unavailable;
+      }
+
+      location ~ ^/api/resource-allocation/v1(?:/|$) {
+        set $resource_allocation_api resource-allocation-api.pmo-hub.svc.cluster.local:3003;
+        proxy_pass http://$resource_allocation_api$request_uri;
+      }
+
+      location @resource_allocation_unavailable {
+        add_header Cache-Control no-store always;
+        if ($resource_allocation_html_navigation) {
+          rewrite ^ /__resource_allocation_unavailable.html last;
+        }
+        default_type text/plain;
+        return 503 'Tech Resource Allocation frontend is unavailable.';
+      }
+
+      location = /__resource_allocation_unavailable.html {
+        internal;
+        default_type text/html;
+        add_header Cache-Control no-store always;
+        return 503 '<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Tech Resource Allocation unavailable | PMO Hub</title><style>:root{color-scheme:light;font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#1d3458;background:#f3f6fb}body{display:grid;min-height:100vh;place-items:center;margin:0;padding:24px;box-sizing:border-box}main{width:min(100%,520px);padding:36px;background:white;border:1px solid #e1e8f2;border-radius:16px;box-shadow:0 18px 50px #1d34581c}h1{margin:0 0 12px;font-size:28px}p{margin:0 0 24px;color:#52627b;line-height:1.6}a{display:inline-flex;min-height:44px;align-items:center;padding:0 17px;border-radius:9px;color:white;background:#315cbb;font-weight:650;text-decoration:none}a:focus-visible{outline:3px solid #315cbb;outline-offset:3px}</style></head><body><main><p>PMO Hub</p><h1>Tech Resource Allocation is unavailable</h1><p>The module screen could not be opened because its frontend did not respond successfully. Try again later or return to the module catalog.</p><a href="/">Return to PMO Hub</a></main></body></html>';
+      }
       location ~ ^/api/hub/v1(?:/|$) {
         set $hub_api hub-api.pmo-hub.svc.cluster.local:3001;
         proxy_pass http://$hub_api$request_uri;

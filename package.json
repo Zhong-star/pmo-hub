@@ -10,7 +10,8 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "check:fast": "npm run lint && npm run typecheck && npm test",
-    "contracts:generate": "npm run openapi:generate --workspace @pmo-hub/hub-api && npm run openapi:types --workspace @pmo-hub/hub && npm run openapi:generate --workspace @pmo-hub/lessons-learned-api && npm run openapi:generate --workspace @pmo-hub/lessons-learned",
+    "contracts:generate": "npm run openapi:generate --workspace @pmo-hub/hub-api && npm run openapi:types --workspace @pmo-hub/hub && npm run openapi:generate --workspace @pmo-hub/lessons-learned-api && npm run openapi:generate --workspace @pmo-hub/lessons-learned && npm run openapi:generate --workspace @pmo-hub/resource-allocation-api && npm run openapi:types --workspace @pmo-hub/resource-allocation",
+    "resource-allocation:worker": "npm run worker --workspace @pmo-hub/resource-allocation-api",
     "lint": "npm run lint --workspaces --if-present",
     "prebuild": "npm run contracts:generate",
     "test": "npm run test --workspaces --if-present",

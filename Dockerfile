@@ -5,8 +5,10 @@ WORKDIR /workspace
 COPY package.json package-lock.json ./
 COPY apps/hub/package.json apps/hub/package.json
 COPY apps/lessons-learned/package.json apps/lessons-learned/package.json
+COPY apps/resource-allocation/package.json apps/resource-allocation/package.json
 COPY services/hub-api/package.json services/hub-api/package.json
 COPY services/lessons-learned-api/package.json services/lessons-learned-api/package.json
+COPY services/resource-allocation-api/package.json services/resource-allocation-api/package.json
 
 RUN npm ci
 
@@ -44,8 +46,10 @@ ENV NODE_ENV=production \
 COPY package.json package-lock.json ./
 COPY apps/hub/package.json apps/hub/package.json
 COPY apps/lessons-learned/package.json apps/lessons-learned/package.json
+COPY apps/resource-allocation/package.json apps/resource-allocation/package.json
 COPY services/hub-api/package.json services/hub-api/package.json
 COPY services/lessons-learned-api/package.json services/lessons-learned-api/package.json
+COPY services/resource-allocation-api/package.json services/resource-allocation-api/package.json
 RUN npm ci --omit=dev --workspace @pmo-hub/hub-api
 
 WORKDIR /app/services/hub-api
@@ -66,8 +70,10 @@ ENV NODE_ENV=production \
 COPY package.json package-lock.json ./
 COPY apps/hub/package.json apps/hub/package.json
 COPY apps/lessons-learned/package.json apps/lessons-learned/package.json
+COPY apps/resource-allocation/package.json apps/resource-allocation/package.json
 COPY services/hub-api/package.json services/hub-api/package.json
 COPY services/lessons-learned-api/package.json services/lessons-learned-api/package.json
+COPY services/resource-allocation-api/package.json services/resource-allocation-api/package.json
 RUN npm ci --omit=dev --workspace @pmo-hub/lessons-learned-api
 
 WORKDIR /app/services/lessons-learned-api
@@ -75,4 +81,36 @@ COPY --from=lessons-learned-api-build /workspace/services/lessons-learned-api/di
 COPY --from=lessons-learned-api-build /workspace/services/lessons-learned-api/config/local-users.json ./config/local-users.json
 COPY --from=lessons-learned-api-build /workspace/services/lessons-learned-api/config/projects.json ./config/projects.json
 EXPOSE 3002
+CMD ["node", "dist/main.js"]
+
+FROM workspace AS resource-allocation-build
+RUN npm run contracts:generate \
+    && npm run build --workspace @pmo-hub/resource-allocation
+
+FROM nginx:1.27-alpine AS resource-allocation
+COPY docker/nginx/resource-allocation.conf /etc/nginx/conf.d/default.conf
+COPY --from=resource-allocation-build /workspace/apps/resource-allocation/dist/ /usr/share/nginx/html/
+EXPOSE 8080
+
+FROM workspace AS resource-allocation-api-build
+RUN npm run build --workspace @pmo-hub/resource-allocation-api
+
+FROM node:22-alpine AS resource-allocation-api
+WORKDIR /app
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=3003
+
+COPY package.json package-lock.json ./
+COPY apps/hub/package.json apps/hub/package.json
+COPY apps/lessons-learned/package.json apps/lessons-learned/package.json
+COPY apps/resource-allocation/package.json apps/resource-allocation/package.json
+COPY services/hub-api/package.json services/hub-api/package.json
+COPY services/lessons-learned-api/package.json services/lessons-learned-api/package.json
+COPY services/resource-allocation-api/package.json services/resource-allocation-api/package.json
+RUN npm ci --omit=dev --workspace @pmo-hub/resource-allocation-api
+
+WORKDIR /app/services/resource-allocation-api
+COPY --from=resource-allocation-api-build /workspace/services/resource-allocation-api/dist/ ./dist/
+EXPOSE 3003
 CMD ["node", "dist/main.js"]

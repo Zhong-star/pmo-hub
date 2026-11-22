@@ -10,7 +10,7 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
         with:
@@ -24,10 +24,20 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - name: Verify generated OpenAPI contracts and clients are up to date
-        run: git diff --exit-code -- apps/hub/src/generated apps/lessons-learned/src/generated services/hub-api/openapi services/lessons-learned-api/openapi
+        run: git diff --exit-code -- apps/hub/src/generated apps/lessons-learned/src/generated apps/resource-allocation/src/generated services/hub-api/openapi services/lessons-learned-api/openapi services/resource-allocation-api/openapi
       - run: npm test
       - name: Lessons Learned PostgreSQL integration tests
         run: npm run test:integration --workspace @pmo-hub/lessons-learned-api
+      - name: Tech Resource Allocation PostgreSQL integration tests
+        run: npm run test:integration --workspace @pmo-hub/resource-allocation-api
       - run: npx playwright install --with-deps chromium
+      - name: Tech Resource Allocation browser tests
+        run: npm run test:e2e --workspace @pmo-hub/resource-allocation
+        env:
+          PLAYWRIGHT_PORT: '5188'
+      - name: Tech Resource Allocation real API and worker browser test
+        run: npm run test:e2e:real --workspace @pmo-hub/resource-allocation
+        env:
+          PLAYWRIGHT_PORT: '5188'
       - run: npm run test:e2e --workspace @pmo-hub/hub
       - run: npm run test:e2e:lessons-learned --workspace @pmo-hub/hub

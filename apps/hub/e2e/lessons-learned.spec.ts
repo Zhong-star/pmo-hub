@@ -335,7 +335,7 @@ test('catalog link opens in the same tab and reload, back, and module return pre
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Welcome, Local Developer' })).toBeVisible();
 
-  await expect(page.getByText('Unavailable')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open Tech Resource Allocation' })).toHaveAttribute('href', '/resource-allocation');
 });
 
 test('PMO can enter the module catalog and open Lessons Learned with the PMO role', async ({ page }) => {
@@ -1105,7 +1105,7 @@ test('profile menu theme is keyboard operable, readable, and shared across both 
 
   await selectDarkWithKeyboard();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.locator('.module-action')).toHaveCSS('background-color', 'rgb(24, 104, 219)');
+  await expect(page.getByRole('link', { name: 'Open Lessons Learned' }).locator('.module-action')).toHaveCSS('background-color', 'rgb(24, 104, 219)');
   await assertReadableTheme();
 
   await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
