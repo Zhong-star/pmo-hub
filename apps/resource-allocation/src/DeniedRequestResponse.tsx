@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import { useNavigationFormProtection } from './NavigationProtection';
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
 import { cancelRequest, contestRequest, getRequestHistory, RequestDecisionApiError, type RequestDecisionResult } from './requestDecisionApi';
 import { REQUESTS_QUERY_ROOT, type ResourceRequestItem } from './requestApi';
@@ -61,6 +62,7 @@ export function DeniedRequestResponse({ localUserId, item, readOnly = false, dis
   const [activeAction, setActiveAction] = useState<ResponseAction | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const form = useForm<ResponseValues>({ defaultValues: { explanation: '' }, mode: 'onSubmit', reValidateMode: 'onChange' });
+  const guardResponseClose = useNavigationFormProtection('denied request response', form.formState.isDirty, form.formState.isSubmitting);
   const historyQuery = useQuery({
     queryKey: [...REQUESTS_QUERY_ROOT, localUserId, 'history', item.id],
     queryFn: () => getRequestHistory(localUserId, item.id),
@@ -78,6 +80,14 @@ export function DeniedRequestResponse({ localUserId, item, readOnly = false, dis
     : historyQuery.data?.items.filter((event) =>
       event.action === 'CONTESTED' || event.action === 'DENIAL_CANCELLED' || event.action === 'DENIAL_AUTO_CANCELLED') ?? [];
   const actionDisabled = disabled || (needsHistory && historyQuery.isError);
+
+  function closeAction() {
+    guardResponseClose(() => {
+      form.reset({ explanation: '' });
+      setErrorMessage('');
+      setActiveAction(null);
+    });
+  }
 
   async function submit(values: ResponseValues) {
     if (!activeAction || disabled) return;
@@ -186,7 +196,7 @@ export function DeniedRequestResponse({ localUserId, item, readOnly = false, dis
               </label>
               {errorMessage && <div className="form-error" role="alert"><p>{errorMessage}</p></div>}
               <div className="form-actions request-actions">
-                <button type="button" className="secondary-button" onClick={() => setActiveAction(null)} disabled={form.formState.isSubmitting}>Keep request</button>
+                <button type="button" className="secondary-button" onClick={closeAction} disabled={form.formState.isSubmitting}>Keep request</button>
                 <button type="submit" className="primary-button" disabled={actionDisabled || form.formState.isSubmitting}>
                   {form.formState.isSubmitting ? 'Saving…' : activeAction === 'contest' ? 'Submit contest' : 'Confirm cancellation'}
                 </button>

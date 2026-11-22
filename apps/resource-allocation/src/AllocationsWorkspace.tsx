@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import { useNavigationFormProtection } from './NavigationProtection';
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
 import { REQUESTS_QUERY_ROOT } from './requestApi';
 import { businessDate, formatBusinessTimestamp, formatCalendarDate } from './timeAndHours';
@@ -230,6 +231,11 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
       setIsStale(error instanceof AllocationRequestError && error.status === 412);
     },
   });
+  const guardActionClose = useNavigationFormProtection(
+    'allocation action',
+    actionForm.formState.isDirty,
+    actionForm.formState.isSubmitting || changeMutation.isPending,
+  );
   const { reset: resetChangeMutation } = changeMutation;
   const collectionRefreshFailed = allocationQuery.isError && !allocationQuery.isFetchNextPageError;
   const detailRefreshFailed = detailQuery.isError;
@@ -288,31 +294,36 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
   }
 
   function selectAllocation(nextId: string) {
-    setSelectedAction(null);
-    setAttempt(null);
-    setIsStale(false);
-    setActionMessage('');
-    resetActionForm({ reason: '' });
-    resetChangeMutation();
-    setSelectedAllocationId(nextId);
-    const url = new URL(window.location.href);
-    url.searchParams.set('page', 'allocations');
-    url.searchParams.set('allocationId', nextId);
-    window.history.replaceState(window.history.state, '', url);
+    if (nextId === selectedAllocationId) return;
+    guardActionClose(() => {
+      setSelectedAction(null);
+      setAttempt(null);
+      setIsStale(false);
+      setActionMessage('');
+      resetActionForm({ reason: '' });
+      resetChangeMutation();
+      setSelectedAllocationId(nextId);
+      const url = new URL(window.location.href);
+      url.searchParams.set('page', 'allocations');
+      url.searchParams.set('allocationId', nextId);
+      window.history.replaceState(window.history.state, '', url);
+    });
   }
 
   function closeDetails() {
-    setSelectedAction(null);
-    setAttempt(null);
-    setIsStale(false);
-    setActionMessage('');
-    resetActionForm({ reason: '' });
-    resetChangeMutation();
-    setSelectedAllocationId(null);
-    const url = new URL(window.location.href);
-    url.searchParams.set('page', 'allocations');
-    url.searchParams.delete('allocationId');
-    window.history.replaceState(window.history.state, '', url);
+    guardActionClose(() => {
+      setSelectedAction(null);
+      setAttempt(null);
+      setIsStale(false);
+      setActionMessage('');
+      resetActionForm({ reason: '' });
+      resetChangeMutation();
+      setSelectedAllocationId(null);
+      const url = new URL(window.location.href);
+      url.searchParams.set('page', 'allocations');
+      url.searchParams.delete('allocationId');
+      window.history.replaceState(window.history.state, '', url);
+    });
   }
 
   return (

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { handleTabListKeyDown } from './tabNavigation';
+import { useNavigationProtection } from './NavigationProtection';
 import type { ResourceAllocationRole } from './accessApi';
 import type { RequestQueueCode } from './requestQueueApi';
 import { ExceptionsQueue } from './request-queues/ExceptionsQueue';
@@ -54,6 +55,7 @@ function updateQueueLocation(queue: RequestQueueCode) {
 }
 
 export function RequestQueues({ localUserId, personId, role, groupId, onAccessDenied }: RequestQueuesProps) {
+  const { guardNavigation } = useNavigationProtection();
   const queues = useMemo(() => queuesFor(role, groupId), [role, groupId]);
   const [selectedQueue, setSelectedQueue] = useState<RequestQueueCode>(() => initialQueue(queues));
   const activeQueue = queues.includes(selectedQueue) ? selectedQueue : initialQueue(queues);
@@ -93,8 +95,10 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
             key={queue}
             onKeyDown={handleTabListKeyDown}
             onClick={() => {
-              setSelectedQueue(queue);
-              updateQueueLocation(queue);
+              guardNavigation(() => {
+                setSelectedQueue(queue);
+                updateQueueLocation(queue);
+              });
             }}
           >
             {queueLabels[queue]}

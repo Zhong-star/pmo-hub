@@ -15,6 +15,7 @@ import { RequestWorkspace } from './RequestWorkspace';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { WorkspaceSidebar } from '../../shared-ui/src/WorkspaceSidebar';
 import { useThemePreference } from '../../shared-ui/src/theme';
+import { NavigationProtectionProvider, useNavigationProtection } from './NavigationProtection';
 import {
   normalizeResourceAllocationPage,
   readResourceAllocationPage,
@@ -23,6 +24,18 @@ import {
 } from './navigation';
 
 type ProfileSelection = { profileId: string | null; generation: number };
+const historyPositionKey = '__pmoResourceAllocationHistoryPosition';
+
+function readHistoryPosition(state: unknown): number | null {
+  if (!state || typeof state !== 'object') return null;
+  const position = (state as Record<string, unknown>)[historyPositionKey];
+  return typeof position === 'number' ? position : null;
+}
+
+function withHistoryPosition(state: unknown, position: number) {
+  const record = state && typeof state === 'object' ? state as Record<string, unknown> : {};
+  return { ...record, [historyPositionKey]: position };
+}
 
 const navigationItems: Array<{ page: ResourceAllocationPage; label: string }> = [
   { page: 'requests', label: 'Requests' },
@@ -53,8 +66,17 @@ function canUseRequestQueues(role: string): boolean {
 }
 
 export function App() {
+  return (
+    <NavigationProtectionProvider>
+      <ResourceAllocationApp />
+    </NavigationProtectionProvider>
+  );
+}
+
+function ResourceAllocationApp() {
   const { theme, selectTheme } = useThemePreference();
   const queryClient = useQueryClient();
+  const { isDirty, isPending, notice: navigationNotice, guardNavigation, allowUnloadOnce } = useNavigationProtection();
   const [selection, setSelection] = useState<ProfileSelection>(() => ({
     profileId: readSelectedProfileId(),
     generation: 0,
@@ -63,6 +85,10 @@ export function App() {
   const [activePage, setActivePage] = useState<ResourceAllocationPage>(() => readResourceAllocationPage(window.location.search));
   const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
   const workspacePanel = useRef<HTMLElement>(null);
+  const currentHistoryPosition = useRef(0);
+  const isRevertingHistory = useRef(false);
+  const isResumingHistory = useRef(false);
+  const pendingHistoryNavigation = useRef<{ delta: number; hasPosition: boolean } | null>(null);
   const [adminAccessBlocked, setAdminAccessBlocked] = useState(false);
   const [moduleDataAccessBlocked, setModuleDataAccessBlocked] = useState(false);
   const { profileId, generation } = selection;
@@ -77,21 +103,74 @@ export function App() {
     });
     setAdminAccessBlocked(false);
     setModuleDataAccessBlocked(false);
+    setIsModuleMenuOpen(false);
     const nextSelection = { profileId: nextProfileId, generation: current.generation + 1 };
     currentSelection.current = nextSelection;
     setSelection(nextSelection);
   }, [queryClient]);
 
   useEffect(() => {
+    const initialPosition = readHistoryPosition(window.history.state);
+    if (initialPosition === null) {
+      currentHistoryPosition.current = 0;
+      window.history.replaceState(withHistoryPosition(window.history.state, 0), '', window.location.href);
+    } else {
+      currentHistoryPosition.current = initialPosition;
+    }
     normalizeResourceAllocationPage(readResourceAllocationPage(window.location.search));
-    function handleHistoryNavigation() {
+
+    function applyHistoryDestination() {
       setActivePage(readResourceAllocationPage(window.location.search));
       setIsModuleMenuOpen(false);
       workspacePanel.current?.focus();
     }
-    window.addEventListener('popstate', handleHistoryNavigation);
-    return () => window.removeEventListener('popstate', handleHistoryNavigation);
-  }, []);
+
+    function handleHistoryNavigation(event: PopStateEvent) {
+      if (isResumingHistory.current) {
+        isResumingHistory.current = false;
+        const resumedPosition = readHistoryPosition(event.state);
+        if (resumedPosition !== null) currentHistoryPosition.current = resumedPosition;
+        applyHistoryDestination();
+        return;
+      }
+
+      if (isRevertingHistory.current) {
+        event.stopImmediatePropagation();
+        isRevertingHistory.current = false;
+        const pending = pendingHistoryNavigation.current;
+        pendingHistoryNavigation.current = null;
+        const revertedPosition = readHistoryPosition(event.state);
+        if (revertedPosition !== null) currentHistoryPosition.current = revertedPosition;
+        if (!pending) return;
+
+        const allowed = guardNavigation(() => {
+          if (!pending.hasPosition) allowUnloadOnce();
+          isResumingHistory.current = true;
+          window.history.go(pending.delta);
+        });
+        if (!allowed) applyHistoryDestination();
+        return;
+      }
+
+      const destinationPosition = readHistoryPosition(event.state);
+      const delta = destinationPosition === null
+        ? -1
+        : destinationPosition - currentHistoryPosition.current;
+      if ((isDirty || isPending) && delta !== 0) {
+        event.stopImmediatePropagation();
+        pendingHistoryNavigation.current = { delta, hasPosition: destinationPosition !== null };
+        isRevertingHistory.current = true;
+        window.history.go(-delta);
+        return;
+      }
+
+      if (destinationPosition !== null) currentHistoryPosition.current = destinationPosition;
+      applyHistoryDestination();
+    }
+
+    window.addEventListener('popstate', handleHistoryNavigation, { capture: true });
+    return () => window.removeEventListener('popstate', handleHistoryNavigation, { capture: true });
+  }, [allowUnloadOnce, guardNavigation, isDirty, isPending]);
 
   useEffect(() => {
     function handleStorageChange(event: StorageEvent) {
@@ -177,6 +256,8 @@ export function App() {
     && (activePage !== 'administration' || isAdministrator);
 
   function changeProfile() {
+    if (!guardNavigation()) return false;
+    if (isDirty || isPending) allowUnloadOnce();
     try {
       window.localStorage.removeItem(LOCAL_USER_STORAGE_KEY);
     } catch {
@@ -187,21 +268,47 @@ export function App() {
         && query.queryKey[0].startsWith('resource-allocation-'),
     });
     window.location.assign('/');
+    return true;
   }
 
   function navigateToPage(page: ResourceAllocationPage, event: MouseEvent<HTMLAnchorElement>) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
+    if (page === activePage) {
+      setIsModuleMenuOpen(false);
+      return;
+    }
+    if (!guardNavigation()) return;
     setIsModuleMenuOpen(false);
-    if (page === activePage) return;
 
     const url = new URL(window.location.href);
     url.search = '';
     url.searchParams.set('page', page);
     url.hash = '';
-    window.history.pushState(window.history.state, '', url);
+    const nextPosition = currentHistoryPosition.current + 1;
+    window.history.pushState(withHistoryPosition(window.history.state, nextPosition), '', url);
+    currentHistoryPosition.current = nextPosition;
     setActivePage(page);
     workspacePanel.current?.focus();
+  }
+
+  function guardSameOriginAnchor(event: MouseEvent<HTMLDivElement>) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!(event.target instanceof Element)) return;
+    const anchor = event.target.closest<HTMLAnchorElement>('a[href]');
+    if (!anchor || anchor.hasAttribute('data-resource-allocation-navigation') || anchor.hasAttribute('download')) return;
+    if (anchor.target && anchor.target.toLowerCase() !== '_self') return;
+
+    const destination = new URL(anchor.href, window.location.href);
+    if (destination.origin !== window.location.origin) return;
+    if (destination.pathname === window.location.pathname && destination.search === window.location.search) return;
+
+    if (!guardNavigation()) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (isDirty || isPending) allowUnloadOnce();
   }
 
   const visibleNavigationItems = navigationItems.filter(({ page }) => {
@@ -211,9 +318,10 @@ export function App() {
   });
 
   return (
-    <div className={`app-shell${canDisplayWorkspace ? ' workspace-shell' : ''}`}>
+    <div className={`app-shell${canDisplayWorkspace ? ' workspace-shell' : ''}`} onClickCapture={guardSameOriginAnchor}>
       <a className="skip-link" href="#main-content">Skip to main content</a>
       <HubHeader
+        key={`${profileId ?? 'no-profile'}:${generation}`}
         profileName={accessQuery.data?.person.displayName ?? profileId ?? undefined}
         onChangeProfile={profileId ? changeProfile : undefined}
         theme={theme}
@@ -234,6 +342,7 @@ export function App() {
                 key={page}
                 href={resourceAllocationPageHref(page)}
                 aria-current={activePage === page ? 'page' : undefined}
+                data-resource-allocation-navigation="true"
                 onClick={(event) => navigateToPage(page, event)}
               >
                 {label}
@@ -242,6 +351,7 @@ export function App() {
           </WorkspaceSidebar>
 
           <main ref={workspacePanel} id="main-content" className="workspace-panel" tabIndex={-1}>
+            {navigationNotice && <p className="supporting-copy" role="status">{navigationNotice}</p>}
             <header className="module-workspace-heading">
               <p className="eyebrow">PMO Hub module</p>
               <h1>Tech Resource Allocation</h1>
@@ -258,7 +368,7 @@ export function App() {
             ) : !selectedPageIsAllowed ? (
               <div className="form-error page-access-denied" role="alert">
                 <p>{activePage === 'administration' ? 'Administration is only available to Admins.' : 'Request queues are not available for this profile.'}</p>
-                <a href={resourceAllocationPageHref('requests')} onClick={(event) => navigateToPage('requests', event)}>Go to Requests</a>
+                <a data-resource-allocation-navigation="true" href={resourceAllocationPageHref('requests')} onClick={(event) => navigateToPage('requests', event)}>Go to Requests</a>
               </div>
             ) : canUseModuleData && profileId ? (
               <Fragment key={`${profileId}:${generation}`}>

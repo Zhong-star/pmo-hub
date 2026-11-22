@@ -1,6 +1,7 @@
 import { hasNonBlankText } from './formValidation';
 import { useForm } from 'react-hook-form';
 import type { RequestQueueItem } from './requestQueueApi';
+import { useNavigationFormProtection } from './NavigationProtection';
 
 interface ExceptionStageActionProps {
   item: RequestQueueItem;
@@ -15,6 +16,7 @@ interface ReasonValues { reason: string; }
 
 export function ExceptionStageAction({ item, action, disabled, open, onToggle, onSubmit }: ExceptionStageActionProps) {
   const form = useForm<ReasonValues>({ defaultValues: { reason: '' }, mode: 'onSubmit', reValidateMode: 'onChange' });
+  const guardFormClose = useNavigationFormProtection('exception stage action', form.formState.isDirty, form.formState.isSubmitting);
   const title = action === 'escalate' ? 'Escalate this exception' : 'Cancel this request';
   const buttonLabel = action === 'escalate' ? 'Escalate request' : 'Cancel request';
   const submitLabel = action === 'escalate' ? 'Confirm escalation' : 'Confirm cancellation';
@@ -23,10 +25,21 @@ export function ExceptionStageAction({ item, action, disabled, open, onToggle, o
     ? 'This explicitly moves the request from Pre N3 to Escalation. It will remain open for Admin resolution.'
     : `Cancellation is final. The request history will remain available. Current stage: ${item.decisionState.replaceAll('_', ' ')}.`;
 
+  function toggleAction() {
+    if (!open) {
+      onToggle();
+      return;
+    }
+    guardFormClose(() => {
+      form.reset({ reason: '' });
+      onToggle();
+    });
+  }
+
   return (
     <div className="request-exception-stage-action">
       {!open && (
-        <button type="button" className="secondary-button" aria-expanded="false" onClick={onToggle} disabled={disabled}>
+        <button type="button" className="secondary-button" aria-expanded="false" onClick={toggleAction} disabled={disabled}>
           {buttonLabel}
         </button>
       )}
@@ -53,7 +66,7 @@ export function ExceptionStageAction({ item, action, disabled, open, onToggle, o
             {form.formState.errors.reason && <span className="field-error">{form.formState.errors.reason.message}</span>}
           </label>
           <div className="form-actions">
-            <button type="button" className="secondary-button" onClick={onToggle} disabled={disabled}>Keep request in queue</button>
+            <button type="button" className="secondary-button" onClick={toggleAction} disabled={disabled}>Keep request in queue</button>
             <button type="submit" className={action === 'cancel' ? 'secondary-button' : 'primary-button'} disabled={disabled || form.formState.isSubmitting}>
               {form.formState.isSubmitting ? progressLabel : submitLabel}
             </button>

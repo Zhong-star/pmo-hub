@@ -5,6 +5,7 @@ import { RequestApiError, REQUESTS_QUERY_ROOT, updateRequest, withdrawRequest, t
 import { type RequestCategory } from '../submissionApi';
 import { normalizeWeeklyHours } from '../timeAndHours';
 import { invalidateRequestSurfaces } from '../requestSurfaces';
+import { useNavigationFormProtection } from '../NavigationProtection';
 import { formValues, hasAccessError, issueMutationError, rowsFromPages, useRequestSelectionQuery, type RequestFormValues } from './shared';
 
 interface WithdrawalFormValues { reason: string; }
@@ -79,8 +80,22 @@ export function RequestEditWithdrawal({
     mutationFn: (input: { requestId: string; version: number; reason: string; idempotencyKey: string }) =>
       withdrawRequest(localUserId, input.requestId, input.version, input.reason, input.idempotencyKey),
   });
+  const guardWithdrawalClose = useNavigationFormProtection(
+    'request withdrawal',
+    withdrawalForm.formState.isDirty,
+    withdrawalForm.formState.isSubmitting || withdrawMutation.isPending,
+  );
+  useNavigationFormProtection('request edit', editForm.formState.isDirty, editForm.formState.isSubmitting || updateMutation.isPending);
 
   const canEdit = canEditCurrentRequest && formVersion !== null && !formVersionChanged;
+
+  function closeWithdrawal() {
+    guardWithdrawalClose(() => {
+      withdrawalForm.reset({ reason: '' });
+      setWithdrawalError('');
+      setWithdrawalOpen(false);
+    });
+  }
 
   useEffect(() => {
     if (modalWasOpen.current && !withdrawalOpen) withdrawButtonRef.current?.focus();
@@ -272,7 +287,7 @@ export function RequestEditWithdrawal({
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 event.preventDefault();
-                if (!withdrawalForm.formState.isSubmitting) setWithdrawalOpen(false);
+                if (!withdrawalForm.formState.isSubmitting) closeWithdrawal();
                 return;
               }
               if (event.key !== 'Tab') return;
@@ -304,7 +319,7 @@ export function RequestEditWithdrawal({
               </label>
               {withdrawalError && <div className="form-error" role="alert"><p>{withdrawalError}</p></div>}
               <div className="form-actions request-actions">
-                <button type="button" className="secondary-button" onClick={() => setWithdrawalOpen(false)} disabled={withdrawalForm.formState.isSubmitting}>Keep request</button>
+                <button type="button" className="secondary-button" onClick={closeWithdrawal} disabled={withdrawalForm.formState.isSubmitting}>Keep request</button>
                 <button type="submit" className="primary-button" disabled={!canEdit || withdrawalForm.formState.isSubmitting}>
                   {withdrawalForm.formState.isSubmitting ? 'Withdrawing…' : 'Confirm withdrawal'}
                 </button>

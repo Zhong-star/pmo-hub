@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ResourceAllocationRole } from './accessApi';
 import type { RequestAuditEvent, ResourceRequestCollection } from './requestApi';
+import { useNavigationProtection } from './NavigationProtection';
 import { RequestAudit } from './request-workspace/RequestAudit';
 import { RequestCollection } from './request-workspace/RequestCollection';
 import { RequestDetail } from './request-workspace/RequestDetail';
@@ -42,6 +43,7 @@ function updateAuditUrl(requestId: string | null) {
 }
 
 export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }: RequestWorkspaceProps) {
+  const { guardNavigation } = useNavigationProtection();
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(() => querySelectedRequestId());
   const [selectedSummaryItem, setSelectedSummaryItem] = useState<ResourceRequestCollection['items'][number] | null>(null);
   const [auditRequestId, setAuditRequestId] = useState<string | null>(() => querySelectedAuditId());
@@ -60,24 +62,31 @@ export function RequestWorkspace({ localUserId, personId, role, onAccessDenied }
   }, []);
 
   function openRequest(item: ResourceRequestCollection['items'][number]) {
-    setSelectedRequestId(item.id);
-    setSelectedSummaryItem(item);
-    setAuditRequestId(null);
-    setNotice('');
-    updateRequestUrl(item.id);
-    updateAuditUrl(null);
+    if (item.id === selectedRequestId) return;
+    guardNavigation(() => {
+      setSelectedRequestId(item.id);
+      setSelectedSummaryItem(item);
+      setAuditRequestId(null);
+      setNotice('');
+      updateRequestUrl(item.id);
+      updateAuditUrl(null);
+    });
   }
 
   function closeRequest() {
-    setSelectedRequestId(null);
-    setSelectedSummaryItem(null);
-    updateRequestUrl(null);
+    guardNavigation(() => {
+      setSelectedRequestId(null);
+      setSelectedSummaryItem(null);
+      updateRequestUrl(null);
+    });
   }
 
   function clearSelection() {
-    setSelectedRequestId(null);
-    setSelectedSummaryItem(null);
-    updateRequestUrl(null);
+    guardNavigation(() => {
+      setSelectedRequestId(null);
+      setSelectedSummaryItem(null);
+      updateRequestUrl(null);
+    });
   }
 
   function onWithdrawn(event: RequestAuditEvent) {

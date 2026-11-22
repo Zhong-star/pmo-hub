@@ -146,3 +146,115 @@ test('does not mount Administration for a user who opens its URL directly', asyn
   await expect(page).toHaveURL(/\?page=requests$/);
   await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible();
 });
+
+test('keeps a dirty request form when area navigation is canceled', async ({ page }) => {
+  await openWithProfile(page, user, '/resource-allocation/?page=new-request');
+
+  const weeklyHours = page.getByLabel('Weekly hours for line 1');
+  await weeklyHours.fill('4.5');
+
+  let confirmationMessage = '';
+  page.once('dialog', async (dialog) => {
+    confirmationMessage = dialog.message();
+    await dialog.dismiss();
+  });
+  await page.getByRole('navigation', { name: 'Tech Resource Allocation' }).getByRole('link', { name: 'Requests' }).click();
+
+  await expect(page).toHaveURL(/\?page=new-request$/);
+  await expect(weeklyHours).toHaveValue('4.5');
+  expect(confirmationMessage).toMatch(/unsaved changes/i);
+
+  await weeklyHours.focus();
+  await expect(weeklyHours).toBeFocused();
+});
+
+test('restores the current area and draft when browser back is canceled', async ({ page }) => {
+  await openWithProfile(page);
+  await page.getByRole('navigation', { name: 'Tech Resource Allocation' }).getByRole('link', { name: 'New request' }).click();
+  const weeklyHours = page.getByLabel('Weekly hours for line 1');
+  await weeklyHours.fill('6.5');
+
+  const canceledPrompt = page.waitForEvent('dialog');
+  await page.evaluate(() => window.history.back());
+  const canceledDialog = await canceledPrompt;
+  expect(canceledDialog.message()).toMatch(/unsaved changes/i);
+  await canceledDialog.dismiss();
+
+  await expect(page).toHaveURL(/\?page=new-request$/);
+  await expect(weeklyHours).toHaveValue('6.5');
+
+  const confirmedPrompt = page.waitForEvent('dialog');
+  await page.evaluate(() => window.history.back());
+  const confirmedDialog = await confirmedPrompt;
+  await confirmedDialog.accept();
+  await expect(page).toHaveURL(/\?page=requests$/);
+  await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible();
+  await page.goForward();
+  await expect(page).toHaveURL(/\?page=new-request$/);
+  await expect(page.getByRole('heading', { name: 'New request batch' })).toBeVisible();
+});
+
+test('keeps profile and form focus when profile change is canceled', async ({ page }) => {
+  await openWithProfile(page, user, '/resource-allocation/?page=new-request');
+  const weeklyHours = page.getByLabel('Weekly hours for line 1');
+  await weeklyHours.fill('3.5');
+  await page.getByRole('button', { name: 'Taylor User' }).click();
+  const changeProfile = page.getByRole('button', { name: 'Change profile' });
+
+  const prompt = page.waitForEvent('dialog');
+  const click = changeProfile.click();
+  const dialog = await prompt;
+  expect(dialog.message()).toMatch(/unsaved changes/i);
+  await dialog.dismiss();
+  await click;
+
+  await expect(page).toHaveURL(/\?page=new-request$/);
+  await expect(weeklyHours).toHaveValue('3.5');
+  await expect(changeProfile).toBeVisible();
+  await expect(changeProfile).toBeFocused();
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), profileStorageKey)).toBe(user.localUserId);
+});
+
+test('protects the PMO Hub brand link and native reload with the current draft', async ({ page }) => {
+  await openWithProfile(page, user, '/resource-allocation/?page=new-request');
+  const weeklyHours = page.getByLabel('Weekly hours for line 1');
+  await weeklyHours.fill('2.5');
+
+  const brandPrompt = page.waitForEvent('dialog');
+  const brandClick = page.getByRole('link', { name: 'PMO Hub' }).click();
+  const brandDialog = await brandPrompt;
+  await brandDialog.dismiss();
+  await brandClick;
+  await expect(page).toHaveURL(/\?page=new-request$/);
+  await expect(weeklyHours).toHaveValue('2.5');
+
+  let unloadDialogType = '';
+  page.on('dialog', async (dialog) => {
+    unloadDialogType = dialog.type();
+    await dialog.dismiss();
+  });
+  await page.reload({ timeout: 2500 }).catch(() => null);
+  expect(unloadDialogType).toBe('beforeunload');
+  await expect(weeklyHours).toHaveValue('2.5');
+});
+
+test('clears a dirty form immediately when another tab changes the selected profile', async ({ page }) => {
+  await openWithProfile(page, user, '/resource-allocation/?page=new-request');
+  const weeklyHours = page.getByLabel('Weekly hours for line 1');
+  await weeklyHours.fill('8');
+
+  let confirmationCount = 0;
+  page.on('dialog', async (dialog) => {
+    confirmationCount += 1;
+    await dialog.dismiss();
+  });
+  await page.evaluate((key) => {
+    window.localStorage.setItem(key, 'profile-from-another-tab');
+    window.dispatchEvent(new StorageEvent('storage', { key }));
+  }, profileStorageKey);
+
+  await expect(page.getByRole('button', { name: 'Taylor User' })).toBeVisible();
+  await expect(weeklyHours).toHaveValue('');
+  expect(confirmationCount).toBe(0);
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), profileStorageKey)).toBe('profile-from-another-tab');
+});
