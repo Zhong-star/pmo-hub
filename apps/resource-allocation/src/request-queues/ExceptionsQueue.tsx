@@ -149,7 +149,7 @@ export function ExceptionsQueue(props: QueueVerticalProps) {
       deepLinkMissing={missing}
       actionError={runner.actionError}
       renderItem={(item) => {
-        const busy = runner.pendingRequestId === item.id;
+        const busy = runner.pendingRequestIds.has(item.id);
         const disabled = busy || actionsBlocked;
         const ownRequest = item.requester.personId === personId;
         const correctionOpen = openCorrectionId === item.id;

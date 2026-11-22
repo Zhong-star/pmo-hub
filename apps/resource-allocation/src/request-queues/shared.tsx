@@ -149,7 +149,7 @@ function actionIdentity(localUserId: string, item: RequestQueueItem, operation: 
 export function useQueueActionRunner(localUserId: string, onAccessDenied: () => void) {
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
-  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [pendingRequestIds, setPendingRequestIds] = useState<ReadonlySet<string>>(() => new Set());
 
   async function performAction(
     item: RequestQueueItem,
@@ -158,7 +158,7 @@ export function useQueueActionRunner(localUserId: string, onAccessDenied: () => 
     action: (idempotencyKey: string) => Promise<unknown>,
   ): Promise<boolean> {
     setActionError(null);
-    setPendingRequestId(item.id);
+    setPendingRequestIds((current) => new Set(current).add(item.id));
     try {
       const identity = actionIdentity(localUserId, item, operation, payload);
       await action(await getActionIdempotencyKey(identity));
@@ -174,11 +174,15 @@ export function useQueueActionRunner(localUserId: string, onAccessDenied: () => 
       }
       return false;
     } finally {
-      setPendingRequestId(null);
+      setPendingRequestIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
     }
   }
 
-  return { actionError, setActionError, pendingRequestId, performAction };
+  return { actionError, setActionError, pendingRequestIds, performAction };
 }
 
 export function RequestQueueCard({

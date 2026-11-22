@@ -97,7 +97,7 @@ export function RevalidationQueue(props: QueueVerticalProps) {
       deepLinkMissing={missing}
       actionError={runner.actionError}
       renderItem={(item) => {
-        const busy = runner.pendingRequestId === item.id;
+        const busy = runner.pendingRequestIds.has(item.id);
         const disabled = busy || actionsBlocked;
         return (
           <RequestQueueCard key={item.id} item={item} queueLabel="Eligibility revalidation" highlighted={item.id === selectedRequestId}>

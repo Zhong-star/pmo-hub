@@ -83,6 +83,38 @@ async function installCommonRoutes(page: Page, profileId: string, person: typeof
   });
 }
 
+test('keeps a request card blocked while a referral on another card completes', async ({ page }) => {
+  await installCommonRoutes(page, admin.localUserId, admin);
+  const first = requestItem({ availableActions: ['REFER'] });
+  const second = requestItem({ id: 'request-b', availableActions: ['REFER'] });
+  let items = [first, second];
+
+  let releaseFirst = () => {};
+  const firstResponse = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  await page.route(`${apiRoot}/request-queues/**`, (route) => route.fulfill({ json: { items, page: emptyPage } }));
+  await page.route(`${apiRoot}/requests/*/referrals`, async (route) => {
+    const isFirst = route.request().url().endsWith('/request-a/referrals');
+    if (isFirst) await firstResponse;
+    const item = isFirst ? first : second;
+    items = items.filter(({ id }) => id !== item.id);
+    await route.fulfill({ json: { ...item, decisionState: 'PENDING_TEAM_DECISION', version: 2 } });
+  });
+
+  await page.goto('/resource-allocation/');
+  const firstCard = page.locator('#resource-request-request-a');
+  const secondCard = page.locator('#resource-request-request-b');
+  try {
+    await firstCard.getByRole('button', { name: 'Refer to group decision' }).click();
+    await expect(firstCard.getByRole('button', { name: 'Updating request…' })).toBeDisabled();
+    await secondCard.getByRole('button', { name: 'Refer to group decision' }).click();
+    await expect(secondCard).toHaveCount(0);
+    await expect(firstCard.getByRole('button', { name: 'Updating request…' })).toBeDisabled();
+  } finally {
+    releaseFirst();
+  }
+  await expect(firstCard).toHaveCount(0);
+});
+
 test('moves between request queues with the tablist arrow keys', async ({ page }) => {
   await installCommonRoutes(page, admin.localUserId, admin);
   await page.route(`${apiRoot}/request-queues/**`, async (route) => {

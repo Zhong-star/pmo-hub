@@ -38,7 +38,7 @@ const readValue = readRequestValue;
 export function ApprovalForm({
   item,
   selections,
-  disabled,
+  disabled: actionDisabled,
   onSubmit,
 }: {
   item: RequestQueueItem;
@@ -47,7 +47,7 @@ export function ApprovalForm({
   onSubmit: (approval: ApprovalDecision) => Promise<void>;
 }) {
   const conditions = item.requestedConditions;
-  const { register, handleSubmit, control, formState: { errors } } = useForm<ApprovalValues>({
+  const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<ApprovalValues>({
     defaultValues: {
       personId: '',
       resourceProfileId: readValue(item, 'resourceProfileId'),
@@ -57,6 +57,7 @@ export function ApprovalForm({
       explanation: '',
     },
   });
+  const disabled = actionDisabled || isSubmitting;
   const selectedProfileId = useWatch({ control, name: 'resourceProfileId' });
   const selectedStartDate = useWatch({ control, name: 'startDate' });
   const selectedEndDate = useWatch({ control, name: 'endDate' });
@@ -226,7 +227,7 @@ export function ApprovalForm({
 export function ReferenceCorrectionForm({
   item,
   selections,
-  disabled,
+  disabled: actionDisabled,
   onSubmit,
 }: {
   item: RequestQueueItem;
@@ -234,9 +235,10 @@ export function ReferenceCorrectionForm({
   disabled: boolean;
   onSubmit: (correction: ReferenceCorrectionValues) => Promise<void>;
 }) {
-  const { register, handleSubmit, control, formState: { errors } } = useForm<ReferenceCorrectionValues>({
+  const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<ReferenceCorrectionValues>({
     defaultValues: { initiativeId: '', groupId: '', resourceProfileId: '', personId: '', reason: '' },
   });
+  const disabled = actionDisabled || isSubmitting;
   const selectedGroupId = useWatch({ control, name: 'groupId' });
   const currentGroupId = readValue(item, 'groupId');
   const effectiveGroupId = selectedGroupId || currentGroupId;
@@ -307,8 +309,9 @@ export function ReferenceCorrectionForm({
   );
 }
 
-export function AdministrativeRemovalForm({ disabled, onSubmit }: { disabled: boolean; onSubmit: (reason: string) => Promise<void> }) {
-  const { register, handleSubmit, formState: { errors } } = useForm<RemovalValues>({ defaultValues: { reason: '' } });
+export function AdministrativeRemovalForm({ disabled: actionDisabled, onSubmit }: { disabled: boolean; onSubmit: (reason: string) => Promise<void> }) {
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<RemovalValues>({ defaultValues: { reason: '' } });
+  const disabled = actionDisabled || isSubmitting;
   return (
     <form className="request-queue-action-form" aria-label="Administrative request removal" onSubmit={handleSubmit((values) => onSubmit(values.reason.trim()))}>
       <h4>Remove request from the active queue</h4>

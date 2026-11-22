@@ -70,7 +70,7 @@ export function PresentationQueue(props: QueueVerticalProps) {
       deepLinkMissing={missing}
       actionError={runner.actionError}
       renderItem={(item) => {
-        const busy = runner.pendingRequestId === item.id;
+        const busy = runner.pendingRequestIds.has(item.id);
         const disabled = busy || actionsBlocked;
         return (
           <RequestQueueCard key={item.id} item={item} queueLabel="Waiting for presentation" highlighted={item.id === selectedRequestId}>
