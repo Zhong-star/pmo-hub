@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import type { DataSourceOptions } from 'typeorm';
 import { ResourcePerson } from '../people/resource-person.entity';
+import { ResourcePersonClassificationHistory } from '../people/resource-person-classification-history.entity';
 import { ResourceInitiative } from '../initiatives/resource-initiative.entity';
 import { ResourceGroup } from '../groups/resource-group.entity';
 import { ResourceProfile } from '../resource-profiles/resource-profile.entity';
@@ -29,6 +30,7 @@ export function createResourceAllocationDataSourceOptions(databaseUrl?: string):
     ...(databaseUrl ? { url: databaseUrl } : {}),
     entities: [
       ResourcePerson,
+      ResourcePersonClassificationHistory,
       ResourceGroup,
       ResourceProfile,
       ResourceInitiative,

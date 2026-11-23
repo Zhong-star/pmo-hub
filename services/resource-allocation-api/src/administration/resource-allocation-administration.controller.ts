@@ -34,6 +34,7 @@ import {
   ResourceGroupCollectionResponseDto,
   ResourceGroupResponseDto,
   ResourcePersonCollectionResponseDto,
+  ResourcePersonClassificationHistoryCollectionResponseDto,
   ResourcePersonResponseDto,
   ResourceProfileCollectionResponseDto,
   ResourceProfileResponseDto,
@@ -90,6 +91,23 @@ export class ResourceAllocationAdministrationController {
     @Query('active') active?: string,
   ) {
     return this.administrationService.listPeople(localUserId, { limit, cursor, active });
+  }
+
+  @Get('people/:id/classification-history')
+  @ApiOperation({ summary: 'List immutable classification changes for an administrative person' })
+  @ApiSecurity('localProfile')
+  @ApiOkResponse({ type: ResourcePersonClassificationHistoryCollectionResponseDto })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size (default 50, maximum 100).' })
+  @ApiQuery({ name: 'cursor', required: false, type: String })
+  @ApiForbiddenResponse({ description: 'Only an active Admin may view administrative records.' })
+  @ApiNotFoundResponse({ description: 'The person was not found.' })
+  async listPersonClassificationHistory(
+    @Headers(localProfileHeader) localUserId: string | undefined,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.administrationService.listPersonClassificationHistory(localUserId, id, { limit, cursor });
   }
 
   @Post('people')

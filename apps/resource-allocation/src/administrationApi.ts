@@ -23,6 +23,7 @@ type AdminResourcePath<C extends AdminCollection> = {
 }[C];
 
 export type AdminPerson = ApiResponse<'/api/resource-allocation/v1/admin/people/{id}', 'get'>;
+export type ResourcePersonClassification = Exclude<AdminPerson['classification'], null>;
 export type AdminGroup = ApiResponse<'/api/resource-allocation/v1/admin/groups/{id}', 'get'>;
 export type AdminResourceProfile = ApiResponse<'/api/resource-allocation/v1/admin/resource-profiles/{id}', 'get'>;
 export type AdminInitiative = ApiResponse<'/api/resource-allocation/v1/admin/initiatives/{id}', 'get'>;
