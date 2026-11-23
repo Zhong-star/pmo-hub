@@ -83,15 +83,34 @@ test('reviews a batch, normalizes decimal commas, and rejects invalid hours befo
   await page.getByLabel('Start date for line 1').fill(dateAfter(2));
   await page.getByLabel('End date for line 1').fill(dateAfter(9));
   await page.getByLabel('Weekly hours for line 1').fill('0,04');
-  await page.getByRole('button', { name: 'Review submission' }).click();
+  await page.getByRole('button', { name: 'Add request line' }).click();
   await expect(page.getByText(/round to at least 0\.1 hours/i)).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Review your requests' })).toHaveCount(0);
 
   await page.getByLabel('Weekly hours for line 1').fill('40.04');
-  await page.getByRole('button', { name: 'Review submission' }).click();
+  await page.getByRole('button', { name: 'Add request line' }).click();
   await expect(page.getByText(/cannot exceed 40 hours/i)).toBeVisible();
 
   await page.getByLabel('Weekly hours for line 1').fill('1,25');
+  await page.getByRole('button', { name: 'Add request line' }).click();
+  const firstLine = page.getByRole('article', { name: 'Request line 1', exact: true });
+  await expect(firstLine.getByText(/1\.3 hours per week/)).toBeVisible();
+  await firstLine.getByRole('button', { name: 'Edit line 1' }).click();
+  await expect(page.getByLabel('Resource profile for line 1')).toHaveValue(profile.id);
+  await page.getByLabel('Comment for line 1').fill('Updated before review');
+  await expect(page.getByRole('button', { name: 'Review submission' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(firstLine.getByText('Updated before review')).toBeVisible();
+
+  await page.getByLabel('Group for line 2').selectOption(group.id);
+  await page.getByLabel('Resource profile for line 2').selectOption(profile.id);
+  await page.getByLabel('Start date for line 2').fill(dateAfter(3));
+  await page.getByLabel('End date for line 2').fill(dateAfter(7));
+  await page.getByLabel('Weekly hours for line 2').fill('8');
+  await page.getByRole('button', { name: 'Add request line' }).click();
+  await expect(page.getByText('2 requests added', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Remove line 2' }).click();
+  await expect(page.getByRole('article', { name: 'Request line 2', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Review submission' }).click();
   await expect(page.getByRole('heading', { name: 'Review your requests' })).toBeVisible();
   await expect(page.getByText('1.3 hours per week')).toBeVisible();
@@ -103,7 +122,7 @@ test('reviews a batch, normalizes decimal commas, and rejects invalid hours befo
   expect(postedBody).toMatchObject({
     initiativeId: initiative.id,
     category: 'EXECUTION_PROJECT',
-    lines: [{ groupId: group.id, resourceProfileId: profile.id, weeklyHours: 1.3 }],
+    lines: [{ groupId: group.id, resourceProfileId: profile.id, weeklyHours: 1.3, comment: 'Updated before review' }],
   });
   expect((postedBody?.lines as Array<Record<string, unknown>>)[0]?.attemptKey).toMatch(/^[0-9a-f-]{36}$/i);
 });
@@ -141,6 +160,7 @@ test('blocks area changes until the submission receipt and does not resend accep
   await page.getByLabel('Start date for line 1').fill(dateAfter(2));
   await page.getByLabel('End date for line 1').fill(dateAfter(9));
   await page.getByLabel('Weekly hours for line 1').fill('4');
+  await page.getByRole('button', { name: 'Add request line' }).click();
   await page.getByRole('button', { name: 'Review submission' }).click();
   await page.getByRole('button', { name: 'Send 1 request' }).click();
   await postStarted;
@@ -221,6 +241,7 @@ test('recovers a durable submission after reload and offers correction only for 
   await expect(page.getByLabel('Category')).toHaveValue('EXECUTION_PROJECT');
   await expect(page.getByLabel('Weekly hours for line 1')).toHaveValue('0.04');
   await page.getByLabel('Weekly hours for line 1').fill('4,5');
+  await page.getByRole('button', { name: 'Add request line' }).click();
   await page.getByRole('button', { name: 'Review submission' }).click();
   await page.getByRole('button', { name: 'Send 1 request' }).click();
   await expect(page.getByText(/Submission submission-retry was received/i)).toBeVisible();
@@ -357,6 +378,7 @@ test('retries an unconfirmed envelope after reload with the same durable keys an
   await page.getByLabel('Start date for line 1').fill(dateAfter(2));
   await page.getByLabel('End date for line 1').fill(dateAfter(9));
   await page.getByLabel('Weekly hours for line 1').fill('8');
+  await page.getByRole('button', { name: 'Add request line' }).click();
   await page.getByRole('button', { name: 'Review submission' }).click();
   await page.getByRole('button', { name: 'Send 1 request' }).click();
   await expect(page.getByText(/receipt could not be confirmed/i)).toBeVisible();

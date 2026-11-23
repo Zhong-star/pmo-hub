@@ -303,12 +303,35 @@ test('keeps all six areas readable in both themes and reflows for keyboard and n
         await page.getByLabel('End date for line 1').fill('2027-01-19');
         await page.getByLabel('Weekly hours for line 1').fill('8');
         await page.getByLabel(/Comment for line 1/).fill('Support the platform reliability rollout.');
+        await page.getByRole('button', { name: 'Add request line' }).click();
         await page.getByRole('button', { name: 'Review submission' }).click();
         await expect(page.getByRole('heading', { name: 'Review your requests' })).toBeVisible();
         await capture(page, `desktop-${theme}-new-request-review`);
         await page.getByRole('button', { name: 'Edit requests' }).click();
-        await expect(page.getByLabel('Resource profile for line 1')).toHaveAttribute('aria-invalid', 'false');
+        const editor = page.getByRole('form', { name: 'Request line editor' });
+        const cards = page.getByRole('region', { name: 'Request lines' });
+        const desktopViewport = page.viewportSize()!;
+        await page.setViewportSize({ ...desktopViewport, height: 1200 });
         await capture(page, `desktop-${theme}-new-request-filled`);
+        const editLine = cards.getByRole('button', { name: 'Edit line 1' });
+        await editLine.focus();
+        await page.keyboard.press('Enter');
+        await expect(editor.getByLabel('Group for line 1')).toBeFocused();
+        await expect(editor.getByLabel('Resource profile for line 1')).toHaveValue(resourceProfile.id);
+        const desktopEditor = (await editor.boundingBox())!;
+        const desktopCards = (await cards.boundingBox())!;
+        expect(desktopCards.x).toBeGreaterThan(desktopEditor.x + desktopEditor.width);
+        await capture(page, `desktop-${theme}-new-request-editing`);
+
+        for (const width of [640, 390]) {
+          await page.setViewportSize({ width, height: 900 });
+          const narrowEditor = (await editor.boundingBox())!;
+          const narrowCards = (await cards.boundingBox())!;
+          expect(narrowCards.y).toBeGreaterThan(narrowEditor.y + narrowEditor.height);
+          expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+          await capture(page, `narrow-${width}-${theme}-new-request`);
+        }
+        await page.setViewportSize(desktopViewport);
 
         const discardPrompt = page.waitForEvent('dialog');
         const navigationClick = navigation.getByRole('link', { name: 'Request queues', exact: true }).click();
