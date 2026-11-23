@@ -12,6 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiConsumes,
   ApiCreatedResponse,
   ApiForbiddenResponse,
@@ -97,9 +98,31 @@ export class ResourceAllocationAdministrationController {
   @Get('people/:id/classification-history')
   @ApiOperation({ summary: 'List immutable classification changes for an administrative person' })
   @ApiSecurity('localProfile')
-  @ApiOkResponse({ type: ResourcePersonClassificationHistoryCollectionResponseDto })
+  @ApiOkResponse({
+    type: ResourcePersonClassificationHistoryCollectionResponseDto,
+    examples: {
+      paginated: {
+        summary: 'A page with a continuation cursor',
+        value: {
+          items: [{
+            id: '11111111-1111-4111-8111-111111111111',
+            previousClassification: 'INTERNAL',
+            nextClassification: 'THIRD_PARTY',
+            actor: {
+              personId: '22222222-2222-4222-8222-222222222222',
+              displayName: 'Morgan Admin',
+              role: 'ALLOCATION_ADMIN',
+            },
+            occurredAt: '2026-11-23T09:00:00.000Z',
+          }],
+          page: { nextCursor: 'opaque-cursor', limit: 1 },
+        },
+      },
+    },
+  })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size (default 50, maximum 100).' })
   @ApiQuery({ name: 'cursor', required: false, type: String })
+  @ApiBadRequestResponse({ description: 'The page limit or cursor is invalid.' })
   @ApiForbiddenResponse({ description: 'Only an active Admin may view administrative records.' })
   @ApiNotFoundResponse({ description: 'The person was not found.' })
   async listPersonClassificationHistory(
@@ -262,6 +285,7 @@ export class ResourceAllocationAdministrationController {
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'cursor', required: false, type: String })
   @ApiQuery({ name: 'active', required: false, enum: ['true', 'false'] })
+  @ApiBadRequestResponse({ description: 'The page limit, cursor, or active filter is invalid.' })
   @ApiForbiddenResponse({ description: 'An active Admin or an in-scope Moderator, Supervisor, or Manager is required.' })
   async listResourceProfiles(
     @Headers(localProfileHeader) localUserId: string | undefined,
@@ -278,6 +302,7 @@ export class ResourceAllocationAdministrationController {
   @ApiOkResponse({ type: ResourceGroupSelectionCollectionDto, description: 'Only active groups in the current profile-management scope, with identifier and name.' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size (default 50, maximum 100).' })
   @ApiQuery({ name: 'cursor', required: false, type: String })
+  @ApiBadRequestResponse({ description: 'The page limit or cursor is invalid.' })
   @ApiForbiddenResponse({ description: 'An active Admin or an in-scope Moderator, Supervisor, or Manager is required.' })
   async listManageableResourceProfileGroups(
     @Headers(localProfileHeader) localUserId: string | undefined,
@@ -296,6 +321,7 @@ export class ResourceAllocationAdministrationController {
     ETag: { description: 'Omitted on a replayed receipt; fetch the resource for its current version.', schema: { type: 'string', example: '"1"' } },
     'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } },
   } })
+  @ApiBadRequestResponse({ description: 'The Idempotency-Key is missing or invalid.' })
   @ApiForbiddenResponse({ description: 'An active Admin or an in-scope Moderator, Supervisor, or Manager is required.' })
   @ApiResponse({ status: 422, description: 'The profile must belong to an active group.' })
   async createResourceProfile(

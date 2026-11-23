@@ -100,9 +100,31 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
       expect.objectContaining({ name: 'limit', required: false }),
       expect.objectContaining({ name: 'cursor', required: false }),
     ]));
-    expect(history.responses['200'].content).toHaveProperty('application/json');
+    expect(history.responses['200'].content).toMatchObject({
+      'application/json': {
+        examples: {
+          paginated: {
+            value: {
+              items: [{ previousClassification: 'INTERNAL', nextClassification: 'THIRD_PARTY' }],
+              page: { nextCursor: expect.any(String), limit: 1 },
+            },
+          },
+        },
+      },
+    });
+    expect(history.responses['400'].content).toHaveProperty('application/problem+json');
     expect(history.responses['403'].content).toHaveProperty('application/problem+json');
     expect(history.responses['404'].content).toHaveProperty('application/problem+json');
+  });
+
+  it('documents validation errors on scoped resource profile administration', () => {
+    const root = '/api/resource-allocation/v1/admin';
+    const resourceProfiles = contract.paths[`${root}/resource-profiles`];
+    const manageableGroups = contract.paths[`${root}/resource-profile-groups`].get;
+
+    expect(resourceProfiles.get.responses['400'].content).toHaveProperty('application/problem+json');
+    expect(resourceProfiles.post.responses['400'].content).toHaveProperty('application/problem+json');
+    expect(manageableGroups.responses['400'].content).toHaveProperty('application/problem+json');
   });
 
   it('documents minimum selection projections without administrative identity fields', () => {

@@ -672,6 +672,40 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ResourcePersonClassificationHistoryCollectionResponseDto"
+                },
+                "examples": {
+                  "paginated": {
+                    "summary": "A page with a continuation cursor",
+                    "value": {
+                      "items": [
+                        {
+                          "id": "11111111-1111-4111-8111-111111111111",
+                          "previousClassification": "INTERNAL",
+                          "nextClassification": "THIRD_PARTY",
+                          "actor": {
+                            "personId": "22222222-2222-4222-8222-222222222222",
+                            "displayName": "Morgan Admin",
+                            "role": "ALLOCATION_ADMIN"
+                          },
+                          "occurredAt": "2026-11-23T09:00:00.000Z"
+                        }
+                      ],
+                      "page": {
+                        "nextCursor": "opaque-cursor",
+                        "limit": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The page limit or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
                 }
               }
             }
@@ -1516,6 +1550,16 @@
               }
             }
           },
+          "400": {
+            "description": "The page limit, cursor, or active filter is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
           "401": {
             "description": "A local Hub profile is required.",
             "content": {
@@ -1628,6 +1672,16 @@
               }
             }
           },
+          "400": {
+            "description": "The Idempotency-Key is missing or invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
           "401": {
             "description": "A local Hub profile is required.",
             "content": {
@@ -1727,6 +1781,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ResourceGroupSelectionCollectionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The page limit or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
                 }
               }
             }

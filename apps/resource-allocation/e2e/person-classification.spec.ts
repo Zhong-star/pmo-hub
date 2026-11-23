@@ -68,7 +68,7 @@ test('Admin can classify a legacy person and sees non-retroactive and access gui
   await expect(row).toBeVisible();
   await row.getByRole('button', { name: 'Edit person Legacy Person' }).click();
   await expect(page.getByLabel('Classification')).toHaveValue('');
-  await expect(page.getByText('Classification does not change access or roles. New allocations use this value; existing allocations are not reclassified.')).toBeVisible();
+  await expect(page.getByText('Classification is informational. It does not change access or roles, and it does not reclassify existing allocations.')).toBeVisible();
 
   await page.getByLabel('Classification').scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/person-classification-light-desktop.png' });
@@ -95,6 +95,11 @@ test('Admin can classify a legacy person and sees non-retroactive and access gui
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Edit person Legacy Person' }).click();
   await expect(page.getByLabel('Classification')).toHaveValue('THIRD_PARTY');
+
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await page.getByRole('heading', { name: 'Administration' }).scrollIntoViewIfNeeded();
+  await expect(page.getByLabel('Classification')).toBeVisible();
+  await page.screenshot({ path: 'test-results/person-classification-dark-desktop.png' });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByLabel('Classification').scrollIntoViewIfNeeded();
