@@ -3,6 +3,8 @@ import { DataSource, type EntityManager } from 'typeorm';
 import { RESOURCE_ALLOCATION_DATA_SOURCE, RESOURCE_ALLOCATION_DATABASE_CONFIGURED } from '../database/database.module';
 import { ResourceAllocationRole } from '../people/resource-allocation-role';
 import { ResourcePerson } from '../people/resource-person.entity';
+import { ResourcePersonClassification } from '../people/resource-person-classification';
+import { ResourcePersonClassificationHistory } from '../people/resource-person-classification-history.entity';
 import { ResourceAllocationException, translateResourceAllocationDatabaseError } from '../access/resource-allocation-problem';
 import { parseStrongVersionIfMatch } from '../access/request-headers';
 import { ResourceInitiative } from '../initiatives/resource-initiative.entity';
@@ -24,6 +26,15 @@ import {
 import { runIdempotentOperation } from './idempotency/run-idempotent-operation';
 import { lockResourceAllocationAdministrationWrites } from './resource-allocation-write-lock';
 import { revalidateRequestsForEligibilityChange } from '../requests/revalidate-requests-for-eligibility-change';
+import { decodeOpaqueCursor, encodeOpaqueCursor } from '../common/opaque-cursor';
+
+interface PersonClassificationHistoryCursor {
+  version: 1;
+  personId: string;
+  sequence: string;
+}
+
+const historyCursorSequencePattern = /^[1-9]\d*$/;
 
 
 @Injectable()
@@ -96,6 +107,61 @@ export class ResourceAllocationAdministrationService {
     return this.toPerson(person);
   }
 
+  async listPersonClassificationHistory(
+    localUserId: string | undefined,
+    personId: string,
+    filters: { limit?: string; cursor?: string },
+  ) {
+    await this.requireAdmin(localUserId);
+    const person = await this.dataSource.getRepository(ResourcePerson).findOne({ where: { id: personId } });
+    if (!person) throw this.notFound('Person');
+
+    const page = parseAdminCollectionQuery('people', { limit: filters.limit });
+    let afterSequence: string | undefined;
+    if (filters.cursor) {
+      let cursor: Partial<PersonClassificationHistoryCursor>;
+      try {
+        cursor = decodeOpaqueCursor<Partial<PersonClassificationHistoryCursor>>(filters.cursor);
+      } catch {
+        throw this.invalidHistoryCursor();
+      }
+      if (
+        cursor.version !== 1 ||
+        cursor.personId !== personId ||
+        typeof cursor.sequence !== 'string' ||
+        !historyCursorSequencePattern.test(cursor.sequence)
+      ) {
+        throw this.invalidHistoryCursor();
+      }
+      afterSequence = cursor.sequence;
+    }
+
+    const query = this.dataSource.getRepository(ResourcePersonClassificationHistory).createQueryBuilder('history')
+      .where('history.person_id = :personId', { personId })
+      .orderBy('history.sequence', 'ASC')
+      .take(page.limit + 1);
+    if (afterSequence) {
+      query.andWhere('history.sequence > :sequence', { sequence: afterSequence });
+    }
+    const found = await query.getMany();
+    const hasNext = found.length > page.limit;
+    const items = found.slice(0, page.limit);
+    const lastItem = items[items.length - 1];
+    return {
+      items: items.map((event) => this.toPersonClassificationHistoryEvent(event)),
+      page: {
+        nextCursor: hasNext && lastItem
+          ? encodeOpaqueCursor({
+            version: 1,
+            personId,
+            sequence: lastItem.sequence,
+          } satisfies PersonClassificationHistoryCursor)
+          : null,
+        limit: page.limit,
+      },
+    };
+  }
+
   async createPerson(localUserId: string | undefined, idempotencyKey: string | undefined, input: CreateResourcePersonRequestDto) {
     const key = this.parseIdempotencyKey(idempotencyKey);
     try {
@@ -107,6 +173,7 @@ export class ResourceAllocationAdministrationService {
           displayName: input.displayName.trim(),
           email: input.email.trim(),
           role,
+          classification: input.classification ?? null,
           active,
           groupId: input.groupId ?? null,
         };
@@ -123,6 +190,16 @@ export class ResourceAllocationAdministrationService {
             groupId,
             coveredGroupIds: [],
           }));
+          if (person.classification !== null) {
+            await this.recordPersonClassificationChange(
+              manager,
+              person.id,
+              actor.id,
+              actor,
+              null,
+              person.classification,
+            );
+          }
           return this.toPerson(person);
         });
         return operation;
@@ -159,16 +236,31 @@ export class ResourceAllocationAdministrationService {
         const nextRole = input.role ?? person.role;
         const nextActive = input.active ?? person.active;
         const nextGroupId = input.groupId === undefined ? person.groupId : input.groupId;
+        const previousClassification = person.classification ?? null;
+        const nextClassification = input.classification === undefined
+          ? previousClassification
+          : input.classification ?? null;
         const previousGroupId = person.groupId;
         await this.ensurePersonCanChangeRoleOrActive(manager, person, nextRole, nextActive);
         person.localUserId = input.localUserId?.trim() ?? person.localUserId;
         person.displayName = input.displayName?.trim() ?? person.displayName;
         person.email = input.email?.trim() ?? person.email;
         person.role = nextRole;
+        person.classification = nextClassification;
         const wasActive = person.active;
         person.active = nextActive;
         person.groupId = await this.validatePersonGroup(manager, nextRole, nextGroupId, nextActive);
         const saved = await repository.save(person);
+        if (previousClassification !== nextClassification) {
+          await this.recordPersonClassificationChange(
+            manager,
+            saved.id,
+            actor.id,
+            actor,
+            previousClassification,
+            nextClassification,
+          );
+        }
         if ((wasActive && !saved.active) || previousGroupId !== saved.groupId) {
           await revalidateRequestsForEligibilityChange(manager, { kind: 'PERSON', id: saved.id }, actor);
         }
@@ -461,10 +553,48 @@ export class ResourceAllocationAdministrationService {
       email: person.email,
       active: person.active,
       role: person.role,
+      classification: person.classification ?? null,
       groupId: person.groupId,
       coveredGroupIds: person.coveredGroupIds,
       version: person.version,
     };
+  }
+
+  private toPersonClassificationHistoryEvent(event: ResourcePersonClassificationHistory) {
+    return {
+      id: event.id,
+      previousClassification: event.previousClassification ?? null,
+      nextClassification: event.nextClassification ?? null,
+      actor: event.actorSnapshot,
+      occurredAt: event.occurredAt.toISOString(),
+    };
+  }
+
+  private async recordPersonClassificationChange(
+    manager: EntityManager,
+    personId: string,
+    actorId: string,
+    actor: ResourcePerson,
+    previousClassification: ResourcePersonClassification | null,
+    nextClassification: ResourcePersonClassification | null,
+  ): Promise<void> {
+    const repository = manager.getRepository(ResourcePersonClassificationHistory);
+    await repository.save(repository.create({
+      personId,
+      actorId,
+      actorSnapshot: { personId: actor.id, displayName: actor.displayName, role: actor.role },
+      previousClassification,
+      nextClassification,
+    }));
+  }
+
+  private invalidHistoryCursor(): ResourceAllocationException {
+    return new ResourceAllocationException(
+      'VALIDATION_ERROR',
+      'Request validation failed',
+      400,
+      'The cursor is invalid for this person classification history.',
+    );
   }
 
   private toGroup(group: ResourceGroup) {

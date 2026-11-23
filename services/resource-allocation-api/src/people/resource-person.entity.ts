@@ -1,5 +1,6 @@
 import { Column, Entity, PrimaryGeneratedColumn, VersionColumn } from 'typeorm';
 import { ResourceAllocationRole } from './resource-allocation-role';
+import { ResourcePersonClassification } from './resource-person-classification';
 
 @Entity({ name: 'resource_people' })
 export class ResourcePerson {
@@ -17,6 +18,9 @@ export class ResourcePerson {
 
   @Column({ type: 'varchar', length: 40 })
   role!: ResourceAllocationRole;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  classification!: ResourcePersonClassification | null;
 
   @Column({ type: 'boolean', default: true })
   active!: boolean;
