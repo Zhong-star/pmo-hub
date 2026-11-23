@@ -740,7 +740,7 @@ function RecordEditor({
                   <option value="THIRD_PARTY">Third party</option>
                 </select>
               </label>
-              <p id="admin-classification-help" className="field-help">Classification does not change access or roles. New allocations use this value; existing allocations are not reclassified.</p>
+              <p id="admin-classification-help" className="field-help">Classification is informational. It does not change access or roles, and it does not reclassify existing allocations.</p>
             </div>
             <div className="field-with-help">
               {renderSelect('groupId', 'Group', groupOptions.map((group) => ({ id: group.id, label: group.name })), role === 'ALLOCATION_MODERATOR')}

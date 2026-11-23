@@ -2304,6 +2304,15 @@ export interface operations {
                     "application/json": components["schemas"]["ResourcePersonClassificationHistoryCollectionResponseDto"];
                 };
             };
+            /** @description The page limit or cursor is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
             /** @description A local Hub profile is required. */
             401: {
                 headers: {
@@ -2846,6 +2855,15 @@ export interface operations {
                     "application/json": components["schemas"]["ResourceProfileCollectionResponseDto"];
                 };
             };
+            /** @description The page limit, cursor, or active filter is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
             /** @description A local Hub profile is required. */
             401: {
                 headers: {
@@ -2910,6 +2928,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResourceProfileResponseDto"];
+                };
+            };
+            /** @description The Idempotency-Key is missing or invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
             /** @description A local Hub profile is required. */
@@ -2980,6 +3007,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResourceGroupSelectionCollectionDto"];
+                };
+            };
+            /** @description The page limit or cursor is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
             /** @description A local Hub profile is required. */
