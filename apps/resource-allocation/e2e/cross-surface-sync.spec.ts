@@ -1406,6 +1406,7 @@ test('updates Requests, Request queues, and Notifications immediately without re
   await page.getByLabel('Start date for line 1').fill(startDate);
   await page.getByLabel('End date for line 1').fill(endDate);
   await page.getByLabel('Weekly hours for line 1').fill('10');
+  await page.getByRole('button', { name: 'Add request line' }).click();
   await page.getByRole('button', { name: 'Review submission' }).click();
   await page.getByRole('button', { name: 'Send 1 request' }).click();
 

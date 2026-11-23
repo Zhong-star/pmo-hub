@@ -419,20 +419,28 @@ h1 {
 .submission-form { display: grid; gap: 20px; }
 .submission-global-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
 .submission-global-fields .form-field { max-width: 560px; }
-.submission-lines-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-top: 12px; }
+.submission-lines-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
 .submission-lines-heading h3, .submission-results-heading h3, .submission-review h3 { margin: 0; color: var(--text); font-size: 20px; letter-spacing: -.02em; }
-.submission-lines-heading p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
-.submission-line-editor-list { display: grid; gap: 16px; }
+.submission-lines-heading span { color: var(--muted); font-size: 13px; }
+.submission-composer { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); align-items: start; gap: 20px; }
+.submission-line-form, .submission-composer-list { min-width: 0; }
+.submission-composer-list { display: grid; gap: 12px; }
+.submission-composer-list .submission-result-row { background: var(--surface-subtle); overflow-wrap: anywhere; }
+.submission-composer-list .submission-result-topline { flex-wrap: wrap; gap: 8px 16px; }
+.submission-card-actions, .submission-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.submission-editor-actions { margin-top: 16px; }
+.submission-editor-actions .primary-button { flex: 1; }
+.submission-card-actions button:disabled { cursor: not-allowed; opacity: .5; }
+.submission-review-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 20px; border-top: 1px solid var(--border); padding-top: 16px; }
+.submission-review-bar .field-help { margin: 4px 0 0; }
 .submission-line-card { min-width: 0; margin: 0; padding: clamp(16px, 2.5vw, 24px); border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-subtle); }
 .submission-line-card legend { padding: 0 8px; color: var(--text-heading); font-size: 15px; font-weight: 750; }
 .submission-line-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
-.submission-comment-field { grid-column: 1 / -1; }
+.submission-line-grid .form-field { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.submission-line-full-field { grid-column: 1 / -1; }
 .form-field textarea { width: 100%; min-height: 88px; padding: 9px 11px; resize: vertical; border: 1px solid var(--control-border); border-radius: var(--control-radius); background: var(--surface); color: var(--text); font: inherit; font-weight: 450; }
 .form-field textarea[aria-invalid="true"] { border-color: var(--error-text); }
 .optional-label { color: var(--muted); font-weight: 450; }
-.line-actions { display: flex; justify-content: flex-end; padding-top: 12px; }
-.line-actions button:disabled { cursor: not-allowed; opacity: .5; }
-.submission-limits { margin: -4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .submission-actions { padding-top: 0; }
 .submission-review { display: grid; gap: 18px; }
 .submission-review > div:first-child > p:last-child { margin: 8px 0 0; color: var(--muted); }
@@ -556,9 +564,12 @@ h1 {
 .request-modal form { display: grid; gap: 16px; }
 .request-modal textarea { min-height: 120px; }
 
+@media (max-width: 960px) {
+  .submission-composer { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 760px) {
   .submission-global-fields, .submission-line-grid { grid-template-columns: 1fr; }
-  .submission-comment-field { grid-column: 1; }
   .submission-list-item { grid-template-columns: 1fr 1fr; align-items: start; }
   .submission-list-title { grid-column: 1 / -1; }
   .request-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -569,8 +580,8 @@ h1 {
 
 @media (max-width: 560px) {
   .submission-panel { padding: 20px 16px; border-radius: 14px; }
-  .submission-lines-heading, .submission-panel-heading, .submission-results-heading, .notification-heading { align-items: stretch; flex-direction: column; }
-  .submission-lines-heading .secondary-button, .submission-panel-heading .secondary-button, .submission-results-heading .secondary-button, .notification-heading .secondary-button { align-self: flex-start; }
+  .submission-panel-heading, .submission-results-heading, .notification-heading { align-items: stretch; flex-direction: column; }
+  .submission-panel-heading .secondary-button, .submission-results-heading .secondary-button, .notification-heading .secondary-button { align-self: flex-start; }
   .unknown-receipt, .submission-failure-detail { align-items: stretch; flex-direction: column; }
   .unknown-receipt .primary-button, .submission-failure-detail .secondary-button { align-self: flex-start; }
   .submission-actions { flex-direction: column; }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useFieldArray, useForm, useWatch, type Control, type FieldErrors, type UseFormGetValues, type UseFormRegister, type UseFormSetValue } from 'react-hook-form';
+import { useFieldArray, useForm, useWatch, type UseFormReturn } from 'react-hook-form';
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
 import { REQUESTS_QUERY_ROOT } from './requestApi';
 import { REQUEST_QUEUES_QUERY_ROOT } from './requestQueueApi';
@@ -65,7 +65,7 @@ const blankLine = (): RequestLineDraft => ({
   comment: '',
 });
 
-const defaultValues: SubmissionFormValues = { initiativeId: '', category: '', lines: [blankLine()] };
+const defaultValues: SubmissionFormValues = { initiativeId: '', category: '', lines: [] };
 
 function outboxStorageKey(localUserId: string) {
   return `pmo-hub.resource-allocation.submission-outbox:${encodeURIComponent(localUserId)}`;
@@ -141,43 +141,38 @@ function requestErrorMessage(error: unknown) {
 }
 
 function LineEditor({
-  control,
+  form,
   index,
   groups,
   profiles,
-  register,
-  setValue,
-  getValues,
-  errors,
-  onRemove,
-  canRemove,
+  disabled,
+  children,
 }: {
-  control: Control<SubmissionFormValues>;
+  form: UseFormReturn<RequestLineDraft>;
   index: number;
   groups: SelectionItem<'groups'>[];
   profiles: SelectionItem<'resource-profiles'>[];
-  register: UseFormRegister<SubmissionFormValues>;
-  setValue: UseFormSetValue<SubmissionFormValues>;
-  getValues: UseFormGetValues<SubmissionFormValues>;
-  errors: FieldErrors<SubmissionFormValues>;
-  onRemove: () => void;
-  canRemove: boolean;
+  disabled: boolean;
+  children: React.ReactNode;
 }) {
-  const selectedGroupId = useWatch({ control, name: `lines.${index}.groupId` });
-  const rowErrors = errors.lines?.[index];
+  const { control, register, setValue, getValues, formState: { errors: rowErrors } } = form;
+  const [selectedGroupId, selectedProfileId, startDate] = useWatch({
+    control,
+    name: ['groupId', 'resourceProfileId', 'startDate'],
+  });
   const eligibleProfiles = profiles.filter((profile) => profile.groupId === selectedGroupId);
 
   return (
-    <fieldset className="submission-line-card">
+    <fieldset className="submission-line-card" disabled={disabled}>
       <legend>Request line {index + 1}</legend>
       <div className="submission-line-grid">
-        <label className="form-field">
+        <label className="form-field submission-line-full-field">
           <span>Group</span>
           <select
             aria-label={`Group for line ${index + 1}`}
-            {...register(`lines.${index}.groupId`, {
+            {...register('groupId', {
               required: 'Choose a group.',
-              onChange: () => setValue(`lines.${index}.resourceProfileId`, '', { shouldDirty: true, shouldValidate: true }),
+              onChange: () => setValue('resourceProfileId', '', { shouldDirty: true, shouldValidate: true }),
             })}
             aria-invalid={Boolean(rowErrors?.groupId)}
           >
@@ -187,17 +182,18 @@ function LineEditor({
           {rowErrors?.groupId?.message && <span className="field-error">{rowErrors.groupId.message}</span>}
         </label>
 
-        <label className="form-field">
+        <label className="form-field submission-line-full-field">
           <span>Resource profile</span>
           <select
             aria-label={`Resource profile for line ${index + 1}`}
-            {...register(`lines.${index}.resourceProfileId`, {
+            {...register('resourceProfileId', {
               required: 'Choose a resource profile.',
               validate: (value) => !value || eligibleProfiles.some((profile) => profile.id === value)
                 || 'Choose a profile in the selected group.',
             })}
             aria-invalid={Boolean(rowErrors?.resourceProfileId)}
             disabled={!selectedGroupId}
+            value={selectedProfileId}
           >
             <option value="">Choose a resource profile</option>
             {eligibleProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
@@ -211,7 +207,7 @@ function LineEditor({
             type="date"
             aria-label={`Start date for line ${index + 1}`}
             min={todayLocalDate()}
-            {...register(`lines.${index}.startDate`, {
+            {...register('startDate', {
               required: 'Choose a start date.',
               validate: (value) => !value || value >= todayLocalDate() || 'Start date must be today or later.',
             })}
@@ -225,11 +221,11 @@ function LineEditor({
           <input
             type="date"
             aria-label={`End date for line ${index + 1}`}
-            min={getValues(`lines.${index}.startDate`) || todayLocalDate()}
-            {...register(`lines.${index}.endDate`, {
+            min={startDate || todayLocalDate()}
+            {...register('endDate', {
               required: 'Choose an end date.',
               validate: (value) => {
-                const startDate = getValues(`lines.${index}.startDate`);
+                const startDate = getValues('startDate');
                 if (!value) return true;
                 if (value < todayLocalDate()) return 'End date must be today or later.';
                 return !startDate || value >= startDate || 'End date cannot be before the start date.';
@@ -240,14 +236,14 @@ function LineEditor({
           {rowErrors?.endDate?.message && <span className="field-error">{rowErrors.endDate.message}</span>}
         </label>
 
-        <label className="form-field">
+        <label className="form-field submission-line-full-field">
           <span>Weekly hours</span>
           <input
             type="text"
             inputMode="decimal"
             aria-label={`Weekly hours for line ${index + 1}`}
             placeholder="e.g. 20 or 20,5"
-            {...register(`lines.${index}.weeklyHours`, {
+            {...register('weeklyHours', {
               required: 'Enter weekly hours.',
               validate: (value) => normalizeWeeklyHours(value).error ?? true,
             })}
@@ -257,13 +253,13 @@ function LineEditor({
           {rowErrors?.weeklyHours?.message && <span className="field-error">{rowErrors.weeklyHours.message}</span>}
         </label>
 
-        <label className="form-field submission-comment-field">
+        <label className="form-field submission-line-full-field">
           <span>Comment <span className="optional-label">(optional)</span></span>
           <textarea
             aria-label={`Comment for line ${index + 1}`}
             rows={3}
             maxLength={2000}
-            {...register(`lines.${index}.comment`, {
+            {...register('comment', {
               maxLength: { value: 2000, message: 'Comments may contain up to 2,000 characters.' },
             })}
             aria-invalid={Boolean(rowErrors?.comment)}
@@ -272,11 +268,7 @@ function LineEditor({
           {rowErrors?.comment?.message && <span className="field-error">{rowErrors.comment.message}</span>}
         </label>
       </div>
-      <div className="line-actions">
-        <button type="button" className="text-button" onClick={onRemove} disabled={!canRemove}>
-          Remove line {index + 1}
-        </button>
-      </div>
+      {children}
     </fieldset>
   );
 }
@@ -437,6 +429,7 @@ function SubmissionResults({
 
 export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionWorkspaceProps) {
   const queryClient = useQueryClient();
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [reviewMode, setReviewMode] = useState(false);
   const [notice, setNotice] = useState('');
   const [sendError, setSendError] = useState('');
@@ -450,7 +443,16 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
   });
   const { control, register, setValue, getValues, handleSubmit, reset, setError, formState: { errors, isSubmitting, isDirty } } = form;
   const values = useWatch({ control }) as SubmissionFormValues;
-  const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
+  const { fields, append, remove, replace, update } = useFieldArray({ control, name: 'lines' });
+
+  const lineForm = useForm<RequestLineDraft>({ defaultValues: blankLine() });
+  const { isDirty: lineDirty, isSubmitting: lineSubmitting } = lineForm.formState;
+  const linePending = lineDirty || editingIndex !== null;
+
+  function clearLineEditor() {
+    lineForm.reset(blankLine());
+    setEditingIndex(null);
+  }
 
   const groupsQuery = useSelectionQuery(localUserId, 'groups');
   const profilesQuery = useSelectionQuery(localUserId, 'resource-profiles');
@@ -474,7 +476,7 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
   const createMutation = useMutation({
     mutationFn: (envelope: StoredEnvelope) => createSubmission(localUserId, envelope.payload, envelope.idempotencyKey),
   });
-  const guardSubmissionClose = useNavigationFormProtection('submission', isDirty, createMutation.isPending);
+  const guardSubmissionClose = useNavigationFormProtection('submission', isDirty || lineDirty, createMutation.isPending);
 
   const selectionAccessError = hasAccessError(groupsQuery.error)
     || hasAccessError(profilesQuery.error)
@@ -515,6 +517,7 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
       setNotice(`Submission ${receipt.id} was received. Line processing can continue after you close this page.`);
       setSelectedSubmissionId(receipt.id);
       reset(defaultValues);
+      clearLineEditor();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: [...SUBMISSIONS_QUERY_ROOT, localUserId] }),
         queryClient.invalidateQueries({ queryKey: [...SUBMISSIONS_QUERY_ROOT, localUserId, receipt.id] }),
@@ -539,6 +542,7 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
   }
 
   const onReview = handleSubmit(() => {
+    if (linePending || lineSubmitting || fields.length === 0) return;
     setReviewMode(true);
     setSendError('');
     setNotice('');
@@ -565,6 +569,16 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
     await submitStoredEnvelope(envelope);
   });
 
+  const saveLine = lineForm.handleSubmit((line) => {
+    if (editingIndex !== null) {
+      update(editingIndex, line);
+    } else if (fields.length < 100) {
+      append(line, { shouldFocus: false });
+    }
+    clearLineEditor();
+    requestAnimationFrame(() => lineForm.setFocus('groupId'));
+  });
+
   function retryFailedLine(_submission: SubmissionSummary, line: SubmissionLine) {
     const initiativeId = line.submittedConditions.initiativeId;
     const category = line.submittedConditions.category;
@@ -575,14 +589,16 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
       setReviewMode(false);
       setValue('initiativeId', initiativeId, { shouldDirty: true, shouldValidate: true });
       setValue('category', category, { shouldDirty: true, shouldValidate: true });
-      replace([{
+      replace([]);
+      setEditingIndex(null);
+      lineForm.reset({
         groupId: line.submittedConditions.groupId,
         resourceProfileId: line.submittedConditions.resourceProfileId,
         startDate: line.submittedConditions.startDate,
         endDate: line.submittedConditions.endDate,
         weeklyHours: String(line.submittedConditions.weeklyHours),
         comment: line.submittedConditions.comment ?? '',
-      }]);
+      }, { keepDefaultValues: true });
       document.getElementById('new-request-batch')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
@@ -679,10 +695,10 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
         )}
 
         {!outbox && !selectionLoading && (
-          <form className="submission-form" onSubmit={(event) => void (reviewMode ? onSend(event) : onReview(event))} noValidate>
+          <div className="submission-form">
             {!reviewMode ? (
               <>
-                <div className="submission-global-fields">
+                <form id="request-batch-review" className="submission-global-fields" onSubmit={onReview} noValidate>
                   <label className="form-field">
                     <span>Initiative (ITDM)</span>
                     <select
@@ -709,49 +725,84 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
                     </select>
                     {errors.category?.message && <span className="field-error">{errors.category.message}</span>}
                   </label>
-                </div>
+                </form>
 
-                <div className="submission-lines-heading">
-                  <div>
-                    <h3>Request lines</h3>
-                    <p>{fields.length} of 100 lines · Each line creates an independent request.</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => append(blankLine())}
-                    disabled={fields.length >= 100}
-                  >
-                    Add request line
-                  </button>
-                </div>
-
-                <div className="submission-line-editor-list">
-                  {fields.map((field, index) => (
+                <div className="submission-composer">
+                  <form className="submission-line-form" aria-label="Request line editor" onSubmit={saveLine} noValidate>
                     <LineEditor
-                      key={field.id}
-                      control={control}
-                      index={index}
+                      form={lineForm}
+                      index={editingIndex ?? fields.length}
                       groups={groups}
                       profiles={profiles}
-                      register={register}
-                      setValue={setValue}
-                      getValues={getValues}
-                      errors={errors}
-                      canRemove={fields.length > 1}
-                      onRemove={() => remove(index)}
-                    />
-                  ))}
+                      disabled={editingIndex === null && fields.length >= 100}
+                    >
+                      <div className="submission-editor-actions">
+                        {linePending && (
+                          <button type="button" className="secondary-button" onClick={clearLineEditor} disabled={lineSubmitting}>
+                            {editingIndex === null ? 'Discard draft' : 'Cancel'}
+                          </button>
+                        )}
+                        <button type="submit" className="primary-button" disabled={lineSubmitting || (editingIndex === null && fields.length >= 100)}>
+                          {editingIndex === null ? 'Add request line' : 'Save changes'}
+                        </button>
+                      </div>
+                    </LineEditor>
+                  </form>
+                  <section className="submission-composer-list" aria-labelledby="request-lines-heading">
+                    <div className="submission-lines-heading">
+                      <h3 id="request-lines-heading">Request lines</h3>
+                      <span>{fields.length} of 100</span>
+                    </div>
+                    {fields.length === 0 && <p className="empty-state">Added requests will appear here.</p>}
+                    {fields.map((field, index) => (
+                      <article className="submission-result-row" key={field.id} aria-label={`Request line ${index + 1}`}>
+                        <div className="submission-result-topline">
+                          <h4>{profiles.find((profile) => profile.id === field.resourceProfileId)?.name ?? field.resourceProfileId}</h4>
+                          <div className="submission-card-actions">
+                            <button
+                              type="button"
+                              className="text-button"
+                              disabled={linePending || lineSubmitting}
+                              onClick={() => {
+                                setEditingIndex(index);
+                                lineForm.reset(getValues('lines')[index]);
+                                requestAnimationFrame(() => lineForm.setFocus('groupId'));
+                              }}
+                            >
+                              Edit line {index + 1}
+                            </button>
+                            <button
+                              type="button"
+                              className="text-button"
+                              disabled={linePending || lineSubmitting}
+                              onClick={() => remove(index)}
+                            >
+                              Remove line {index + 1}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="submission-result-conditions">
+                          {groups.find((group) => group.id === field.groupId)?.name ?? field.groupId}
+                          {' · '}{field.startDate} to {field.endDate}
+                          {' · '}{normalizeWeeklyHours(field.weeklyHours).value?.toFixed(1)} hours per week
+                        </p>
+                        {field.comment.trim() && <p className="submission-result-comment">{field.comment.trim()}</p>}
+                      </article>
+                    ))}
+                  </section>
                 </div>
-                <p className="submission-limits">Comments can contain up to 2,000 characters. Dates start today or later, and the end date cannot be before the start date.</p>
-                <div className="form-actions submission-actions">
-                  <button type="submit" className="primary-button" disabled={isSubmitting}>
+                <div className="submission-review-bar">
+                  <div role="status">
+                    <strong>{fields.length} request{fields.length === 1 ? '' : 's'} added</strong>
+                    {linePending && <p className="field-help">Save or discard the current line before reviewing.</p>}
+                  </div>
+                  <button form="request-batch-review" type="submit" className="primary-button" disabled={isSubmitting || lineSubmitting || linePending || fields.length === 0}>
                     Review submission
                   </button>
                 </div>
               </>
             ) : (
-              <section className="submission-review" aria-labelledby="submission-review-heading">
+              <form className="submission-review" aria-labelledby="submission-review-heading" onSubmit={onSend} noValidate>
                 <div>
                   <p className="eyebrow">Final check</p>
                   <h3 id="submission-review-heading">Review your requests</h3>
@@ -787,9 +838,9 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
                     {isSubmitting ? 'Sending…' : `Send ${values.lines.length} request${values.lines.length === 1 ? '' : 's'}`}
                   </button>
                 </div>
-              </section>
+              </form>
             )}
-          </form>
+          </div>
         )}
       </div>
 

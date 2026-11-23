@@ -36,6 +36,7 @@ test('submits through the real API and shows the PostgreSQL worker result', asyn
   await page.getByLabel('End date for line 1').fill(dateAfterBusinessDays(20));
   await page.getByLabel('Weekly hours for line 1').fill('12');
 
+  await page.getByRole('button', { name: 'Add request line' }).click();
   await page.getByRole('button', { name: 'Review submission' }).click();
   await expect(page.getByRole('heading', { name: 'Review your requests' })).toBeVisible();
   await expect(page.getByText(`${dateAfterBusinessDays(10)} to ${dateAfterBusinessDays(20)}`)).toBeVisible();
