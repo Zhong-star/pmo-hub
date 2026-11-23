@@ -15,6 +15,7 @@ import { ResourceRequestAudit } from '../requests/resource-request-audit.entity'
 import { ResourceAllocationNotification } from '../notifications/resource-allocation-notification.entity';
 import { ResourceAllocation } from '../allocations/resource-allocation.entity';
 import { ResourceAllocationHistory } from '../allocations/resource-allocation-history.entity';
+import { ResourceProfileAuditEvent } from '../resource-profiles/resource-profile-audit-event.entity';
 
 export const RESOURCE_ALLOCATION_DATABASE_URL_ENV = 'RESOURCE_ALLOCATION_DATABASE_URL';
 
@@ -33,6 +34,7 @@ export function createResourceAllocationDataSourceOptions(databaseUrl?: string):
       ResourcePersonClassificationHistory,
       ResourceGroup,
       ResourceProfile,
+      ResourceProfileAuditEvent,
       ResourceInitiative,
       ResourceAllocationOperationReceipt,
       ResourceSubmission,

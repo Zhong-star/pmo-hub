@@ -453,7 +453,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
                 >
                   <span className="allocation-list-main">
                     <strong>{allocationTitle(item)}</strong>
-                    <small>{item.person.displayName} · {item.group.name} · {item.resourceProfile.name}</small>
+                    <small>{item.person.displayName} · {item.group.name} · {item.resourceProfile.name}{item.resourceProfile.active ? '' : ' · Inactive profile'}</small>
                   </span>
                   <span className="allocation-list-period">{formatDateRange(item.startDate, item.endDate)}</span>
                   <span className={`allocation-state allocation-state-${item.state.toLowerCase().replaceAll('_', '-')}`}>{stateLabel(item.state)}</span>
@@ -509,7 +509,7 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
               </div>
               <dl className="allocation-metadata">
                 <div><dt>State</dt><dd>{stateLabel(allocation.state)}</dd></div>
-                <div><dt>Resource profile</dt><dd>{allocation.resourceProfile.name}</dd></div>
+                <div><dt>Resource profile</dt><dd>{allocation.resourceProfile.name}{allocation.resourceProfile.active ? '' : ' · Inactive'}</dd></div>
                 <div><dt>Effective period</dt><dd>{formatDateRange(allocation.startDate, allocation.endDate)}</dd></div>
                 <div><dt>Approved period</dt><dd>{formatDateRange(allocation.approvedPeriod.startDate, allocation.approvedPeriod.endDate)}</dd></div>
                 <div><dt>Weekly hours</dt><dd>{formatHours(allocation.weeklyHours)}</dd></div>

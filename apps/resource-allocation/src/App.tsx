@@ -7,6 +7,7 @@ import {
   readSelectedProfileId,
 } from './accessApi';
 import { Administration } from './Administration';
+import { ProfileAdministration } from './ProfileAdministration';
 import { AllocationsWorkspace } from './AllocationsWorkspace';
 import { NotificationsInbox } from './NotificationsInbox';
 import { RequestQueues } from './RequestQueues';
@@ -90,6 +91,7 @@ function ResourceAllocationApp() {
   const isResumingHistory = useRef(false);
   const pendingHistoryNavigation = useRef<{ delta: number; hasPosition: boolean } | null>(null);
   const [adminAccessBlocked, setAdminAccessBlocked] = useState(false);
+  const [profileAdministrationAccessBlocked, setProfileAdministrationAccessBlocked] = useState(false);
   const [moduleDataAccessBlocked, setModuleDataAccessBlocked] = useState(false);
   const { profileId, generation } = selection;
 
@@ -102,6 +104,7 @@ function ResourceAllocationApp() {
         && query.queryKey[0].startsWith('resource-allocation-'),
     });
     setAdminAccessBlocked(false);
+    setProfileAdministrationAccessBlocked(false);
     setModuleDataAccessBlocked(false);
     setIsModuleMenuOpen(false);
     const nextSelection = { profileId: nextProfileId, generation: current.generation + 1 };
@@ -214,12 +217,23 @@ function ResourceAllocationApp() {
   const isAdministrator = accessQuery.isSuccess
     && accessQuery.data.person.role === 'ALLOCATION_ADMIN'
     && !adminAccessBlocked;
+  const role = accessQuery.data?.person.role;
+  const isDelegatedProfileAdministrator = role === 'ALLOCATION_MODERATOR'
+    || role === 'ALLOCATION_SUPERVISOR'
+    || role === 'ALLOCATION_MANAGER';
+  const canManageProfiles = isAdministrator || (isDelegatedProfileAdministrator && !profileAdministrationAccessBlocked);
   const canUseModuleData = accessQuery.isSuccess && !moduleDataAccessBlocked;
   const canDisplayWorkspace = profileId !== null && accessQuery.isSuccess;
   const refetchAccess = accessQuery.refetch;
   const handleAdminAccessDenied = useCallback(() => {
     setAdminAccessBlocked(true);
     queryClient.removeQueries({ queryKey: ['resource-allocation-admin', profileId] });
+    void refetchAccess();
+  }, [profileId, queryClient, refetchAccess]);
+
+  const handleProfileAdministrationAccessDenied = useCallback(() => {
+    setProfileAdministrationAccessBlocked(true);
+    queryClient.removeQueries({ queryKey: ['resource-allocation-profile-administration', profileId] });
     void refetchAccess();
   }, [profileId, queryClient, refetchAccess]);
 
@@ -250,10 +264,9 @@ function ResourceAllocationApp() {
           ? 'Could not reach Tech Resource Allocation'
           : 'Tech Resource Allocation';
 
-  const role = accessQuery.data?.person.role;
   const queueAccess = role ? canUseRequestQueues(role) : false;
   const selectedPageIsAllowed = (activePage !== 'request-queues' || queueAccess)
-    && (activePage !== 'administration' || isAdministrator);
+    && (activePage !== 'administration' || canManageProfiles || (profileAdministrationAccessBlocked && isDelegatedProfileAdministrator));
 
   function changeProfile() {
     if (!guardNavigation()) return false;
@@ -313,7 +326,7 @@ function ResourceAllocationApp() {
 
   const visibleNavigationItems = navigationItems.filter(({ page }) => {
     if (page === 'request-queues') return queueAccess;
-    if (page === 'administration') return isAdministrator;
+    if (page === 'administration') return isAdministrator || (isDelegatedProfileAdministrator && !profileAdministrationAccessBlocked);
     return true;
   });
 
@@ -345,7 +358,7 @@ function ResourceAllocationApp() {
                 data-resource-allocation-navigation="true"
                 onClick={(event) => navigateToPage(page, event)}
               >
-                {label}
+                {page === 'administration' && isDelegatedProfileAdministrator ? 'Resource profiles' : label}
               </a>
             ))}
           </WorkspaceSidebar>
@@ -367,7 +380,7 @@ function ResourceAllocationApp() {
               </div>
             ) : !selectedPageIsAllowed ? (
               <div className="form-error page-access-denied" role="alert">
-                <p>{activePage === 'administration' ? 'Administration is only available to Admins.' : 'Request queues are not available for this profile.'}</p>
+                <p>{activePage === 'administration' ? 'Resource profile administration is only available to Admins and in-scope resource leaders.' : 'Request queues are not available for this profile.'}</p>
                 <a data-resource-allocation-navigation="true" href={resourceAllocationPageHref('requests')} onClick={(event) => navigateToPage('requests', event)}>Go to Requests</a>
               </div>
             ) : canUseModuleData && profileId ? (
@@ -392,7 +405,18 @@ function ResourceAllocationApp() {
                 )}
                 {activePage === 'allocations' && <AllocationsWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />}
                 {activePage === 'notifications' && <NotificationsInbox localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />}
-                {activePage === 'administration' && <Administration localUserId={profileId} onAccessDenied={handleAdminAccessDenied} />}
+                {activePage === 'administration' && profileAdministrationAccessBlocked && isDelegatedProfileAdministrator && (
+                  <div className="form-error admin-access-revoked" role="alert">
+                    <p>Your current profile-management scope could not be confirmed. Protected profile records have been cleared.</p>
+                    <button type="button" className="secondary-button" onClick={() => { setProfileAdministrationAccessBlocked(false); void refetchAccess(); }} disabled={accessQuery.isFetching}>
+                      {accessQuery.isFetching ? 'Checking access…' : 'Check profile access again'}
+                    </button>
+                  </div>
+                )}
+                {activePage === 'administration' && isAdministrator && <Administration localUserId={profileId} onAccessDenied={handleAdminAccessDenied} />}
+                {activePage === 'administration' && isDelegatedProfileAdministrator && !profileAdministrationAccessBlocked && role && (
+                  <ProfileAdministration localUserId={profileId} role={role} onAccessDenied={handleProfileAdministrationAccessDenied} />
+                )}
               </Fragment>
             ) : null}
 

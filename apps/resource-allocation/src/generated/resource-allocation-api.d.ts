@@ -186,11 +186,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List administrative resource profiles */
+        /** List resource profiles in the current administrative or leadership scope */
         get: operations["ResourceAllocationAdministrationController_listResourceProfiles"];
         put?: never;
-        /** Create an administrative resource profile */
+        /** Create a resource profile in the current administrative or leadership scope */
         post: operations["ResourceAllocationAdministrationController_createResourceProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resource-allocation/v1/admin/resource-profile-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List groups where the current user can manage resource profiles */
+        get: operations["ResourceAllocationAdministrationController_listManageableResourceProfileGroups"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -204,14 +221,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get an administrative resource profile */
+        /** Get a resource profile in the current administrative or leadership scope */
         get: operations["ResourceAllocationAdministrationController_getResourceProfile"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** Update an administrative resource profile */
+        /** Update a resource profile in the current administrative or leadership scope */
         patch: operations["ResourceAllocationAdministrationController_updateResourceProfile"];
         trace?: never;
     };
@@ -1110,6 +1127,15 @@ export interface components {
             page: components["schemas"]["CursorPageInfoDto"];
             items: components["schemas"]["ResourceProfileResponseDto"][];
         };
+        ResourceGroupSelectionDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        ResourceGroupSelectionCollectionDto: {
+            page: components["schemas"]["CursorPageInfoDto"];
+            items: components["schemas"]["ResourceGroupSelectionDto"][];
+        };
         CreateResourceProfileRequestDto: {
             name: string;
             /** Format: uuid */
@@ -1148,15 +1174,6 @@ export interface components {
         ResourcePersonSelectionCollectionDto: {
             page: components["schemas"]["CursorPageInfoDto"];
             items: components["schemas"]["ResourcePersonSelectionDto"][];
-        };
-        ResourceGroupSelectionDto: {
-            /** Format: uuid */
-            id: string;
-            name: string;
-        };
-        ResourceGroupSelectionCollectionDto: {
-            page: components["schemas"]["CursorPageInfoDto"];
-            items: components["schemas"]["ResourceGroupSelectionDto"][];
         };
         ResourceProfileSelectionDto: {
             /** Format: uuid */
@@ -1393,6 +1410,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
+            active: boolean;
         };
         AllocationApprovalResponseDto: {
             /** Format: uuid */
@@ -2838,7 +2856,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
-            /** @description Only an active Admin may manage administrative records. */
+            /** @description An active Admin or an in-scope Moderator, Supervisor, or Manager is required. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2904,7 +2922,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
-            /** @description Only an active Admin may manage administrative records. */
+            /** @description An active Admin or an in-scope Moderator, Supervisor, or Manager is required. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2915,6 +2933,67 @@ export interface operations {
             };
             /** @description The profile must belong to an active group. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceAllocationAdministrationController_listManageableResourceProfileGroups: {
+        parameters: {
+            query?: {
+                /** @description Page size (default 50, maximum 100). */
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Only active groups in the current profile-management scope, with identifier and name. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceGroupSelectionCollectionDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An active Admin or an in-scope Moderator, Supervisor, or Manager is required. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2972,7 +3051,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
-            /** @description Only an active Admin may manage administrative records. */
+            /** @description An active Admin or an in-scope Moderator, Supervisor, or Manager is required. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3055,7 +3134,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
-            /** @description Only an active Admin may manage administrative records. */
+            /** @description An active Admin or an in-scope Moderator, Supervisor, or Manager is required. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3066,6 +3145,15 @@ export interface operations {
             };
             /** @description The resource profile was not found. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A profile referenced by an allocation cannot be moved to another group. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
