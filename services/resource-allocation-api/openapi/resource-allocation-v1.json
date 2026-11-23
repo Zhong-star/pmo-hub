@@ -635,6 +635,117 @@
         ]
       }
     },
+    "/api/resource-allocation/v1/admin/people/{id}/classification-history": {
+      "get": {
+        "operationId": "ResourceAllocationAdministrationController_listPersonClassificationHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size (default 50, maximum 100).",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourcePersonClassificationHistoryCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may view administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The person was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List immutable classification changes for an administrative person",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      }
+    },
     "/api/resource-allocation/v1/admin/people/{id}": {
       "get": {
         "operationId": "ResourceAllocationAdministrationController_getPerson",
@@ -8484,6 +8595,14 @@
               "ALLOCATION_ADMIN"
             ]
           },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true
+          },
           "groupId": {
             "type": "string",
             "format": "uuid",
@@ -8507,6 +8626,7 @@
           "email",
           "active",
           "role",
+          "classification",
           "groupId",
           "coveredGroupIds",
           "version"
@@ -8522,6 +8642,83 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ResourcePersonResponseDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "items"
+        ]
+      },
+      "ResourcePersonClassificationActorDto": {
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "personId",
+          "displayName",
+          "role"
+        ]
+      },
+      "ResourcePersonClassificationHistoryEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "previousClassification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true
+          },
+          "nextClassification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true
+          },
+          "actor": {
+            "$ref": "#/components/schemas/ResourcePersonClassificationActorDto"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "previousClassification",
+          "nextClassification",
+          "actor",
+          "occurredAt"
+        ]
+      },
+      "ResourcePersonClassificationHistoryCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/CursorPageInfoDto"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourcePersonClassificationHistoryEventDto"
             }
           }
         },
@@ -8554,6 +8751,14 @@
               "ALLOCATION_MANAGER",
               "ALLOCATION_ADMIN"
             ]
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true
           },
           "groupId": {
             "type": "string",
@@ -8596,6 +8801,14 @@
               "ALLOCATION_MANAGER",
               "ALLOCATION_ADMIN"
             ]
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true
           },
           "groupId": {
             "type": "string",

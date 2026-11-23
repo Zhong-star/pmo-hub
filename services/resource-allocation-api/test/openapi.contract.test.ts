@@ -19,6 +19,7 @@ type OpenApiDocument = {
         enum?: string[];
         $ref?: string;
         type?: string;
+        nullable?: boolean;
         items?: { $ref?: string };
       }>;
     }>;
@@ -75,6 +76,33 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
     expect(item.patch.responses['200'].headers).toHaveProperty('ETag');
     expect(item.patch.responses['412'].content).toHaveProperty('application/problem+json');
     expect(collection.get.responses['200'].headers ?? {}).not.toHaveProperty('ETag');
+  });
+
+  it('documents nullable person classification and Admin-only paged classification history', () => {
+    const root = '/api/resource-allocation/v1';
+    const person = contract.components.schemas.ResourcePersonResponseDto;
+    expect(person.properties?.classification).toMatchObject({
+      enum: ['INTERNAL', 'THIRD_PARTY'],
+      nullable: true,
+    });
+    expect(person.required).toContain('classification');
+    expect(contract.components.schemas.CreateResourcePersonRequestDto.properties?.classification).toMatchObject({
+      enum: ['INTERNAL', 'THIRD_PARTY'],
+      nullable: true,
+    });
+    expect(contract.components.schemas.UpdateResourcePersonRequestDto.properties?.classification).toMatchObject({
+      enum: ['INTERNAL', 'THIRD_PARTY'],
+      nullable: true,
+    });
+
+    const history = contract.paths[`${root}/admin/people/{id}/classification-history`].get;
+    expect(history.parameters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'limit', required: false }),
+      expect.objectContaining({ name: 'cursor', required: false }),
+    ]));
+    expect(history.responses['200'].content).toHaveProperty('application/json');
+    expect(history.responses['403'].content).toHaveProperty('application/problem+json');
+    expect(history.responses['404'].content).toHaveProperty('application/problem+json');
   });
 
   it('documents minimum selection projections without administrative identity fields', () => {

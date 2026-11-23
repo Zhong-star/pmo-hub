@@ -108,6 +108,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/resource-allocation/v1/admin/people/{id}/classification-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List immutable classification changes for an administrative person */
+        get: operations["ResourceAllocationAdministrationController_listPersonClassificationHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/resource-allocation/v1/admin/people/{id}": {
         parameters: {
             query?: never;
@@ -991,6 +1008,8 @@ export interface components {
             active: boolean;
             /** @enum {string} */
             role: "ALLOCATION_USER" | "ALLOCATION_MODERATOR" | "ALLOCATION_SUPERVISOR" | "ALLOCATION_MANAGER" | "ALLOCATION_ADMIN";
+            /** @enum {string|null} */
+            classification: "INTERNAL" | "THIRD_PARTY" | null;
             /** Format: uuid */
             groupId: string | null;
             coveredGroupIds: string[];
@@ -1000,12 +1019,35 @@ export interface components {
             page: components["schemas"]["CursorPageInfoDto"];
             items: components["schemas"]["ResourcePersonResponseDto"][];
         };
+        ResourcePersonClassificationActorDto: {
+            /** Format: uuid */
+            personId: string;
+            displayName: string;
+            role: string;
+        };
+        ResourcePersonClassificationHistoryEventDto: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string|null} */
+            previousClassification: "INTERNAL" | "THIRD_PARTY" | null;
+            /** @enum {string|null} */
+            nextClassification: "INTERNAL" | "THIRD_PARTY" | null;
+            actor: components["schemas"]["ResourcePersonClassificationActorDto"];
+            /** Format: date-time */
+            occurredAt: string;
+        };
+        ResourcePersonClassificationHistoryCollectionResponseDto: {
+            page: components["schemas"]["CursorPageInfoDto"];
+            items: components["schemas"]["ResourcePersonClassificationHistoryEventDto"][];
+        };
         CreateResourcePersonRequestDto: {
             localUserId: string;
             displayName: string;
             email: string;
             /** @enum {string} */
             role: "ALLOCATION_USER" | "ALLOCATION_MODERATOR" | "ALLOCATION_SUPERVISOR" | "ALLOCATION_MANAGER" | "ALLOCATION_ADMIN";
+            /** @enum {string|null} */
+            classification?: "INTERNAL" | "THIRD_PARTY" | null;
             /** Format: uuid */
             groupId?: string | null;
             /** @default true */
@@ -1017,6 +1059,8 @@ export interface components {
             email?: string;
             /** @enum {string} */
             role?: "ALLOCATION_USER" | "ALLOCATION_MODERATOR" | "ALLOCATION_SUPERVISOR" | "ALLOCATION_MANAGER" | "ALLOCATION_ADMIN";
+            /** @enum {string|null} */
+            classification?: "INTERNAL" | "THIRD_PARTY" | null;
             /** Format: uuid */
             groupId?: string | null;
             active?: boolean;
@@ -2192,6 +2236,77 @@ export interface operations {
             };
             /** @description The role or group reference is not eligible. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceAllocationAdministrationController_listPersonClassificationHistory: {
+        parameters: {
+            query?: {
+                /** @description Page size (default 50, maximum 100). */
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourcePersonClassificationHistoryCollectionResponseDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description Only an active Admin may view administrative records. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The person was not found. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
