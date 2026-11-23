@@ -2286,6 +2286,15 @@ export interface operations {
                     "application/json": components["schemas"]["ResourcePersonClassificationHistoryCollectionResponseDto"];
                 };
             };
+            /** @description The page limit or cursor is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
             /** @description A local Hub profile is required. */
             401: {
                 headers: {

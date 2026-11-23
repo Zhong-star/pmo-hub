@@ -100,7 +100,19 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
       expect.objectContaining({ name: 'limit', required: false }),
       expect.objectContaining({ name: 'cursor', required: false }),
     ]));
-    expect(history.responses['200'].content).toHaveProperty('application/json');
+    expect(history.responses['200'].content).toMatchObject({
+      'application/json': {
+        examples: {
+          paginated: {
+            value: {
+              items: [{ previousClassification: 'INTERNAL', nextClassification: 'THIRD_PARTY' }],
+              page: { nextCursor: expect.any(String), limit: 1 },
+            },
+          },
+        },
+      },
+    });
+    expect(history.responses['400'].content).toHaveProperty('application/problem+json');
     expect(history.responses['403'].content).toHaveProperty('application/problem+json');
     expect(history.responses['404'].content).toHaveProperty('application/problem+json');
   });
