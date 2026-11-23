@@ -13,6 +13,7 @@ import { ResourcePerson } from '../people/resource-person.entity';
 import { ResourceAllocationRole } from '../people/resource-allocation-role';
 import { ResourceAllocationAccessService } from '../access/resource-allocation-access.service';
 import { ResourceAllocationNotification } from '../notifications/resource-allocation-notification.entity';
+import { ResourceProfile } from '../resource-profiles/resource-profile.entity';
 import type { AllocationCollectionQueryDto, AllocationCommandDto, AllocationLoadQueryDto, allocationStates } from './allocation.dto';
 
 const defaultPageSize = 50;
@@ -58,6 +59,8 @@ interface AllocationRow {
   initiative_snapshot: Record<string, unknown>;
   resource_profile_id: string;
   resource_profile_snapshot: Record<string, unknown>;
+  resource_profile_name?: string | null;
+  resource_profile_active?: boolean | null;
   approved_start_date: string;
   approved_end_date: string;
   effective_start_date: string;
@@ -107,6 +110,8 @@ export class ResourceAllocationService {
           allocation.approved_end_date::text AS approved_end_date,
           allocation.effective_start_date::text AS effective_start_date,
           allocation.effective_end_date::text AS effective_end_date,
+          profile.name AS resource_profile_name,
+          profile.active AS resource_profile_active,
           CASE
             WHEN allocation.state = 'CANCELED' THEN 'CANCELED'
             WHEN operation_clock.business_date > allocation.effective_end_date THEN 'DONE'
@@ -117,6 +122,7 @@ export class ResourceAllocationService {
           END AS response_state,
           operation_clock.business_date::text AS business_date
         FROM resource_allocations AS allocation
+        LEFT JOIN resource_profiles AS profile ON profile.id = allocation.resource_profile_id
         CROSS JOIN operation_clock
         WHERE ${clauses.join(' AND ')}
         ORDER BY allocation.effective_start_date ASC, allocation.id ASC
@@ -155,6 +161,8 @@ export class ResourceAllocationService {
           allocation.approved_end_date::text AS approved_end_date,
           allocation.effective_start_date::text AS effective_start_date,
           allocation.effective_end_date::text AS effective_end_date,
+          profile.name AS resource_profile_name,
+          profile.active AS resource_profile_active,
           CASE
             WHEN allocation.state = 'CANCELED' THEN 'CANCELED'
             WHEN operation_clock.business_date > allocation.effective_end_date THEN 'DONE'
@@ -165,6 +173,7 @@ export class ResourceAllocationService {
           END AS response_state,
           operation_clock.business_date::text AS business_date
         FROM resource_allocations AS allocation
+        LEFT JOIN resource_profiles AS profile ON profile.id = allocation.resource_profile_id
         CROSS JOIN operation_clock
         WHERE allocation.id = $1::uuid
       `, [this.requireUuid(allocationId, 'allocationId')]) as AllocationRow[];
@@ -373,7 +382,8 @@ export class ResourceAllocationService {
           const currentState = this.currentState(allocation, clock.businessDate);
           const nextState = this.nextState(command, currentState, allocation.effectiveStartDate, clock.businessDate);
           const nextEndDate = this.endedPeriod(command, allocation, clock.businessDate);
-          const before = this.toResponse(this.rowFromEntity(allocation, currentState, clock.businessDate), actor);
+          const profileState = await this.currentResourceProfileState(manager, allocation.resourceProfileId);
+          const before = this.toResponse(this.rowFromEntity(allocation, currentState, clock.businessDate, profileState), actor);
           const updatedRows = await manager.query(`
             WITH changed AS (
               UPDATE resource_allocations
@@ -391,7 +401,7 @@ export class ResourceAllocationService {
           allocation.stateEnteredAt = clock.now;
           allocation.effectiveEndDate = nextEndDate;
           allocation.version = Number(updatedRows[0].version);
-          const after = this.toResponse(this.rowFromEntity(allocation, nextState, clock.businessDate), actor);
+          const after = this.toResponse(this.rowFromEntity(allocation, nextState, clock.businessDate, profileState), actor);
           const actorSnapshot = { personId: actor.id, displayName: actor.displayName, role: actor.role };
           await manager.getRepository(ResourceAllocationHistory).insert({
             allocationId: allocation.id,
@@ -463,7 +473,8 @@ export class ResourceAllocationService {
       const clock = { now: new Date(clocks[0].now), businessDate: clocks[0].business_date };
       const nextState = this.currentState(allocation, clock.businessDate);
       if (nextState === allocation.state) return false;
-      const before = this.toResponse(this.rowFromEntity(allocation, allocation.state as AllocationState, clock.businessDate));
+      const profileState = await this.currentResourceProfileState(manager, allocation.resourceProfileId);
+      const before = this.toResponse(this.rowFromEntity(allocation, allocation.state as AllocationState, clock.businessDate, profileState));
       const updated = await manager.query(`
         WITH changed AS (
           UPDATE resource_allocations
@@ -477,7 +488,7 @@ export class ResourceAllocationService {
       allocation.state = nextState;
       allocation.stateEnteredAt = clock.now;
       allocation.version = Number(updated[0].version);
-      const after = this.toResponse(this.rowFromEntity(allocation, nextState, clock.businessDate));
+      const after = this.toResponse(this.rowFromEntity(allocation, nextState, clock.businessDate, profileState));
       const action = nextState === 'IN_PROGRESS' ? 'ALLOCATION_STARTED' : 'ALLOCATION_ENDED';
       const reason = nextState === 'IN_PROGRESS'
         ? 'Automatically started on its São Paulo start date.'
@@ -683,7 +694,11 @@ export class ResourceAllocationService {
       person: { personId: row.person_id, displayName: row.person_snapshot.displayName },
       group: { id: row.group_id, name: row.group_snapshot.name },
       initiative: { id: row.initiative_id, code: row.initiative_snapshot.code, name: row.initiative_snapshot.name },
-      resourceProfile: { id: row.resource_profile_id, name: row.resource_profile_snapshot.name },
+      resourceProfile: {
+        id: row.resource_profile_id,
+        name: row.resource_profile_name ?? row.resource_profile_snapshot.name,
+        active: row.resource_profile_active ?? true,
+      },
       startDate: row.effective_start_date,
       endDate: row.effective_end_date,
       approvedPeriod: { startDate: row.approved_start_date, endDate: row.approved_end_date },
@@ -695,7 +710,12 @@ export class ResourceAllocationService {
     };
   }
 
-  private rowFromEntity(allocation: ResourceAllocation, state: AllocationState, businessDate: string): AllocationRow {
+  private rowFromEntity(
+    allocation: ResourceAllocation,
+    state: AllocationState,
+    businessDate: string,
+    profileState?: { name: string; active: boolean },
+  ): AllocationRow {
     return {
       id: allocation.id,
       source_request_id: allocation.sourceRequestId,
@@ -707,6 +727,8 @@ export class ResourceAllocationService {
       initiative_snapshot: allocation.initiativeSnapshot,
       resource_profile_id: allocation.resourceProfileId,
       resource_profile_snapshot: allocation.resourceProfileSnapshot,
+      resource_profile_name: profileState?.name,
+      resource_profile_active: profileState?.active,
       approved_start_date: allocation.approvedStartDate,
       approved_end_date: allocation.approvedEndDate,
       effective_start_date: allocation.effectiveStartDate,
@@ -719,6 +741,14 @@ export class ResourceAllocationService {
       approved_at: allocation.approvedAt,
       version: allocation.version,
     };
+  }
+
+  private async currentResourceProfileState(manager: EntityManager, profileId: string): Promise<{ name: string; active: boolean } | undefined> {
+    const profile = await manager.getRepository(ResourceProfile).findOne({
+      where: { id: profileId },
+      select: { id: true, name: true, active: true },
+    });
+    return profile ? { name: profile.name, active: profile.active } : undefined;
   }
 
   private availableActions(state: AllocationState, started: boolean): string[] {
