@@ -476,6 +476,12 @@ export class ResourceAllocationAdministrationService {
       const wasActive = profile.active;
       const nextGroupId = input.groupId ?? profile.groupId;
       const nextActive = input.active ?? profile.active;
+      if (!wasActive && nextActive && actor.role !== ResourceAllocationRole.Admin) {
+        throw new ResourceAllocationException(
+          'ACCESS_DENIED', 'Access denied', 403,
+          'Only an Admin may reactivate an inactive resource profile.',
+        );
+      }
       if (input.groupId !== undefined) await this.assertProfileGroupScope(manager, actor, nextGroupId);
       await this.validateProfileGroup(manager, nextGroupId, nextActive);
       if (nextGroupId !== profile.groupId) await this.assertProfileCanMove(manager, profile.id);

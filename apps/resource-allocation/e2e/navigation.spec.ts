@@ -137,7 +137,7 @@ test('does not mount Administration for a user who opens its URL directly', asyn
   });
   await openWithProfile(page, user, '/resource-allocation/?page=administration');
 
-  await expect(page.getByRole('alert')).toContainText('Administration is only available to Admins.');
+  await expect(page.getByRole('alert')).toContainText('Resource profile administration is only available to Admins and in-scope resource leaders.');
   await expect(page.getByRole('link', { name: 'Requests', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Administration' })).toHaveCount(0);
   expect(administrationRequests).toBe(0);

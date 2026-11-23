@@ -15,13 +15,15 @@ const existingProfile = {
   active: true,
   version: 1,
 };
+const inactiveProfile = { ...existingProfile, active: false, version: 2 };
 
 async function openWithProfile(page: Page, profileId: string) {
   await page.route(accessPath, async (route) => {
     const role = profileId.includes('supervisor') ? 'ALLOCATION_SUPERVISOR'
       : profileId.includes('manager') ? 'ALLOCATION_MANAGER'
         : profileId.includes('user') ? 'ALLOCATION_USER'
-          : 'ALLOCATION_MODERATOR';
+          : profileId.includes('admin') ? 'ALLOCATION_ADMIN'
+            : 'ALLOCATION_MODERATOR';
     await route.fulfill({ json: { person: {
       id: `person-${profileId}`,
       localUserId: profileId,
@@ -117,6 +119,198 @@ test('deactivates a profile with an ETag and explains that existing allocations 
   await expect(page.getByText('Resource profile updated.')).toBeVisible();
   expect(patchPayload).toMatchObject({ active: false });
   expect(patchHeaders?.['if-match']).toBe('"1"');
+});
+
+test('leaders cannot reactivate inactive profiles', async ({ page }) => {
+  let leaderPatch: Record<string, unknown> | undefined;
+  await page.route(groupPath, async (route) => route.fulfill({ json: { items: [platform], page: pageInfo } }));
+  await page.route(profilePath, async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path.endsWith(existingProfile.id)) {
+      await route.fulfill({ headers: { etag: '"2"' }, json: inactiveProfile });
+      return;
+    }
+    if (request.method() === 'PATCH') {
+      leaderPatch = request.postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        headers: { etag: '"3"' },
+        json: { ...inactiveProfile, ...leaderPatch, version: 3 },
+      });
+      return;
+    }
+    await route.fulfill({ json: { items: [inactiveProfile], page: pageInfo } });
+  });
+
+  await openWithProfile(page, 'profile-moderator');
+  await page.getByRole('button', { name: 'Edit resource profile Platform Engineer' }).click();
+  const leaderActive = page.getByLabel('Active');
+  await expect(leaderActive).not.toBeChecked();
+  await expect(leaderActive).toBeDisabled();
+  await expect(page.getByText('Only an Admin can reactivate an inactive resource profile.')).toBeVisible();
+  await page.getByLabel('Resource profile name').fill('Renamed inactive profile');
+  await page.getByRole('button', { name: 'Save resource profile' }).click();
+  await expect(page.getByText('Resource profile updated.')).toBeVisible();
+  expect(leaderPatch?.active).not.toBe(true);
+});
+
+test('Admins can reactivate inactive profiles', async ({ page }) => {
+  let adminPatch: Record<string, unknown> | undefined;
+  await page.route(groupPath, async (route) => route.fulfill({ json: { items: [platform], page: pageInfo } }));
+  await page.route(/\/api\/resource-allocation\/v1\/admin\/(people|groups|initiatives)(?:\?|$)/, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const items = path.endsWith('/groups')
+      ? [{ id: platform.id, name: platform.name, active: true, supervisorId: null, managerId: null, version: 1 }]
+      : [];
+    await route.fulfill({ json: { items, page: pageInfo } });
+  });
+  await page.route(profilePath, async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path.endsWith(existingProfile.id)) {
+      await route.fulfill({ headers: { etag: '"2"' }, json: inactiveProfile });
+      return;
+    }
+    if (request.method() === 'PATCH') {
+      adminPatch = request.postDataJSON() as Record<string, unknown>;
+      await route.fulfill({ headers: { etag: '"3"' }, json: { ...inactiveProfile, ...adminPatch, version: 3 } });
+      return;
+    }
+    await route.fulfill({ json: { items: [inactiveProfile], page: pageInfo } });
+  });
+  await openWithProfile(page, 'profile-admin');
+  await page.getByRole('tab', { name: 'Resource profiles' }).click();
+  await page.getByRole('button', { name: 'Edit resource profile Platform Engineer' }).click();
+  const adminActive = page.getByLabel('Active');
+  await expect(adminActive).toBeEnabled();
+  await adminActive.check();
+  await page.getByRole('button', { name: 'Save resource profile' }).click();
+  await expect(page.getByText('Resource profiles record updated.')).toBeVisible();
+  expect(adminPatch).toMatchObject({ active: true });
+});
+
+test('keeps dirty profile edits and the original ETag after a focus refetch', async ({ page }) => {
+  let detailReads = 0;
+  let patchIfMatch: string | undefined;
+  await page.route(groupPath, async (route) => route.fulfill({ json: { items: [platform], page: pageInfo } }));
+  await page.route(profilePath, async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path.endsWith(existingProfile.id)) {
+      detailReads += 1;
+      const current = detailReads === 1
+        ? existingProfile
+        : { ...existingProfile, name: 'Updated by another admin', version: 2 };
+      await route.fulfill({ headers: { etag: `"${current.version}"` }, json: current });
+      return;
+    }
+    if (request.method() === 'PATCH') {
+      patchIfMatch = request.headers()['if-match'];
+      await route.fulfill({
+        status: 412,
+        contentType: 'application/problem+json',
+        json: {
+          type: 'https://pmo-hub.example/problems/precondition-failed',
+          title: 'Precondition failed',
+          status: 412,
+          detail: 'The resource profile changed. Reload the record before saving.',
+          code: 'PRECONDITION_FAILED',
+        },
+      });
+      return;
+    }
+    await route.fulfill({ json: { items: [existingProfile], page: pageInfo } });
+  });
+
+  await openWithProfile(page, 'profile-moderator');
+  await page.getByRole('button', { name: 'Edit resource profile Platform Engineer' }).click();
+  const name = page.getByLabel('Resource profile name');
+  await expect(name).toHaveValue('Platform Engineer');
+  await name.fill('My unsaved profile name');
+
+  await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')));
+  await expect.poll(() => detailReads).toBe(2);
+  await expect(name).toHaveValue('My unsaved profile name');
+
+  const prompt = page.waitForEvent('dialog');
+  const close = page.getByRole('button', { name: 'Close form' }).click();
+  const dialog = await prompt;
+  expect(dialog.message()).toMatch(/unsaved changes/i);
+  await dialog.dismiss();
+  await close;
+
+  await page.getByRole('button', { name: 'Save resource profile' }).click();
+  await expect(page.getByRole('alert')).toContainText('Your edits are still here.');
+  await expect(name).toHaveValue('My unsaved profile name');
+  expect(patchIfMatch).toBe('"1"');
+
+  const discardPrompt = page.waitForEvent('dialog');
+  const closeAfterConflict = page.getByRole('button', { name: 'Close form' }).click();
+  const discardDialog = await discardPrompt;
+  await discardDialog.accept();
+  await closeAfterConflict;
+  await page.getByRole('button', { name: 'Edit resource profile Platform Engineer' }).click();
+  await expect(page.getByLabel('Resource profile name')).toHaveValue('Updated by another admin');
+});
+
+test('keeps dirty profile edits visible when a background refresh fails', async ({ page }) => {
+  let detailReads = 0;
+  await page.route(groupPath, async (route) => route.fulfill({ json: { items: [platform], page: pageInfo } }));
+  await page.route(profilePath, async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path.endsWith(existingProfile.id)) {
+      detailReads += 1;
+      if (detailReads === 1) {
+        await route.fulfill({ headers: { etag: '"1"' }, json: existingProfile });
+      } else {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/problem+json',
+          json: { status: 500, title: 'Unexpected error', detail: 'The latest profile version could not be checked.' },
+        });
+      }
+      return;
+    }
+    await route.fulfill({ json: { items: [existingProfile], page: pageInfo } });
+  });
+
+  await openWithProfile(page, 'profile-moderator');
+  await page.getByRole('button', { name: 'Edit resource profile Platform Engineer' }).click();
+  const name = page.getByLabel('Resource profile name');
+  await name.fill('My unsaved profile name');
+  await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')));
+
+  await expect.poll(() => detailReads).toBe(2);
+  await expect(name).toHaveValue('My unsaved profile name');
+  await expect(page.getByRole('alert')).toContainText('Your current values are still here.');
+
+  const prompt = page.waitForEvent('dialog');
+  const close = page.getByRole('button', { name: 'Close form' }).click();
+  const dialog = await prompt;
+  expect(dialog.message()).toMatch(/unsaved changes/i);
+  await dialog.dismiss();
+  await close;
+  await expect(name).toHaveValue('My unsaved profile name');
+});
+
+test('shows a close action when an existing profile cannot be loaded', async ({ page }) => {
+  await page.route(groupPath, async (route) => route.fulfill({ json: { items: [platform], page: pageInfo } }));
+  await page.route(profilePath, async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path.endsWith(existingProfile.id)) {
+      await route.fulfill({ status: 500, contentType: 'application/problem+json', json: { status: 500, title: 'Unexpected error' } });
+      return;
+    }
+    await route.fulfill({ json: { items: [existingProfile], page: pageInfo } });
+  });
+
+  await openWithProfile(page, 'profile-moderator');
+  await page.getByRole('button', { name: 'Edit resource profile Platform Engineer' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await page.getByRole('button', { name: 'Close' }).click();
+  await expect(page.getByRole('heading', { name: 'Edit resource profile' })).toHaveCount(0);
 });
 
 test('denies User direct navigation without requesting profile administration data', async ({ page }) => {

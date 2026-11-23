@@ -222,6 +222,7 @@ export function ProfileAdministration({ localUserId, role, onAccessDenied }: Pro
         <ResourceProfileEditor
           key={`${editor.mode}:${editor.mode === 'edit' ? editor.id : 'new'}`}
           editor={editor}
+          role={role}
           groups={groups}
           localUserId={localUserId}
           onAccessDenied={onAccessDenied}
@@ -247,6 +248,7 @@ export function ProfileAdministration({ localUserId, role, onAccessDenied }: Pro
 
 function ResourceProfileEditor({
   editor,
+  role,
   groups,
   localUserId,
   onAccessDenied,
@@ -254,6 +256,7 @@ function ResourceProfileEditor({
   onSaved,
 }: {
   editor: ProfileEditor;
+  role: ResourceAllocationRole;
   groups: Array<{ id: string; name: string }>;
   localUserId: string;
   onAccessDenied: () => void;
@@ -265,34 +268,86 @@ function ResourceProfileEditor({
     queryKey: [...profileQueryKey(localUserId), 'detail', editId],
     queryFn: () => getAdminResource('resource-profiles', editId!, localUserId),
     enabled: Boolean(editId),
+    refetchOnWindowFocus: true,
     staleTime: 0,
     retry: false,
   });
-  const { register, handleSubmit, reset, setValue, control, formState } = useForm<ProfileFormValues>({ defaultValues });
+
+  useEffect(() => {
+    if (detailQuery.isError && isAccessDenied(detailQuery.error)) onAccessDenied();
+  }, [detailQuery.error, detailQuery.isError, onAccessDenied]);
+
+  if (editId && detailQuery.isError && (!detailQuery.data || !detailQuery.isFetchedAfterMount)) {
+    return (
+      <div className="editor-panel" role="alert">
+        <p>{errorMessage(detailQuery.error)}</p>
+        <button type="button" className="secondary-button" onClick={onClose}>Close</button>
+      </div>
+    );
+  }
+  if (editId && (detailQuery.isPending || !detailQuery.isFetchedAfterMount || !detailQuery.data)) {
+    return <div className="editor-panel" role="status">Loading resource profile…</div>;
+  }
+
+  return (
+    <ResourceProfileEditorForm
+      editor={editor}
+      role={role}
+      groups={groups}
+      localUserId={localUserId}
+      onAccessDenied={onAccessDenied}
+      onClose={onClose}
+      onSaved={onSaved}
+      initialProfile={editId ? detailQuery.data?.record : undefined}
+      originalEtag={editId ? detailQuery.data?.etag ?? '' : ''}
+      detailRefreshError={Boolean(editId && detailQuery.isError)}
+    />
+  );
+}
+
+function ResourceProfileEditorForm({
+  editor,
+  role,
+  groups,
+  localUserId,
+  onAccessDenied,
+  onClose,
+  onSaved,
+  initialProfile,
+  originalEtag,
+  detailRefreshError,
+}: {
+  editor: ProfileEditor;
+  role: ResourceAllocationRole;
+  groups: Array<{ id: string; name: string }>;
+  localUserId: string;
+  onAccessDenied: () => void;
+  onClose: () => void;
+  onSaved: (mode: ProfileEditor['mode']) => Promise<void>;
+  initialProfile?: AdminResourceProfile;
+  originalEtag: string;
+  detailRefreshError: boolean;
+}) {
+  const editId = editor.mode === 'edit' ? editor.id : undefined;
+  const { register, handleSubmit, setValue, control, formState } = useForm<ProfileFormValues>({
+    defaultValues: initialProfile ? {
+      name: initialProfile.name,
+      groupId: initialProfile.groupId,
+      active: initialProfile.active,
+    } : defaultValues,
+  });
+  const originalEtagSnapshot = useRef(originalEtag);
   const guardEditorClose = useNavigationFormProtection('resource profile editor', formState.isDirty, formState.isSubmitting);
   const active = useWatch({ control, name: 'active' });
   const [submissionError, setSubmissionError] = useState('');
   const idempotencyKeys = useRef(new Map<string, string>());
-
-  useEffect(() => {
-    if (editId && detailQuery.data?.record) {
-      reset({
-        name: detailQuery.data.record.name,
-        groupId: detailQuery.data.record.groupId,
-        active: detailQuery.data.record.active,
-      });
-    }
-  }, [detailQuery.data, editId, reset]);
+  const canChangeActive = role === 'ALLOCATION_ADMIN' || editor.mode === 'create' || initialProfile?.active !== false;
 
   useEffect(() => {
     if (!editId && groups.length === 1 && !formState.isDirty) {
       setValue('groupId', groups[0].id, { shouldDirty: false });
     }
   }, [editId, formState.isDirty, groups, setValue]);
-
-  useEffect(() => {
-    if (detailQuery.isError && isAccessDenied(detailQuery.error)) onAccessDenied();
-  }, [detailQuery.error, detailQuery.isError, onAccessDenied]);
 
   const mutation = useMutation({
     mutationFn: async (values: ProfileFormValues) => {
@@ -306,7 +361,7 @@ function ResourceProfileEditor({
         }
         return createAdminResource('resource-profiles', localUserId, payload, idempotencyKey);
       }
-      return updateAdminResource('resource-profiles', editId!, localUserId, detailQuery.data?.etag ?? '', payload);
+      return updateAdminResource('resource-profiles', editId!, localUserId, originalEtagSnapshot.current, payload);
     },
     onSuccess: async () => onSaved(editor.mode),
     onError: (error) => {
@@ -326,15 +381,6 @@ function ResourceProfileEditor({
 
   const close = () => guardEditorClose(onClose);
   const editorHeading = `${editor.mode === 'create' ? 'Add' : 'Edit'} resource profile`;
-  if (editId && detailQuery.isPending) return <div className="editor-panel" role="status">Loading resource profile…</div>;
-  if (editId && detailQuery.isError) {
-    return (
-      <div className="editor-panel" role="alert">
-        <p>{errorMessage(detailQuery.error)}</p>
-        <button type="button" className="secondary-button" onClick={onClose}>Close</button>
-      </div>
-    );
-  }
 
   return (
     <section className="editor-panel" aria-labelledby="resource-profile-editor-title">
@@ -346,6 +392,9 @@ function ResourceProfileEditor({
         <button className="icon-button" type="button" onClick={close}>Close form</button>
       </div>
 
+      {editId && detailRefreshError && (
+        <p className="form-error" role="alert">The latest profile version could not be checked. Your current values are still here. Close and reopen the profile to try again.</p>
+      )}
       {submissionError && <p className="form-error" role="alert">{submissionError}</p>}
       <form className="admin-form" onSubmit={(event) => void onSubmit(event)} noValidate>
         <label className="form-field full-row">
@@ -372,11 +421,12 @@ function ResourceProfileEditor({
 
         <div className="field-with-help full-row">
           <label className="check-field">
-            <input type="checkbox" {...register('active')} />
+            <input type="checkbox" disabled={!canChangeActive} {...register('active')} />
             Active
           </label>
           <p className="field-help">Existing allocations and capacity remain unchanged when a profile is deactivated. Inactive profiles are unavailable for new selections.</p>
         </div>
+        {!canChangeActive && <p className="field-help full-row">Only an Admin can reactivate an inactive resource profile.</p>}
         {!active && editor.mode === 'edit' && (
           <p className="field-help full-row">After saving, this profile will be unavailable for new selections. Existing allocations and capacity remain available.</p>
         )}

@@ -369,9 +369,49 @@ describe('delegated resource profile administration (#91)', () => {
       .expect(200);
     expect(inactiveCollection.body.items).toContainEqual(expect.objectContaining({
       id: allocation.id,
+      state: 'DONE',
+      weeklyHours: 12,
       resourceProfile: { id: fixture.profileA.id, name: 'Platform Reliability Engineer', active: false },
     }));
     expect(await dataSource!.getRepository(ResourceProfile).findOneBy({ id: fixture.profileA.id })).toMatchObject({ active: false });
+  });
+
+  it('allows only Admins to reactivate inactive profiles without changing state on a denied attempt', async () => {
+    const fixture = await setup();
+    await request(app!.getHttpServer())
+      .patch(`${adminProfilesPath}/${fixture.profileA.id}`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"1"')
+      .set('Content-Type', 'application/merge-patch+json')
+      .send({ active: false })
+      .expect(200);
+
+    const denied = await request(app!.getHttpServer())
+      .patch(`${adminProfilesPath}/${fixture.profileA.id}`)
+      .set('X-PMO-Local-User-ID', fixture.moderatorA.localUserId)
+      .set('If-Match', '"2"')
+      .set('Content-Type', 'application/merge-patch+json')
+      .send({ active: true })
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(403);
+    expect(denied.body.code).toBe('ACCESS_DENIED');
+    expect(await dataSource!.getRepository(ResourceProfile).findOneBy({ id: fixture.profileA.id }))
+      .toMatchObject({ active: false, version: 2 });
+
+    const actions = await dataSource!.query(
+      'SELECT action FROM resource_profile_audit_events WHERE profile_id = $1::uuid ORDER BY occurred_at, id',
+      [fixture.profileA.id],
+    ) as Array<{ action: string }>;
+    expect(actions.map(({ action }) => action)).toEqual(['PROFILE_DEACTIVATED']);
+
+    const adminReactivation = await request(app!.getHttpServer())
+      .patch(`${adminProfilesPath}/${fixture.profileA.id}`)
+      .set('X-PMO-Local-User-ID', fixture.admin.localUserId)
+      .set('If-Match', '"2"')
+      .set('Content-Type', 'application/merge-patch+json')
+      .send({ active: true })
+      .expect(200);
+    expect(adminReactivation.body).toMatchObject({ active: true, version: 3 });
   });
 
   it('keeps profile administration unavailable to User and preserves Admin global scope', async () => {
