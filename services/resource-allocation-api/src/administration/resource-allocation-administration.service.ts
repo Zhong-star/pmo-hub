@@ -35,6 +35,7 @@ interface PersonClassificationHistoryCursor {
 }
 
 const historyCursorSequencePattern = /^[1-9]\d*$/;
+const maxPostgresBigint = 9223372036854775807n;
 
 
 @Injectable()
@@ -129,7 +130,8 @@ export class ResourceAllocationAdministrationService {
         cursor.version !== 1 ||
         cursor.personId !== personId ||
         typeof cursor.sequence !== 'string' ||
-        !historyCursorSequencePattern.test(cursor.sequence)
+        !historyCursorSequencePattern.test(cursor.sequence) ||
+        BigInt(cursor.sequence) > maxPostgresBigint
       ) {
         throw this.invalidHistoryCursor();
       }
