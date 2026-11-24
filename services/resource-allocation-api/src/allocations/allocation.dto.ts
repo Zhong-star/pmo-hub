@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Matches, Min } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Matches, Min } from 'class-validator';
 import { AllocationApprovalResponseDto } from '../approvals/approve-request.dto';
 import {
   AllocationHoursByStateDto,
@@ -9,8 +9,79 @@ import {
   CursorPageInfoDto,
   allocationStateValues,
 } from '../common/resource-allocation-contract.dto';
+import { allocationCategories, type AllocationCategory } from './allocation-category';
 
 export const allocationStates = allocationStateValues;
+export class CreateAllocationDto {
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    description: 'Person to allocate. Omit it, or send the current person, for an own operational allocation; any other person makes a direct allocation that requires leadership scope over the person\'s group.',
+  })
+  @IsOptional()
+  @IsUUID()
+  personId?: string;
+
+  @ApiProperty({
+    enum: allocationCategories,
+    description: 'Operational categories (ROUTINE_SUPPORT, TRAINING, INTERNAL_ACTIVITIES, VACATION) never use an initiative. Initiative categories require initiativeId and are available only to direct allocations.',
+  })
+  @IsIn(allocationCategories)
+  category!: AllocationCategory;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, description: 'Required except for VACATION, which never has a resource profile.' })
+  @IsOptional()
+  @IsUUID()
+  resourceProfileId?: string | null;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, description: 'ITDM initiative; required for initiative categories and rejected for operational categories.' })
+  @IsOptional()
+  @IsUUID()
+  initiativeId?: string | null;
+
+  @ApiProperty({ type: String, format: 'date', description: 'Inclusive start date in America/Sao_Paulo. Past dates are allowed.' })
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  startDate!: string;
+
+  @ApiProperty({ type: String, format: 'date', description: 'Inclusive end date in America/Sao_Paulo; on or after startDate.' })
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  endDate!: string;
+
+  @ApiPropertyOptional({
+    type: Number,
+    minimum: 0.01,
+    maximum: 40,
+    description: 'Required except for VACATION, which is always 40. Rounded half up to one decimal place; overlaps and totals above 40 are not blocked.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0.01)
+  @Max(40)
+  weeklyHours?: number;
+
+  @ApiPropertyOptional({ type: String, maxLength: 2000, nullable: true, description: 'Required for ROUTINE_SUPPORT, TRAINING, and INTERNAL_ACTIVITIES.' })
+  @IsOptional()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MaxLength(2000)
+  comment?: string | null;
+}
+
+export class AllocationGroupOptionDto {
+  @ApiProperty({ type: String, format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ type: String })
+  name!: string;
+}
+
+export class AllocationGroupCollectionResponseDto {
+  @ApiProperty({ type: () => [AllocationGroupOptionDto] })
+  items!: AllocationGroupOptionDto[];
+}
 
 export class AllocationCollectionQueryDto {
   @ApiPropertyOptional({ type: String, format: 'uuid' })
@@ -116,9 +187,6 @@ export class AllocationCommandDto {
 }
 
 export class AllocationViewDto extends AllocationApprovalResponseDto {
-  @ApiProperty({ type: String, format: 'uuid' })
-  requestId!: string;
-
   @ApiProperty({ type: () => AllocationPeriodDto })
   approvedPeriod!: AllocationPeriodDto;
 

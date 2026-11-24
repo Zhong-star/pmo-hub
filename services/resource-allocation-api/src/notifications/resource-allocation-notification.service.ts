@@ -15,7 +15,8 @@ const cursorVersion = 1;
 const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 const targetAvailableSql = `CASE
-  WHEN source_request.id IS NULL OR source_request.removed_at IS NOT NULL THEN FALSE
+  WHEN source_request.id IS NOT NULL AND source_request.removed_at IS NOT NULL THEN FALSE
+  WHEN source_request.id IS NULL AND source_allocation.id IS NULL THEN FALSE
   WHEN source_request.requester_id = recipient.id THEN TRUE
   WHEN source_allocation.person_id = recipient.id THEN TRUE
   WHEN recipient.role = 'ALLOCATION_ADMIN' THEN TRUE
@@ -55,7 +56,7 @@ interface NotificationRow {
   created_at: string;
   cursor_created_at: string;
   read_at: string | null;
-  source_request_id: string;
+  source_request_id: string | null;
   target_available: boolean;
   target_destination: 'REQUEST_DETAIL' | 'PRESENTATION_QUEUE' | 'TEAM_DECISION_QUEUE' | 'ALLOCATION_DETAIL' | null;
   allocation_id: string | null;
@@ -108,9 +109,11 @@ export class ResourceAllocationNotificationService {
         FROM resource_allocation_notifications AS notification
         INNER JOIN resource_people AS recipient ON recipient.id = notification.recipient_id
         LEFT JOIN resource_requests AS source_request ON source_request.id = notification.source_request_id
-        LEFT JOIN resource_allocations AS source_allocation ON source_allocation.source_request_id = source_request.id
+        LEFT JOIN resource_allocations AS source_allocation
+          ON source_allocation.id = notification.source_allocation_id
+          OR source_allocation.source_request_id = source_request.id
         LEFT JOIN resource_groups AS source_group
-          ON source_group.id = NULLIF(source_request.requested_conditions->>'groupId', '')::uuid
+          ON source_group.id = COALESCE(source_allocation.group_id, NULLIF(source_request.requested_conditions->>'groupId', '')::uuid)
         WHERE ${clauses.join(' AND ')}
         ORDER BY notification.created_at DESC, notification.id DESC
         LIMIT $${parameters.length}::int
@@ -240,7 +243,7 @@ export class ResourceAllocationNotificationService {
       createdAt: row.created_at,
       readAt: row.read_at,
       target: {
-        type: 'REQUEST',
+        type: row.source_request_id === null ? 'ALLOCATION' : 'REQUEST',
         requestId: row.source_request_id,
         available: row.target_available,
         destination: row.target_destination,
@@ -276,9 +279,11 @@ export class ResourceAllocationNotificationService {
       INNER JOIN resource_people AS recipient
         ON recipient.id = notification.recipient_id AND recipient.active = TRUE
       LEFT JOIN resource_requests AS source_request ON source_request.id = notification.source_request_id
-      LEFT JOIN resource_allocations AS source_allocation ON source_allocation.source_request_id = source_request.id
+      LEFT JOIN resource_allocations AS source_allocation
+        ON source_allocation.id = notification.source_allocation_id
+        OR source_allocation.source_request_id = source_request.id
       LEFT JOIN resource_groups AS source_group
-        ON source_group.id = NULLIF(source_request.requested_conditions->>'groupId', '')::uuid
+        ON source_group.id = COALESCE(source_allocation.group_id, NULLIF(source_request.requested_conditions->>'groupId', '')::uuid)
       WHERE notification.recipient_id = $1::uuid AND notification.id = $2::uuid
       ${lock ? 'FOR UPDATE OF notification' : ''}
     `, [recipientId, notificationId]) as NotificationRow[];

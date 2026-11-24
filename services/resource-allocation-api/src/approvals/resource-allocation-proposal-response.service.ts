@@ -1,3 +1,4 @@
+import { requestCategory } from '../allocations/allocation-category';
 import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DataSource, type EntityManager } from 'typeorm';
@@ -208,6 +209,7 @@ export class ResourceAllocationProposalResponseService extends ResourceAllocatio
     const saved = await manager.getRepository(ResourceRequest).save(request);
     const allocation = await createResourceAllocationForRequest(manager, {
       requestId: request.id,
+      category: requestCategory(request.requestedConditions),
       person: person!,
       group: group!,
       initiative: initiative!,

@@ -160,6 +160,7 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
 
   it('approves an in-scope request once and exposes its confirmed allocation in the requester detail', async () => {
     const fixture = await setup();
+    await dataSource!.query("UPDATE resource_people SET classification = 'THIRD_PARTY' WHERE id = $1::uuid", [fixture.assignee.id]);
     const resourceRequest = await createRequest(fixture.requester, fixture.group, fixture.profile, fixture.initiative);
     const queue = await request(app!.getHttpServer())
       .get('/api/resource-allocation/v1/request-queues/presentation')
@@ -201,6 +202,10 @@ describe('Tech Resource Allocation approvals and proposals (#63–#64)', () => {
       .set('X-PMO-Local-User-ID', fixture.requester.localUserId)
       .expect(200);
     expect(detail.body.allocation).toMatchObject({
+      source: 'REQUEST',
+      requestId: resourceRequest.id,
+      category: expect.any(String),
+      classification: 'THIRD_PARTY',
       person: { personId: fixture.assignee.id, displayName: fixture.assignee.displayName },
       resourceProfile: { id: fixture.profile.id, name: fixture.profile.name },
       startDate: '2027-01-11',

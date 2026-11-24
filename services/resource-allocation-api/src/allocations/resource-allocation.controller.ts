@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiHeader,
   ApiNotFoundResponse,
@@ -31,6 +32,8 @@ import {
   AllocationCollectionQueryDto,
   AllocationCollectionResponseDto,
   AllocationCommandDto,
+  CreateAllocationDto,
+  AllocationGroupCollectionResponseDto,
   AllocationHistoryCollectionResponseDto,
   AllocationLoadQueryDto,
   AllocationLoadResponseDto,
@@ -45,6 +48,7 @@ interface ResponseWithHeaders {
 const collectionQueryValidation = createValidationPipe(AllocationCollectionQueryDto);
 const loadQueryValidation = createValidationPipe(AllocationLoadQueryDto);
 const commandValidation = createValidationPipe(AllocationCommandDto);
+const createAllocationValidation = createValidationPipe(CreateAllocationDto);
 
 @ApiTags('Tech Resource Allocations')
 @ApiSecurity('localProfile')
@@ -55,6 +59,37 @@ export class ResourceAllocationController {
     @Inject(ResourceAllocationService)
     private readonly allocationService: ResourceAllocationService,
   ) {}
+
+  @Post('allocations')
+  @ApiOperation({ summary: 'Record an approved allocation without a request: own operational time or vacation, or a direct allocation by in-scope leadership' })
+  @ApiHeader({ name: 'Idempotency-Key', required: true, description: 'UUID for this exact allocation creation.' })
+  @ApiHeader({ name: 'X-Correlation-ID', required: true })
+  @ApiCreatedResponse({ type: AllocationViewDto, headers: { Location: { schema: { type: 'string' } }, ETag: { schema: { type: 'string', example: '"1"' } }, 'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } } } })
+  @ApiBadRequestResponse({ description: 'A required header or allocation field is invalid.' })
+  @ApiForbiddenResponse({ description: 'An active local profile is required; direct allocations require leadership scope over the person, and own allocations use operational categories only.' })
+  @ApiResponse({ status: 409, description: 'The idempotency key was reused with different content.' })
+  @ApiUnprocessableEntityResponse({ description: 'The profile, group, dates, or hours do not meet allocation rules.' })
+  async create(
+    @Headers(localProfileHeader) localUserId: string | undefined,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined,
+    @Body(createAllocationValidation) input: CreateAllocationDto,
+    @Res({ passthrough: true }) response: ResponseWithHeaders,
+  ) {
+    const operation = await this.allocationService.createAllocation(localUserId, idempotencyKey, correlationId, input);
+    response.setHeader('Location', `/api/resource-allocation/v1/allocations/${operation.result.id}`);
+    response.setHeader('ETag', `"${operation.result.version}"`);
+    if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    return operation.result;
+  }
+
+  @Get('allocation-groups')
+  @ApiOperation({ summary: 'List active groups where the current person may record direct allocations' })
+  @ApiOkResponse({ type: AllocationGroupCollectionResponseDto, description: 'Empty for a User; all active groups for an Admin. Not paginated: group counts are small and the list feeds one selection.' })
+  @ApiForbiddenResponse({ description: 'An active local profile is required.' })
+  listDirectAllocationGroups(@Headers(localProfileHeader) localUserId: string | undefined) {
+    return this.allocationService.listDirectAllocationGroups(localUserId);
+  }
 
   @Get('allocations')
   @ApiOperation({ summary: 'List allocations visible to the current person, leadership scope, or Admin' })

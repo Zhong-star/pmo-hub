@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { useNavigationFormProtection } from './NavigationProtection';
+import { AllocationCreation, type AllocationCreatorRole } from './AllocationCreation';
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
 import { REQUESTS_QUERY_ROOT } from './requestApi';
 import { businessDate, formatBusinessTimestamp, formatCalendarDate } from './timeAndHours';
@@ -13,6 +14,7 @@ import {
   getAllocationHistory,
   getAllocationLoad,
   getAllocations,
+  allocationCategoryLabel,
   isAllocationAction,
   type AllocationAction,
   type AllocationFilters,
@@ -22,6 +24,9 @@ import {
 
 interface AllocationsWorkspaceProps {
   localUserId: string;
+  personId: string;
+  role: AllocationCreatorRole;
+  groupId: string | null;
   onAccessDenied: () => void;
 }
 
@@ -119,7 +124,25 @@ function errorText(error: unknown): string {
 }
 
 function allocationTitle(allocation: AllocationRecord): string {
-  return `${allocation.initiative.code} · ${allocation.initiative.name}`;
+  if (allocation.initiative) return `${allocation.initiative.code} · ${allocation.initiative.name}`;
+  return allocationCategoryLabel(allocation.category) ?? 'Operational allocation';
+}
+
+function allocationOrigin(allocation: AllocationRecord): string {
+  if (allocation.source === 'SELF') return 'Own allocation';
+  if (allocation.source === 'DIRECT') return 'Direct allocation';
+  return 'From request';
+}
+
+function profileText(allocation: AllocationRecord): string {
+  if (!allocation.resourceProfile) return allocation.category === 'VACATION' ? 'Vacation' : 'No resource profile';
+  return `${allocation.resourceProfile.name}${allocation.resourceProfile.active ? '' : ' · Inactive profile'}`;
+}
+
+function classificationText(value: AllocationRecord['classification']): string {
+  if (value === 'INTERNAL') return 'Internal';
+  if (value === 'THIRD_PARTY') return 'Third party';
+  return 'Unclassified';
 }
 
 function createAttempt(
@@ -141,7 +164,7 @@ function createAttempt(
   };
 }
 
-export function AllocationsWorkspace({ localUserId, onAccessDenied }: AllocationsWorkspaceProps) {
+export function AllocationsWorkspace({ localUserId, personId, role, groupId, onAccessDenied }: AllocationsWorkspaceProps) {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<AllocationFilters>({});
   const [loadDate, setLoadDate] = useState(() => businessDate());
@@ -152,6 +175,8 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
   const [attempt, setAttempt] = useState<CommandAttempt | null>(null);
   const [isStale, setIsStale] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [creationMessage, setCreationMessage] = useState('');
 
   const filterForm = useForm<AllocationFilterForm>({ defaultValues: emptyFilterForm() });
   const actionForm = useForm<AllocationActionForm>({ defaultValues: { reason: '' }, mode: 'onSubmit', reValidateMode: 'onChange' });
@@ -323,18 +348,55 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
     });
   }
 
+  function openCreation() {
+    guardActionClose(() => {
+      resetAllocationAction();
+      setCreationMessage('');
+      setIsCreating(true);
+    });
+  }
+
+  async function handleCreated(created: AllocationRecord) {
+    setIsCreating(false);
+    setCreationMessage(`${allocationTitle(created)} was recorded for ${created.person.displayName}.`);
+    setSelectedAllocationId(created.id);
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', 'allocations');
+    url.searchParams.set('allocationId', created.id);
+    window.history.replaceState(window.history.state, '', url);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId] }),
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_ROOT }),
+    ]);
+  }
+
   return (
     <section className="allocation-workspace" aria-labelledby="allocations-heading">
       <div className="allocation-workspace-heading">
         <div>
           <p className="eyebrow">Approved commitments</p>
           <h2 id="allocations-heading">Allocations and capacity</h2>
-          <p className="supporting-copy">Review commitments in your authorized scope, check weekly hours by state, and record an operational change.</p>
+          <p className="supporting-copy">Review commitments in your authorized scope, check weekly hours by state, record operational time or vacation, and change an allocation's state.</p>
         </div>
-        <button type="button" className="secondary-button" onClick={() => void allocationQuery.refetch()} disabled={allocationQuery.isFetching}>
-          {allocationQuery.isFetching ? 'Refreshing…' : 'Refresh allocations'}
-        </button>
+        <div className="allocation-heading-actions">
+          {!isCreating && <button type="button" className="primary-button" onClick={openCreation}>Record allocation</button>}
+          <button type="button" className="secondary-button" onClick={() => void allocationQuery.refetch()} disabled={allocationQuery.isFetching}>
+            {allocationQuery.isFetching ? 'Refreshing…' : 'Refresh allocations'}
+          </button>
+        </div>
       </div>
+      {creationMessage && <p className="allocation-action-message" role="status">{creationMessage}</p>}
+      {isCreating && (
+        <AllocationCreation
+          localUserId={localUserId}
+          personId={personId}
+          role={role}
+          groupId={groupId}
+          onAccessDenied={onAccessDenied}
+          onCreated={(created) => void handleCreated(created)}
+          onClose={() => setIsCreating(false)}
+        />
+      )}
 
       <form className="allocation-filters" onSubmit={filterForm.handleSubmit((values) => setFilters(filtersFromForm(values)))}>
         <label>
@@ -448,12 +510,12 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
                   type="button"
                   className={`allocation-list-item${selectedAllocationId === item.id ? ' allocation-list-item-selected' : ''}`}
                   aria-pressed={selectedAllocationId === item.id}
-                  aria-label={`View allocation ${item.initiative.code}`}
+                  aria-label={`View allocation ${allocationTitle(item)} for ${item.person.displayName}`}
                   onClick={() => selectAllocation(item.id)}
                 >
                   <span className="allocation-list-main">
                     <strong>{allocationTitle(item)}</strong>
-                    <small>{item.person.displayName} · {item.group.name} · {item.resourceProfile.name}{item.resourceProfile.active ? '' : ' · Inactive profile'}</small>
+                    <small>{item.person.displayName} · {item.group.name} · {profileText(item)} · {allocationOrigin(item)}</small>
                   </span>
                   <span className="allocation-list-period">{formatDateRange(item.startDate, item.endDate)}</span>
                   <span className={`allocation-state allocation-state-${item.state.toLowerCase().replaceAll('_', '-')}`}>{stateLabel(item.state)}</span>
@@ -509,11 +571,15 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
               </div>
               <dl className="allocation-metadata">
                 <div><dt>State</dt><dd>{stateLabel(allocation.state)}</dd></div>
-                <div><dt>Resource profile</dt><dd>{allocation.resourceProfile.name}{allocation.resourceProfile.active ? '' : ' · Inactive'}</dd></div>
+                <div><dt>Origin</dt><dd>{allocationOrigin(allocation)}</dd></div>
+                <div><dt>Category</dt><dd>{allocationCategoryLabel(allocation.category) ?? 'Not recorded'}</dd></div>
+                <div><dt>Resource profile</dt><dd>{allocation.resourceProfile ? `${allocation.resourceProfile.name}${allocation.resourceProfile.active ? '' : ' · Inactive'}` : 'Not used'}</dd></div>
+                <div><dt>Classification</dt><dd>{classificationText(allocation.classification)}</dd></div>
                 <div><dt>Effective period</dt><dd>{formatDateRange(allocation.startDate, allocation.endDate)}</dd></div>
                 <div><dt>Approved period</dt><dd>{formatDateRange(allocation.approvedPeriod.startDate, allocation.approvedPeriod.endDate)}</dd></div>
                 <div><dt>Weekly hours</dt><dd>{formatHours(allocation.weeklyHours)}</dd></div>
                 <div><dt>Version</dt><dd>Version {allocation.version}</dd></div>
+                {allocation.comment && <div className="allocation-metadata-wide"><dt>Description</dt><dd>{allocation.comment}</dd></div>}
               </dl>
 
               {actionMessage && <p className="allocation-action-message" role="status">{actionMessage}</p>}

@@ -137,3 +137,113 @@ export async function changeAllocationState<Action extends AllocationAction>(
 export function isAllocationAction(value: string): value is AllocationAction {
   return value in actionPaths;
 }
+
+type AllocationCreationBody = ApiRequestBody<AllocationCollectionPath, 'post'>;
+export type AllocationCategory = AllocationCreationBody['category'];
+export type CreateAllocationInput = Omit<AllocationCreationBody, 'category'> & { category: AllocationCategory };
+type SelectionPeoplePath = '/api/resource-allocation/v1/people';
+type SelectionProfilesPath = '/api/resource-allocation/v1/resource-profiles';
+type SelectionInitiativesPath = '/api/resource-allocation/v1/initiatives';
+export type AllocationPersonOption = ApiResponse<SelectionPeoplePath, 'get'>['items'][number];
+export type AllocationProfileOption = ApiResponse<SelectionProfilesPath, 'get'>['items'][number];
+export type AllocationInitiativeOption = ApiResponse<SelectionInitiativesPath, 'get'>['items'][number];
+
+export const operationalCategories = ['ROUTINE_SUPPORT', 'TRAINING', 'INTERNAL_ACTIVITIES', 'VACATION'] as const satisfies readonly AllocationCategory[];
+export const initiativeCategories = [
+  'DEMAND_ANALYSIS', 'POC_BBP', 'EXECUTION_PROJECT', 'EXECUTION_FAST_TRACK', 'EXECUTION_ENHANCEMENT',
+] as const satisfies readonly AllocationCategory[];
+
+const categoryLabels: Record<AllocationCategory, string> = {
+  ROUTINE_SUPPORT: 'Routine / Support',
+  TRAINING: 'Training',
+  INTERNAL_ACTIVITIES: 'Internal activities',
+  VACATION: 'Vacation',
+  DEMAND_ANALYSIS: 'Demand Analysis',
+  POC_BBP: 'POC/BBP',
+  EXECUTION_PROJECT: 'Execution — Project',
+  EXECUTION_FAST_TRACK: 'Execution — Fast track',
+  EXECUTION_ENHANCEMENT: 'Execution — Enhancement',
+};
+
+export function allocationCategoryLabel(category: string | null | undefined): string | null {
+  return category && category in categoryLabels ? categoryLabels[category as AllocationCategory] : null;
+}
+
+export function isOperationalCategory(category: string | null | undefined): boolean {
+  return (operationalCategories as readonly string[]).includes(category ?? '');
+}
+
+export async function createAllocation(
+  localUserId: string,
+  input: CreateAllocationInput,
+  idempotencyKey: string,
+  correlationId: string,
+): Promise<{ allocation: AllocationRecord; etag: string | undefined }> {
+  try {
+    const response = await api.post<AllocationRecord>(`${API_ROOT}/allocations`, input satisfies AllocationCreationBody, {
+      headers: {
+        ...headers(localUserId),
+        'Idempotency-Key': idempotencyKey,
+        'X-Correlation-ID': correlationId,
+      },
+    });
+    return { allocation: response.data, etag: response.headers.etag as string | undefined };
+  } catch (error) {
+    return throwApiRequestError(error, AllocationRequestError);
+  }
+}
+
+async function loadAllSelectionPages<Item>(
+  path: SelectionPeoplePath | SelectionProfilesPath | SelectionInitiativesPath,
+  localUserId: string,
+  groupId?: string,
+): Promise<Item[]> {
+  const items: Item[] = [];
+  let cursor: string | null = null;
+  do {
+    const response: { data: { items: Item[]; page: { nextCursor: string | null } } } = await api.get(path, {
+      headers: headers(localUserId),
+      params: { limit: 100, ...(groupId ? { groupId } : {}), ...(cursor ? { cursor } : {}) },
+    });
+    items.push(...response.data.items);
+    cursor = response.data.page.nextCursor;
+  } while (cursor !== null);
+  return items;
+}
+
+export type AllocationGroupOption = ApiResponse<'/api/resource-allocation/v1/allocation-groups', 'get'>['items'][number];
+
+/** Groups where the current person may record direct allocations (empty for a User). */
+export async function getDirectAllocationGroups(localUserId: string): Promise<AllocationGroupOption[]> {
+  try {
+    const response = await api.get<ApiResponse<'/api/resource-allocation/v1/allocation-groups', 'get'>>(`${API_ROOT}/allocation-groups`, {
+      headers: headers(localUserId),
+    });
+    return response.data.items;
+  } catch (error) {
+    return throwApiRequestError(error, AllocationRequestError);
+  }
+}
+
+/** Loads the active profiles, and for direct allocations the people, that can be chosen for one group. */
+export async function getGroupAllocationOptions(localUserId: string, groupId: string, includePeople: boolean) {
+  try {
+    const [people, profiles] = await Promise.all([
+      includePeople
+        ? loadAllSelectionPages<AllocationPersonOption>('/api/resource-allocation/v1/people', localUserId, groupId)
+        : Promise.resolve([] as AllocationPersonOption[]),
+      loadAllSelectionPages<AllocationProfileOption>('/api/resource-allocation/v1/resource-profiles', localUserId, groupId),
+    ]);
+    return { people, profiles };
+  } catch (error) {
+    return throwApiRequestError(error, AllocationRequestError);
+  }
+}
+
+export async function getInitiativeOptions(localUserId: string): Promise<AllocationInitiativeOption[]> {
+  try {
+    return await loadAllSelectionPages<AllocationInitiativeOption>('/api/resource-allocation/v1/initiatives', localUserId);
+  } catch (error) {
+    return throwApiRequestError(error, AllocationRequestError);
+  }
+}
