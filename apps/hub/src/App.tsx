@@ -154,7 +154,7 @@ export function App() {
         )}
         <main className={activeUser ? 'workspace-panel' : 'page-content'} tabIndex={activeUser ? 0 : undefined}>
         <section className={`welcome-card${activeUser ? ' catalog-page' : ''}`} aria-labelledby="page-title">
-        <h1 id="page-title">Welcome to PMO Hub</h1>
+        <h1 id="page-title" className={activeUser ? 'sr-only' : undefined}>Welcome to PMO Hub</h1>
 
         <div className="service-status" role="status" aria-live="polite">
           <span className={`status-dot ${statusQuery.isSuccess ? 'is-available' : ''}`} aria-hidden="true" />

@@ -8,6 +8,7 @@ import { REQUESTS_QUERY_ROOT, type ResourceRequestItem } from './requestApi';
 import { REQUEST_QUEUES_QUERY_ROOT } from './requestQueueApi';
 import { SUBMISSIONS_QUERY_ROOT } from './submissionApi';
 import { formatBusinessTimestamp } from './timeAndHours';
+import { enumLabel } from './labels';
 
 interface DeniedRequestResponseProps {
   localUserId: string;
@@ -133,7 +134,7 @@ export function DeniedRequestResponse({ localUserId, item, readOnly = false, dis
       )}
       {readOnly && historyQuery.data?.items.map((event) => (
         <article className="request-denial-response-event" key={event.id}>
-          <p><strong>{event.action.replaceAll('_', ' ')}:</strong> {event.reason ?? 'No reason was recorded.'}</p>
+          <p><strong>{enumLabel(event.action)}:</strong> {event.reason ?? 'No reason was recorded.'}</p>
           <p><strong>By:</strong> {String(event.actorSnapshot.displayName ?? 'System')}</p>
           <p><strong>When:</strong> {formatBusinessTimestamp(event.occurredAt)}</p>
         </article>
@@ -147,7 +148,7 @@ export function DeniedRequestResponse({ localUserId, item, readOnly = false, dis
       )}
       {!readOnly && needsHistory && responseEvents.map((event) => (
         <article className="request-denial-response-event" key={event.id}>
-          <p><strong>{event.action.replaceAll('_', ' ')}:</strong> {event.reason ?? 'No reason was recorded.'}</p>
+          <p><strong>{enumLabel(event.action)}:</strong> {event.reason ?? 'No reason was recorded.'}</p>
           <p><strong>When:</strong> {formatBusinessTimestamp(event.occurredAt)}</p>
         </article>
       ))}

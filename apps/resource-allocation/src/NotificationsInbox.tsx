@@ -130,7 +130,6 @@ export function NotificationsInbox({ localUserId, onAccessDenied }: Notification
     <section className="notification-panel" aria-labelledby="notifications-heading">
       <div className="notification-heading">
         <div>
-          <p className="eyebrow">Your inbox</p>
           <h2 id="notifications-heading">Notifications</h2>
           <p className="notification-intro">Updates stay here until you mark them as read.</p>
         </div>

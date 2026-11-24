@@ -22,6 +22,7 @@ import {
   resourceAllocationPageHref,
   type ResourceAllocationPage,
 } from './navigation';
+import { roleLabel } from './labels';
 
 type ProfileSelection = { profileId: string | null; generation: number };
 const historyPositionKey = '__pmoResourceAllocationHistoryPosition';
@@ -353,9 +354,8 @@ function ResourceAllocationApp() {
           <main ref={workspacePanel} id="main-content" className="workspace-panel" tabIndex={-1}>
             {navigationNotice && <p className="supporting-copy" role="status">{navigationNotice}</p>}
             <header className="module-workspace-heading">
-              <p className="eyebrow">PMO Hub module</p>
               <h1>Tech Resource Allocation</h1>
-              {role && <p className="module-role">Role: {role}</p>}
+              {role && <p className="module-role">{roleLabel(role)}</p>}
             </header>
 
             {moduleDataAccessBlocked ? (
@@ -411,7 +411,6 @@ function ResourceAllocationApp() {
           <div className="content-column">
             <section className="access-card" aria-labelledby="page-title">
               <div className="card-mark" aria-hidden="true">RA</div>
-              <p className="eyebrow">PMO Hub module</p>
               <h1 id="page-title">{heading}</h1>
 
               {profileId === null && (

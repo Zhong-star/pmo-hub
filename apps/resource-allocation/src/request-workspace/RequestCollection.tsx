@@ -83,7 +83,6 @@ export function RequestCollection({
     <div className="request-panel">
       <div className="request-panel-heading">
         <div>
-          <p className="eyebrow">Operational requests</p>
           <h2 id="my-requests-title">{scopeTitle}</h2>
           <p>{effectiveRequestScope === 'visible'
             ? 'Consult operational requests in the groups currently visible to your role. Other requesters’ records are read-only.'

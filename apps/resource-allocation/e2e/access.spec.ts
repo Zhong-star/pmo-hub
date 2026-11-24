@@ -87,7 +87,7 @@ test('opens with the selected Hub profile and links back to the catalog', async 
 
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.getByText('Taylor User')).toBeVisible();
-  await expect(page.getByText('ALLOCATION_USER')).toBeVisible();
+  await expect(page.locator('.module-role')).toHaveText('User');
   await expect(page.getByRole('link', { name: 'PMO Hub' })).toHaveAttribute('href', '/');
   expect(sentProfile).toBe('profile-user');
 });

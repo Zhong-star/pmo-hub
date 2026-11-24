@@ -24,9 +24,10 @@
   --primary-background: #1868db;
   --primary-hover: #0c55c7;
   --primary-text: #fff;
-  --card-radius: 20px;
-  --control-radius: 8px;
-  --button-radius: 28px;
+  --radius-sm: 4px;
+  --card-radius: 8px;
+  --control-radius: 6px;
+  --button-radius: 6px;
   --card-shadow: 0 1px 2px rgb(9 30 66 / 12%);
 }
 

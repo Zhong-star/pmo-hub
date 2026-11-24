@@ -34,7 +34,7 @@ test('opens Resource Allocation from the Hub, survives refresh, returns, and fol
   await expect(page).toHaveURL(/\/resource-allocation\/?\?page=requests$/);
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.getByText('Local Developer')).toBeVisible();
-  await expect(page.getByText('ALLOCATION_USER')).toBeVisible();
+  await expect(page.locator('.module-role')).toHaveText('User');
   await page.reload();
   await expect(page.getByText('Local Developer')).toBeVisible();
 
@@ -55,7 +55,7 @@ test('opens Resource Allocation from the Hub, survives refresh, returns, and fol
 
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.getByText('Local Contributor')).toBeVisible();
-  await expect(page.getByText('ALLOCATION_MODERATOR')).toBeVisible();
+  await expect(page.locator('.module-role')).toHaveText('Moderator');
   await expect(page.getByText('Local Developer')).toHaveCount(0);
   expect(selectedProfiles.slice(0, 2)).toContain('local-developer');
   expect(selectedProfiles.at(-1)).toBe('local-contributor');

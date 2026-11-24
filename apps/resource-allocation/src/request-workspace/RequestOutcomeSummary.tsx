@@ -1,6 +1,7 @@
 import { type RequestDecisionState, type ResourceRequestItem } from '../requestApi';
 import { formatBusinessTimestamp } from '../timeAndHours';
 import { requestResponsibleLabel, revalidationImpedimentLabel, revalidationOriginLabel } from '../revalidation';
+import { enumLabel } from '../labels';
 
 const decisionStates: Array<{ value: RequestDecisionState; label: string }> = [
   { value: 'WAITING_FOR_PRESENTATION', label: 'Waiting for presentation' },
@@ -90,7 +91,7 @@ export function RequestOutcomeDetails({ item }: { item: ResourceRequestItem }) {
             <div><dt>Group</dt><dd>{item.allocation.group.name}</dd></div>
             <div><dt>Period</dt><dd>{item.allocation.startDate} to {item.allocation.endDate}</dd></div>
             <div><dt>Weekly hours</dt><dd>{item.allocation.weeklyHours} hours per week</dd></div>
-            <div><dt>Allocation state</dt><dd>{item.allocation.state.replaceAll('_', ' ')}</dd></div>
+            <div><dt>Allocation state</dt><dd>{enumLabel(item.allocation.state)}</dd></div>
             <div><dt>Approved</dt><dd>{formatBusinessTimestamp(item.allocation.approvedAt)}</dd></div>
           </dl>
         </section>
