@@ -1,6 +1,6 @@
 :root {
-  --border-strong: #b3bac5;
-  --control-border: #8590a2;
+  --border-strong: #bdc0c4;
+  --control-border: #8a8f96;
   --border-accent: #8ab8ff;
   --accent-border-soft: #cce0ff;
   --accent-soft: #e9f2fe;
@@ -24,8 +24,8 @@
 }
 
 :root[data-theme='dark'] {
-  --border-strong: #6e7d98;
-  --control-border: #6e7d98;
+  --border-strong: #6f747b;
+  --control-border: #6f747b;
   --border-accent: #8ab8ff;
   --accent-border-soft: #355682;
   --accent-soft: #1d3150;
@@ -373,8 +373,8 @@ h1 {
 .secondary-button:disabled { cursor: wait; opacity: .65; }
 
 .admin-table { width: 100%; border-collapse: collapse; text-align: left; }
-.admin-table th { padding: 12px 14px; border-bottom: 1px solid var(--border-strong); color: var(--muted); font-size: 13px; font-weight: 600; }
-.admin-table td { padding: 15px 14px; border-bottom: 1px solid var(--border-subtle); color: var(--text-body); font-size: 14px; vertical-align: middle; }
+.admin-table th { padding: 8px 12px; border-bottom: 1px solid var(--border-strong); color: var(--muted); font-size: 13px; font-weight: 600; }
+.admin-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); color: var(--text-body); font-size: 14px; vertical-align: middle; }
 .admin-table td:first-child { min-width: 170px; }
 .admin-table td:first-child span { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; }
 .admin-table tr:last-child td { border-bottom: 0; }
@@ -665,14 +665,14 @@ h1 {
 .request-exception-filters .form-field { margin: 0; }
 .request-queue-content { padding-top: 24px; }
 .request-queue-list { display: grid; gap: 16px; }
-.request-queue-card { min-width: 0; padding: clamp(18px, 3vw, 26px); border: 1px solid var(--border-strong); border-radius: var(--card-radius); background: var(--surface-subtle); scroll-margin-block: 24px; }
+.request-queue-card { min-width: 0; padding: clamp(14px, 2vw, 20px); border: 1px solid var(--border-strong); border-radius: var(--card-radius); background: var(--surface-subtle); scroll-margin-block: 24px; }
 .request-queue-card-highlighted { border-color: var(--link); box-shadow: 0 0 0 3px var(--accent-ring); }
 .request-queue-card:focus { outline: 3px solid var(--focus); outline-offset: 3px; }
 .request-queue-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 .request-queue-card-heading h3 { margin: 0; color: var(--text); font-size: 20px; letter-spacing: -.02em; }
 .request-queue-card-heading .eyebrow { margin-bottom: 7px; }
 .request-queue-requester { margin: 7px 0 0; color: var(--muted); font-size: 14px; }
-.request-queue-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px 20px; margin: 22px 0 0; }
+.request-queue-details { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 20px; margin: 16px 0 0; }
 .request-queue-details div { min-width: 0; }
 .request-queue-details dt { color: var(--muted); font-size: 12px; font-weight: 500; }
 .request-queue-details dd { margin: 5px 0 0; color: var(--text-body); font-size: 14px; overflow-wrap: anywhere; }
@@ -731,7 +731,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
-  padding: 18px;
+  padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--control-radius);
   background: var(--surface-subtle);
@@ -751,7 +751,7 @@ h1 {
 .allocation-filters input::placeholder, .form-field input::placeholder, .form-field textarea::placeholder { color: var(--muted); opacity: 1; }
 .allocation-filter-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; grid-column: 1 / -1; }
 .allocation-capacity, .allocation-list-area, .allocation-detail { display: grid; gap: 16px; }
-.allocation-capacity { padding: 20px; border: 1px solid var(--border); border-radius: var(--control-radius); background: var(--surface-subtle); }
+.allocation-capacity { padding: 16px; border: 1px solid var(--border); border-radius: var(--control-radius); background: var(--surface-subtle); }
 .allocation-subheading h3 { margin: 0; color: var(--text-heading); font-size: 18px; }
 .allocation-subheading p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
 .allocation-capacity .allocation-subheading { align-items: end; }

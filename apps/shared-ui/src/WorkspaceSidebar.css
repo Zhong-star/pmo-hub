@@ -29,7 +29,7 @@
 }
 
 .workspace-panel {
-  padding: clamp(20px, 3vw, 48px);
+  padding: clamp(16px, 2.5vw, 32px);
   background: var(--surface);
 }
 

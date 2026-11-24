@@ -3,15 +3,15 @@
   --nav-indicator: #1868db;
   --status-background: #e9f2fe;
   --status-border: #cce0ff;
-  --status-text: #1c2b42;
+  --status-text: #1a1c1f;
   --status-indicator: #1868db;
   --warning-background: #fff8f3;
   --warning-border: #efd7c8;
   --warning-text: #713e24;
   --warning-copy: #765d4e;
   --warning-indicator: #b95f30;
-  --theme-control-background: #f0f1f2;
-  --theme-control-text: #42526e;
+  --theme-control-background: #f3f4f5;
+  --theme-control-text: #5b6067;
   --theme-active-text: #fff;
 }
 
@@ -27,8 +27,8 @@
   --warning-text: #ffdbbf;
   --warning-copy: #f0c7a8;
   --warning-indicator: #ffb17c;
-  --theme-control-background: #1c2b42;
-  --theme-control-text: #b5c2d5;
+  --theme-control-background: #1a1c1f;
+  --theme-control-text: #a9aeb4;
   --theme-active-text: #fff;
 }
 
@@ -756,7 +756,7 @@ h1 + .api-status {
 
 .notifications-menu__trigger:hover,
 .notifications-menu__trigger[aria-expanded='true'] {
-  background: var(--header-hover, #f0f1f2);
+  background: var(--header-hover, #f3f4f5);
 }
 
 .notifications-menu__badge {
