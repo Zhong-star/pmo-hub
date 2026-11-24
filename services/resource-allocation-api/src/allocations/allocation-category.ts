@@ -33,3 +33,8 @@ export function allocationCategoryLabel(category: string | null | undefined): st
     EXECUTION_ENHANCEMENT: 'Execution — Enhancement',
   } as Record<string, string>)[category ?? ''] ?? null;
 }
+
+/** Category recorded on a request-based allocation; null when a legacy request has none. */
+export function requestCategory(conditions: Record<string, unknown>): string | null {
+  return typeof conditions.category === 'string' && conditions.category ? conditions.category : null;
+}

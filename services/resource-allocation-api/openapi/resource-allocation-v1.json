@@ -7225,6 +7225,81 @@
         ]
       }
     },
+    "/api/resource-allocation/v1/allocation-groups": {
+      "get": {
+        "operationId": "ResourceAllocationController_listDirectAllocationGroups",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Empty for a User; all active groups for an Admin. Not paginated: group counts are small and the list feeds one selection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationGroupCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active local profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List active groups where the current person may record direct allocations",
+        "tags": [
+          "Tech Resource Allocations"
+        ]
+      }
+    },
     "/api/resource-allocation/v1/allocations/{id}": {
       "get": {
         "operationId": "ResourceAllocationController_get",
@@ -11687,6 +11762,36 @@
           "category",
           "startDate",
           "endDate"
+        ]
+      },
+      "AllocationGroupOptionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "AllocationGroupCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllocationGroupOptionDto"
+            }
+          }
+        },
+        "required": [
+          "items"
         ]
       },
       "AllocationCollectionResponseDto": {

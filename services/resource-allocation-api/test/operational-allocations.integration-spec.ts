@@ -393,6 +393,32 @@ describe('Tech Resource Allocation operational and direct allocations (#92–#94
     });
   });
 
+  describe('direct allocation scope options (#93)', () => {
+    it('lists only the groups each role may allocate directly, including covered groups', async () => {
+      const fixture = await setup();
+      const covering = await addPerson('ops-covering', ResourceAllocationRole.Supervisor);
+      await dataSource!.getRepository(ResourcePerson).update(covering.id, { coveredGroupIds: [fixture.otherGroup.id] });
+      const groupsFor = async (person: ResourcePerson) => (await request(app!.getHttpServer())
+        .get('/api/resource-allocation/v1/allocation-groups')
+        .set('X-PMO-Local-User-ID', person.localUserId)
+        .expect(200)).body.items.map(({ name }: { name: string }) => name);
+      expect(await groupsFor(fixture.member)).toEqual([]);
+      expect(await groupsFor(fixture.moderator)).toEqual(['Platform']);
+      expect(await groupsFor(fixture.supervisor)).toEqual(['Platform']);
+      expect(await groupsFor(fixture.manager)).toEqual(['Platform']);
+      expect(await groupsFor(covering)).toEqual(['Data']);
+      expect(await groupsFor(fixture.admin)).toEqual(['Data', 'Platform']);
+    });
+
+    it('answers a User direct attempt with 403 whether or not the person exists', async () => {
+      const fixture = await setup();
+      const today = await businessDate();
+      const body = { category: 'TRAINING', resourceProfileId: fixture.profile.id, startDate: today, endDate: today, weeklyHours: 2, comment: 'Course.' };
+      await create(fixture.member, { ...body, personId: randomUUID() }).expect(403);
+      await create(fixture.member, { ...body, personId: fixture.outsider.id }).expect(403);
+    });
+  });
+
   describe('vacation (#94)', () => {
     it('records own Vacation at 40 weekly hours without profile or initiative and notifies leaders', async () => {
       const fixture = await setup();
@@ -411,6 +437,8 @@ describe('Tech Resource Allocation operational and direct allocations (#92–#94
         category: 'VACATION', resourceProfileId: fixture.profile.id, initiativeId: fixture.initiative.id, startDate: today, endDate: today, weeklyHours: 20,
       }).expect(400);
       expect(incompatible.body.errors.map(({ path }: { path: string }) => path).sort()).toEqual(['initiativeId', 'resourceProfileId', 'weeklyHours']);
+      const described = await create(fixture.member, { category: 'VACATION', startDate: today, endDate: today, comment: 'Hidden text' }).expect(400);
+      expect(described.body.errors).toEqual([expect.objectContaining({ path: 'comment', code: 'NOT_ALLOWED' })]);
     });
 
     it('lets leadership register Vacation directly and keeps colleagues from reading it', async () => {

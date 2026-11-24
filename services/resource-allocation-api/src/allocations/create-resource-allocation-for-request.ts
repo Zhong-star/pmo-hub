@@ -7,7 +7,7 @@ import { ResourceProfile } from '../resource-profiles/resource-profile.entity';
 
 export interface CreateResourceAllocationForRequestInput {
   requestId: string;
-  category: string;
+  category: string | null;
   person: ResourcePerson;
   group: ResourceGroup;
   initiative: ResourceInitiative;

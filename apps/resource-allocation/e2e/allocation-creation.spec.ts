@@ -71,8 +71,8 @@ async function openAllocations(page: Page, person: typeof member) {
   await page.route(`${apiRoot}/initiatives**`, (route) => route.fulfill({
     json: { items: [{ id: initiativeId, code: 'ITDM-77', name: 'Capacity planning' }], page: emptyPage },
   }));
-  await page.route(`${apiRoot}/admin/resource-profile-groups**`, (route) => route.fulfill({
-    json: { items: [{ id: groupId, name: 'Platform Engineering' }, { id: otherGroupId, name: 'Data' }], page: emptyPage },
+  await page.route(`${apiRoot}/allocation-groups`, (route) => route.fulfill({
+    json: { items: person.role === 'ALLOCATION_USER' ? [] : [{ id: groupId, name: 'Platform Engineering' }, { id: otherGroupId, name: 'Data' }] },
   }));
   await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), { key: profileStorageKey, value: person.localUserId });
 }
@@ -202,6 +202,8 @@ test('records Vacation with fixed hours and no profile field', async ({ page }) 
   });
   await page.goto('/resource-allocation/?page=allocations');
   await page.getByRole('button', { name: 'Record allocation' }).click();
+  await creation(page).getByLabel('Category').selectOption('TRAINING');
+  await creation(page).getByLabel('Activity description').fill('Text that Vacation must not keep');
   await creation(page).getByLabel('Category').selectOption('VACATION');
   await expect(creation(page).getByLabel('Resource profile')).toHaveCount(0);
   await expect(creation(page).getByLabel('Weekly hours')).toHaveCount(0);

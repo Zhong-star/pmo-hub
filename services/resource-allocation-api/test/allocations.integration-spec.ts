@@ -575,6 +575,34 @@ describe('Tech Resource Allocation allocations (#69)', () => {
     });
   });
 
+  it('keeps pre-existing request allocations and notices intact and Unclassified when operational allocations migrate', async () => {
+    const fixture = await setup();
+    const created = await createAllocation(fixture);
+    await dataSource!.query(
+      "INSERT INTO resource_allocation_notifications (recipient_id, source_request_id, event_code, title, message) VALUES ($1::uuid, $2::uuid, 'LEGACY_NOTICE', 'Legacy', 'Legacy notice')",
+      [fixture.requester.id, created.requestItem.id],
+    );
+    const migrationTable = dataSource!.options.migrationsTableName ?? 'migrations';
+    const applied = async () => (await dataSource!.query(`SELECT 1 FROM ${migrationTable} WHERE name = 'CreateOperationalAllocations2026112300092'`)).length > 0;
+    while (await applied()) await dataSource!.undoLastMigration();
+    expect(await dataSource!.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'resource_allocations' AND column_name = 'classification'")).toEqual([]);
+    await dataSource!.query("UPDATE resource_people SET classification = 'INTERNAL' WHERE id = $1::uuid", [fixture.assignee.id]);
+    await dataSource!.runMigrations();
+
+    const rows = await dataSource!.query(
+      'SELECT origin, category, classification, created_by_person_id, initiative_id::text AS initiative_id FROM resource_allocations WHERE id = $1::uuid',
+      [created.allocation.id],
+    );
+    expect(rows).toEqual([{ origin: 'REQUEST', category: 'EXECUTION_PROJECT', classification: null, created_by_person_id: null, initiative_id: fixture.initiative.id }]);
+    expect(await dataSource!.query("SELECT source_request_id::text AS request_id, source_allocation_id FROM resource_allocation_notifications WHERE event_code = 'LEGACY_NOTICE'"))
+      .toEqual([{ request_id: created.requestItem.id, source_allocation_id: null }]);
+    const detail = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/allocations/${created.allocation.id}`)
+      .set('X-PMO-Local-User-ID', fixture.assignee.localUserId)
+      .expect(200);
+    expect(detail.body).toMatchObject({ source: 'REQUEST', requestId: created.requestItem.id, classification: null, category: 'EXECUTION_PROJECT' });
+  });
+
   it('serializes DTO query and body validation field errors into RFC 9457 errors[]', async () => {
     const fixture = await setup();
     const today = await businessDate();

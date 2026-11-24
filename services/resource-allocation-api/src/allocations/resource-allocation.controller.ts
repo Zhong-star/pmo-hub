@@ -33,6 +33,7 @@ import {
   AllocationCollectionResponseDto,
   AllocationCommandDto,
   CreateAllocationDto,
+  AllocationGroupCollectionResponseDto,
   AllocationHistoryCollectionResponseDto,
   AllocationLoadQueryDto,
   AllocationLoadResponseDto,
@@ -80,6 +81,14 @@ export class ResourceAllocationController {
     response.setHeader('ETag', `"${operation.result.version}"`);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
     return operation.result;
+  }
+
+  @Get('allocation-groups')
+  @ApiOperation({ summary: 'List active groups where the current person may record direct allocations' })
+  @ApiOkResponse({ type: AllocationGroupCollectionResponseDto, description: 'Empty for a User; all active groups for an Admin. Not paginated: group counts are small and the list feeds one selection.' })
+  @ApiForbiddenResponse({ description: 'An active local profile is required.' })
+  listDirectAllocationGroups(@Headers(localProfileHeader) localUserId: string | undefined) {
+    return this.allocationService.listDirectAllocationGroups(localUserId);
   }
 
   @Get('allocations')

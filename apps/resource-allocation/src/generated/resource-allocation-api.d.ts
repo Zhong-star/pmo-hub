@@ -783,6 +783,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/resource-allocation/v1/allocation-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List active groups where the current person may record direct allocations */
+        get: operations["ResourceAllocationController_listDirectAllocationGroups"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/resource-allocation/v1/allocations/{id}": {
         parameters: {
             query?: never;
@@ -1885,6 +1902,14 @@ export interface components {
             weeklyHours?: number;
             /** @description Required for ROUTINE_SUPPORT, TRAINING, and INTERNAL_ACTIVITIES. */
             comment?: string | null;
+        };
+        AllocationGroupOptionDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        AllocationGroupCollectionResponseDto: {
+            items: components["schemas"]["AllocationGroupOptionDto"][];
         };
         AllocationCollectionResponseDto: {
             items: components["schemas"]["AllocationViewDto"][];
@@ -6501,6 +6526,63 @@ export interface operations {
             };
             /** @description The profile, group, dates, or hours do not meet allocation rules. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceAllocationController_listDirectAllocationGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Empty for a User; all active groups for an Admin. Not paginated: group counts are small and the list feeds one selection. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllocationGroupCollectionResponseDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An active local profile is required. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

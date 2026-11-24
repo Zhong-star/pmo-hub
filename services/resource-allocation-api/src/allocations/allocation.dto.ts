@@ -70,6 +70,19 @@ export class CreateAllocationDto {
   comment?: string | null;
 }
 
+export class AllocationGroupOptionDto {
+  @ApiProperty({ type: String, format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ type: String })
+  name!: string;
+}
+
+export class AllocationGroupCollectionResponseDto {
+  @ApiProperty({ type: () => [AllocationGroupOptionDto] })
+  items!: AllocationGroupOptionDto[];
+}
+
 export class AllocationCollectionQueryDto {
   @ApiPropertyOptional({ type: String, format: 'uuid' })
   @IsOptional()

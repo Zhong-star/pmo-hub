@@ -211,11 +211,27 @@ async function loadAllSelectionPages<Item>(
   return items;
 }
 
-/** Loads the people and active profiles that can be chosen for one group. */
-export async function getGroupAllocationOptions(localUserId: string, groupId: string) {
+export type AllocationGroupOption = ApiResponse<'/api/resource-allocation/v1/allocation-groups', 'get'>['items'][number];
+
+/** Groups where the current person may record direct allocations (empty for a User). */
+export async function getDirectAllocationGroups(localUserId: string): Promise<AllocationGroupOption[]> {
+  try {
+    const response = await api.get<ApiResponse<'/api/resource-allocation/v1/allocation-groups', 'get'>>(`${API_ROOT}/allocation-groups`, {
+      headers: headers(localUserId),
+    });
+    return response.data.items;
+  } catch (error) {
+    return throwApiRequestError(error, AllocationRequestError);
+  }
+}
+
+/** Loads the active profiles, and for direct allocations the people, that can be chosen for one group. */
+export async function getGroupAllocationOptions(localUserId: string, groupId: string, includePeople: boolean) {
   try {
     const [people, profiles] = await Promise.all([
-      loadAllSelectionPages<AllocationPersonOption>('/api/resource-allocation/v1/people', localUserId, groupId),
+      includePeople
+        ? loadAllSelectionPages<AllocationPersonOption>('/api/resource-allocation/v1/people', localUserId, groupId)
+        : Promise.resolve([] as AllocationPersonOption[]),
       loadAllSelectionPages<AllocationProfileOption>('/api/resource-allocation/v1/resource-profiles', localUserId, groupId),
     ]);
     return { people, profiles };

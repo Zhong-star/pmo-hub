@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { useNavigationFormProtection } from './NavigationProtection';
-import { getManageableProfileGroups } from './resource-profile-administration-api';
 import { businessDate, formatCalendarDate, normalizeWeeklyHours } from './timeAndHours';
 import {
   ALLOCATIONS_QUERY_ROOT,
   AllocationRequestError,
   allocationCategoryLabel,
   createAllocation,
+  getDirectAllocationGroups,
   getGroupAllocationOptions,
   getInitiativeOptions,
   initiativeCategories,
@@ -96,7 +96,7 @@ function toInput(values: CreationForm): CreateAllocationInput | null {
     startDate: values.startDate,
     endDate: values.endDate,
     ...(vacation ? {} : { weeklyHours: hours }),
-    ...(values.comment.trim() ? { comment: values.comment.trim() } : {}),
+    ...(!vacation && values.comment.trim() ? { comment: values.comment.trim() } : {}),
   };
 }
 
@@ -117,22 +117,13 @@ export function AllocationCreation({ localUserId, personId, role, groupId, onAcc
 
   const leadershipGroupsQuery = useQuery({
     queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId, 'creation-groups'],
-    queryFn: async () => {
-      const groups: Array<{ id: string; name: string }> = [];
-      let cursor: string | null = null;
-      do {
-        const page = await getManageableProfileGroups(localUserId, cursor);
-        groups.push(...page.items);
-        cursor = page.page.nextCursor;
-      } while (cursor !== null);
-      return groups;
-    },
+    queryFn: () => getDirectAllocationGroups(localUserId),
     enabled: leader,
     retry: false,
   });
   const groupOptionsQuery = useQuery({
-    queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId, 'creation-options', optionsGroupId],
-    queryFn: () => getGroupAllocationOptions(localUserId, optionsGroupId!),
+    queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId, 'creation-options', optionsGroupId, target],
+    queryFn: () => getGroupAllocationOptions(localUserId, optionsGroupId!, target === 'direct'),
     enabled: optionsGroupId !== null,
     retry: false,
   });

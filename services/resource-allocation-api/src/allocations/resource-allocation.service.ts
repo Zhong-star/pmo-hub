@@ -116,6 +116,9 @@ export class ResourceAllocationService {
           throw this.accessDenied('Own allocations are limited to operational categories. Initiative work needs a request or a direct allocation by your leadership.');
         }
 
+        if (origin === 'DIRECT' && actor.role === ResourceAllocationRole.User) {
+          throw this.accessDenied('You can create direct allocations only for people in groups within your scope.');
+        }
         const person = origin === 'SELF'
           ? actor
           : await manager.getRepository(ResourcePerson).findOne({ where: { id: personId } });
@@ -218,6 +221,35 @@ export class ResourceAllocationService {
     }
   }
 
+  /** Active groups where the current person may record direct allocations. */
+  async listDirectAllocationGroups(localUserId: string | undefined) {
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const actor = await this.requireActivePerson(manager, localUserId);
+        if (actor.role === ResourceAllocationRole.User) return { items: [] };
+        const parameters: unknown[] = [];
+        let scope = 'TRUE';
+        if (actor.role === ResourceAllocationRole.Moderator) {
+          parameters.push(actor.groupId);
+          scope = 'team.id = $1::uuid';
+        } else if (actor.role === ResourceAllocationRole.Supervisor || actor.role === ResourceAllocationRole.Manager) {
+          const column = actor.role === ResourceAllocationRole.Supervisor ? 'supervisor_id' : 'manager_id';
+          parameters.push(actor.id, actor.coveredGroupIds ?? []);
+          scope = `(team.id = ANY($2::uuid[]) OR team.${column} = $1::uuid)`;
+        }
+        const rows = await manager.query(`
+          SELECT team.id::text AS id, team.name
+          FROM resource_groups AS team
+          WHERE team.active = TRUE AND ${scope}
+          ORDER BY team.name, team.id
+        `, parameters) as Array<{ id: string; name: string }>;
+        return { items: rows };
+      });
+    } catch (error) {
+      throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
+    }
+  }
+
   private parseCreationFields(input: CreateAllocationDto) {
     const errors: Array<{ path: string; code: string; message: string }> = [];
     const category = input.category;
@@ -230,6 +262,7 @@ export class ResourceAllocationService {
     const endDate = this.requireDate(input.endDate, 'endDate');
     const comment = typeof input.comment === 'string' && input.comment.trim() ? input.comment.trim() : null;
 
+    if (vacation && comment) errors.push({ path: 'comment', code: 'NOT_ALLOWED', message: 'Vacation does not use a description.' });
     if (vacation && resourceProfileId) errors.push({ path: 'resourceProfileId', code: 'NOT_ALLOWED', message: 'Vacation does not use a resource profile.' });
     if (!vacation && !resourceProfileId) errors.push({ path: 'resourceProfileId', code: 'REQUIRED', message: 'Choose an active resource profile.' });
     if (operational && initiativeId) errors.push({ path: 'initiativeId', code: 'NOT_ALLOWED', message: 'Operational categories do not use an ITDM initiative.' });
