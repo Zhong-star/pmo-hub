@@ -117,6 +117,16 @@ describe('backend-owned Resource Allocation OpenAPI contract', () => {
     expect(history.responses['404'].content).toHaveProperty('application/problem+json');
   });
 
+  it('documents validation errors on scoped resource profile administration', () => {
+    const root = '/api/resource-allocation/v1/admin';
+    const resourceProfiles = contract.paths[`${root}/resource-profiles`];
+    const manageableGroups = contract.paths[`${root}/resource-profile-groups`].get;
+
+    expect(resourceProfiles.get.responses['400'].content).toHaveProperty('application/problem+json');
+    expect(resourceProfiles.post.responses['400'].content).toHaveProperty('application/problem+json');
+    expect(manageableGroups.responses['400'].content).toHaveProperty('application/problem+json');
+  });
+
   it('documents minimum selection projections without administrative identity fields', () => {
     const peopleList = contract.paths['/api/resource-allocation/v1/people'].get;
     const peopleSchema = contract.components.schemas.ResourcePersonSelectionDto;

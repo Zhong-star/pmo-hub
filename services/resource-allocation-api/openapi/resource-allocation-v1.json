@@ -1550,6 +1550,16 @@
               }
             }
           },
+          "400": {
+            "description": "The page limit, cursor, or active filter is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
           "401": {
             "description": "A local Hub profile is required.",
             "content": {
@@ -1569,7 +1579,7 @@
             }
           },
           "403": {
-            "description": "Only an active Admin may manage administrative records.",
+            "description": "An active Admin or an in-scope Moderator, Supervisor, or Manager is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1604,7 +1614,7 @@
             "localProfile": []
           }
         ],
-        "summary": "List administrative resource profiles",
+        "summary": "List resource profiles in the current administrative or leadership scope",
         "tags": [
           "Tech Resource Allocation administration"
         ]
@@ -1662,6 +1672,16 @@
               }
             }
           },
+          "400": {
+            "description": "The Idempotency-Key is missing or invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
           "401": {
             "description": "A local Hub profile is required.",
             "content": {
@@ -1681,7 +1701,7 @@
             }
           },
           "403": {
-            "description": "Only an active Admin may manage administrative records.",
+            "description": "An active Admin or an in-scope Moderator, Supervisor, or Manager is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1726,7 +1746,110 @@
             "localProfile": []
           }
         ],
-        "summary": "Create an administrative resource profile",
+        "summary": "Create a resource profile in the current administrative or leadership scope",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/admin/resource-profile-groups": {
+      "get": {
+        "operationId": "ResourceAllocationAdministrationController_listManageableResourceProfileGroups",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size (default 50, maximum 100).",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Only active groups in the current profile-management scope, with identifier and name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGroupSelectionCollectionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The page limit or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active Admin or an in-scope Moderator, Supervisor, or Manager is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List groups where the current user can manage resource profiles",
         "tags": [
           "Tech Resource Allocation administration"
         ]
@@ -1783,7 +1906,7 @@
             }
           },
           "403": {
-            "description": "Only an active Admin may manage administrative records.",
+            "description": "An active Admin or an in-scope Moderator, Supervisor, or Manager is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1828,7 +1951,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Get an administrative resource profile",
+        "summary": "Get a resource profile in the current administrative or leadership scope",
         "tags": [
           "Tech Resource Allocation administration"
         ]
@@ -1911,7 +2034,7 @@
             }
           },
           "403": {
-            "description": "Only an active Admin may manage administrative records.",
+            "description": "An active Admin or an in-scope Moderator, Supervisor, or Manager is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1922,6 +2045,16 @@
           },
           "404": {
             "description": "The resource profile was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A profile referenced by an allocation cannot be moved to another group.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1976,7 +2109,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Update an administrative resource profile",
+        "summary": "Update a resource profile in the current administrative or leadership scope",
         "tags": [
           "Tech Resource Allocation administration"
         ]
@@ -9001,6 +9134,40 @@
           "items"
         ]
       },
+      "ResourceGroupSelectionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "ResourceGroupSelectionCollectionDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/CursorPageInfoDto"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceGroupSelectionDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "items"
+        ]
+      },
       "CreateResourceProfileRequestDto": {
         "type": "object",
         "properties": {
@@ -9109,40 +9276,6 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ResourcePersonSelectionDto"
-            }
-          }
-        },
-        "required": [
-          "page",
-          "items"
-        ]
-      },
-      "ResourceGroupSelectionDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name"
-        ]
-      },
-      "ResourceGroupSelectionCollectionDto": {
-        "type": "object",
-        "properties": {
-          "page": {
-            "$ref": "#/components/schemas/CursorPageInfoDto"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ResourceGroupSelectionDto"
             }
           }
         },
@@ -9896,11 +10029,15 @@
           },
           "name": {
             "type": "string"
+          },
+          "active": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
-          "name"
+          "name",
+          "active"
         ]
       },
       "AllocationApprovalResponseDto": {

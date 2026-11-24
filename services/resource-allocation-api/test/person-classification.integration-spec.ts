@@ -130,6 +130,25 @@ describe('Admin person classification', () => {
     expect(history.body.items).toEqual([]);
   });
 
+  it('rejects classification history cursors outside the PostgreSQL bigint range', async () => {
+    const admin = await addPerson('classification-admin', ResourceAllocationRole.Admin);
+    const person = await addPerson('classified-person', ResourceAllocationRole.User);
+    const cursor = Buffer.from(JSON.stringify({
+      version: 1,
+      personId: person.id,
+      sequence: '9223372036854775808',
+    })).toString('base64url');
+
+    const response = await request(app!.getHttpServer())
+      .get(`${personPath(person.id)}/classification-history`)
+      .query({ cursor })
+      .set('X-PMO-Local-User-ID', admin.localUserId)
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(400);
+
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
   it('lets Admin change or clear classification with current ETags without changing the person role', async () => {
     const admin = await addPerson('classification-admin', ResourceAllocationRole.Admin);
     const person = await addPerson('classified-person', ResourceAllocationRole.User);

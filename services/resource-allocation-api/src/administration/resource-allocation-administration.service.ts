@@ -35,6 +35,7 @@ interface PersonClassificationHistoryCursor {
 }
 
 const historyCursorSequencePattern = /^[1-9]\d*$/;
+const maxPostgresBigint = 9223372036854775807n;
 
 
 @Injectable()
@@ -129,7 +130,8 @@ export class ResourceAllocationAdministrationService {
         cursor.version !== 1 ||
         cursor.personId !== personId ||
         typeof cursor.sequence !== 'string' ||
-        !historyCursorSequencePattern.test(cursor.sequence)
+        !historyCursorSequencePattern.test(cursor.sequence) ||
+        BigInt(cursor.sequence) > maxPostgresBigint
       ) {
         throw this.invalidHistoryCursor();
       }
@@ -368,11 +370,16 @@ export class ResourceAllocationAdministrationService {
   }
 
   async listResourceProfiles(localUserId: string | undefined, filters: { limit?: string; cursor?: string; active?: string }) {
-    await this.requireAdmin(localUserId);
+    const actor = await this.requireProfileAdministrator(localUserId);
     const page = parseAdminCollectionQuery('resource-profiles', filters);
     const query = this.dataSource.getRepository(ResourceProfile).createQueryBuilder('profile')
       .orderBy('profile.id', 'ASC')
       .take(page.limit + 1);
+    if (actor.role !== ResourceAllocationRole.Admin) {
+      const groupIds = (await this.getManageableProfileGroups(this.dataSource.manager, actor)).map((group) => group.id);
+      if (groupIds.length === 0) query.andWhere('1 = 0');
+      else query.andWhere('profile.group_id IN (:...groupIds)', { groupIds });
+    }
     if (page.active !== undefined) query.andWhere('profile.active = :active', { active: page.active });
     if (page.afterId) query.andWhere('profile.id > :afterId', { afterId: page.afterId });
     const found = await query.getMany();
@@ -389,18 +396,47 @@ export class ResourceAllocationAdministrationService {
     };
   }
 
+  async listManageableResourceProfileGroups(localUserId: string | undefined, filters: { limit?: string; cursor?: string }) {
+    const actor = await this.requireProfileAdministrator(localUserId);
+    const page = parseAdminCollectionQuery('resource-profile-groups', { ...filters, active: 'true' });
+    const query = this.dataSource.getRepository(ResourceGroup).createQueryBuilder('group')
+      .where('group.active = TRUE')
+      .orderBy('group.id', 'ASC')
+      .take(page.limit + 1);
+    if (actor.role !== ResourceAllocationRole.Admin) {
+      const groupIds = (await this.getManageableProfileGroups(this.dataSource.manager, actor)).map((group) => group.id);
+      if (groupIds.length === 0) query.andWhere('1 = 0');
+      else query.andWhere('group.id IN (:...groupIds)', { groupIds });
+    }
+    if (page.afterId) query.andWhere('group.id > :afterId', { afterId: page.afterId });
+    const found = await query.getMany();
+    const hasNext = found.length > page.limit;
+    const groups = found.slice(0, page.limit);
+    return {
+      items: groups.map((group): ResourceGroupSelectionDto => ({ id: group.id, name: group.name })),
+      page: {
+        nextCursor: hasNext && groups.length > 0
+          ? nextAdminCollectionCursor('resource-profile-groups', true, groups[groups.length - 1].id)
+          : null,
+        limit: page.limit,
+      },
+    };
+  }
+
   async getResourceProfile(localUserId: string | undefined, id: string) {
-    await this.requireAdmin(localUserId);
+    const actor = await this.requireProfileAdministrator(localUserId);
     const profile = await this.dataSource.getRepository(ResourceProfile).findOne({ where: { id } });
     if (!profile) throw this.notFound('Resource profile');
+    await this.assertProfileGroupScope(this.dataSource.manager, actor, profile.groupId);
     return this.toResourceProfile(profile);
   }
 
   async createResourceProfile(localUserId: string | undefined, idempotencyKey: string | undefined, input: CreateResourceProfileRequestDto) {
     const key = this.parseIdempotencyKey(idempotencyKey);
-    return this.withAdminMutation(localUserId, async (manager, actor) => {
+    return this.withResourceProfileMutation(localUserId, async (manager, actor) => {
       const active = input.active ?? true;
       const normalizedInput = { name: input.name.trim(), groupId: input.groupId, active };
+      await this.assertProfileGroupScope(manager, actor, input.groupId);
       return runIdempotentOperation(manager, {
         actorId: actor.id,
         operation: 'admin.createResourceProfile',
@@ -409,7 +445,10 @@ export class ResourceAllocationAdministrationService {
       }, async () => {
         await this.validateProfileGroup(manager, input.groupId, active);
         const repository = manager.getRepository(ResourceProfile);
-        return this.toResourceProfile(await repository.save(repository.create(normalizedInput)));
+        const profile = await repository.save(repository.create(normalizedInput));
+        const response = this.toResourceProfile(profile);
+        await this.recordResourceProfileAudit(manager, actor, 'PROFILE_CREATED', null, response);
+        return response;
       });
     });
   }
@@ -424,13 +463,14 @@ export class ResourceAllocationAdministrationService {
     if (Object.keys(input).length === 0) {
       throw new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, 'At least one editable field is required.');
     }
-    return this.withAdminMutation(localUserId, async (manager, actor) => {
+    return this.withResourceProfileMutation(localUserId, async (manager, actor) => {
       const repository = manager.getRepository(ResourceProfile);
       const profile = await repository.createQueryBuilder('profile')
         .setLock('pessimistic_write')
         .where('profile.id = :id', { id })
         .getOne();
       if (!profile) throw this.notFound('Resource profile');
+      await this.assertProfileGroupScope(manager, actor, profile.groupId);
       if (profile.version !== expectedVersion) {
         throw new ResourceAllocationException('PRECONDITION_FAILED', 'Precondition failed', 412, 'The resource profile changed. Reload it before saving.');
       }
@@ -438,15 +478,27 @@ export class ResourceAllocationAdministrationService {
       const wasActive = profile.active;
       const nextGroupId = input.groupId ?? profile.groupId;
       const nextActive = input.active ?? profile.active;
+      if (!wasActive && nextActive && actor.role !== ResourceAllocationRole.Admin) {
+        throw new ResourceAllocationException(
+          'ACCESS_DENIED', 'Access denied', 403,
+          'Only an Admin may reactivate an inactive resource profile.',
+        );
+      }
+      if (input.groupId !== undefined) await this.assertProfileGroupScope(manager, actor, nextGroupId);
       await this.validateProfileGroup(manager, nextGroupId, nextActive);
+      if (nextGroupId !== profile.groupId) await this.assertProfileCanMove(manager, profile.id);
+      const before = this.toResourceProfile(profile);
       if (input.name !== undefined) profile.name = input.name.trim();
       profile.groupId = nextGroupId;
       profile.active = nextActive;
       const saved = await repository.save(profile);
+      const after = this.toResourceProfile(saved);
+      const action = this.resourceProfileUpdateAction(before, after);
+      await this.recordResourceProfileAudit(manager, actor, action, before, after);
       if ((wasActive && !saved.active) || previousGroupId !== saved.groupId) {
         await revalidateRequestsForEligibilityChange(manager, { kind: 'PROFILE', id: saved.id }, actor);
       }
-      return this.toResourceProfile(saved);
+      return after;
     });
   }
 
@@ -788,6 +840,107 @@ export class ResourceAllocationAdministrationService {
       const actor = await this.requireAdmin(localUserId, manager);
       return operation(manager, actor);
     });
+  }
+
+  private async withResourceProfileMutation<T>(
+    localUserId: string | undefined,
+    operation: (manager: EntityManager, actor: ResourcePerson) => Promise<T>,
+  ): Promise<T> {
+    return this.dataSource.transaction(async (manager) => {
+      await this.lockAdministrationWrites(manager);
+      const actor = await this.requireProfileAdministrator(localUserId, manager);
+      return operation(manager, actor);
+    });
+  }
+
+  private async requireProfileAdministrator(localUserId: string | undefined, manager?: EntityManager): Promise<ResourcePerson> {
+    const person = await this.requireActivePerson(localUserId, manager);
+    if (![
+      ResourceAllocationRole.Admin,
+      ResourceAllocationRole.Moderator,
+      ResourceAllocationRole.Supervisor,
+      ResourceAllocationRole.Manager,
+    ].includes(person.role)) {
+      throw new ResourceAllocationException(
+        'ACCESS_DENIED', 'Access denied', 403,
+        'Only an active Admin or in-scope resource leader can manage resource profiles.',
+      );
+    }
+    return person;
+  }
+
+  private async getManageableProfileGroups(manager: EntityManager, actor: ResourcePerson): Promise<ResourceGroup[]> {
+    const groups = manager.getRepository(ResourceGroup);
+    if (actor.role === ResourceAllocationRole.Admin) {
+      return groups.find({ where: { active: true }, order: { id: 'ASC' } });
+    }
+    if (actor.role === ResourceAllocationRole.Moderator) {
+      if (!actor.groupId) return [];
+      const group = await groups.findOne({ where: { id: actor.groupId, active: true } });
+      return group ? [group] : [];
+    }
+    if (actor.role === ResourceAllocationRole.Supervisor) {
+      return groups.find({ where: { active: true, supervisorId: actor.id }, order: { id: 'ASC' } });
+    }
+    if (actor.role === ResourceAllocationRole.Manager) {
+      return groups.find({ where: { active: true, managerId: actor.id }, order: { id: 'ASC' } });
+    }
+    return [];
+  }
+
+  private async assertProfileGroupScope(manager: EntityManager, actor: ResourcePerson, groupId: string): Promise<void> {
+    if (actor.role === ResourceAllocationRole.Admin) return;
+    const manageableGroups = await this.getManageableProfileGroups(manager, actor);
+    if (!manageableGroups.some((group) => group.id === groupId)) {
+      throw new ResourceAllocationException(
+        'ACCESS_DENIED', 'Access denied', 403,
+        'The resource profile is outside your current group scope.',
+      );
+    }
+  }
+
+  private async assertProfileCanMove(manager: EntityManager, profileId: string): Promise<void> {
+    const referenced = await manager.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM resource_allocations WHERE resource_profile_id = $1::uuid
+      ) AS referenced
+    `, [profileId]) as Array<{ referenced: boolean }>;
+    if (referenced[0]?.referenced) {
+      throw new ResourceAllocationException(
+        'RESOURCE_CONFLICT', 'Resource conflict', 409,
+        'A resource profile referenced by an allocation cannot be moved to another group.',
+      );
+    }
+  }
+
+  private async recordResourceProfileAudit(
+    manager: EntityManager,
+    actor: ResourcePerson,
+    action: string,
+    beforeSnapshot: Record<string, unknown> | null,
+    afterSnapshot: Record<string, unknown>,
+  ): Promise<void> {
+    await manager.query(`
+      INSERT INTO resource_profile_audit_events (profile_id, actor_id, action, before_snapshot, after_snapshot)
+      VALUES ($1::uuid, $2::uuid, $3::varchar, $4::jsonb, $5::jsonb)
+    `, [
+      String(afterSnapshot.id),
+      actor.id,
+      action,
+      beforeSnapshot === null ? null : JSON.stringify(beforeSnapshot),
+      JSON.stringify(afterSnapshot),
+    ]);
+  }
+
+  private resourceProfileUpdateAction(
+    before: ReturnType<ResourceAllocationAdministrationService['toResourceProfile']>,
+    after: ReturnType<ResourceAllocationAdministrationService['toResourceProfile']>,
+  ): string {
+    if (before.name !== after.name && before.active === after.active && before.groupId === after.groupId) return 'PROFILE_RENAMED';
+    if (before.active && !after.active && before.name === after.name && before.groupId === after.groupId) return 'PROFILE_DEACTIVATED';
+    if (!before.active && after.active && before.name === after.name && before.groupId === after.groupId) return 'PROFILE_REACTIVATED';
+    if (before.groupId !== after.groupId && before.name === after.name && before.active === after.active) return 'PROFILE_MOVED';
+    return 'PROFILE_UPDATED';
   }
 
   private async notifyPersonDeactivationCommitments(

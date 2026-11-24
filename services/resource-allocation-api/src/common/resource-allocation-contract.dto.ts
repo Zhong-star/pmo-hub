@@ -141,6 +141,9 @@ export class AllocationResourceProfileSummaryDto {
 
   @ApiProperty({ type: String })
   name!: string;
+
+  @ApiProperty({ type: Boolean })
+  active!: boolean;
 }
 
 export class AllocationPeriodDto {
