@@ -79,7 +79,6 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
     <section className="request-queues-panel" aria-labelledby="request-queues-title">
       <header className="request-queues-heading">
         <div>
-          <p className="eyebrow">Request work</p>
           <h2 id="request-queues-title">Request queues</h2>
           <p className="supporting-copy">Requests are shown only when your current role and group scope allow you to act on them.</p>
         </div>

@@ -327,7 +327,6 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
     <section className="allocation-workspace" aria-labelledby="allocations-heading">
       <div className="allocation-workspace-heading">
         <div>
-          <p className="eyebrow">Approved commitments</p>
           <h2 id="allocations-heading">Allocations and capacity</h2>
           <p className="supporting-copy">Review commitments in your authorized scope, check weekly hours by state, and record an operational change.</p>
         </div>
@@ -411,7 +410,11 @@ export function AllocationsWorkspace({ localUserId, onAccessDenied }: Allocation
                   <tr key={item.person.personId}>
                     <th scope="row">{item.person.displayName}</th>
                     {hoursByState.map(({ state }) => (
-                      <td key={state}>{formatHours(item.weeklyHoursByState[state] ?? 0)}</td>
+                      <td key={state}>
+                        {item.weeklyHoursByState[state]
+                          ? formatHours(item.weeklyHoursByState[state] ?? 0)
+                          : <><span className="capacity-empty" aria-hidden="true">—</span><span className="sr-only">{formatHours(0)}</span></>}
+                      </td>
                     ))}
                     <td><strong>{formatHours(item.totalWeeklyHours)}</strong></td>
                   </tr>

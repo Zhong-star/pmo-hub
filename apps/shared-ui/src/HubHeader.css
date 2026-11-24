@@ -41,13 +41,13 @@
 
 .hub-header__mark {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   place-items: center;
-  border-radius: 9px;
-  color: #fff;
-  background: var(--primary-background);
-  font-size: 17px;
+  border-radius: var(--control-radius);
+  color: var(--page-background);
+  background: var(--text);
+  font-size: 14px;
 }
 
 .hub-header__right {
@@ -92,7 +92,7 @@
   min-width: 190px;
   padding: 6px;
   border: 1px solid var(--header-menu-border);
-  border-radius: 12px;
+  border-radius: var(--card-radius);
   background: var(--header-menu-background);
   box-shadow: 0 8px 24px rgb(9 30 66 / 14%);
 }
@@ -102,7 +102,7 @@
   min-height: 40px;
   padding: 0 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   color: var(--header-text);
   background: transparent;
   font: inherit;
@@ -125,7 +125,7 @@
   width: auto;
   flex: 1;
   min-height: 36px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   color: var(--header-muted);
   text-align: center;
 }
