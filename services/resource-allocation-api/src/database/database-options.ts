@@ -16,6 +16,8 @@ import { ResourceAllocationNotification } from '../notifications/resource-alloca
 import { ResourceAllocation } from '../allocations/resource-allocation.entity';
 import { ResourceAllocationHistory } from '../allocations/resource-allocation-history.entity';
 import { ResourceProfileAuditEvent } from '../resource-profiles/resource-profile-audit-event.entity';
+import { ResourceCapacity } from '../capacities/resource-capacity.entity';
+import { ResourceCapacityHistory } from '../capacities/resource-capacity-history.entity';
 
 export const RESOURCE_ALLOCATION_DATABASE_URL_ENV = 'RESOURCE_ALLOCATION_DATABASE_URL';
 
@@ -46,6 +48,8 @@ export function createResourceAllocationDataSourceOptions(databaseUrl?: string):
       ResourceAllocationNotification,
       ResourceAllocation,
       ResourceAllocationHistory,
+      ResourceCapacity,
+      ResourceCapacityHistory,
     ],
     migrations: [resolve(__dirname, 'migrations/*{.js,.ts}')],
     migrationsRun: false,

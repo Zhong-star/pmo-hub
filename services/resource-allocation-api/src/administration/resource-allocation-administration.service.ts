@@ -903,12 +903,20 @@ export class ResourceAllocationAdministrationService {
     const referenced = await manager.query(`
       SELECT EXISTS (
         SELECT 1 FROM resource_allocations WHERE resource_profile_id = $1::uuid
-      ) AS referenced
-    `, [profileId]) as Array<{ referenced: boolean }>;
-    if (referenced[0]?.referenced) {
+      ) AS allocation_referenced, EXISTS (
+        SELECT 1 FROM resource_capacities WHERE resource_profile_id = $1::uuid
+      ) AS capacity_referenced
+    `, [profileId]) as Array<{ allocation_referenced: boolean; capacity_referenced: boolean }>;
+    if (referenced[0]?.allocation_referenced) {
       throw new ResourceAllocationException(
         'RESOURCE_CONFLICT', 'Resource conflict', 409,
         'A resource profile referenced by an allocation cannot be moved to another group.',
+      );
+    }
+    if (referenced[0]?.capacity_referenced) {
+      throw new ResourceAllocationException(
+        'RESOURCE_CONFLICT', 'Resource conflict', 409,
+        'A resource profile with capacity history cannot be moved to another group.',
       );
     }
   }

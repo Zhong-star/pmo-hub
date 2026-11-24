@@ -30,6 +30,8 @@ import { ResourceAllocationTeamDecisionService } from './decisions/resource-allo
 import { ResourceAllocationRequesterResponseService } from './decisions/resource-allocation-requester-response.service';
 import { ResourceAllocationExceptionResolutionService } from './decisions/resource-allocation-exception-resolution.service';
 import { ResourceAllocationRequestHistoryService } from './decisions/resource-allocation-request-history.service';
+import { ResourceCapacityController } from './capacities/resource-capacity.controller';
+import { ResourceCapacityService } from './capacities/resource-capacity.service';
 
 @Module({
   controllers: [
@@ -46,6 +48,7 @@ import { ResourceAllocationRequestHistoryService } from './decisions/resource-al
     ResourceAllocationDecisionController,
     ResourceAllocationApprovalController,
     ResourceAllocationController,
+    ResourceCapacityController,
   ],
   providers: [
     ResourceAllocationAccessService,
@@ -66,6 +69,7 @@ import { ResourceAllocationRequestHistoryService } from './decisions/resource-al
     ResourceAllocationRequesterResponseService,
     ResourceAllocationExceptionResolutionService,
     ResourceAllocationRequestHistoryService,
+    ResourceCapacityService,
   ],
 })
 export class AppModule {

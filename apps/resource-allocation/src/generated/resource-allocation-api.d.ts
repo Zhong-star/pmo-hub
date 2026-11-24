@@ -935,6 +935,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/resource-allocation/v1/capacity-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List active groups and resource profiles available for new capacity entries */
+        get: operations["ResourceCapacityController_options"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resource-allocation/v1/capacities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List capacity entries visible to the current leadership scope or Admin */
+        get: operations["ResourceCapacityController_list"];
+        put?: never;
+        /** Create a dated FTE capacity entry */
+        post: operations["ResourceCapacityController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resource-allocation/v1/capacities/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a capacity entry */
+        get: operations["ResourceCapacityController_get"];
+        put?: never;
+        post?: never;
+        /** Remove a capacity entry while retaining its audit history */
+        delete: operations["ResourceCapacityController_remove"];
+        options?: never;
+        head?: never;
+        /** Update the FTE value or effective date of a capacity entry */
+        patch: operations["ResourceCapacityController_update"];
+        trace?: never;
+    };
+    "/api/resource-allocation/v1/capacities/{id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read immutable capacity changes, including a removed entry */
+        get: operations["ResourceCapacityController_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1858,6 +1929,86 @@ export interface components {
         };
         AllocationCommandDto: {
             reason: string;
+        };
+        CapacityProfileDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            active: boolean;
+        };
+        CapacityOptionsGroupDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            resourceProfiles: components["schemas"]["CapacityProfileDto"][];
+        };
+        CapacityOptionsResponseDto: {
+            groups: components["schemas"]["CapacityOptionsGroupDto"][];
+        };
+        CapacityGroupDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        CapacityResponseDto: {
+            /** Format: uuid */
+            id: string;
+            group: components["schemas"]["CapacityGroupDto"];
+            resourceProfile: components["schemas"]["CapacityProfileDto"];
+            /** @enum {string} */
+            classification: "INTERNAL" | "THIRD_PARTY";
+            /** Format: date */
+            effectiveDate: string;
+            fte: number;
+            version: number;
+        };
+        CapacityCollectionResponseDto: {
+            items: components["schemas"]["CapacityResponseDto"][];
+            page: components["schemas"]["CursorPageInfoDto"];
+        };
+        CreateCapacityRequestDto: {
+            /** Format: uuid */
+            groupId: string;
+            /** Format: uuid */
+            resourceProfileId: string;
+            /** @enum {string} */
+            classification: "INTERNAL" | "THIRD_PARTY";
+            /** Format: date */
+            effectiveDate: string;
+            /** @description FTE value; excess precision is rounded to one decimal place. No upper bound. */
+            fte: number;
+            reason: string;
+        };
+        UpdateCapacityRequestDto: {
+            /** Format: date */
+            effectiveDate?: string;
+            /** @description FTE value; excess precision is rounded to one decimal place. No upper bound. */
+            fte?: number;
+            reason: string;
+        };
+        RemoveCapacityRequestDto: {
+            reason: string;
+        };
+        CapacityHistoryActorDto: {
+            /** Format: uuid */
+            id: string;
+            displayName: string;
+        };
+        CapacityHistoryEventDto: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            action: "CREATED" | "UPDATED" | "REMOVED";
+            actor: components["schemas"]["CapacityHistoryActorDto"];
+            reason: string;
+            before: components["schemas"]["CapacityResponseDto"] | null;
+            after: components["schemas"]["CapacityResponseDto"] | null;
+            /** Format: date-time */
+            occurredAt: string;
+        };
+        CapacityHistoryCollectionResponseDto: {
+            items: components["schemas"]["CapacityHistoryEventDto"][];
+            page: components["schemas"]["CursorPageInfoDto"];
         };
     };
     responses: never;
@@ -7168,6 +7319,562 @@ export interface operations {
             };
             /** @description A closed allocation cannot be canceled. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_options: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityOptionsResponseDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description Capacity planning is only available to leaders in scope and Admins. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_list: {
+        parameters: {
+            query?: {
+                /** @description Page size (default 50, maximum 100). */
+                limit?: number;
+                cursor?: string;
+                groupId?: string;
+                resourceProfileId?: string;
+                classification?: "INTERNAL" | "THIRD_PARTY";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityCollectionResponseDto"];
+                };
+            };
+            /** @description A filter, limit, or cursor is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The current profile is outside the requested capacity scope. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_create: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCapacityRequestDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    Location?: string;
+                    /** @description Omitted on a replayed receipt; fetch the resource for its current version. */
+                    ETag?: string;
+                    "Idempotency-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityResponseDto"];
+                };
+            };
+            /** @description The capacity value, date, justification, or required header is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The current profile cannot maintain the requested group or effective date. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description Another capacity entry exists for this group, profile, classification, and date. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The group or resource profile is not eligible. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityResponseDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The current profile is outside the capacity group scope. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The capacity entry was not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_remove: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                /** @description Strong ETag version from the latest capacity response. */
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoveCapacityRequestDto"];
+            };
+        };
+        responses: {
+            /** @description The capacity entry was removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description If-Match, Idempotency-Key, or justification is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The current profile cannot remove a capacity entry for a past date or outside its group scope. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The capacity entry was not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The capacity version changed. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_update: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                /** @description Strong ETag version from the latest capacity response. */
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["UpdateCapacityRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    ETag?: string;
+                    "Idempotency-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityResponseDto"];
+                };
+            };
+            /** @description If-Match, Idempotency-Key, or merge patch is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The current profile cannot change the original or resulting effective date. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The capacity entry was not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The requested effective date already has capacity for this group, profile, and classification. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The capacity version changed. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_history: {
+        parameters: {
+            query?: {
+                /** @description Page size (default 50, maximum 100). */
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityHistoryCollectionResponseDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The current profile is outside the capacity group scope. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The capacity entry was not found. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
