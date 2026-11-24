@@ -383,6 +383,7 @@ export class ResourceAllocationApprovalService extends ResourceAllocationApprova
 
     const allocation = await createResourceAllocationForRequest(manager, {
       requestId: request.id,
+      category: String(request.requestedConditions.category),
       person: selectedPerson,
       group,
       initiative,

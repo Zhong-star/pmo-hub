@@ -862,3 +862,43 @@ h1 {
   .request-exception-filters { grid-template-columns: 1fr; }
   .request-affected-initiatives { grid-column: 1; }
 }
+
+.allocation-heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.allocation-create { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-subtle); }
+.allocation-create .allocation-detail-heading h3 { font-size: 20px; }
+.allocation-create-form, .allocation-create-review { display: grid; gap: 16px; }
+.allocation-create-review h4 { margin: 0; color: var(--text-heading); font-size: 16px; }
+.allocation-create-review h4:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.allocation-create-target { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0; padding: 0; border: 0; color: var(--text-body); font-size: 14px; }
+.allocation-create-target legend { margin-bottom: 8px; color: var(--text-body); font-size: 13px; font-weight: 650; }
+.allocation-create-target label { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; }
+.allocation-create-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 16px; }
+.allocation-create-grid label, .allocation-create-fixed { display: grid; align-content: start; gap: 6px; color: var(--text-body); font-size: 13px; font-weight: 650; }
+.allocation-create-fixed strong { min-height: 42px; padding: 10px 0; color: var(--text); font-size: 14px; }
+.allocation-create-grid input, .allocation-create-grid select, .allocation-create-grid textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 450;
+}
+.allocation-create-grid select:disabled { opacity: .7; cursor: not-allowed; }
+.allocation-create-grid [aria-invalid="true"] { border-color: var(--error-text); box-shadow: 0 0 0 2px rgb(163 51 40 / 14%); }
+.allocation-create-comment { grid-column: 1 / -1; }
+.allocation-create-comment textarea { min-height: 96px; resize: vertical; }
+.allocation-metadata-wide { grid-column: 1 / -1; }
+
+@media (max-width: 900px) {
+  .allocation-create-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .allocation-create { padding: 16px; }
+  .allocation-create-grid { grid-template-columns: 1fr; }
+  .allocation-heading-actions { justify-content: stretch; }
+  .allocation-heading-actions button { flex: 1; }
+}

@@ -259,6 +259,7 @@ export class ResourceAllocationExceptionResolutionService extends ResourceAlloca
           const saved = await manager.getRepository(ResourceRequest).save(item);
           const allocation = await createResourceAllocationForRequest(manager, {
             requestId: saved.id,
+            category: String(saved.requestedConditions.category),
             person,
             group,
             initiative,

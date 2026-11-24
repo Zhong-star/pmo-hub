@@ -13,8 +13,12 @@ import { ResourcePerson } from '../people/resource-person.entity';
 import { ResourceAllocationRole } from '../people/resource-allocation-role';
 import { ResourceAllocationAccessService } from '../access/resource-allocation-access.service';
 import { ResourceAllocationNotification } from '../notifications/resource-allocation-notification.entity';
+import { normalizeRequestedWeeklyHours } from '../requests/requested-weekly-hours';
+import { ResourceGroup } from '../groups/resource-group.entity';
+import { ResourceInitiative } from '../initiatives/resource-initiative.entity';
+import { allocationCategoryLabel, isOperationalAllocationCategory, isVacationAllocation, vacationWeeklyHours } from './allocation-category';
 import { ResourceProfile } from '../resource-profiles/resource-profile.entity';
-import type { AllocationCollectionQueryDto, AllocationCommandDto, AllocationLoadQueryDto, allocationStates } from './allocation.dto';
+import type { CreateAllocationDto, AllocationCollectionQueryDto, AllocationCommandDto, AllocationLoadQueryDto, allocationStates } from './allocation.dto';
 
 const defaultPageSize = 50;
 const maximumPageSize = 100;
@@ -50,15 +54,19 @@ interface LoadCursor {
 
 interface AllocationRow {
   id: string;
-  source_request_id: string;
+  source_request_id: string | null;
+  origin: 'REQUEST' | 'SELF' | 'DIRECT';
+  category: string | null;
+  classification: 'INTERNAL' | 'THIRD_PARTY' | null;
+  comment: string | null;
   person_id: string;
   person_snapshot: Record<string, unknown>;
   group_id: string;
   group_snapshot: Record<string, unknown>;
-  initiative_id: string;
-  initiative_snapshot: Record<string, unknown>;
-  resource_profile_id: string;
-  resource_profile_snapshot: Record<string, unknown>;
+  initiative_id: string | null;
+  initiative_snapshot: Record<string, unknown> | null;
+  resource_profile_id: string | null;
+  resource_profile_snapshot: Record<string, unknown> | null;
   resource_profile_name?: string | null;
   resource_profile_active?: boolean | null;
   approved_start_date: string;
@@ -87,6 +95,173 @@ export class ResourceAllocationService {
     @Inject(ResourceAllocationAccessService)
     private readonly accessService: ResourceAllocationAccessService,
   ) {}
+
+  async createAllocation(
+    localUserId: string | undefined,
+    idempotencyKey: string | undefined,
+    correlationId: string | undefined,
+    input: CreateAllocationDto,
+  ) {
+    const key = parseUuidHeader(idempotencyKey, 'Idempotency-Key');
+    const correlation = parseUuidHeader(correlationId, 'X-Correlation-ID');
+    const fields = this.parseCreationFields(input);
+
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        await lockResourceAllocationAdministrationWrites(manager);
+        const actor = await this.requireActivePerson(manager, localUserId);
+        const personId = fields.personId ?? actor.id;
+        const origin: 'SELF' | 'DIRECT' = personId === actor.id ? 'SELF' : 'DIRECT';
+        if (origin === 'SELF' && !isOperationalAllocationCategory(fields.category)) {
+          throw this.accessDenied('Own allocations are limited to operational categories. Initiative work needs a request or a direct allocation by your leadership.');
+        }
+
+        const person = origin === 'SELF'
+          ? actor
+          : await manager.getRepository(ResourcePerson).findOne({ where: { id: personId } });
+        if (!person) throw this.invalidReference('personId', 'Choose an active person from a group in your scope.');
+        if (!person.groupId) {
+          throw this.invalidReference('personId', origin === 'SELF'
+            ? 'Your profile must belong to an active group to record an operational allocation.'
+            : 'Choose an active person from a group in your scope.');
+        }
+        if (origin === 'DIRECT' && !await this.canLeadGroup(actor, person.groupId, manager)) {
+          throw this.accessDenied('You can create direct allocations only for people in groups within your scope.');
+        }
+        if (!person.active) throw this.invalidReference('personId', 'Choose an active person from a group in your scope.');
+        const group = await manager.getRepository(ResourceGroup).findOne({ where: { id: person.groupId, active: true } });
+        if (!group) {
+          throw this.invalidReference('personId', origin === 'SELF'
+            ? 'Your profile must belong to an active group to record an operational allocation.'
+            : 'The person must belong to an active group.');
+        }
+        const profile = fields.resourceProfileId
+          ? await manager.getRepository(ResourceProfile).findOne({ where: { id: fields.resourceProfileId, groupId: group.id, active: true } })
+          : null;
+        if (fields.resourceProfileId && !profile) {
+          throw this.invalidReference('resourceProfileId', 'Choose an active resource profile from the person’s group.');
+        }
+        const initiative = fields.initiativeId
+          ? await manager.getRepository(ResourceInitiative).findOne({ where: { id: fields.initiativeId, active: true } })
+          : null;
+        if (fields.initiativeId && !initiative) {
+          throw this.invalidReference('initiativeId', 'Choose an active ITDM initiative.');
+        }
+
+        return runIdempotentOperation(manager, {
+          actorId: actor.id,
+          operation: 'allocation.create',
+          key,
+          payload: {
+            personId,
+            category: fields.category,
+            resourceProfileId: fields.resourceProfileId,
+            initiativeId: fields.initiativeId,
+            startDate: fields.startDate,
+            endDate: fields.endDate,
+            weeklyHours: fields.weeklyHours,
+            comment: fields.comment,
+          },
+        }, async () => {
+          const clockRows = await manager.query(`
+            WITH operation_clock AS (SELECT clock_timestamp() AS now)
+            SELECT now, (now AT TIME ZONE 'America/Sao_Paulo')::date::text AS business_date
+            FROM operation_clock
+          `) as Array<{ now: Date; business_date: string }>;
+          const occurredAt = new Date(clockRows[0].now);
+          const businessDate = clockRows[0].business_date;
+          const state: AllocationState = fields.startDate > businessDate
+            ? 'NOT_STARTED'
+            : fields.endDate < businessDate ? 'DONE' : 'IN_PROGRESS';
+          const repository = manager.getRepository(ResourceAllocation);
+          const allocation = await repository.save(repository.create({
+            sourceRequestId: null,
+            origin,
+            category: fields.category,
+            comment: fields.comment,
+            classification: person.classification ?? null,
+            createdByPersonId: actor.id,
+            personId: person.id,
+            personSnapshot: { personId: person.id, displayName: person.displayName, role: person.role },
+            groupId: group.id,
+            groupSnapshot: { id: group.id, name: group.name },
+            initiativeId: initiative?.id ?? null,
+            initiativeSnapshot: initiative ? { id: initiative.id, code: initiative.code, name: initiative.name } : null,
+            resourceProfileId: profile?.id ?? null,
+            resourceProfileSnapshot: profile ? { id: profile.id, name: profile.name } : null,
+            approvedStartDate: fields.startDate,
+            approvedEndDate: fields.endDate,
+            effectiveStartDate: fields.startDate,
+            effectiveEndDate: fields.endDate,
+            weeklyHours: fields.weeklyHours.toFixed(1),
+            state,
+            stateEnteredAt: occurredAt,
+            approvedAt: occurredAt,
+          }));
+          const after = this.toResponse(this.rowFromEntity(allocation, state, businessDate), actor);
+          await manager.getRepository(ResourceAllocationHistory).insert({
+            allocationId: allocation.id,
+            actorSnapshot: { personId: actor.id, displayName: actor.displayName, role: actor.role },
+            action: origin === 'SELF' ? 'SELF_ALLOCATION_CREATED' : 'DIRECT_ALLOCATION_CREATED',
+            reason: fields.comment,
+            beforeSnapshot: {},
+            afterSnapshot: after as never,
+            correlationId: correlation,
+            occurredAt,
+          });
+          await this.notifyAllocationCreated(manager, allocation, actor.id, occurredAt);
+          return after;
+        });
+      });
+    } catch (error) {
+      throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
+    }
+  }
+
+  private parseCreationFields(input: CreateAllocationDto) {
+    const errors: Array<{ path: string; code: string; message: string }> = [];
+    const category = input.category;
+    const vacation = category === 'VACATION';
+    const operational = isOperationalAllocationCategory(category);
+    const personId = input.personId == null ? undefined : this.requireUuid(input.personId, 'personId');
+    const resourceProfileId = input.resourceProfileId == null ? null : this.requireUuid(input.resourceProfileId, 'resourceProfileId');
+    const initiativeId = input.initiativeId == null ? null : this.requireUuid(input.initiativeId, 'initiativeId');
+    const startDate = this.requireDate(input.startDate, 'startDate');
+    const endDate = this.requireDate(input.endDate, 'endDate');
+    const comment = typeof input.comment === 'string' && input.comment.trim() ? input.comment.trim() : null;
+
+    if (vacation && resourceProfileId) errors.push({ path: 'resourceProfileId', code: 'NOT_ALLOWED', message: 'Vacation does not use a resource profile.' });
+    if (!vacation && !resourceProfileId) errors.push({ path: 'resourceProfileId', code: 'REQUIRED', message: 'Choose an active resource profile.' });
+    if (operational && initiativeId) errors.push({ path: 'initiativeId', code: 'NOT_ALLOWED', message: 'Operational categories do not use an ITDM initiative.' });
+    if (!operational && !initiativeId) errors.push({ path: 'initiativeId', code: 'REQUIRED', message: 'Initiative categories require an ITDM initiative.' });
+    if (operational && !vacation && !comment) errors.push({ path: 'comment', code: 'REQUIRED', message: 'Describe the operational activity.' });
+    if (vacation && input.weeklyHours != null && Number(input.weeklyHours) !== vacationWeeklyHours) {
+      errors.push({ path: 'weeklyHours', code: 'NOT_ALLOWED', message: 'Vacation always uses 40 weekly hours.' });
+    }
+    if (!vacation && input.weeklyHours == null) {
+      errors.push({ path: 'weeklyHours', code: 'REQUIRED', message: 'Enter weekly hours greater than zero and no more than 40.' });
+    }
+    if (errors.length > 0) {
+      throw new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, 'One or more fields are invalid.', undefined, undefined, errors);
+    }
+    if (startDate > endDate) {
+      throw new ResourceAllocationException('INVALID_BUSINESS_DATE', 'Invalid business date', 422, 'The allocation end date must be on or after its start date.');
+    }
+    const weeklyHours = vacation ? vacationWeeklyHours : normalizeRequestedWeeklyHours(Number(input.weeklyHours));
+    return { personId, category, resourceProfileId, initiativeId, startDate, endDate, weeklyHours, comment };
+  }
+
+  private async canLeadGroup(actor: AllocationActor, groupId: string, manager: EntityManager): Promise<boolean> {
+    if (actor.role === ResourceAllocationRole.Admin) return true;
+    if (actor.role === ResourceAllocationRole.User) return false;
+    return this.canReadAllocation(actor, '', groupId, manager);
+  }
+
+  private invalidReference(path: string, detail: string): ResourceAllocationException {
+    return new ResourceAllocationException('INVALID_ALLOCATION_REFERENCE', 'Invalid allocation reference', 422, detail, undefined, undefined, [
+      { path, code: 'INVALID_REFERENCE', message: detail },
+    ]);
+  }
 
   async list(localUserId: string | undefined, query: AllocationCollectionQueryDto) {
     const { actor, filters, limit, after } = await this.prepareList(localUserId, query);
@@ -380,6 +555,9 @@ export class ResourceAllocationService {
           `) as Array<OperationClock & { business_date: string }>;
           const clock = { now: new Date(clocks[0].now), businessDate: clocks[0].business_date };
           const currentState = this.currentState(allocation, clock.businessDate);
+          if (isVacationAllocation(allocation.category) && (command === 'suspend' || command === 'reserve')) {
+            throw this.invalidTransition('Vacation cannot be suspended or reserved. Complete or cancel it instead.');
+          }
           const nextState = this.nextState(command, currentState, allocation.effectiveStartDate, clock.businessDate);
           const nextEndDate = this.endedPeriod(command, allocation, clock.businessDate);
           const profileState = await this.currentResourceProfileState(manager, allocation.resourceProfileId);
@@ -408,8 +586,8 @@ export class ResourceAllocationService {
             actorSnapshot,
             action: this.historyAction(command, nextState),
             reason,
-            beforeSnapshot: before,
-            afterSnapshot: after,
+            beforeSnapshot: before as never,
+            afterSnapshot: after as never,
             correlationId: correlation,
             occurredAt: clock.now,
           });
@@ -498,8 +676,8 @@ export class ResourceAllocationService {
         actorSnapshot: { displayName: 'Resource Allocation lifecycle worker', role: 'SYSTEM' },
         action,
         reason,
-        beforeSnapshot: before,
-        afterSnapshot: after,
+        beforeSnapshot: before as never,
+        afterSnapshot: after as never,
         correlationId: randomUUID(),
         occurredAt: clock.now,
       });
@@ -516,15 +694,17 @@ export class ResourceAllocationService {
     nextState: AllocationState,
     occurredAt: Date,
   ): Promise<void> {
-    const requests = await manager.query('SELECT requester_id FROM resource_requests WHERE id = $1::uuid', [allocation.sourceRequestId]) as Array<{ requester_id: string }>;
-    const requestRow = requests[0];
-    if (!requestRow) throw new Error('The allocation source request is missing.');
+    const requests = allocation.sourceRequestId
+      ? await manager.query('SELECT requester_id FROM resource_requests WHERE id = $1::uuid', [allocation.sourceRequestId]) as Array<{ requester_id: string }>
+      : [];
+    if (allocation.sourceRequestId && !requests[0]) throw new Error('The allocation source request is missing.');
+    const requesterId = requests[0]?.requester_id ?? null;
     const recipients = await manager.query(`
       SELECT DISTINCT person.id::text AS id
       FROM resource_people AS person
       LEFT JOIN resource_groups AS team ON team.id = $1::uuid
       WHERE person.active = TRUE AND person.id <> $2::uuid AND (
-        person.id = $3::uuid OR person.id = $4::uuid
+        person.id = $3::uuid OR ($4::uuid IS NOT NULL AND person.id = $4::uuid)
         OR (person.role = 'ALLOCATION_MODERATOR' AND person.group_id = team.id)
         OR (person.role = 'ALLOCATION_SUPERVISOR' AND (
           person.covered_group_ids @> ARRAY[team.id]::uuid[] OR team.supervisor_id = person.id
@@ -534,9 +714,10 @@ export class ResourceAllocationService {
         ))
       )
       ORDER BY id
-    `, [allocation.groupId, actorId, allocation.personId, requestRow.requester_id]) as Array<{ id: string }>;
+    `, [allocation.groupId, actorId, allocation.personId, requesterId]) as Array<{ id: string }>;
     const titleState = this.stateLabel(nextState);
     const code = `ALLOCATION_${nextState}_${allocation.version}`;
+    const sourceName = String(allocation.initiativeSnapshot?.code ?? allocationCategoryLabel(allocation.category) ?? 'the initiative');
     const repository = manager.getRepository(ResourceAllocationNotification);
     await repository.createQueryBuilder()
       .insert()
@@ -544,9 +725,60 @@ export class ResourceAllocationService {
       .values(recipients.map(({ id }) => ({
         recipientId: id,
         sourceRequestId: allocation.sourceRequestId,
+        sourceAllocationId: allocation.sourceRequestId ? null : allocation.id,
         eventCode: code,
         title: `Allocation ${titleState.toLowerCase()}`,
-        message: `The allocation for ${String(allocation.initiativeSnapshot.code ?? 'the initiative')} changed to ${titleState}. Reason: ${reason}`,
+        message: `The allocation for ${sourceName} changed to ${titleState}. Reason: ${reason}`,
+        createdAt: occurredAt,
+      })))
+      .orIgnore()
+      .execute();
+  }
+
+  private async notifyAllocationCreated(
+    manager: EntityManager,
+    allocation: ResourceAllocation,
+    actorId: string,
+    occurredAt: Date,
+  ): Promise<void> {
+    const self = allocation.origin === 'SELF';
+    const recipients = self
+      ? await manager.query(`
+        SELECT DISTINCT person.id::text AS id
+        FROM resource_people AS person
+        LEFT JOIN resource_groups AS team ON team.id = $1::uuid
+        WHERE person.active = TRUE AND person.id <> $2::uuid AND (
+          (person.role = 'ALLOCATION_MODERATOR' AND person.group_id = team.id)
+          OR (person.role = 'ALLOCATION_SUPERVISOR' AND (
+            person.covered_group_ids @> ARRAY[team.id]::uuid[] OR team.supervisor_id = person.id
+          ))
+          OR (person.role = 'ALLOCATION_MANAGER' AND (
+            person.covered_group_ids @> ARRAY[team.id]::uuid[] OR team.manager_id = person.id
+          ))
+        )
+        ORDER BY id
+      `, [allocation.groupId, actorId]) as Array<{ id: string }>
+      : await manager.query(`
+        SELECT person.id::text AS id
+        FROM resource_people AS person
+        WHERE person.active = TRUE AND person.id = $1::uuid AND person.id <> $2::uuid
+      `, [allocation.personId, actorId]) as Array<{ id: string }>;
+    if (recipients.length === 0) return;
+    const category = allocationCategoryLabel(allocation.category) ?? 'Allocation';
+    const subject = allocation.initiativeSnapshot ? `${category} for ${String(allocation.initiativeSnapshot.code)}` : category;
+    const period = `from ${allocation.effectiveStartDate} to ${allocation.effectiveEndDate} at ${Number(allocation.weeklyHours).toFixed(1)} weekly hours`;
+    await manager.getRepository(ResourceAllocationNotification).createQueryBuilder()
+      .insert()
+      .into(ResourceAllocationNotification)
+      .values(recipients.map(({ id }) => ({
+        recipientId: id,
+        sourceRequestId: null,
+        sourceAllocationId: allocation.id,
+        eventCode: 'ALLOCATION_CREATED',
+        title: self ? 'New self allocation' : 'New direct allocation',
+        message: self
+          ? `${subject} was self-allocated by ${String(allocation.personSnapshot.displayName)} ${period}.`
+          : `${subject} was allocated to you ${period}.`,
         createdAt: occurredAt,
       })))
       .orIgnore()
@@ -636,7 +868,7 @@ export class ResourceAllocationService {
     const column = actor.role === ResourceAllocationRole.Supervisor ? 'supervisor_id' : 'manager_id';
     const rows = await (manager ?? this.dataSource.manager).query(`
       SELECT (
-        $1::uuid = ANY($2::uuid[]) OR EXISTS (
+        $3::uuid = ANY($2::uuid[]) OR EXISTS (
           SELECT 1 FROM resource_groups AS team WHERE team.id = $3::uuid AND team.${column} = $1::uuid
         )
       ) AS allowed
@@ -691,14 +923,22 @@ export class ResourceAllocationService {
     return {
       id: row.id,
       requestId: row.source_request_id,
+      source: row.origin,
+      category: row.category,
+      classification: row.classification,
+      comment: row.comment,
       person: { personId: row.person_id, displayName: row.person_snapshot.displayName },
       group: { id: row.group_id, name: row.group_snapshot.name },
-      initiative: { id: row.initiative_id, code: row.initiative_snapshot.code, name: row.initiative_snapshot.name },
-      resourceProfile: {
-        id: row.resource_profile_id,
-        name: row.resource_profile_name ?? row.resource_profile_snapshot.name,
-        active: row.resource_profile_active ?? true,
-      },
+      initiative: row.initiative_snapshot
+        ? { id: row.initiative_id, code: row.initiative_snapshot.code, name: row.initiative_snapshot.name }
+        : null,
+      resourceProfile: row.resource_profile_id && row.resource_profile_snapshot
+        ? {
+          id: row.resource_profile_id,
+          name: row.resource_profile_name ?? row.resource_profile_snapshot.name,
+          active: row.resource_profile_active ?? true,
+        }
+        : null,
       startDate: row.effective_start_date,
       endDate: row.effective_end_date,
       approvedPeriod: { startDate: row.approved_start_date, endDate: row.approved_end_date },
@@ -706,7 +946,7 @@ export class ResourceAllocationService {
       state,
       approvedAt: new Date(row.approved_at).toISOString(),
       version: Number(row.version),
-      availableActions: actor ? this.availableActions(state, started) : [],
+      availableActions: actor ? this.availableActions(state, started, isVacationAllocation(row.category)) : [],
     };
   }
 
@@ -719,6 +959,10 @@ export class ResourceAllocationService {
     return {
       id: allocation.id,
       source_request_id: allocation.sourceRequestId,
+      origin: allocation.origin,
+      category: allocation.category,
+      classification: allocation.classification,
+      comment: allocation.comment,
       person_id: allocation.personId,
       person_snapshot: allocation.personSnapshot,
       group_id: allocation.groupId,
@@ -743,7 +987,8 @@ export class ResourceAllocationService {
     };
   }
 
-  private async currentResourceProfileState(manager: EntityManager, profileId: string): Promise<{ name: string; active: boolean } | undefined> {
+  private async currentResourceProfileState(manager: EntityManager, profileId: string | null): Promise<{ name: string; active: boolean } | undefined> {
+    if (!profileId) return undefined;
     const profile = await manager.getRepository(ResourceProfile).findOne({
       where: { id: profileId },
       select: { id: true, name: true, active: true },
@@ -751,7 +996,12 @@ export class ResourceAllocationService {
     return profile ? { name: profile.name, active: profile.active } : undefined;
   }
 
-  private availableActions(state: AllocationState, started: boolean): string[] {
+  private availableActions(state: AllocationState, started: boolean, vacation = false): string[] {
+    if (vacation) {
+      if (state === 'NOT_STARTED') return ['CANCEL'];
+      if (state === 'IN_PROGRESS') return ['COMPLETE', 'CANCEL'];
+      return [];
+    }
     if (state === 'NOT_STARTED') return ['SUSPEND', 'RESERVE', 'CANCEL'];
     if (state === 'IN_PROGRESS') return ['SUSPEND', 'RESERVE', 'COMPLETE', 'CANCEL'];
     if (state === 'SUSPENDED') return ['RESUME', 'RESERVE', ...(started ? ['COMPLETE'] : []), 'CANCEL'];
@@ -868,8 +1118,8 @@ export class ResourceAllocationService {
     return new ResourceAllocationException('INVALID_ALLOCATION_TRANSITION', 'Invalid allocation transition', 422, detail);
   }
 
-  private accessDenied(): ResourceAllocationException {
-    return new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, 'The active profile is not authorized to access this allocation.');
+  private accessDenied(detail = 'The active profile is not authorized to access this allocation.'): ResourceAllocationException {
+    return new ResourceAllocationException('ACCESS_DENIED', 'Access denied', 403, detail);
   }
 
   private validationError(detail: string): ResourceAllocationException {

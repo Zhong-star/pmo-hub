@@ -775,7 +775,8 @@ export interface paths {
         /** List allocations visible to the current person, leadership scope, or Admin */
         get: operations["ResourceAllocationController_list"];
         put?: never;
-        post?: never;
+        /** Record an approved allocation without a request: own operational time or vacation, or a direct allocation by in-scope leadership */
+        post: operations["ResourceAllocationController_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1415,10 +1416,31 @@ export interface components {
         AllocationApprovalResponseDto: {
             /** Format: uuid */
             id: string;
+            /**
+             * Format: uuid
+             * @description Null when the allocation was created without a request.
+             */
+            requestId: string | null;
+            /** @enum {string} */
+            source: "REQUEST" | "SELF" | "DIRECT";
+            /**
+             * @description Initiative or operational category captured when the allocation was created. Null only for legacy allocations whose request has no category.
+             * @enum {string|null}
+             */
+            category: "ROUTINE_SUPPORT" | "TRAINING" | "INTERNAL_ACTIVITIES" | "VACATION" | "DEMAND_ANALYSIS" | "POC_BBP" | "EXECUTION_PROJECT" | "EXECUTION_FAST_TRACK" | "EXECUTION_ENHANCEMENT" | null;
+            /**
+             * @description Classification captured at allocation creation. Null means Unclassified.
+             * @enum {string|null}
+             */
+            classification: "INTERNAL" | "THIRD_PARTY" | null;
+            /** @description Operational activity description recorded at creation. */
+            comment: string | null;
             person: components["schemas"]["AllocationPersonSummaryDto"];
             group: components["schemas"]["AllocationGroupSummaryDto"];
-            initiative: components["schemas"]["AllocationInitiativeSummaryDto"];
-            resourceProfile: components["schemas"]["AllocationResourceProfileSummaryDto"];
+            /** @description Null for operational allocations without an initiative. */
+            initiative: components["schemas"]["AllocationInitiativeSummaryDto"] | null;
+            /** @description Null for Vacation, which never uses a resource profile. */
+            resourceProfile: components["schemas"]["AllocationResourceProfileSummaryDto"] | null;
             /** Format: date */
             startDate: string;
             /** Format: date */
@@ -1502,10 +1524,31 @@ export interface components {
         AllocationViewDto: {
             /** Format: uuid */
             id: string;
+            /**
+             * Format: uuid
+             * @description Null when the allocation was created without a request.
+             */
+            requestId: string | null;
+            /** @enum {string} */
+            source: "REQUEST" | "SELF" | "DIRECT";
+            /**
+             * @description Initiative or operational category captured when the allocation was created. Null only for legacy allocations whose request has no category.
+             * @enum {string|null}
+             */
+            category: "ROUTINE_SUPPORT" | "TRAINING" | "INTERNAL_ACTIVITIES" | "VACATION" | "DEMAND_ANALYSIS" | "POC_BBP" | "EXECUTION_PROJECT" | "EXECUTION_FAST_TRACK" | "EXECUTION_ENHANCEMENT" | null;
+            /**
+             * @description Classification captured at allocation creation. Null means Unclassified.
+             * @enum {string|null}
+             */
+            classification: "INTERNAL" | "THIRD_PARTY" | null;
+            /** @description Operational activity description recorded at creation. */
+            comment: string | null;
             person: components["schemas"]["AllocationPersonSummaryDto"];
             group: components["schemas"]["AllocationGroupSummaryDto"];
-            initiative: components["schemas"]["AllocationInitiativeSummaryDto"];
-            resourceProfile: components["schemas"]["AllocationResourceProfileSummaryDto"];
+            /** @description Null for operational allocations without an initiative. */
+            initiative: components["schemas"]["AllocationInitiativeSummaryDto"] | null;
+            /** @description Null for Vacation, which never uses a resource profile. */
+            resourceProfile: components["schemas"]["AllocationResourceProfileSummaryDto"] | null;
             /** Format: date */
             startDate: string;
             /** Format: date */
@@ -1516,16 +1559,14 @@ export interface components {
             /** Format: date-time */
             approvedAt: string;
             version: number;
-            /** Format: uuid */
-            requestId: string;
             approvedPeriod: components["schemas"]["AllocationPeriodDto"];
             availableActions: ("SUSPEND" | "RESERVE" | "RESUME" | "ACTIVATE" | "COMPLETE" | "CANCEL")[];
         };
         ResourceNotificationTargetDto: {
             /** @enum {string} */
-            type: "REQUEST";
+            type: "REQUEST" | "ALLOCATION";
             /** Format: uuid */
-            requestId: string;
+            requestId: string | null;
             /** @description Whether the current recipient can still open the request. */
             available: boolean;
             /**
@@ -1809,6 +1850,42 @@ export interface components {
             explanation?: string;
         };
         AcceptRequestChangesDto: Record<string, never>;
+        CreateAllocationDto: {
+            /**
+             * Format: uuid
+             * @description Person to allocate. Omit it, or send the current person, for an own operational allocation; any other person makes a direct allocation that requires leadership scope over the person's group.
+             */
+            personId?: string;
+            /**
+             * @description Operational categories (ROUTINE_SUPPORT, TRAINING, INTERNAL_ACTIVITIES, VACATION) never use an initiative. Initiative categories require initiativeId and are available only to direct allocations.
+             * @enum {string}
+             */
+            category: "ROUTINE_SUPPORT" | "TRAINING" | "INTERNAL_ACTIVITIES" | "VACATION" | "DEMAND_ANALYSIS" | "POC_BBP" | "EXECUTION_PROJECT" | "EXECUTION_FAST_TRACK" | "EXECUTION_ENHANCEMENT";
+            /**
+             * Format: uuid
+             * @description Required except for VACATION, which never has a resource profile.
+             */
+            resourceProfileId?: string | null;
+            /**
+             * Format: uuid
+             * @description ITDM initiative; required for initiative categories and rejected for operational categories.
+             */
+            initiativeId?: string | null;
+            /**
+             * Format: date
+             * @description Inclusive start date in America/Sao_Paulo. Past dates are allowed.
+             */
+            startDate: string;
+            /**
+             * Format: date
+             * @description Inclusive end date in America/Sao_Paulo; on or after startDate.
+             */
+            endDate: string;
+            /** @description Required except for VACATION, which is always 40. Rounded half up to one decimal place; overlaps and totals above 40 are not blocked. */
+            weeklyHours?: number;
+            /** @description Required for ROUTINE_SUPPORT, TRAINING, and INTERNAL_ACTIVITIES. */
+            comment?: string | null;
+        };
         AllocationCollectionResponseDto: {
             items: components["schemas"]["AllocationViewDto"][];
             page: components["schemas"]["CursorPageInfoDto"];
@@ -6330,6 +6407,100 @@ export interface operations {
             };
             /** @description An active Resource Allocation profile is required. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceAllocationController_create: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Correlation-ID": string;
+                /** @description UUID for this exact allocation creation. */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAllocationDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    Location?: string;
+                    ETag?: string;
+                    "Idempotency-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllocationViewDto"];
+                };
+            };
+            /** @description A required header or allocation field is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An active local profile is required; direct allocations require leadership scope over the person, and own allocations use operational categories only. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The idempotency key was reused with different content. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The profile, group, dates, or hours do not meet allocation rules. */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -2,11 +2,11 @@ import { ApiProperty } from '@nestjs/swagger';
 import { CursorPageInfoDto } from '../common/resource-allocation-contract.dto';
 
 export class ResourceNotificationTargetDto {
-  @ApiProperty({ type: String, enum: ['REQUEST'] })
-  type!: 'REQUEST';
+  @ApiProperty({ type: String, enum: ['REQUEST', 'ALLOCATION'] })
+  type!: 'REQUEST' | 'ALLOCATION';
 
-  @ApiProperty({ type: String, format: 'uuid' })
-  requestId!: string;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  requestId!: string | null;
 
   @ApiProperty({ type: Boolean, description: 'Whether the current recipient can still open the request.' })
   available!: boolean;

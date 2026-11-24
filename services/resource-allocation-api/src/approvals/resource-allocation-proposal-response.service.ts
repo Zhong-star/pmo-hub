@@ -208,6 +208,7 @@ export class ResourceAllocationProposalResponseService extends ResourceAllocatio
     const saved = await manager.getRepository(ResourceRequest).save(request);
     const allocation = await createResourceAllocationForRequest(manager, {
       requestId: request.id,
+      category: String(request.requestedConditions.category),
       person: person!,
       group: group!,
       initiative: initiative!,

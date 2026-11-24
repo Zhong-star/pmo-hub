@@ -10,6 +10,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
 import { RESOURCE_ALLOCATION_DATA_SOURCE } from '../src/database/database.module';
 import { ResourcePerson } from '../src/people/resource-person.entity';
+import { ResourcePersonClassification } from '../src/people/resource-person-classification';
 import { ResourceAllocationRole } from '../src/people/resource-allocation-role';
 import { ResourceGroup } from '../src/groups/resource-group.entity';
 import { ResourceProfile } from '../src/resource-profiles/resource-profile.entity';
@@ -504,6 +505,74 @@ describe('Tech Resource Allocation allocations (#69)', () => {
     expect(savedCanceled).toMatchObject({ state: 'CANCELED', version: 1 });
     expect(await dataSource!.getRepository(ResourceAllocationHistory).countBy({ allocationId: starting.allocation.id })).toBe(1);
     expect(await dataSource!.getRepository(ResourceAllocationHistory).countBy({ allocationId: ending.allocation.id })).toBe(1);
+  });
+
+  it('creates an own operational allocation with history and a group-lead notification', async () => {
+    const fixture = await setup();
+    fixture.assignee.groupId = fixture.group.id;
+    fixture.assignee.classification = ResourcePersonClassification.Internal;
+    await dataSource!.getRepository(ResourcePerson).save(fixture.assignee);
+    const today = await businessDate();
+    const startDate = addDays(today, 1);
+    const endDate = addDays(today, 8);
+    const allocation = await request(app!.getHttpServer())
+      .post('/api/resource-allocation/v1/allocations')
+      .set({
+        'X-PMO-Local-User-ID': fixture.assignee.localUserId,
+        'Idempotency-Key': randomUUID(),
+        'X-Correlation-ID': randomUUID(),
+      })
+      .send({
+        category: 'TRAINING',
+        resourceProfileId: fixture.profile.id,
+        startDate,
+        endDate,
+        weeklyHours: 12.5,
+        comment: 'Complete the cloud security course.',
+      })
+      .expect(201)
+      .expect('Location', /^\/api\/resource-allocation\/v1\/allocations\/[0-9a-f-]+$/i);
+
+    expect(allocation.body).toMatchObject({
+      requestId: null,
+      source: 'SELF',
+      category: 'TRAINING',
+      classification: 'INTERNAL',
+      comment: 'Complete the cloud security course.',
+      person: { personId: fixture.assignee.id, displayName: fixture.assignee.displayName },
+      group: { id: fixture.group.id, name: fixture.group.name },
+      initiative: null,
+      resourceProfile: { id: fixture.profile.id, name: fixture.profile.name },
+      startDate,
+      endDate,
+      weeklyHours: 12.5,
+      state: 'NOT_STARTED',
+    });
+
+    const listed = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/allocations')
+      .set('X-PMO-Local-User-ID', fixture.assignee.localUserId)
+      .expect(200);
+    expect(listed.body.items).toEqual([expect.objectContaining({ id: allocation.body.id, source: 'SELF', category: 'TRAINING' })]);
+
+    const history = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/allocations/${allocation.body.id}/history`)
+      .set('X-PMO-Local-User-ID', fixture.assignee.localUserId)
+      .expect(200);
+    expect(history.body.items[0]).toMatchObject({
+      actor: { personId: fixture.assignee.id },
+      action: 'SELF_ALLOCATION_CREATED',
+      after: { source: 'SELF', category: 'TRAINING', classification: 'INTERNAL' },
+    });
+
+    const notifications = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/notifications')
+      .set('X-PMO-Local-User-ID', fixture.moderator.localUserId)
+      .expect(200);
+    expect(notifications.body.items[0]).toMatchObject({
+      eventCode: 'ALLOCATION_CREATED',
+      target: { type: 'ALLOCATION', requestId: null, available: true, destination: 'ALLOCATION_DETAIL', allocationId: allocation.body.id },
+    });
   });
 
   it('serializes DTO query and body validation field errors into RFC 9457 errors[]', async () => {

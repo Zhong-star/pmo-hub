@@ -403,7 +403,15 @@ function ResourceAllocationApp() {
                     onAccessDenied={handleQueueAccessDenied}
                   />
                 )}
-                {activePage === 'allocations' && <AllocationsWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />}
+                {activePage === 'allocations' && (
+                  <AllocationsWorkspace
+                    localUserId={profileId}
+                    personId={accessQuery.data.person.id}
+                    role={accessQuery.data.person.role}
+                    groupId={accessQuery.data.person.groupId ?? null}
+                    onAccessDenied={handleModuleDataAccessDenied}
+                  />
+                )}
                 {activePage === 'notifications' && <NotificationsInbox localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />}
                 {activePage === 'administration' && profileAdministrationAccessBlocked && isDelegatedProfileAdministrator && (
                   <div className="form-error admin-access-revoked" role="alert">
