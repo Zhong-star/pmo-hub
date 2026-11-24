@@ -8847,6 +8847,16 @@
               }
             }
           },
+          "400": {
+            "description": "The capacity id is not a UUID.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
           "401": {
             "description": "A local Hub profile is required.",
             "content": {
@@ -8959,6 +8969,7 @@
           "200": {
             "headers": {
               "ETag": {
+                "description": "Omitted on a replayed receipt; fetch the entry for its current version.",
                 "schema": {
                   "type": "string",
                   "example": "\"2\""
@@ -9253,6 +9264,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CapacityHistoryCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The capacity id, limit, or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
                 }
               }
             }
@@ -12464,7 +12485,7 @@
           "name"
         ]
       },
-      "CapacityResponseDto": {
+      "CapacityListItemDto": {
         "type": "object",
         "properties": {
           "id": {
@@ -12495,6 +12516,12 @@
           "version": {
             "type": "number",
             "minimum": 1
+          },
+          "effectiveUntil": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "Last inclusive day of this value: the day before the next entry for the same group, profile, and classification; null when no later entry exists."
           }
         },
         "required": [
@@ -12504,16 +12531,18 @@
           "classification",
           "effectiveDate",
           "fte",
-          "version"
+          "version",
+          "effectiveUntil"
         ]
       },
       "CapacityCollectionResponseDto": {
         "type": "object",
         "properties": {
           "items": {
+            "description": "Ordered by group, resource profile, classification, effective date, then id.",
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/CapacityResponseDto"
+              "$ref": "#/components/schemas/CapacityListItemDto"
             }
           },
           "page": {
@@ -12565,6 +12594,49 @@
           "effectiveDate",
           "fte",
           "reason"
+        ]
+      },
+      "CapacityResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "group": {
+            "$ref": "#/components/schemas/CapacityGroupDto"
+          },
+          "resourceProfile": {
+            "$ref": "#/components/schemas/CapacityProfileDto"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ]
+          },
+          "effectiveDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "fte": {
+            "type": "number",
+            "minimum": 0
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id",
+          "group",
+          "resourceProfile",
+          "classification",
+          "effectiveDate",
+          "fte",
+          "version"
         ]
       },
       "UpdateCapacityRequestDto": {

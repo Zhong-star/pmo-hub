@@ -30,7 +30,7 @@ interface CapacityFormValues {
   resourceProfileId: string;
   classification: 'INTERNAL' | 'THIRD_PARTY';
   effectiveDate: string;
-  fte: number;
+  fte: string;
   reason: string;
 }
 
@@ -51,7 +51,7 @@ function emptyFormValues(): CapacityFormValues {
     resourceProfileId: '',
     classification: 'INTERNAL',
     effectiveDate: businessDate(),
-    fte: 0,
+    fte: '',
     reason: '',
   };
 }
@@ -168,7 +168,7 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
         resourceProfileId: next.capacity.resourceProfile.id,
         classification: next.capacity.classification,
         effectiveDate: next.capacity.effectiveDate,
-        fte: next.capacity.fte,
+        fte: String(next.capacity.fte),
         reason: '',
       });
     } else {
@@ -223,7 +223,7 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
         resourceProfileId: values.resourceProfileId,
         classification: values.classification,
         effectiveDate: values.effectiveDate,
-        fte: values.fte,
+        fte: Number(values.fte.replace(',', '.')),
         reason: values.reason.trim(),
       };
       const keyed = nextAttempt(attempt, input);
@@ -244,7 +244,7 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
     if (editor?.mode === 'edit') {
       const input = {
         effectiveDate: values.effectiveDate,
-        fte: values.fte,
+        fte: Number(values.fte.replace(',', '.')),
         reason: values.reason.trim(),
       };
       const command = { id: editor.capacity.id, version: editor.capacity.version, input };
@@ -307,13 +307,29 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
     void capacitiesQuery.fetchNextPage();
   }
 
+  const profileFilterOptions = useMemo(() => {
+    const options = new Map<string, { id: string; name: string; groupId: string; groupName: string; active: boolean }>();
+    for (const group of optionsQuery.data?.groups ?? []) {
+      for (const profile of group.resourceProfiles) options.set(profile.id, { ...profile, groupId: group.id, groupName: group.name });
+    }
+    for (const capacity of capacities) {
+      if (!options.has(capacity.resourceProfile.id)) {
+        options.set(capacity.resourceProfile.id, { ...capacity.resourceProfile, groupId: capacity.group.id, groupName: capacity.group.name });
+      }
+    }
+    if (filters.resourceProfileId && !options.has(filters.resourceProfileId)) {
+      options.set(filters.resourceProfileId, { id: filters.resourceProfileId, name: 'Selected profile', groupId: filters.groupId ?? '', groupName: 'current filter', active: false });
+    }
+    return [...options.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }, [capacities, filters.groupId, filters.resourceProfileId, optionsQuery.data]);
+
   const formBusy = formState.isSubmitting || createMutation.isPending || updateMutation.isPending || removeMutation.isPending;
   const groupRegister = register('groupId', { required: 'Choose a group.' });
   const profileRegister = register('resourceProfileId', { required: 'Choose an active resource profile.' });
   const dateRegister = register('effectiveDate', { required: 'Choose an effective date.' });
   const fteRegister = register('fte', {
-    valueAsNumber: true,
-    validate: (value) => Number.isFinite(value) && value >= 0 || 'Enter a non-negative FTE value.',
+    validate: (value) => (/^\d+(?:[.,]\d+)?$/.test(value.trim()) && Number.isFinite(Number(value.trim().replace(',', '.'))))
+      || 'Enter a non-negative FTE value, such as 0, 0.5, or 2.',
   });
   const classificationRegister = register('classification', { required: 'Choose a classification.' });
   const reasonRegister = register('reason', {
@@ -353,10 +369,9 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
             onChange={(event) => setFilters((current) => ({ ...current, resourceProfileId: event.target.value || undefined }))}
           >
             <option value="">All profiles</option>
-            {(optionsQuery.data?.groups ?? [])
-              .filter((group) => !filters.groupId || group.id === filters.groupId)
-              .flatMap((group) => group.resourceProfiles.map((profile) => ({ ...profile, groupName: group.name })))
-              .map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.groupName}</option>)}
+            {profileFilterOptions
+              .filter((profile) => !filters.groupId || profile.groupId === filters.groupId)
+              .map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.groupName}{profile.active ? '' : ' (inactive)'}</option>)}
           </select>
         </label>
         <label>
@@ -433,7 +448,7 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
                   </label>
                   <label className="capacity-field">
                     <span>Capacity <em>FTE</em></span>
-                    <input {...fteRegister} type="number" min="0" step="any" inputMode="decimal" aria-describedby="capacity-fte-help" aria-invalid={Boolean(formState.errors.fte)} onChange={(event) => { void fteRegister.onChange(event); clearFieldErrors(); }} />
+                    <input {...fteRegister} type="text" inputMode="decimal" aria-describedby="capacity-fte-help" aria-invalid={Boolean(formState.errors.fte)} onChange={(event) => { void fteRegister.onChange(event); clearFieldErrors(); }} />
                     <small id="capacity-fte-help">1.0 FTE represents 40 hours per week. Zero is allowed; values round to one decimal place.</small>
                     {formState.errors.fte && <small className="field-error">{formState.errors.fte.message}</small>}
                   </label>
@@ -458,7 +473,7 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
                     </label>
                     <label className="capacity-field">
                       <span>Capacity <em>FTE</em></span>
-                      <input {...fteRegister} type="number" min="0" step="any" inputMode="decimal" aria-describedby="capacity-fte-help" aria-invalid={Boolean(formState.errors.fte)} onChange={(event) => { void fteRegister.onChange(event); clearFieldErrors(); }} />
+                      <input {...fteRegister} type="text" inputMode="decimal" aria-describedby="capacity-fte-help" aria-invalid={Boolean(formState.errors.fte)} onChange={(event) => { void fteRegister.onChange(event); clearFieldErrors(); }} />
                       <small id="capacity-fte-help">1.0 FTE represents 40 hours per week. Zero is allowed; values round to one decimal place.</small>
                       {formState.errors.fte && <small className="field-error">{formState.errors.fte.message}</small>}
                     </label>
@@ -519,7 +534,7 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
                     <dl className="capacity-card-details">
                       <div><dt>Effective from</dt><dd>{formatCalendarDate(capacity.effectiveDate)}</dd></div>
                       <div><dt>Capacity</dt><dd>{formatFte(capacity.fte)} FTE</dd></div>
-                      <div><dt>Next change</dt><dd>Until the next effective date</dd></div>
+                      <div><dt>Applies through</dt><dd>{capacity.effectiveUntil ? formatCalendarDate(capacity.effectiveUntil) : 'No later entry'}</dd></div>
                     </dl>
                     {pastAndLocked && <p className="capacity-inactive-note">Past capacity entries can only be corrected by an Admin.</p>}
                   </div>
@@ -536,7 +551,7 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
 
         {capacitiesQuery.isFetchNextPageError && <p className="form-error" role="alert">The next page could not be loaded. Existing entries remain available.</p>}
         {(capacitiesQuery.hasNextPage || capacitiesQuery.isFetchNextPageError) && (
-          <button className="secondary-button capacity-load-more" type="button" onClick={loadMore} disabled={capacitiesQuery.isFetching}>
+          <button className="secondary-button capacity-load-more" type="button" onClick={loadMore} disabled={capacitiesQuery.isFetching || (capacitiesQuery.isError && !capacitiesQuery.isFetchNextPageError)}>
             {capacitiesQuery.isFetchNextPageError ? 'Retry loading more' : capacitiesQuery.isFetchingNextPage ? 'Loading…' : 'Load more'}
           </button>
         )}

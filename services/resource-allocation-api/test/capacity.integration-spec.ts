@@ -349,6 +349,73 @@ describe('Tech Resource Allocation capacity maintenance (#98)', () => {
       .expect(403);
   });
 
+  it('covers covered groups, denies other leaders, locks past removal to Admin, and rejects a move onto a taken date', async () => {
+    const admin = await addPerson('capacity-admin', ResourceAllocationRole.Admin);
+    const { group, profile, supervisor, manager } = await addGroupWithProfile();
+    const outsiderSupervisor = await addPerson('capacity-outsider-supervisor', ResourceAllocationRole.Supervisor);
+    const outsiderManager = await addPerson('capacity-outsider-manager', ResourceAllocationRole.Manager);
+    const covering = await addPerson('capacity-covering-manager', ResourceAllocationRole.Manager);
+    await dataSource!.getRepository(ResourcePerson).update(covering.id, { coveredGroupIds: [group.id] });
+    const path = '/api/resource-allocation/v1/capacities';
+    const body = (effectiveDate: string) => ({
+      groupId: group.id, resourceProfileId: profile.id, classification: 'INTERNAL', effectiveDate, fte: 1, reason: 'Plan',
+    });
+    const post = (actor: ResourcePerson, effectiveDate: string) => request(app!.getHttpServer())
+      .post(path).set('X-PMO-Local-User-ID', actor.localUserId).set('Idempotency-Key', randomUUID()).send(body(effectiveDate));
+    const patch = (actor: ResourcePerson, id: string, version: number, change: Record<string, unknown>) => request(app!.getHttpServer())
+      .patch(`${path}/${id}`).set('X-PMO-Local-User-ID', actor.localUserId).set('If-Match', `"${version}"`)
+      .set('Idempotency-Key', randomUUID()).set('Content-Type', 'application/merge-patch+json').send({ reason: 'Correction', ...change });
+    const remove = (actor: ResourcePerson, id: string, version: number) => request(app!.getHttpServer())
+      .delete(`${path}/${id}`).set('X-PMO-Local-User-ID', actor.localUserId).set('If-Match', `"${version}"`)
+      .set('Idempotency-Key', randomUUID()).send({ reason: 'Remove' });
+
+    const covered = await post(covering, '2099-03-01').expect(201);
+    await post(outsiderSupervisor, '2099-03-02').expect(403);
+    await post(outsiderManager, '2099-03-03').expect(403);
+    await request(app!.getHttpServer()).get(`${path}/${covered.body.id}`).set('X-PMO-Local-User-ID', outsiderManager.localUserId).expect(403);
+    await post(supervisor, '2099-03-08').expect(201);
+
+    const taken = await patch(manager, covered.body.id, 1, { effectiveDate: '2099-03-08' }).expect(409);
+    expect(taken.body.code).toBe('RESOURCE_CONFLICT');
+
+    const past = await post(admin, '2001-01-01').expect(201);
+    await remove(supervisor, past.body.id, 1).expect(403);
+    await patch(manager, past.body.id, 1, { fte: 2 }).expect(403);
+    const corrected = await patch(admin, past.body.id, 1, { fte: 2, effectiveDate: '2001-01-02' }).expect(200);
+    expect(corrected.body).toMatchObject({ fte: 2, effectiveDate: '2001-01-02', version: 2 });
+    await remove(admin, past.body.id, 2).expect(204);
+
+    await dataSource!.getRepository(ResourcePerson).update(covering.id, { active: false });
+    await post(covering, '2099-04-01').expect(403);
+  });
+
+  it('orders entries chronologically within each group, profile, and classification and shows when each value ends', async () => {
+    const admin = await addPerson('capacity-admin', ResourceAllocationRole.Admin);
+    const { group, profile } = await addGroupWithProfile();
+    const path = '/api/resource-allocation/v1/capacities';
+    for (const [effectiveDate, classification] of [['2099-03-01', 'INTERNAL'], ['2099-01-04', 'INTERNAL'], ['2099-02-01', 'THIRD_PARTY'], ['2099-02-01', 'INTERNAL']]) {
+      await request(app!.getHttpServer()).post(path).set('X-PMO-Local-User-ID', admin.localUserId).set('Idempotency-Key', randomUUID())
+        .send({ groupId: group.id, resourceProfileId: profile.id, classification, effectiveDate, fte: 1, reason: 'Plan' }).expect(201);
+    }
+    const seen: Array<[string, string, string | null]> = [];
+    let cursor: string | null = null;
+    do {
+      const page: { body: { items: Array<{ classification: string; effectiveDate: string; effectiveUntil: string | null }>; page: { nextCursor: string | null } } } = await request(app!.getHttpServer()).get(path).query({ limit: 1, ...(cursor ? { cursor } : {}) })
+        .set('X-PMO-Local-User-ID', admin.localUserId).expect(200);
+      for (const item of page.body.items) seen.push([item.classification, item.effectiveDate, item.effectiveUntil]);
+      cursor = page.body.page.nextCursor;
+    } while (cursor);
+    expect(seen).toEqual([
+      ['INTERNAL', '2099-01-04', '2099-01-31'],
+      ['INTERNAL', '2099-02-01', '2099-02-28'],
+      ['INTERNAL', '2099-03-01', null],
+      ['THIRD_PARTY', '2099-02-01', null],
+    ]);
+    const stringValue = await request(app!.getHttpServer()).post(path).set('X-PMO-Local-User-ID', admin.localUserId).set('Idempotency-Key', randomUUID())
+      .send({ groupId: group.id, resourceProfileId: profile.id, classification: 'THIRD_PARTY', effectiveDate: '2099-05-01', fte: '', reason: 'Plan' });
+    expect(stringValue.status).toBe(400);
+  });
+
   it('removes a future vigency without erasing its audit tombstone or prior capacity', async () => {
     const admin = await addPerson('capacity-admin', ResourceAllocationRole.Admin);
     const { group, profile } = await addGroupWithProfile();

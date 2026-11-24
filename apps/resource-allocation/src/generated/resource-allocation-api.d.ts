@@ -1950,7 +1950,7 @@ export interface components {
             id: string;
             name: string;
         };
-        CapacityResponseDto: {
+        CapacityListItemDto: {
             /** Format: uuid */
             id: string;
             group: components["schemas"]["CapacityGroupDto"];
@@ -1961,9 +1961,15 @@ export interface components {
             effectiveDate: string;
             fte: number;
             version: number;
+            /**
+             * Format: date
+             * @description Last inclusive day of this value: the day before the next entry for the same group, profile, and classification; null when no later entry exists.
+             */
+            effectiveUntil: string | null;
         };
         CapacityCollectionResponseDto: {
-            items: components["schemas"]["CapacityResponseDto"][];
+            /** @description Ordered by group, resource profile, classification, effective date, then id. */
+            items: components["schemas"]["CapacityListItemDto"][];
             page: components["schemas"]["CursorPageInfoDto"];
         };
         CreateCapacityRequestDto: {
@@ -1978,6 +1984,18 @@ export interface components {
             /** @description FTE value; excess precision is rounded to one decimal place. No upper bound. */
             fte: number;
             reason: string;
+        };
+        CapacityResponseDto: {
+            /** Format: uuid */
+            id: string;
+            group: components["schemas"]["CapacityGroupDto"];
+            resourceProfile: components["schemas"]["CapacityProfileDto"];
+            /** @enum {string} */
+            classification: "INTERNAL" | "THIRD_PARTY";
+            /** Format: date */
+            effectiveDate: string;
+            fte: number;
+            version: number;
         };
         UpdateCapacityRequestDto: {
             /** Format: date */
@@ -7587,6 +7605,15 @@ export interface operations {
                     "application/json": components["schemas"]["CapacityResponseDto"];
                 };
             };
+            /** @description The capacity id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
             /** @description A local Hub profile is required. */
             401: {
                 headers: {
@@ -7748,6 +7775,7 @@ export interface operations {
         responses: {
             200: {
                 headers: {
+                    /** @description Omitted on a replayed receipt; fetch the entry for its current version. */
                     ETag?: string;
                     "Idempotency-Replayed"?: string;
                     [name: string]: unknown;
@@ -7852,6 +7880,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CapacityHistoryCollectionResponseDto"];
+                };
+            };
+            /** @description The capacity id, limit, or cursor is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
             /** @description A local Hub profile is required. */

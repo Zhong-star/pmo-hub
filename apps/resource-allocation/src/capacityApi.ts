@@ -62,7 +62,7 @@ export async function getCapacityHistory(localUserId: string, capacityId: string
   try {
     const response = await api.get<CapacityHistory>(`${API_ROOT}/capacities/${encodeURIComponent(capacityId)}/history`, {
       headers: headers(localUserId),
-      params: { limit: 50 } satisfies ApiQuery<CapacityHistoryPath, 'get'>,
+      params: { limit: 100 } satisfies ApiQuery<CapacityHistoryPath, 'get'>,
     });
     return response.data;
   } catch (error) {

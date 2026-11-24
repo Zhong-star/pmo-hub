@@ -58,7 +58,6 @@ export class CreateCapacityRequestDto {
   effectiveDate!: string;
 
   @ApiProperty({ type: Number, minimum: 0, description: 'FTE value; excess precision is rounded to one decimal place. No upper bound.' })
-  @Type(() => Number)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   fte!: number;
@@ -81,7 +80,6 @@ export class UpdateCapacityRequestDto {
 
   @ApiPropertyOptional({ type: Number, minimum: 0, description: 'FTE value; excess precision is rounded to one decimal place. No upper bound.' })
   @IsOptional()
-  @Type(() => Number)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   fte?: number;
@@ -126,8 +124,13 @@ export class CapacityResponseDto {
   @ApiProperty({ type: Number, minimum: 1 }) version!: number;
 }
 
+export class CapacityListItemDto extends CapacityResponseDto {
+  @ApiProperty({ type: String, format: 'date', nullable: true, description: 'Last inclusive day of this value: the day before the next entry for the same group, profile, and classification; null when no later entry exists.' })
+  effectiveUntil!: string | null;
+}
+
 export class CapacityCollectionResponseDto {
-  @ApiProperty({ type: () => CapacityResponseDto, isArray: true }) items!: CapacityResponseDto[];
+  @ApiProperty({ type: () => CapacityListItemDto, isArray: true, description: 'Ordered by group, resource profile, classification, effective date, then id.' }) items!: CapacityListItemDto[];
   @ApiProperty({ type: () => CursorPageInfoDto }) page!: CursorPageInfoDto;
 }
 

@@ -117,6 +117,7 @@ export class ResourceCapacityController {
   @Get('capacities/:id')
   @ApiOperation({ summary: 'Read a capacity entry' })
   @ApiOkResponse({ type: CapacityResponseDto, headers: { ETag: { schema: { type: 'string', example: '"1"' } } } })
+  @ApiBadRequestResponse({ description: 'The capacity id is not a UUID.' })
   @ApiNotFoundResponse({ description: 'The capacity entry was not found.' })
   @ApiForbiddenResponse({ description: 'The current profile is outside the capacity group scope.' })
   async get(
@@ -135,7 +136,7 @@ export class ResourceCapacityController {
   @ApiHeader({ name: 'If-Match', required: true, description: 'Strong ETag version from the latest capacity response.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiOkResponse({ type: CapacityResponseDto, headers: {
-    ETag: { schema: { type: 'string', example: '"2"' } },
+    ETag: { description: 'Omitted on a replayed receipt; fetch the entry for its current version.', schema: { type: 'string', example: '"2"' } },
     'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } },
   } })
   @ApiBadRequestResponse({ description: 'If-Match, Idempotency-Key, or merge patch is invalid.' })
@@ -182,6 +183,7 @@ export class ResourceCapacityController {
   @ApiOkResponse({ type: CapacityHistoryCollectionResponseDto })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size (default 50, maximum 100).' })
   @ApiQuery({ name: 'cursor', required: false, type: String })
+  @ApiBadRequestResponse({ description: 'The capacity id, limit, or cursor is invalid.' })
   @ApiNotFoundResponse({ description: 'The capacity entry was not found.' })
   @ApiForbiddenResponse({ description: 'The current profile is outside the capacity group scope.' })
   history(

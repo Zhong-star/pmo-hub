@@ -25,14 +25,15 @@ function capacity(overrides: Record<string, unknown> = {}) {
     resourceProfile: { id: inactiveProfileId, name: 'Cloud Engineering', active: false },
     classification: 'INTERNAL',
     effectiveDate: '2026-11-24',
+    effectiveUntil: null,
     fte: 1.2,
     version: 3,
     ...overrides,
   };
 }
 
-async function installBaseRoutes(page: Page) {
-  await page.route(`${apiRoot}/access`, (route) => route.fulfill({ json: { person: admin } }));
+async function installBaseRoutes(page: Page, person: typeof admin = admin) {
+  await page.route(`${apiRoot}/access`, (route) => route.fulfill({ json: { person } }));
   await page.route(`${apiRoot}/request-queues/**`, (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/requests**`, (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/submissions**`, (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
@@ -42,12 +43,11 @@ async function installBaseRoutes(page: Page) {
   await page.route(`${apiRoot}/initiatives**`, (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), {
     key: profileStorageKey,
-    value: localUserId,
+    value: person.localUserId,
   });
 }
 
 async function openCapacity(page: Page) {
-  page.on('pageerror', (error) => console.log(`PAGE_ERROR ${error.stack}`));
   await installBaseRoutes(page);
   await page.route(`${apiRoot}/capacity-options`, (route) => route.fulfill({ json: {
     groups: [{
@@ -78,8 +78,6 @@ async function openCapacity(page: Page) {
     return route.fulfill({ json: { items: entries, page: emptyPage } });
   });
   await page.goto('/resource-allocation/?page=capacity');
-  await page.waitForTimeout(300);
-  console.log(`BODY ${await page.locator('body').innerText()}`);
 }
 
 test('creates and lists dated FTE capacity, requires a reason, and rounds to one decimal place', async ({ page }) => {
@@ -246,4 +244,35 @@ test('captures capacity in both themes, desktop and narrow, with keyboard focus 
   await page.getByRole('button', { name: 'Save capacity' }).scrollIntoViewIfNeeded();
   await expect(page.getByRole('button', { name: 'Save capacity' })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('capacity-dark-zoom-200.png'), fullPage: true });
+});
+
+test('locks past entries for a leader and explains a version conflict without losing the edit', async ({ page }) => {
+  const moderator = { ...admin, id: '91847999-3f3c-41df-b026-20ac20e31c92', localUserId: 'profile-capacity-moderator', displayName: 'Riley Moderator', role: 'ALLOCATION_MODERATOR', groupId };
+  await installBaseRoutes(page, moderator);
+  await page.route(`${apiRoot}/capacity-options`, (route) => route.fulfill({ json: {
+    groups: [{ id: groupId, name: 'Platform Engineering', resourceProfiles: [{ id: activeProfileId, name: 'Application Engineering', active: true }] }],
+  } }));
+  const pastEntry = capacity({ id: '11111111-4d69-4f31-a818-3b8c24607903', effectiveDate: '2001-01-01', effectiveUntil: '2099-12-31', resourceProfile: { id: activeProfileId, name: 'Legacy Engineering', active: true } });
+  const futureEntry = capacity({ effectiveDate: '2099-12-31', resourceProfile: { id: activeProfileId, name: 'Application Engineering', active: true } });
+  await page.route(`${apiRoot}/capacities**`, async (route) => {
+    if (route.request().method() === 'PATCH') {
+      return route.fulfill({ status: 412, contentType: 'application/problem+json', json: { status: 412, code: 'PRECONDITION_FAILED', detail: 'The capacity entry changed.' } });
+    }
+    return route.fulfill({ json: { items: [pastEntry, futureEntry], page: emptyPage } });
+  });
+  await page.goto('/resource-allocation/?page=capacity');
+  const pastCard = page.getByRole('listitem').filter({ hasText: 'Legacy Engineering' });
+  await expect(pastCard).toContainText('Past capacity entries can only be corrected by an Admin.');
+  await expect(pastCard).toContainText('Dec 31, 2099');
+  await expect(pastCard.getByRole('button', { name: 'Edit' })).toBeDisabled();
+  await expect(pastCard.getByRole('button', { name: 'Remove' })).toBeDisabled();
+
+  const futureCard = page.getByRole('listitem').filter({ hasText: 'Application Engineering' });
+  await expect(futureCard).toContainText('No later entry');
+  await futureCard.getByRole('button', { name: 'Edit' }).click();
+  await page.getByLabel('Capacity FTE').fill('2,5');
+  await page.getByLabel('Reason Required').fill('Hiring plan');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByRole('alert')).toContainText('changed in another session');
+  await expect(page.getByLabel('Capacity FTE')).toHaveValue('2,5');
 });

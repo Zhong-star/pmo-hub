@@ -30,6 +30,7 @@ interface CapacityRow {
   fte: string;
   deleted_at: Date | null;
   version: number;
+  effective_until?: string | null;
 }
 
 interface CapacityActor extends ResourcePerson {
@@ -42,6 +43,10 @@ interface CapacityCursor {
   filtersHash?: string;
   lastId: string;
   occurredAt?: string;
+  groupId?: string;
+  resourceProfileId?: string;
+  classification?: string;
+  effectiveDate?: string;
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -80,7 +85,9 @@ export class ResourceCapacityService {
     else if (groupIds) clauses.push(`capacity.group_id = ANY(${addParameter(groupIds)}::uuid[])`);
     if (filters.resourceProfileId) clauses.push(`capacity.resource_profile_id = ${addParameter(filters.resourceProfileId)}::uuid`);
     if (filters.classification) clauses.push(`capacity.classification = ${addParameter(filters.classification)}::varchar`);
-    if (cursor) clauses.push(`capacity.id > ${addParameter(cursor.lastId)}::uuid`);
+    if (cursor) {
+      clauses.push(`(capacity.group_id, capacity.resource_profile_id, capacity.classification, capacity.effective_date, capacity.id) > (${addParameter(cursor.groupId)}::uuid, ${addParameter(cursor.resourceProfileId)}::uuid, ${addParameter(cursor.classification)}::varchar, ${addParameter(cursor.effectiveDate)}::date, ${addParameter(cursor.lastId)}::uuid)`);
+    }
     const limitParameter = addParameter(limit + 1);
 
     try {
@@ -89,21 +96,39 @@ export class ResourceCapacityService {
           capacity.resource_profile_id, profile.name AS resource_profile_name,
           profile.active AS resource_profile_active, capacity.classification,
           capacity.effective_date::text AS effective_date, capacity.fte::text AS fte,
-          capacity.deleted_at, capacity.version
+          capacity.deleted_at, capacity.version,
+          (
+            SELECT (MIN(later.effective_date) - 1)::text
+            FROM resource_capacities AS later
+            WHERE later.deleted_at IS NULL
+              AND later.group_id = capacity.group_id
+              AND later.resource_profile_id = capacity.resource_profile_id
+              AND later.classification = capacity.classification
+              AND later.effective_date > capacity.effective_date
+          ) AS effective_until
         FROM resource_capacities AS capacity
         INNER JOIN resource_groups AS team ON team.id = capacity.group_id
         INNER JOIN resource_profiles AS profile ON profile.id = capacity.resource_profile_id
         WHERE ${clauses.join(' AND ')}
-        ORDER BY capacity.id ASC
+        ORDER BY capacity.group_id ASC, capacity.resource_profile_id ASC, capacity.classification ASC, capacity.effective_date ASC, capacity.id ASC
         LIMIT ${limitParameter}::integer
       `, parameters) as CapacityRow[];
       const hasNext = found.length > limit;
       const rows = found.slice(0, limit);
       return {
-        items: rows.map((row) => this.toCapacity(row)),
+        items: rows.map((row) => ({ ...this.toCapacity(row), effectiveUntil: row.effective_until ?? null })),
         page: {
           nextCursor: hasNext && rows.length > 0
-            ? this.encodeCursor({ version: 1, collection: 'capacities', filtersHash: filterHash, lastId: rows[rows.length - 1].id })
+            ? this.encodeCursor({
+              version: 1,
+              collection: 'capacities',
+              filtersHash: filterHash,
+              lastId: rows[rows.length - 1].id,
+              groupId: rows[rows.length - 1].group_id,
+              resourceProfileId: rows[rows.length - 1].resource_profile_id,
+              classification: rows[rows.length - 1].classification,
+              effectiveDate: rows[rows.length - 1].effective_date,
+            })
             : null,
           limit,
         },
@@ -515,7 +540,9 @@ export class ResourceCapacityService {
     try {
       const cursor = decodeOpaqueCursor<Partial<CapacityCursor>>(value);
       if (cursor.version !== 1 || cursor.collection !== collection || !uuidPattern.test(String(cursor.lastId)) ||
-        (collection === 'capacities' && cursor.filtersHash !== filtersHash) ||
+        (collection === 'capacities' && (cursor.filtersHash !== filtersHash || !uuidPattern.test(String(cursor.groupId)) ||
+          !uuidPattern.test(String(cursor.resourceProfileId)) || !['INTERNAL', 'THIRD_PARTY'].includes(String(cursor.classification)) ||
+          !datePattern.test(String(cursor.effectiveDate)))) ||
         (collection === 'capacity-history' && (typeof cursor.occurredAt !== 'string' || Number.isNaN(Date.parse(cursor.occurredAt))))) {
         throw new Error('Invalid cursor.');
       }
