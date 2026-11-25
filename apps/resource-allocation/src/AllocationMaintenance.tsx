@@ -80,7 +80,29 @@ function versionFrom(etag: string | undefined): number | null {
   return match ? Number(match[1]) : null;
 }
 
-export function AllocationMaintenance({ localUserId, allocation, etag, mode, isAdmin, onSaved, onClose, onReload, onAccessDenied }: AllocationMaintenanceProps) {
+export function AllocationMaintenance(props: AllocationMaintenanceProps) {
+  const { localUserId, allocation, onClose } = props;
+  const optionsQuery = useQuery({
+    queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId, 'creation-options', allocation.group.id, 'direct'],
+    queryFn: () => getGroupAllocationOptions(localUserId, allocation.group.id, true),
+    retry: false,
+  });
+  if (optionsQuery.isPending) return <p className="allocation-loading" role="status">Loading people and profiles…</p>;
+  if (optionsQuery.isError) {
+    return (
+      <div className="form-error" role="alert">
+        <p>People and profiles for this group could not be loaded.</p>
+        <button type="button" className="text-button" onClick={() => void optionsQuery.refetch()}>Try again</button>
+        <button type="button" className="text-button" onClick={onClose}>Close</button>
+      </div>
+    );
+  }
+  return <MaintenanceFormView {...props} options={optionsQuery.data} />;
+}
+
+function MaintenanceFormView({ localUserId, allocation, etag, mode, isAdmin, onSaved, onClose, onReload, onAccessDenied, options }: AllocationMaintenanceProps & {
+  options: Awaited<ReturnType<typeof getGroupAllocationOptions>>;
+}) {
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [stale, setStale] = useState(false);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
@@ -93,11 +115,6 @@ export function AllocationMaintenance({ localUserId, allocation, etag, mode, isA
   const enteringVacation = vacation && allocation.category !== 'VACATION';
   const heldState = allocation.state === 'SUSPENDED' || allocation.state === 'ALLOCATED_WITHOUT_ACTION';
 
-  const optionsQuery = useQuery({
-    queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId, 'creation-options', allocation.group.id, 'direct'],
-    queryFn: () => getGroupAllocationOptions(localUserId, allocation.group.id, true),
-    retry: false,
-  });
   const mutation = useMutation({
     mutationFn: async ({ input, next, version }: { input: UpdateAllocationInput | ReopenAllocationInput; next: Attempt; version: number }) => (
       mode === 'edit'
@@ -179,8 +196,8 @@ export function AllocationMaintenance({ localUserId, allocation, etag, mode, isA
     mutation.reset();
   }
 
-  const people = optionsQuery.data?.people ?? [];
-  const profiles = optionsQuery.data?.profiles ?? [];
+  const people = options.people;
+  const profiles = options.profiles;
   const preview = previewState(allocation.state, category, values.startDate ?? '', values.endDate ?? '', mode);
   const title = mode === 'edit' ? 'Change allocation' : 'Reopen allocation';
   const errorMessage = mutation.error instanceof AllocationRequestError

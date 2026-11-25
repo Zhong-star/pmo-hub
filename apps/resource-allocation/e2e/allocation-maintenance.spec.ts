@@ -99,6 +99,8 @@ test('keeps entries on a version conflict and reloads only when asked, without r
     return { status: 412, json: { status: 412, code: 'PRECONDITION_FAILED', detail: 'The allocation changed.' } };
   });
   await page.getByRole('button', { name: 'Change allocation' }).click();
+  await expect(maintenance(page).getByLabel('Resource profile')).toHaveValue(profileId);
+  await expect(maintenance(page).getByLabel(/^Person/)).toHaveValue(memberId);
   await maintenance(page).getByLabel('Weekly hours').fill('10');
   await maintenance(page).getByLabel('Reason for this change').fill('More time');
   await page.getByRole('button', { name: 'Save change' }).click();
