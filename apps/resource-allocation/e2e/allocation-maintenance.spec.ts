@@ -92,23 +92,36 @@ test('lets a leader change profile, dates, and hours with a reason and shows the
   expect(body).toEqual({ reason: 'Team rebalance', resourceProfileId: otherProfileId, startDate: '2099-01-05', endDate: '2099-01-20', weeklyHours: 12.3 });
 });
 
-test('keeps entries on a version conflict and reloads only when asked, without resending', async ({ page }) => {
-  let writes = 0;
-  await open(page, moderator, () => allocation(), () => {
-    writes += 1;
-    return { status: 412, json: { status: 412, code: 'PRECONDITION_FAILED', detail: 'The allocation changed.' } };
+test('keeps entries when a newer version arrives, waits for an explicit review, and then saves against it', async ({ page }) => {
+  const ifMatches: string[] = [];
+  let version = 3;
+  await open(page, moderator, () => allocation({ version, weeklyHours: version === 3 ? 8 : 9 }), (request) => {
+    ifMatches.push(request.headers()['if-match']);
+    if (ifMatches.length === 1) return { status: 412, json: { status: 412, code: 'PRECONDITION_FAILED', detail: 'The allocation changed.' } };
+    return { status: 200, json: allocation({ version: 5, weeklyHours: 10 }) };
   });
   await page.getByRole('button', { name: 'Change allocation' }).click();
   await expect(maintenance(page).getByLabel('Resource profile')).toHaveValue(profileId);
   await expect(maintenance(page).getByLabel(/^Person/)).toHaveValue(memberId);
   await maintenance(page).getByLabel('Weekly hours').fill('10');
   await maintenance(page).getByLabel('Reason for this change').fill('More time');
+
+  version = 4;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await page.getByRole('button', { name: 'Save change' }).click();
   await expect(maintenance(page).getByRole('alert')).toContainText('changed after you opened it');
   await expect(page.getByRole('button', { name: 'Save change' })).toBeDisabled();
   await expect(maintenance(page).getByLabel('Weekly hours')).toHaveValue('10');
-  await maintenance(page).getByRole('button', { name: 'Reload allocation' }).click();
-  expect(writes).toBe(1);
+  await expect(maintenance(page).getByLabel('Reason for this change')).toHaveValue('More time');
+
+  await maintenance(page).getByRole('button', { name: 'Review latest version' }).click();
+  await expect(page.getByRole('button', { name: 'Save change' })).toBeEnabled();
+  await expect(maintenance(page).getByLabel('Weekly hours')).toHaveValue('10');
+  await page.getByRole('button', { name: 'Save change' }).click();
+  await expect(page.getByText('The allocation was changed.')).toBeVisible();
+  expect(ifMatches.at(-1)).toBe('"4"');
+  expect(ifMatches.every((value, index) => index === 0 ? value === '"3"' : true)).toBe(true);
 });
 
 test('asks to confirm the derived state when suspended work becomes Vacation', async ({ page }) => {

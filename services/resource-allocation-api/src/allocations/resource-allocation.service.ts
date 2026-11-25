@@ -829,6 +829,20 @@ export class ResourceAllocationService {
             );
           }
 
+          const fingerprint = (value: Record<string, unknown>) => JSON.stringify(value);
+          const unchanged = mode === 'update' && fingerprint({
+            personId: allocation.personId, profileId: allocation.resourceProfileId, category: allocation.category, comment: allocation.comment,
+            startDate: allocation.effectiveStartDate, endDate: allocation.effectiveEndDate, hours: Number(allocation.weeklyHours),
+            classification: allocation.classification, state: allocation.state,
+          }) === fingerprint({
+            personId: person && personChanged ? person.id : allocation.personId,
+            profileId: profile === undefined ? allocation.resourceProfileId : profile?.id ?? null,
+            category: nextCategory, comment, startDate, endDate, hours: weeklyHours,
+            classification: changes.classification !== undefined ? changes.classification : person && personChanged ? person.classification ?? null : allocation.classification,
+            state: nextState,
+          });
+          if (unchanged) throw this.validationError('Change at least one field before saving.');
+
           const profileState = await this.currentResourceProfileState(manager, allocation.resourceProfileId);
           const before = this.toResponse(this.rowFromEntity(allocation, currentState, clock.businessDate, profileState), actor);
           const previousPersonId = allocation.personId;

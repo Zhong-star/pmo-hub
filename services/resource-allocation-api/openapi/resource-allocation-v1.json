@@ -7510,6 +7510,16 @@
               }
             }
           },
+          "404": {
+            "description": "The allocation was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
           "409": {
             "description": "The idempotency key was reused with different content.",
             "content": {
@@ -8787,6 +8797,16 @@
           },
           "403": {
             "description": "Only an Admin can reopen an allocation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The allocation was not found.",
             "content": {
               "application/problem+json": {
                 "schema": {

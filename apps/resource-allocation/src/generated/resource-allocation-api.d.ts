@@ -6980,6 +6980,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
+            /** @description The allocation was not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
             /** @description The idempotency key was reused with different content. */
             409: {
                 headers: {
@@ -7744,6 +7753,15 @@ export interface operations {
             };
             /** @description Only an Admin can reopen an allocation. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The allocation was not found. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

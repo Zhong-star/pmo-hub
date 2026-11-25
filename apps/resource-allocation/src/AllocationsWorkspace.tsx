@@ -17,6 +17,7 @@ import {
   getAllocationLoad,
   getAllocations,
   allocationCategoryLabel,
+  getDirectAllocationGroups,
   isAllocationAction,
   type AllocationAction,
   type AllocationFilters,
@@ -145,7 +146,7 @@ function historyChanges(before: Record<string, unknown> | null | undefined, afte
   if (!before || !after || Object.keys(before).length === 0) return [];
   const labels: Array<[string, string]> = [
     ['person', 'Person'], ['category', 'Category'], ['resourceProfile', 'Profile'], ['startDate', 'Start'], ['endDate', 'End'],
-    ['weeklyHours', 'Hours'], ['classification', 'Classification'], ['state', 'State'],
+    ['weeklyHours', 'Hours'], ['classification', 'Classification'], ['comment', 'Description'], ['state', 'State'],
   ];
   return labels
     .filter(([field]) => snapshotValue(before, field) !== snapshotValue(after, field))
@@ -240,8 +241,15 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
     retry: false,
   });
   const allocation = detailQuery.data?.allocation;
+  const directGroupsQuery = useQuery({
+    queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId, 'creation-groups'],
+    queryFn: () => getDirectAllocationGroups(localUserId),
+    enabled: role !== 'ALLOCATION_USER' && role !== 'ALLOCATION_ADMIN',
+    retry: false,
+  });
   const closed = allocation?.state === 'DONE' || allocation?.state === 'CANCELED';
-  const canEdit = role !== 'ALLOCATION_USER' && (!closed || role === 'ALLOCATION_ADMIN');
+  const leadsAllocationGroup = role === 'ALLOCATION_ADMIN' || (allocation ? (directGroupsQuery.data ?? []).some((group) => group.id === allocation.group.id) : false);
+  const canEdit = closed ? role === 'ALLOCATION_ADMIN' : leadsAllocationGroup;
   const historyQuery = useQuery({
     queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId, selectedAllocationId, 'history'],
     queryFn: () => getAllocationHistory(localUserId, selectedAllocationId!),
@@ -644,7 +652,7 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
               )}
               {maintenanceMode && detailQuery.data && (
                 <AllocationMaintenance
-                  key={`${allocation.id}:${allocation.version}:${maintenanceMode}`}
+                  key={`${allocation.id}:${maintenanceMode}`}
                   localUserId={localUserId}
                   allocation={allocation}
                   etag={detailQuery.data.etag}
@@ -652,7 +660,7 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
                   isAdmin={role === 'ALLOCATION_ADMIN'}
                   onSaved={(saved) => void handleMaintained(saved)}
                   onClose={() => setMaintenanceMode(null)}
-                  onReload={async () => { await detailQuery.refetch(); }}
+                  onReload={async () => (await detailQuery.refetch()).data?.allocation}
                   onAccessDenied={onAccessDenied}
                 />
               )}

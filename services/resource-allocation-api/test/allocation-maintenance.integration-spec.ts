@@ -220,6 +220,41 @@ describe('Tech Resource Allocation maintenance after approval (#95–#97)', () =
       expect(await dataSource!.getRepository(ResourceAllocationHistory).countBy({ allocationId: own.body.id, action: 'ALLOCATION_UPDATED' })).toBe(1);
     });
 
+    it('lets a covering leader edit, serializes concurrent edits, rejects no-op edits, and rolls back when a notice fails', async () => {
+      const f = await setup();
+      const day = await today();
+      const covering = await addPerson('mt-covering', ResourceAllocationRole.Supervisor);
+      await dataSource!.getRepository(ResourcePerson).update(covering.id, { coveredGroupIds: [f.group.id] });
+      const own = await create(f.member, { category: 'TRAINING', resourceProfileId: f.profile.id, startDate: day, endDate: addDays(day, 5), weeklyHours: 4, comment: 'Course' });
+      await patch(covering, own.body.id, 1, { reason: 'Covered group', weeklyHours: 5 }).expect(200);
+
+      const attempts = await Promise.all([
+        patch(f.moderator, own.body.id, 2, { reason: 'First', weeklyHours: 6 }),
+        patch(f.manager, own.body.id, 2, { reason: 'Second', weeklyHours: 7 }),
+      ]);
+      expect(attempts.map(({ status }) => status).sort()).toEqual([200, 412]);
+      expect(await dataSource!.getRepository(ResourceAllocationHistory).countBy({ allocationId: own.body.id, action: 'ALLOCATION_UPDATED' })).toBe(2);
+
+      const noop = await patch(f.moderator, own.body.id, 3, { reason: 'Nothing', weeklyHours: Number((await dataSource!.getRepository(ResourceAllocation).findOneByOrFail({ id: own.body.id })).weeklyHours) }).expect(400);
+      expect(noop.body.code).toBe('VALIDATION_ERROR');
+
+      await dataSource!.query(`
+        CREATE FUNCTION fail_maintenance_notice() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION 'test notification failure'; END
+        $$
+      `);
+      await dataSource!.query('CREATE TRIGGER fail_maintenance_notice_before_insert BEFORE INSERT ON resource_allocation_notifications FOR EACH ROW EXECUTE FUNCTION fail_maintenance_notice()');
+      try {
+        await patch(f.moderator, own.body.id, 3, { reason: 'Will fail', weeklyHours: 9 }).expect(500);
+        expect(await dataSource!.getRepository(ResourceAllocation).findOneByOrFail({ id: own.body.id })).toMatchObject({ version: 3 });
+        expect(await dataSource!.getRepository(ResourceAllocationHistory).countBy({ allocationId: own.body.id, action: 'ALLOCATION_UPDATED' })).toBe(2);
+        expect(await dataSource!.query("SELECT id FROM resource_allocation_operation_receipts WHERE operation = 'allocation.update'")).toHaveLength(2);
+      } finally {
+        await dataSource!.query('DROP TRIGGER fail_maintenance_notice_before_insert ON resource_allocation_notifications');
+        await dataSource!.query('DROP FUNCTION fail_maintenance_notice()');
+      }
+    });
+
     it('switches only among operational categories and confirms the derived state when held work becomes Vacation', async () => {
       const f = await setup();
       const day = await today();

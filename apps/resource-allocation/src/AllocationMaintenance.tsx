@@ -25,7 +25,7 @@ interface AllocationMaintenanceProps {
   isAdmin: boolean;
   onSaved: (allocation: AllocationRecord) => void;
   onClose: () => void;
-  onReload: () => Promise<void>;
+  onReload: () => Promise<AllocationRecord | undefined>;
   onAccessDenied: () => void;
 }
 
@@ -75,11 +75,6 @@ export function previewState(current: AllocationRecord['state'], category: strin
   return startDate > today ? 'Not started' : 'In progress';
 }
 
-function versionFrom(etag: string | undefined): number | null {
-  const match = etag?.match(/^"([1-9]\d*)"$/);
-  return match ? Number(match[1]) : null;
-}
-
 export function AllocationMaintenance(props: AllocationMaintenanceProps) {
   const { localUserId, allocation, onClose } = props;
   const optionsQuery = useQuery({
@@ -100,11 +95,14 @@ export function AllocationMaintenance(props: AllocationMaintenanceProps) {
   return <MaintenanceFormView {...props} options={optionsQuery.data} />;
 }
 
-function MaintenanceFormView({ localUserId, allocation, etag, mode, isAdmin, onSaved, onClose, onReload, onAccessDenied, options }: AllocationMaintenanceProps & {
+function MaintenanceFormView({ localUserId, allocation: latest, mode, isAdmin, onSaved, onClose, onReload, onAccessDenied, options }: AllocationMaintenanceProps & {
   options: Awaited<ReturnType<typeof getGroupAllocationOptions>>;
 }) {
+  // The version reviewed when the form opened; refreshes never silently move the form to a newer version.
+  const [allocation, setAllocation] = useState(latest);
   const [attempt, setAttempt] = useState<Attempt | null>(null);
-  const [stale, setStale] = useState(false);
+  const [conflict, setConflict] = useState(false);
+  const stale = conflict || latest.version !== allocation.version;
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const form = useForm<MaintenanceForm>({ defaultValues: defaults(allocation), mode: 'onSubmit', reValidateMode: 'onChange' });
   const { register, control, handleSubmit, getValues, setError, formState, reset } = form;
@@ -131,7 +129,8 @@ function MaintenanceFormView({ localUserId, allocation, etag, mode, isAdmin, onS
         onAccessDenied();
         return;
       }
-      setStale(error instanceof AllocationRequestError && error.status === 412);
+      if (error instanceof AllocationRequestError && error.status === 403) void onReload();
+      setConflict(error instanceof AllocationRequestError && error.status === 412);
       for (const fieldError of error instanceof AllocationRequestError ? error.problem?.errors ?? [] : []) {
         if ((fieldNames as readonly string[]).includes(fieldError.path)) {
           setError(fieldError.path as typeof fieldNames[number], { type: 'server', message: fieldError.message });
@@ -171,12 +170,13 @@ function MaintenanceFormView({ localUserId, allocation, etag, mode, isAdmin, onS
   }
 
   async function submit(formValues: MaintenanceForm) {
-    const version = versionFrom(etag);
-    if (version === null || version !== allocation.version) {
-      setStale(true);
+    if (stale) return;
+    const version = allocation.version;
+    const input = buildInput(formValues);
+    if (mode === 'edit' && Object.keys(input).length === 1) {
+      setError('reason', { type: 'validate', message: 'Change at least one field before saving.' });
       return;
     }
-    const input = buildInput(formValues);
     const payloadKey = JSON.stringify({ version, input });
     const next = attempt?.payloadKey === payloadKey
       ? attempt
@@ -189,9 +189,11 @@ function MaintenanceFormView({ localUserId, allocation, etag, mode, isAdmin, onS
     }
   }
 
-  async function reload() {
-    await onReload();
-    setStale(false);
+  async function reviewLatest() {
+    const fresh = await onReload();
+    if (!fresh) return;
+    setAllocation(fresh);
+    setConflict(false);
     setAttempt(null);
     mutation.reset();
   }
@@ -330,8 +332,8 @@ function MaintenanceFormView({ localUserId, allocation, etag, mode, isAdmin, onS
       {formState.errors.confirmDerivedState && <span className="field-error" role="alert">{formState.errors.confirmDerivedState.message}</span>}
       {stale && (
         <div className="allocation-stale" role="alert">
-          <p>This allocation changed after you opened it. Your entries are kept. Reload the allocation and review it before saving again.</p>
-          <button type="button" className="text-button" onClick={() => void reload()}>Reload allocation</button>
+          <p>This allocation changed after you opened it. Your entries are kept. Review the latest version, then save again; nothing is resent automatically.</p>
+          <button type="button" className="text-button" onClick={() => void reviewLatest()}>Review latest version</button>
         </div>
       )}
       {!stale && errorMessage && <div className="form-error" role="alert"><p>{errorMessage} Your entries are kept.</p></div>}
