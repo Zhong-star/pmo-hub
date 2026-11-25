@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { DataSource, type EntityManager } from 'typeorm';
+import { DataSource, type EntityManager, In } from 'typeorm';
 import { RESOURCE_ALLOCATION_DATA_SOURCE, RESOURCE_ALLOCATION_DATABASE_CONFIGURED } from '../database/database.module';
 import { ResourceAllocationRole } from '../people/resource-allocation-role';
 import { ResourcePerson } from '../people/resource-person.entity';
@@ -879,11 +879,15 @@ export class ResourceAllocationAdministrationService {
       const group = await groups.findOne({ where: { id: actor.groupId, active: true } });
       return group ? [group] : [];
     }
-    if (actor.role === ResourceAllocationRole.Supervisor) {
-      return groups.find({ where: { active: true, supervisorId: actor.id }, order: { id: 'ASC' } });
-    }
-    if (actor.role === ResourceAllocationRole.Manager) {
-      return groups.find({ where: { active: true, managerId: actor.id }, order: { id: 'ASC' } });
+    if (actor.role === ResourceAllocationRole.Supervisor || actor.role === ResourceAllocationRole.Manager) {
+      const responsible = actor.role === ResourceAllocationRole.Supervisor ? { supervisorId: actor.id } : { managerId: actor.id };
+      return groups.find({
+        where: [
+          { active: true, ...responsible },
+          ...(actor.coveredGroupIds?.length ? [{ active: true, id: In(actor.coveredGroupIds) }] : []),
+        ],
+        order: { id: 'ASC' },
+      });
     }
     return [];
   }

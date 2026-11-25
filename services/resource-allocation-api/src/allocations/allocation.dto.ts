@@ -81,6 +81,25 @@ export class AllocationGroupOptionDto {
 export class AllocationGroupCollectionResponseDto {
   @ApiProperty({ type: () => [AllocationGroupOptionDto] })
   items!: AllocationGroupOptionDto[];
+
+  @ApiProperty({ type: () => CursorPageInfoDto })
+  page!: CursorPageInfoDto;
+}
+
+export class AllocationGroupQueryDto {
+  @ApiPropertyOptional({ type: Number, minimum: 1, maximum: 100, default: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @ApiPropertyOptional({ type: String, maxLength: 2048 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  cursor?: string;
 }
 
 export class AllocationCollectionQueryDto {

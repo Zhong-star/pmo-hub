@@ -2016,6 +2016,7 @@ export interface components {
         };
         AllocationGroupCollectionResponseDto: {
             items: components["schemas"]["AllocationGroupOptionDto"][];
+            page: components["schemas"]["CursorPageInfoDto"];
         };
         AllocationCollectionResponseDto: {
             items: components["schemas"]["AllocationViewDto"][];
@@ -6805,6 +6806,7 @@ export interface operations {
             201: {
                 headers: {
                     Location?: string;
+                    /** @description Omitted on a replayed receipt; fetch the allocation for its current version. */
                     ETag?: string;
                     "Idempotency-Replayed"?: string;
                     [name: string]: unknown;
@@ -6881,20 +6883,32 @@ export interface operations {
     };
     ResourceAllocationController_listDirectAllocationGroups: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Empty for a User; all active groups for an Admin. Not paginated: group counts are small and the list feeds one selection. */
+            /** @description Empty for a User; all active groups for an Admin. Ordered by id with a cursor. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["AllocationGroupCollectionResponseDto"];
+                };
+            };
+            /** @description The limit or cursor is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
             /** @description A local Hub profile is required. */

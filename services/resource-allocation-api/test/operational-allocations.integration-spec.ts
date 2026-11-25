@@ -264,6 +264,7 @@ describe('Tech Resource Allocation operational and direct allocations (#92–#94
       const first = await create(fixture.member, body, key).expect(201);
       const afterFirst = await countEffects();
       const replay = await create(fixture.member, body, key).expect(201).expect('Idempotency-Replayed', 'true');
+      expect(replay.headers.etag).toBeUndefined();
       expect(replay.body.id).toBe(first.body.id);
       expect(await countEffects()).toEqual(afterFirst);
       const conflict = await create(fixture.member, { ...body, weeklyHours: 7 }, key).expect(409);
@@ -401,13 +402,23 @@ describe('Tech Resource Allocation operational and direct allocations (#92–#94
       const groupsFor = async (person: ResourcePerson) => (await request(app!.getHttpServer())
         .get('/api/resource-allocation/v1/allocation-groups')
         .set('X-PMO-Local-User-ID', person.localUserId)
-        .expect(200)).body.items.map(({ name }: { name: string }) => name);
+        .expect(200)).body.items.map(({ name }: { name: string }) => name).sort();
       expect(await groupsFor(fixture.member)).toEqual([]);
       expect(await groupsFor(fixture.moderator)).toEqual(['Platform']);
       expect(await groupsFor(fixture.supervisor)).toEqual(['Platform']);
       expect(await groupsFor(fixture.manager)).toEqual(['Platform']);
       expect(await groupsFor(covering)).toEqual(['Data']);
-      expect(await groupsFor(fixture.admin)).toEqual(['Data', 'Platform']);
+      expect((await groupsFor(fixture.admin)).sort()).toEqual(['Data', 'Platform']);
+      const firstPage = await request(app!.getHttpServer()).get('/api/resource-allocation/v1/allocation-groups')
+        .query({ limit: 1 }).set('X-PMO-Local-User-ID', fixture.admin.localUserId).expect(200);
+      expect(firstPage.body.items).toHaveLength(1);
+      expect(firstPage.body.page).toMatchObject({ limit: 1, nextCursor: expect.any(String) });
+      const secondPage = await request(app!.getHttpServer()).get('/api/resource-allocation/v1/allocation-groups')
+        .query({ limit: 1, cursor: firstPage.body.page.nextCursor }).set('X-PMO-Local-User-ID', fixture.admin.localUserId).expect(200);
+      expect(secondPage.body).toMatchObject({ page: { nextCursor: null } });
+      expect([firstPage.body.items[0].name, secondPage.body.items[0].name].sort()).toEqual(['Data', 'Platform']);
+      await request(app!.getHttpServer()).get('/api/resource-allocation/v1/allocation-groups')
+        .query({ cursor: 'not-a-cursor' }).set('X-PMO-Local-User-ID', fixture.admin.localUserId).expect(400);
     });
 
     it('answers a User direct attempt with 403 whether or not the person exists', async () => {

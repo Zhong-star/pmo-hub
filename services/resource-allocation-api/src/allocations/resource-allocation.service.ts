@@ -4,7 +4,7 @@ import { DataSource, type EntityManager } from 'typeorm';
 import { runIdempotentOperation } from '../administration/idempotency/run-idempotent-operation';
 import { lockResourceAllocationAdministrationWrites } from '../administration/resource-allocation-write-lock';
 import { ResourceAllocationException, translateResourceAllocationDatabaseError } from '../access/resource-allocation-problem';
-import { parseStrongVersionIfMatch, parseUuidHeader } from '../access/request-headers';
+import { correlationIdOrNew, parseStrongVersionIfMatch, parseUuidHeader } from '../access/request-headers';
 import { decodeOpaqueCursor, encodeOpaqueCursor } from '../common/opaque-cursor';
 import { RESOURCE_ALLOCATION_DATA_SOURCE } from '../database/database.module';
 import { ResourceAllocation } from './resource-allocation.entity';
@@ -223,11 +223,22 @@ export class ResourceAllocationService {
   }
 
   /** Active groups where the current person may record direct allocations. */
-  async listDirectAllocationGroups(localUserId: string | undefined) {
+  async listDirectAllocationGroups(localUserId: string | undefined, query: { limit?: number; cursor?: string }) {
+    const limit = this.parseLimit(query.limit);
+    let afterId: string | undefined;
+    if (query.cursor) {
+      try {
+        const cursor = decodeOpaqueCursor<{ version?: number; kind?: string; id?: string }>(query.cursor);
+        if (cursor.version !== 1 || cursor.kind !== 'allocation-groups' || !uuidPattern.test(String(cursor.id))) throw new Error('Invalid cursor.');
+        afterId = String(cursor.id);
+      } catch {
+        throw this.validationError('cursor is invalid.');
+      }
+    }
     try {
       return await this.dataSource.transaction(async (manager) => {
         const actor = await this.requireActivePerson(manager, localUserId);
-        if (actor.role === ResourceAllocationRole.User) return { items: [] };
+        if (actor.role === ResourceAllocationRole.User) return { items: [], page: { nextCursor: null, limit } };
         const parameters: unknown[] = [];
         let scope = 'TRUE';
         if (actor.role === ResourceAllocationRole.Moderator) {
@@ -238,13 +249,20 @@ export class ResourceAllocationService {
           parameters.push(actor.id, actor.coveredGroupIds ?? []);
           scope = `(team.id = ANY($2::uuid[]) OR team.${column} = $1::uuid)`;
         }
+        parameters.push(afterId ?? null, limit + 1);
         const rows = await manager.query(`
           SELECT team.id::text AS id, team.name
           FROM resource_groups AS team
           WHERE team.active = TRUE AND ${scope}
-          ORDER BY team.name, team.id
+            AND ($${parameters.length - 1}::uuid IS NULL OR team.id > $${parameters.length - 1}::uuid)
+          ORDER BY team.id
+          LIMIT $${parameters.length}::int
         `, parameters) as Array<{ id: string; name: string }>;
-        return { items: rows };
+        const items = rows.slice(0, limit);
+        const nextCursor = rows.length > limit
+          ? encodeOpaqueCursor({ version: 1, kind: 'allocation-groups', id: items[items.length - 1].id })
+          : null;
+        return { items, page: { nextCursor, limit } };
       });
     } catch (error) {
       throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
@@ -558,7 +576,7 @@ export class ResourceAllocationService {
     const expectedVersion = parseStrongVersionIfMatch(ifMatch);
     const id = this.requireUuid(allocationId, 'allocationId');
     const key = parseUuidHeader(idempotencyKey, 'Idempotency-Key');
-    const correlation = parseUuidHeader(correlationId, 'X-Correlation-ID', 'X-Correlation-ID must be a UUID.');
+    const correlation = correlationIdOrNew(correlationId);
     const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
     if (!reason || reason.length > 2000) throw this.validationError('reason must contain between 1 and 2,000 characters.');
 
@@ -671,7 +689,7 @@ export class ResourceAllocationService {
     const expectedVersion = parseStrongVersionIfMatch(ifMatch);
     const id = this.requireUuid(allocationId, 'allocationId');
     const key = parseUuidHeader(idempotencyKey, 'Idempotency-Key');
-    const correlation = parseUuidHeader(correlationId, 'X-Correlation-ID', 'X-Correlation-ID must be a UUID.');
+    const correlation = correlationIdOrNew(correlationId);
     const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
     if (!reason || reason.length > 2000) throw this.validationError('reason must contain between 1 and 2,000 characters.');
     if (mode === 'reopen' && (!input.startDate || !input.endDate)) {

@@ -226,7 +226,12 @@ describe('Tech Resource Allocation maintenance after approval (#95–#97)', () =
       const covering = await addPerson('mt-covering', ResourceAllocationRole.Supervisor);
       await dataSource!.getRepository(ResourcePerson).update(covering.id, { coveredGroupIds: [f.group.id] });
       const own = await create(f.member, { category: 'TRAINING', resourceProfileId: f.profile.id, startDate: day, endDate: addDays(day, 5), weeklyHours: 4, comment: 'Course' });
-      await patch(covering, own.body.id, 1, { reason: 'Covered group', weeklyHours: 5 }).expect(200);
+      await request(app!.getHttpServer()).patch(`${allocationsPath}/${own.body.id}`)
+        .set({ 'X-PMO-Local-User-ID': covering.localUserId, 'Idempotency-Key': randomUUID(), 'If-Match': '"1"', 'Content-Type': 'application/merge-patch+json' })
+        .send({ reason: 'Covered group without a correlation id', weeklyHours: 5 })
+        .expect(200);
+      const event = await dataSource!.getRepository(ResourceAllocationHistory).findOneByOrFail({ allocationId: own.body.id, action: 'ALLOCATION_UPDATED' });
+      expect(event.correlationId).toMatch(/^[0-9a-f-]{36}$/);
 
       const attempts = await Promise.all([
         patch(f.moderator, own.body.id, 2, { reason: 'First', weeklyHours: 6 }),

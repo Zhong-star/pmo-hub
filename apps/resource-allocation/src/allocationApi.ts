@@ -216,10 +216,17 @@ export type AllocationGroupOption = ApiResponse<'/api/resource-allocation/v1/all
 /** Groups where the current person may record direct allocations (empty for a User). */
 export async function getDirectAllocationGroups(localUserId: string): Promise<AllocationGroupOption[]> {
   try {
-    const response = await api.get<ApiResponse<'/api/resource-allocation/v1/allocation-groups', 'get'>>(`${API_ROOT}/allocation-groups`, {
-      headers: headers(localUserId),
-    });
-    return response.data.items;
+    const groups: AllocationGroupOption[] = [];
+    let cursor: string | null = null;
+    do {
+      const response: { data: ApiResponse<'/api/resource-allocation/v1/allocation-groups', 'get'> } = await api.get(`${API_ROOT}/allocation-groups`, {
+        headers: headers(localUserId),
+        params: { limit: 100, ...(cursor ? { cursor } : {}) },
+      });
+      groups.push(...response.data.items);
+      cursor = response.data.page.nextCursor;
+    } while (cursor !== null);
+    return groups.sort((left, right) => left.name.localeCompare(right.name));
   } catch (error) {
     return throwApiRequestError(error, AllocationRequestError);
   }

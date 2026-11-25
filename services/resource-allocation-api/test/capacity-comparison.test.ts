@@ -101,6 +101,14 @@ describe('weekly capacity comparison', () => {
     expect(profileB.total).toMatchObject({ plannedHours: 10, capacityHours: 40, complete: true, utilizationPercent: 25 });
   });
 
+  it('keeps the profile percentage when Unclassified load is only suspended', () => {
+    const [week] = compareWeeks([monday], [
+      allocation({ weeklyHours: 20 }),
+      allocation({ classification: null, weeklyHours: 10, kind: 'SUSPENDED' }),
+    ], [capacity(), capacity({ classification: 'THIRD_PARTY', fte: 0 })], [group]);
+    expect(week.groups[0].profiles[0].total).toMatchObject({ plannedHours: 20, suspendedHours: 10, complete: true, utilizationPercent: 50 });
+  });
+
   it('spans weeks across a year boundary', () => {
     expect(weekSpan('2026-12-28', '2027-01-04')).toBe(2);
     const weeks = compareWeeks(['2026-12-28', '2027-01-04'], [allocation({ startDate: '2026-12-31', endDate: '2027-01-05' })], [], [group]);

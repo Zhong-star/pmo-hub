@@ -414,6 +414,26 @@ describe('delegated resource profile administration (#91)', () => {
     expect(adminReactivation.body).toMatchObject({ active: true, version: 3 });
   });
 
+  it('lets a Supervisor or Manager maintain profiles in a group they cover', async () => {
+    const fixture = await setup();
+    const covering = await dataSource!.getRepository(ResourcePerson).save(dataSource!.getRepository(ResourcePerson).create({
+      localUserId: 'covering-manager', displayName: 'Covering Manager', email: 'covering-manager@example.test',
+      role: ResourceAllocationRole.Manager, active: true, groupId: null, coveredGroupIds: [fixture.profileA.groupId],
+    }));
+    const groups = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/admin/resource-profile-groups')
+      .set('X-PMO-Local-User-ID', covering.localUserId)
+      .expect(200);
+    expect(groups.body.items.map(({ id }: { id: string }) => id)).toContain(fixture.profileA.groupId);
+    await request(app!.getHttpServer())
+      .patch(`${adminProfilesPath}/${fixture.profileA.id}`)
+      .set('X-PMO-Local-User-ID', covering.localUserId)
+      .set('If-Match', '"1"')
+      .set('Content-Type', 'application/merge-patch+json')
+      .send({ name: 'Covered rename' })
+      .expect(200);
+  });
+
   it('keeps profile administration unavailable to User and preserves Admin global scope', async () => {
     const fixture = await setup();
 

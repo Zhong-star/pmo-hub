@@ -6941,6 +6941,7 @@
                 }
               },
               "ETag": {
+                "description": "Omitted on a replayed receipt; fetch the allocation for its current version.",
                 "schema": {
                   "type": "string",
                   "example": "\"1\""
@@ -7228,14 +7229,45 @@
     "/api/resource-allocation/v1/allocation-groups": {
       "get": {
         "operationId": "ResourceAllocationController_listDirectAllocationGroups",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 2048,
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Empty for a User; all active groups for an Admin. Not paginated: group counts are small and the list feeds one selection.",
+            "description": "Empty for a User; all active groups for an Admin. Ordered by id with a cursor.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AllocationGroupCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The limit or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
                 }
               }
             }
@@ -13173,10 +13205,14 @@
             "items": {
               "$ref": "#/components/schemas/AllocationGroupOptionDto"
             }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPageInfoDto"
           }
         },
         "required": [
-          "items"
+          "items",
+          "page"
         ]
       },
       "AllocationCollectionResponseDto": {

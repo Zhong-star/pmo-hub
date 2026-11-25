@@ -38,6 +38,7 @@ import {
   ReopenAllocationDto,
   UpdateAllocationDto,
   AllocationGroupCollectionResponseDto,
+  AllocationGroupQueryDto,
   AllocationHistoryCollectionResponseDto,
   AllocationLoadQueryDto,
   AllocationLoadResponseDto,
@@ -52,6 +53,7 @@ interface ResponseWithHeaders {
 const collectionQueryValidation = createValidationPipe(AllocationCollectionQueryDto);
 const loadQueryValidation = createValidationPipe(AllocationLoadQueryDto);
 const commandValidation = createValidationPipe(AllocationCommandDto);
+const groupQueryValidation = createValidationPipe(AllocationGroupQueryDto);
 const updateValidation = createValidationPipe(UpdateAllocationDto);
 const reopenValidation = createValidationPipe(ReopenAllocationDto);
 const createAllocationValidation = createValidationPipe(CreateAllocationDto);
@@ -70,7 +72,7 @@ export class ResourceAllocationController {
   @ApiOperation({ summary: 'Record an approved allocation without a request: own operational time or vacation, or a direct allocation by in-scope leadership' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, description: 'UUID for this exact allocation creation.' })
   @ApiHeader({ name: 'X-Correlation-ID', required: true })
-  @ApiCreatedResponse({ type: AllocationViewDto, headers: { Location: { schema: { type: 'string' } }, ETag: { schema: { type: 'string', example: '"1"' } }, 'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } } } })
+  @ApiCreatedResponse({ type: AllocationViewDto, headers: { Location: { schema: { type: 'string' } }, ETag: { description: 'Omitted on a replayed receipt; fetch the allocation for its current version.', schema: { type: 'string', example: '"1"' } }, 'Idempotency-Replayed': { schema: { type: 'string', example: 'true' } } } })
   @ApiBadRequestResponse({ description: 'A required header or allocation field is invalid.' })
   @ApiForbiddenResponse({ description: 'An active local profile is required; direct allocations require leadership scope over the person, and own allocations use operational categories only.' })
   @ApiResponse({ status: 409, description: 'The idempotency key was reused with different content.' })
@@ -84,17 +86,21 @@ export class ResourceAllocationController {
   ) {
     const operation = await this.allocationService.createAllocation(localUserId, idempotencyKey, correlationId, input);
     response.setHeader('Location', `/api/resource-allocation/v1/allocations/${operation.result.id}`);
-    response.setHeader('ETag', `"${operation.result.version}"`);
     if (operation.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    else response.setHeader('ETag', `"${operation.result.version}"`);
     return operation.result;
   }
 
   @Get('allocation-groups')
   @ApiOperation({ summary: 'List active groups where the current person may record direct allocations' })
-  @ApiOkResponse({ type: AllocationGroupCollectionResponseDto, description: 'Empty for a User; all active groups for an Admin. Not paginated: group counts are small and the list feeds one selection.' })
+  @ApiOkResponse({ type: AllocationGroupCollectionResponseDto, description: 'Empty for a User; all active groups for an Admin. Ordered by id with a cursor.' })
+  @ApiBadRequestResponse({ description: 'The limit or cursor is invalid.' })
   @ApiForbiddenResponse({ description: 'An active local profile is required.' })
-  listDirectAllocationGroups(@Headers(localProfileHeader) localUserId: string | undefined) {
-    return this.allocationService.listDirectAllocationGroups(localUserId);
+  listDirectAllocationGroups(
+    @Headers(localProfileHeader) localUserId: string | undefined,
+    @Query(groupQueryValidation) query: AllocationGroupQueryDto,
+  ) {
+    return this.allocationService.listDirectAllocationGroups(localUserId, query);
   }
 
   @Get('allocations')

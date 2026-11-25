@@ -143,7 +143,7 @@ test('shows changed weekly figures after an allocation change made in the Alloca
     return { businessDate: '2026-11-25', vacationIncluded: true, weeks: [base] };
   });
   await page.route(`${apiRoot}/allocation-load**`, (route) => route.fulfill({ json: { date: '2026-11-25', items: [], page: emptyPage } }));
-  await page.route(`${apiRoot}/allocation-groups`, (route) => route.fulfill({ json: { items: [{ id: groupId, name: 'Platform Engineering' }] } }));
+  await page.route(`${apiRoot}/allocation-groups**`, (route) => route.fulfill({ json: { items: [{ id: groupId, name: 'Platform Engineering' }], page: { nextCursor: null, limit: 100 } } }));
   await page.route(`${apiRoot}/people**`, (route) => route.fulfill({ json: { items: [{ id: 'm1', displayName: 'Casey Member', groupId }], page: emptyPage } }));
   await page.route(`${apiRoot}/resource-profiles**`, (route) => route.fulfill({ json: { items: [{ id: 'p1', name: 'Cloud Engineering', groupId }], page: emptyPage } }));
   await page.route(`${apiRoot}/allocations**`, async (route) => {

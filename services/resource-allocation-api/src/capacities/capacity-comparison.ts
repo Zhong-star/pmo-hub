@@ -175,7 +175,7 @@ export function compareWeeks(
           rows.push({ classification: null, ...figures(unclassifiedRowPlanned, unclassifiedRowSuspended, null, false) });
         }
         const classifiedRows = rows.filter((row) => row.classification !== null);
-        const total = sumFigures(classifiedRows, unclassifiedRowPlanned, unclassified.length === 0);
+        const total = sumFigures(classifiedRows, unclassifiedRowPlanned, !unclassified.some((item) => item.kind === 'PLANNED'));
         total.suspendedHours += unclassifiedRowSuspended;
         return { groupId, resourceProfileId, classifications: rows, total };
       });

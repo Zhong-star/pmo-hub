@@ -71,8 +71,8 @@ async function openAllocations(page: Page, person: typeof member) {
   await page.route(`${apiRoot}/initiatives**`, (route) => route.fulfill({
     json: { items: [{ id: initiativeId, code: 'ITDM-77', name: 'Capacity planning' }], page: emptyPage },
   }));
-  await page.route(`${apiRoot}/allocation-groups`, (route) => route.fulfill({
-    json: { items: person.role === 'ALLOCATION_USER' ? [] : [{ id: groupId, name: 'Platform Engineering' }, { id: otherGroupId, name: 'Data' }] },
+  await page.route(`${apiRoot}/allocation-groups**`, (route) => route.fulfill({
+    json: { items: person.role === 'ALLOCATION_USER' ? [] : [{ id: groupId, name: 'Platform Engineering' }, { id: otherGroupId, name: 'Data' }], page: { nextCursor: null, limit: 100 } },
   }));
   await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), { key: profileStorageKey, value: person.localUserId });
 }

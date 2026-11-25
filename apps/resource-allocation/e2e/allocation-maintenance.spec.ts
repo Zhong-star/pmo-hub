@@ -33,7 +33,7 @@ async function open(page: Page, actor: typeof moderator, current: () => Record<s
     await page.route(`${apiRoot}/${path}`, (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   }
   await page.route(`${apiRoot}/allocation-load**`, (route) => route.fulfill({ json: { date: '2099-01-04', items: [], page: emptyPage } }));
-  await page.route(`${apiRoot}/allocation-groups`, (route) => route.fulfill({ json: { items: [{ id: groupId, name: 'Platform Engineering' }] } }));
+  await page.route(`${apiRoot}/allocation-groups**`, (route) => route.fulfill({ json: { items: [{ id: groupId, name: 'Platform Engineering' }], page: { nextCursor: null, limit: 100 } } }));
   await page.route(`${apiRoot}/people**`, (route) => route.fulfill({ json: { items: [{ id: memberId, displayName: 'Casey Member', groupId }, { id: 'd1d77176-cc30-46a5-b634-b0218b67286d', displayName: 'Drew Contractor', groupId }], page: emptyPage } }));
   await page.route(`${apiRoot}/resource-profiles**`, (route) => route.fulfill({ json: { items: [{ id: profileId, name: 'Cloud Engineering', groupId }, { id: otherProfileId, name: 'API Engineering', groupId }], page: emptyPage } }));
   await page.route(`${apiRoot}/allocations**`, async (route) => {
