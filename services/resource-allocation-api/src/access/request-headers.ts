@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { ResourceAllocationException } from './resource-allocation-problem';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -32,6 +33,11 @@ export function parseUuidHeader(
 ): string {
   if (!value || !pattern.test(value)) throw validationError(detail);
   return value.toLowerCase();
+}
+
+/** Uses a valid client correlation ID, or replaces a missing or untrusted one (api-conventions: replaced, not rejected). */
+export function correlationIdOrNew(value: string | undefined): string {
+  return value && uuidPattern.test(value) ? value.toLowerCase() : randomUUID();
 }
 
 function validationError(detail: string): ResourceAllocationException {

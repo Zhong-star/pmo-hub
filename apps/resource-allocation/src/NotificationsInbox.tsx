@@ -284,6 +284,7 @@ function notificationTargetHref(notification: ResourceNotification): string {
   if (destination === 'ALLOCATION_DETAIL' && allocationId) {
     return `/resource-allocation/?${new URLSearchParams({ page: 'allocations', allocationId })}`;
   }
+  if (!requestId) return '/resource-allocation/?page=allocations';
   if (destination === 'REQUEST_DETAIL') {
     return `/resource-allocation/?${new URLSearchParams({ page: 'requests', requestId })}`;
   }

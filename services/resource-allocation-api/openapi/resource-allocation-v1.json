@@ -635,6 +635,151 @@
         ]
       }
     },
+    "/api/resource-allocation/v1/admin/people/{id}/classification-history": {
+      "get": {
+        "operationId": "ResourceAllocationAdministrationController_listPersonClassificationHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size (default 50, maximum 100).",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourcePersonClassificationHistoryCollectionResponseDto"
+                },
+                "examples": {
+                  "paginated": {
+                    "summary": "A page with a continuation cursor",
+                    "value": {
+                      "items": [
+                        {
+                          "id": "11111111-1111-4111-8111-111111111111",
+                          "previousClassification": "INTERNAL",
+                          "nextClassification": "THIRD_PARTY",
+                          "actor": {
+                            "personId": "22222222-2222-4222-8222-222222222222",
+                            "displayName": "Morgan Admin",
+                            "role": "ALLOCATION_ADMIN"
+                          },
+                          "occurredAt": "2026-11-23T09:00:00.000Z"
+                        }
+                      ],
+                      "page": {
+                        "nextCursor": "opaque-cursor",
+                        "limit": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The page limit or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an active Admin may view administrative records.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The person was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List immutable classification changes for an administrative person",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      }
+    },
     "/api/resource-allocation/v1/admin/people/{id}": {
       "get": {
         "operationId": "ResourceAllocationAdministrationController_getPerson",
@@ -1405,6 +1550,16 @@
               }
             }
           },
+          "400": {
+            "description": "The page limit, cursor, or active filter is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
           "401": {
             "description": "A local Hub profile is required.",
             "content": {
@@ -1424,7 +1579,7 @@
             }
           },
           "403": {
-            "description": "Only an active Admin may manage administrative records.",
+            "description": "An active Admin or an in-scope Moderator, Supervisor, or Manager is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1459,7 +1614,7 @@
             "localProfile": []
           }
         ],
-        "summary": "List administrative resource profiles",
+        "summary": "List resource profiles in the current administrative or leadership scope",
         "tags": [
           "Tech Resource Allocation administration"
         ]
@@ -1517,6 +1672,16 @@
               }
             }
           },
+          "400": {
+            "description": "The Idempotency-Key is missing or invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
           "401": {
             "description": "A local Hub profile is required.",
             "content": {
@@ -1536,7 +1701,7 @@
             }
           },
           "403": {
-            "description": "Only an active Admin may manage administrative records.",
+            "description": "An active Admin or an in-scope Moderator, Supervisor, or Manager is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1581,7 +1746,110 @@
             "localProfile": []
           }
         ],
-        "summary": "Create an administrative resource profile",
+        "summary": "Create a resource profile in the current administrative or leadership scope",
+        "tags": [
+          "Tech Resource Allocation administration"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/admin/resource-profile-groups": {
+      "get": {
+        "operationId": "ResourceAllocationAdministrationController_listManageableResourceProfileGroups",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size (default 50, maximum 100).",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Only active groups in the current profile-management scope, with identifier and name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGroupSelectionCollectionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The page limit or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active Admin or an in-scope Moderator, Supervisor, or Manager is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List groups where the current user can manage resource profiles",
         "tags": [
           "Tech Resource Allocation administration"
         ]
@@ -1638,7 +1906,7 @@
             }
           },
           "403": {
-            "description": "Only an active Admin may manage administrative records.",
+            "description": "An active Admin or an in-scope Moderator, Supervisor, or Manager is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1683,7 +1951,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Get an administrative resource profile",
+        "summary": "Get a resource profile in the current administrative or leadership scope",
         "tags": [
           "Tech Resource Allocation administration"
         ]
@@ -1766,7 +2034,7 @@
             }
           },
           "403": {
-            "description": "Only an active Admin may manage administrative records.",
+            "description": "An active Admin or an in-scope Moderator, Supervisor, or Manager is required.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1777,6 +2045,16 @@
           },
           "404": {
             "description": "The resource profile was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A profile referenced by an allocation cannot be moved to another group.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1831,7 +2109,7 @@
             "localProfile": []
           }
         ],
-        "summary": "Update an administrative resource profile",
+        "summary": "Update a resource profile in the current administrative or leadership scope",
         "tags": [
           "Tech Resource Allocation administration"
         ]
@@ -6623,6 +6901,157 @@
       }
     },
     "/api/resource-allocation/v1/allocations": {
+      "post": {
+        "operationId": "ResourceAllocationController_create",
+        "parameters": [
+          {
+            "name": "X-Correlation-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "UUID for this exact allocation creation.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAllocationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "description": "Omitted on a replayed receipt; fetch the allocation for its current version.",
+                "schema": {
+                  "type": "string",
+                  "example": "\"1\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationViewDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A required header or allocation field is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active local profile is required; direct allocations require leadership scope over the person, and own allocations use operational categories only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The idempotency key was reused with different content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The profile, group, dates, or hours do not meet allocation rules.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Record an approved allocation without a request: own operational time or vacation, or a direct allocation by in-scope leadership",
+        "tags": [
+          "Tech Resource Allocations"
+        ]
+      },
       "get": {
         "operationId": "ResourceAllocationController_list",
         "parameters": [
@@ -6797,6 +7226,112 @@
         ]
       }
     },
+    "/api/resource-allocation/v1/allocation-groups": {
+      "get": {
+        "operationId": "ResourceAllocationController_listDirectAllocationGroups",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 2048,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Empty for a User; all active groups for an Admin. Ordered by id with a cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationGroupCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The limit or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An active local profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List active groups where the current person may record direct allocations",
+        "tags": [
+          "Tech Resource Allocations"
+        ]
+      }
+    },
     "/api/resource-allocation/v1/allocations/{id}": {
       "get": {
         "operationId": "ResourceAllocationController_get",
@@ -6894,6 +7429,186 @@
           }
         ],
         "summary": "Read an allocation and its approved and effective periods",
+        "tags": [
+          "Tech Resource Allocations"
+        ]
+      },
+      "patch": {
+        "operationId": "ResourceAllocationController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Strong ETag of the allocation version that was reviewed.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAllocationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "description": "Omitted on a replayed receipt.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationViewDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A header, field, or field combination is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only leadership in scope or an Admin can change an allocation; only an Admin can correct its classification.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The allocation was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The idempotency key was reused with different content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The allocation version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The allocation is done or canceled, the category change crosses initiative and operational work, the dates are reversed, or the derived Vacation state needs confirmation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Change the person, profile, operational category, dates, hours, or description of an open allocation",
         "tags": [
           "Tech Resource Allocations"
         ]
@@ -8013,6 +8728,187 @@
         ]
       }
     },
+    "/api/resource-allocation/v1/allocations/{id}/reopenings": {
+      "post": {
+        "operationId": "ResourceAllocationController_reopen",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReopenAllocationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "description": "Omitted on a replayed receipt.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationViewDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A header, reason, date, person, or profile is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only an Admin can reopen an allocation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The allocation was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The idempotency key was reused with different content.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The allocation version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The allocation is still open, or its group or ITDM must be reactivated first.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Reopen a done or canceled allocation with new dates (Admin only)",
+        "tags": [
+          "Tech Resource Allocations"
+        ]
+      }
+    },
     "/api/resource-allocation/v1/allocations/{id}/cancellations": {
       "post": {
         "operationId": "ResourceAllocationController_cancel",
@@ -8180,6 +9076,1030 @@
         "summary": "Cancel an open allocation",
         "tags": [
           "Tech Resource Allocations"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/capacity-options": {
+      "get": {
+        "operationId": "ResourceCapacityController_options",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityOptionsResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Capacity planning is only available to leaders in scope and Admins.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List active groups and resource profiles available for new capacity entries",
+        "tags": [
+          "Tech Resource Allocation capacity"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/capacity-comparison": {
+      "get": {
+        "operationId": "ResourceCapacityController_comparison",
+        "parameters": [
+          {
+            "name": "weekStart",
+            "required": false,
+            "in": "query",
+            "description": "Monday of the first week (America/Sao_Paulo). Defaults to the current week.",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "name": "weekEnd",
+            "required": false,
+            "in": "query",
+            "description": "Monday of the last week, inclusive; at most 26 weeks after weekStart. Defaults to weekStart.",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "name": "groupId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceProfileId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "classification",
+            "required": false,
+            "in": "query",
+            "description": "Limits capacity, load, and totals to one classification; Unclassified load and vacation are then omitted.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "INTERNAL",
+                "THIRD_PARTY"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Weeks run Monday–Sunday in America/Sao_Paulo; only weekdays count. Aggregates cover every authorized record, not a page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityComparisonResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A week is not a Monday, the range is reversed or longer than 26 weeks, or a filter is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Capacity comparison is only available to leaders in scope and Admins.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Compare weekly planned load with FTE capacity for authorized groups",
+        "tags": [
+          "Tech Resource Allocation capacity"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/capacities": {
+      "get": {
+        "operationId": "ResourceCapacityController_list",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size (default 50, maximum 100).",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 2048,
+              "type": "string"
+            }
+          },
+          {
+            "name": "groupId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceProfileId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "classification",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "INTERNAL",
+                "THIRD_PARTY"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A filter, limit, or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The current profile is outside the requested capacity scope.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "List capacity entries visible to the current leadership scope or Admin",
+        "tags": [
+          "Tech Resource Allocation capacity"
+        ]
+      },
+      "post": {
+        "operationId": "ResourceCapacityController_create",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCapacityRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "description": "Omitted on a replayed receipt; fetch the resource for its current version.",
+                "schema": {
+                  "type": "string",
+                  "example": "\"1\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The capacity value, date, justification, or required header is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The current profile cannot maintain the requested group or effective date.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another capacity entry exists for this group, profile, classification, and date.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The group or resource profile is not eligible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Create a dated FTE capacity entry",
+        "tags": [
+          "Tech Resource Allocation capacity"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/capacities/{id}": {
+      "get": {
+        "operationId": "ResourceCapacityController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "example": "\"1\""
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The capacity id is not a UUID.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The current profile is outside the capacity group scope.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The capacity entry was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Read a capacity entry",
+        "tags": [
+          "Tech Resource Allocation capacity"
+        ]
+      },
+      "patch": {
+        "operationId": "ResourceCapacityController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Strong ETag version from the latest capacity response.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/merge-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCapacityRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "description": "Omitted on a replayed receipt; fetch the entry for its current version.",
+                "schema": {
+                  "type": "string",
+                  "example": "\"2\""
+                }
+              },
+              "Idempotency-Replayed": {
+                "schema": {
+                  "type": "string",
+                  "example": "true"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match, Idempotency-Key, or merge patch is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The current profile cannot change the original or resulting effective date.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The capacity entry was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The requested effective date already has capacity for this group, profile, and classification.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The capacity version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Update the FTE value or effective date of a capacity entry",
+        "tags": [
+          "Tech Resource Allocation capacity"
+        ]
+      },
+      "delete": {
+        "operationId": "ResourceCapacityController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Strong ETag version from the latest capacity response.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveCapacityRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "The capacity entry was removed."
+          },
+          "400": {
+            "description": "If-Match, Idempotency-Key, or justification is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The current profile cannot remove a capacity entry for a past date or outside its group scope.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The capacity entry was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The capacity version changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Remove a capacity entry while retaining its audit history",
+        "tags": [
+          "Tech Resource Allocation capacity"
+        ]
+      }
+    },
+    "/api/resource-allocation/v1/capacities/{id}/history": {
+      "get": {
+        "operationId": "ResourceCapacityController_history",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size (default 50, maximum 100).",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 2048,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityHistoryCollectionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The capacity id, limit, or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A local Hub profile is required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "LocalProfile realm=\"Tech Resource Allocation\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The current profile is outside the capacity group scope.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The capacity entry was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error occurred.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Resource Allocation database is unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceAllocationProblemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "localProfile": []
+          }
+        ],
+        "summary": "Read immutable capacity changes, including a removed entry",
+        "tags": [
+          "Tech Resource Allocation capacity"
         ]
       }
     }
@@ -8484,6 +10404,14 @@
               "ALLOCATION_ADMIN"
             ]
           },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true
+          },
           "groupId": {
             "type": "string",
             "format": "uuid",
@@ -8507,6 +10435,7 @@
           "email",
           "active",
           "role",
+          "classification",
           "groupId",
           "coveredGroupIds",
           "version"
@@ -8522,6 +10451,83 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ResourcePersonResponseDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "items"
+        ]
+      },
+      "ResourcePersonClassificationActorDto": {
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "personId",
+          "displayName",
+          "role"
+        ]
+      },
+      "ResourcePersonClassificationHistoryEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "previousClassification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true
+          },
+          "nextClassification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true
+          },
+          "actor": {
+            "$ref": "#/components/schemas/ResourcePersonClassificationActorDto"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "previousClassification",
+          "nextClassification",
+          "actor",
+          "occurredAt"
+        ]
+      },
+      "ResourcePersonClassificationHistoryCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/CursorPageInfoDto"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourcePersonClassificationHistoryEventDto"
             }
           }
         },
@@ -8554,6 +10560,14 @@
               "ALLOCATION_MANAGER",
               "ALLOCATION_ADMIN"
             ]
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true
           },
           "groupId": {
             "type": "string",
@@ -8596,6 +10610,14 @@
               "ALLOCATION_MANAGER",
               "ALLOCATION_ADMIN"
             ]
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true
           },
           "groupId": {
             "type": "string",
@@ -8754,6 +10776,40 @@
           "items"
         ]
       },
+      "ResourceGroupSelectionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "ResourceGroupSelectionCollectionDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/CursorPageInfoDto"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceGroupSelectionDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "items"
+        ]
+      },
       "CreateResourceProfileRequestDto": {
         "type": "object",
         "properties": {
@@ -8862,40 +10918,6 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ResourcePersonSelectionDto"
-            }
-          }
-        },
-        "required": [
-          "page",
-          "items"
-        ]
-      },
-      "ResourceGroupSelectionDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name"
-        ]
-      },
-      "ResourceGroupSelectionCollectionDto": {
-        "type": "object",
-        "properties": {
-          "page": {
-            "$ref": "#/components/schemas/CursorPageInfoDto"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ResourceGroupSelectionDto"
             }
           }
         },
@@ -9649,11 +11671,15 @@
           },
           "name": {
             "type": "string"
+          },
+          "active": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
-          "name"
+          "name",
+          "active"
         ]
       },
       "AllocationApprovalResponseDto": {
@@ -9663,6 +11689,50 @@
             "type": "string",
             "format": "uuid"
           },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null when the allocation was created without a request."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "REQUEST",
+              "SELF",
+              "DIRECT"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "ROUTINE_SUPPORT",
+              "TRAINING",
+              "INTERNAL_ACTIVITIES",
+              "VACATION",
+              "DEMAND_ANALYSIS",
+              "POC_BBP",
+              "EXECUTION_PROJECT",
+              "EXECUTION_FAST_TRACK",
+              "EXECUTION_ENHANCEMENT"
+            ],
+            "nullable": true,
+            "description": "Initiative or operational category captured when the allocation was created. Null only for legacy allocations whose request has no category."
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true,
+            "description": "Classification captured at allocation creation. Null means Unclassified."
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true,
+            "description": "Operational activity description recorded at creation."
+          },
           "person": {
             "$ref": "#/components/schemas/AllocationPersonSummaryDto"
           },
@@ -9670,10 +11740,24 @@
             "$ref": "#/components/schemas/AllocationGroupSummaryDto"
           },
           "initiative": {
-            "$ref": "#/components/schemas/AllocationInitiativeSummaryDto"
+            "nullable": true,
+            "description": "Null for operational allocations without an initiative.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AllocationInitiativeSummaryDto"
+              }
+            ]
           },
           "resourceProfile": {
-            "$ref": "#/components/schemas/AllocationResourceProfileSummaryDto"
+            "nullable": true,
+            "description": "Null for Vacation, which never uses a resource profile.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AllocationResourceProfileSummaryDto"
+              }
+            ]
           },
           "startDate": {
             "type": "string",
@@ -9703,6 +11787,11 @@
         },
         "required": [
           "id",
+          "requestId",
+          "source",
+          "category",
+          "classification",
+          "comment",
           "person",
           "group",
           "initiative",
@@ -9951,6 +12040,50 @@
             "type": "string",
             "format": "uuid"
           },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null when the allocation was created without a request."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "REQUEST",
+              "SELF",
+              "DIRECT"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "ROUTINE_SUPPORT",
+              "TRAINING",
+              "INTERNAL_ACTIVITIES",
+              "VACATION",
+              "DEMAND_ANALYSIS",
+              "POC_BBP",
+              "EXECUTION_PROJECT",
+              "EXECUTION_FAST_TRACK",
+              "EXECUTION_ENHANCEMENT"
+            ],
+            "nullable": true,
+            "description": "Initiative or operational category captured when the allocation was created. Null only for legacy allocations whose request has no category."
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true,
+            "description": "Classification captured at allocation creation. Null means Unclassified."
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true,
+            "description": "Operational activity description recorded at creation."
+          },
           "person": {
             "$ref": "#/components/schemas/AllocationPersonSummaryDto"
           },
@@ -9958,10 +12091,24 @@
             "$ref": "#/components/schemas/AllocationGroupSummaryDto"
           },
           "initiative": {
-            "$ref": "#/components/schemas/AllocationInitiativeSummaryDto"
+            "nullable": true,
+            "description": "Null for operational allocations without an initiative.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AllocationInitiativeSummaryDto"
+              }
+            ]
           },
           "resourceProfile": {
-            "$ref": "#/components/schemas/AllocationResourceProfileSummaryDto"
+            "nullable": true,
+            "description": "Null for Vacation, which never uses a resource profile.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AllocationResourceProfileSummaryDto"
+              }
+            ]
           },
           "startDate": {
             "type": "string",
@@ -9992,10 +12139,6 @@
           "version": {
             "type": "number"
           },
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "approvedPeriod": {
             "$ref": "#/components/schemas/AllocationPeriodDto"
           },
@@ -10016,6 +12159,11 @@
         },
         "required": [
           "id",
+          "requestId",
+          "source",
+          "category",
+          "classification",
+          "comment",
           "person",
           "group",
           "initiative",
@@ -10026,7 +12174,6 @@
           "state",
           "approvedAt",
           "version",
-          "requestId",
           "approvedPeriod",
           "availableActions"
         ]
@@ -10037,12 +12184,14 @@
           "type": {
             "type": "string",
             "enum": [
-              "REQUEST"
+              "REQUEST",
+              "ALLOCATION"
             ]
           },
           "requestId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "nullable": true
           },
           "available": {
             "type": "boolean",
@@ -10968,6 +13117,104 @@
         "type": "object",
         "properties": {}
       },
+      "CreateAllocationDto": {
+        "type": "object",
+        "properties": {
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Person to allocate. Omit it, or send the current person, for an own operational allocation; any other person makes a direct allocation that requires leadership scope over the person's group."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "ROUTINE_SUPPORT",
+              "TRAINING",
+              "INTERNAL_ACTIVITIES",
+              "VACATION",
+              "DEMAND_ANALYSIS",
+              "POC_BBP",
+              "EXECUTION_PROJECT",
+              "EXECUTION_FAST_TRACK",
+              "EXECUTION_ENHANCEMENT"
+            ],
+            "description": "Operational categories (ROUTINE_SUPPORT, TRAINING, INTERNAL_ACTIVITIES, VACATION) never use an initiative. Initiative categories require initiativeId and are available only to direct allocations."
+          },
+          "resourceProfileId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Required except for VACATION, which never has a resource profile."
+          },
+          "initiativeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "ITDM initiative; required for initiative categories and rejected for operational categories."
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Inclusive start date in America/Sao_Paulo. Past dates are allowed."
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Inclusive end date in America/Sao_Paulo; on or after startDate."
+          },
+          "weeklyHours": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 40,
+            "description": "Required except for VACATION, which is always 40. Rounded half up to one decimal place; overlaps and totals above 40 are not blocked."
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true,
+            "description": "Required for ROUTINE_SUPPORT, TRAINING, and INTERNAL_ACTIVITIES."
+          }
+        },
+        "required": [
+          "category",
+          "startDate",
+          "endDate"
+        ]
+      },
+      "AllocationGroupOptionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "AllocationGroupCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllocationGroupOptionDto"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPageInfoDto"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ]
+      },
       "AllocationCollectionResponseDto": {
         "type": "object",
         "properties": {
@@ -11139,6 +13386,661 @@
         },
         "required": [
           "reason"
+        ]
+      },
+      "UpdateAllocationDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Justification recorded in the allocation history."
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "New person, active and in the same group; copies their current classification."
+          },
+          "resourceProfileId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "New active profile of the same group; not used for Vacation."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "ROUTINE_SUPPORT",
+              "TRAINING",
+              "INTERNAL_ACTIVITIES",
+              "VACATION"
+            ],
+            "description": "Switch only among operational categories. Entering Vacation fixes 40 hours and removes the profile and description; leaving it needs profile, hours, and description."
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "weeklyHours": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 40
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true,
+            "description": "Admin-only explicit correction of the recorded classification; null means Unclassified."
+          },
+          "confirmDerivedState": {
+            "type": "boolean",
+            "description": "Must be true when a suspended or reserved allocation becomes Vacation and its state is derived from the dates."
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "ReopenAllocationDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Justification recorded in the allocation history."
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Replacement person, active and in the same group."
+          },
+          "resourceProfileId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Replacement active profile of the same group; never used for Vacation."
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date",
+            "description": "New inclusive start date (America/Sao_Paulo)."
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date",
+            "description": "New inclusive end date (America/Sao_Paulo)."
+          }
+        },
+        "required": [
+          "reason",
+          "startDate",
+          "endDate"
+        ]
+      },
+      "CapacityProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "active"
+        ]
+      },
+      "CapacityOptionsGroupDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "resourceProfiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapacityProfileDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "resourceProfiles"
+        ]
+      },
+      "CapacityOptionsResponseDto": {
+        "type": "object",
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapacityOptionsGroupDto"
+            }
+          }
+        },
+        "required": [
+          "groups"
+        ]
+      },
+      "CapacityGroupDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "CapacityComparisonClassificationDto": {
+        "type": "object",
+        "properties": {
+          "plannedHours": {
+            "type": "number",
+            "description": "Planned work hours (Not Started, In Progress, Allocated without action, Done) in the week; full precision."
+          },
+          "suspendedHours": {
+            "type": "number",
+            "description": "Hours of suspended allocations, shown apart from planned work."
+          },
+          "capacityHours": {
+            "type": "number",
+            "nullable": true,
+            "description": "Known capacity hours (FTE × 8 per weekday with an entry); null when not configured for any weekday."
+          },
+          "capacityFte": {
+            "type": "number",
+            "nullable": true,
+            "description": "capacityHours / 40."
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "Every weekday of every component has capacity and no Unclassified load is included."
+          },
+          "utilizationPercent": {
+            "type": "number",
+            "nullable": true,
+            "description": "plannedHours / capacityHours × 100 when complete and capacity is above zero; may exceed 100."
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ],
+            "nullable": true,
+            "description": "Null for Unclassified load, which never has capacity."
+          }
+        },
+        "required": [
+          "plannedHours",
+          "suspendedHours",
+          "capacityHours",
+          "capacityFte",
+          "complete",
+          "utilizationPercent",
+          "classification"
+        ]
+      },
+      "CapacityComparisonFiguresDto": {
+        "type": "object",
+        "properties": {
+          "plannedHours": {
+            "type": "number",
+            "description": "Planned work hours (Not Started, In Progress, Allocated without action, Done) in the week; full precision."
+          },
+          "suspendedHours": {
+            "type": "number",
+            "description": "Hours of suspended allocations, shown apart from planned work."
+          },
+          "capacityHours": {
+            "type": "number",
+            "nullable": true,
+            "description": "Known capacity hours (FTE × 8 per weekday with an entry); null when not configured for any weekday."
+          },
+          "capacityFte": {
+            "type": "number",
+            "nullable": true,
+            "description": "capacityHours / 40."
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "Every weekday of every component has capacity and no Unclassified load is included."
+          },
+          "utilizationPercent": {
+            "type": "number",
+            "nullable": true,
+            "description": "plannedHours / capacityHours × 100 when complete and capacity is above zero; may exceed 100."
+          }
+        },
+        "required": [
+          "plannedHours",
+          "suspendedHours",
+          "capacityHours",
+          "capacityFte",
+          "complete",
+          "utilizationPercent"
+        ]
+      },
+      "CapacityComparisonProfileDto": {
+        "type": "object",
+        "properties": {
+          "resourceProfile": {
+            "$ref": "#/components/schemas/CapacityProfileDto"
+          },
+          "classifications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapacityComparisonClassificationDto"
+            }
+          },
+          "total": {
+            "$ref": "#/components/schemas/CapacityComparisonFiguresDto"
+          }
+        },
+        "required": [
+          "resourceProfile",
+          "classifications",
+          "total"
+        ]
+      },
+      "CapacityComparisonGroupDto": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "$ref": "#/components/schemas/CapacityGroupDto"
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapacityComparisonProfileDto"
+            }
+          },
+          "unclassifiedHours": {
+            "type": "number",
+            "description": "Planned hours from allocations recorded without a classification."
+          },
+          "vacationHours": {
+            "type": "number",
+            "description": "Vacation hours in the week, outside the work numerator and not deducted from capacity."
+          },
+          "total": {
+            "$ref": "#/components/schemas/CapacityComparisonFiguresDto"
+          }
+        },
+        "required": [
+          "group",
+          "profiles",
+          "unclassifiedHours",
+          "vacationHours",
+          "total"
+        ]
+      },
+      "CapacityComparisonWeekDto": {
+        "type": "object",
+        "properties": {
+          "weekStart": {
+            "type": "string",
+            "format": "date"
+          },
+          "weekEnd": {
+            "type": "string",
+            "format": "date"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapacityComparisonGroupDto"
+            }
+          },
+          "total": {
+            "description": "All authorized groups in the filter, summed before dividing.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CapacityComparisonFiguresDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "weekStart",
+          "weekEnd",
+          "groups",
+          "total"
+        ]
+      },
+      "CapacityComparisonResponseDto": {
+        "type": "object",
+        "properties": {
+          "businessDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Current business date in America/Sao_Paulo."
+          },
+          "vacationIncluded": {
+            "type": "boolean",
+            "description": "False when a profile or classification filter is applied: Vacation has neither, so vacation hours are not reported."
+          },
+          "weeks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapacityComparisonWeekDto"
+            }
+          }
+        },
+        "required": [
+          "businessDate",
+          "vacationIncluded",
+          "weeks"
+        ]
+      },
+      "CapacityListItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "group": {
+            "$ref": "#/components/schemas/CapacityGroupDto"
+          },
+          "resourceProfile": {
+            "$ref": "#/components/schemas/CapacityProfileDto"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ]
+          },
+          "effectiveDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "fte": {
+            "type": "number",
+            "minimum": 0
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1
+          },
+          "effectiveUntil": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "Last inclusive day of this value: the day before the next entry for the same group, profile, and classification; null when no later entry exists."
+          }
+        },
+        "required": [
+          "id",
+          "group",
+          "resourceProfile",
+          "classification",
+          "effectiveDate",
+          "fte",
+          "version",
+          "effectiveUntil"
+        ]
+      },
+      "CapacityCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "Ordered by group, resource profile, classification, effective date, then id.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapacityListItemDto"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPageInfoDto"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ]
+      },
+      "CreateCapacityRequestDto": {
+        "type": "object",
+        "properties": {
+          "groupId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resourceProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ]
+          },
+          "effectiveDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "fte": {
+            "type": "number",
+            "minimum": 0,
+            "description": "FTE value; excess precision is rounded to one decimal place. No upper bound."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "groupId",
+          "resourceProfileId",
+          "classification",
+          "effectiveDate",
+          "fte",
+          "reason"
+        ]
+      },
+      "CapacityResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "group": {
+            "$ref": "#/components/schemas/CapacityGroupDto"
+          },
+          "resourceProfile": {
+            "$ref": "#/components/schemas/CapacityProfileDto"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "INTERNAL",
+              "THIRD_PARTY"
+            ]
+          },
+          "effectiveDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "fte": {
+            "type": "number",
+            "minimum": 0
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id",
+          "group",
+          "resourceProfile",
+          "classification",
+          "effectiveDate",
+          "fte",
+          "version"
+        ]
+      },
+      "UpdateCapacityRequestDto": {
+        "type": "object",
+        "properties": {
+          "effectiveDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "fte": {
+            "type": "number",
+            "minimum": 0,
+            "description": "FTE value; excess precision is rounded to one decimal place. No upper bound."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "RemoveCapacityRequestDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "CapacityHistoryActorDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName"
+        ]
+      },
+      "CapacityHistoryEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "CREATED",
+              "UPDATED",
+              "REMOVED"
+            ]
+          },
+          "actor": {
+            "$ref": "#/components/schemas/CapacityHistoryActorDto"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "before": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CapacityResponseDto"
+              }
+            ]
+          },
+          "after": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CapacityResponseDto"
+              }
+            ]
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "actor",
+          "reason",
+          "before",
+          "after",
+          "occurredAt"
+        ]
+      },
+      "CapacityHistoryCollectionResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapacityHistoryEventDto"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPageInfoDto"
+          }
+        },
+        "required": [
+          "items",
+          "page"
         ]
       }
     }

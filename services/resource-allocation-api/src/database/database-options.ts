@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import type { DataSourceOptions } from 'typeorm';
 import { ResourcePerson } from '../people/resource-person.entity';
+import { ResourcePersonClassificationHistory } from '../people/resource-person-classification-history.entity';
 import { ResourceInitiative } from '../initiatives/resource-initiative.entity';
 import { ResourceGroup } from '../groups/resource-group.entity';
 import { ResourceProfile } from '../resource-profiles/resource-profile.entity';
@@ -14,6 +15,9 @@ import { ResourceRequestAudit } from '../requests/resource-request-audit.entity'
 import { ResourceAllocationNotification } from '../notifications/resource-allocation-notification.entity';
 import { ResourceAllocation } from '../allocations/resource-allocation.entity';
 import { ResourceAllocationHistory } from '../allocations/resource-allocation-history.entity';
+import { ResourceProfileAuditEvent } from '../resource-profiles/resource-profile-audit-event.entity';
+import { ResourceCapacity } from '../capacities/resource-capacity.entity';
+import { ResourceCapacityHistory } from '../capacities/resource-capacity-history.entity';
 
 export const RESOURCE_ALLOCATION_DATABASE_URL_ENV = 'RESOURCE_ALLOCATION_DATABASE_URL';
 
@@ -29,8 +33,10 @@ export function createResourceAllocationDataSourceOptions(databaseUrl?: string):
     ...(databaseUrl ? { url: databaseUrl } : {}),
     entities: [
       ResourcePerson,
+      ResourcePersonClassificationHistory,
       ResourceGroup,
       ResourceProfile,
+      ResourceProfileAuditEvent,
       ResourceInitiative,
       ResourceAllocationOperationReceipt,
       ResourceSubmission,
@@ -42,6 +48,8 @@ export function createResourceAllocationDataSourceOptions(databaseUrl?: string):
       ResourceAllocationNotification,
       ResourceAllocation,
       ResourceAllocationHistory,
+      ResourceCapacity,
+      ResourceCapacityHistory,
     ],
     migrations: [resolve(__dirname, 'migrations/*{.js,.ts}')],
     migrationsRun: false,

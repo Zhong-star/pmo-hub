@@ -20,6 +20,7 @@ import {
   type AdminPerson,
   type AdminResourceProfile,
   type ResourceAllocationRole,
+  type ResourcePersonClassification,
 } from './administrationApi';
 import { roleLabel } from './labels';
 
@@ -42,6 +43,7 @@ interface FormValues {
   displayName: string;
   email: string;
   role: ResourceAllocationRole | '';
+  classification: ResourcePersonClassification | '';
   groupId: string;
   name: string;
   code: string;
@@ -55,6 +57,7 @@ const defaultValues: FormValues = {
   displayName: '',
   email: '',
   role: '',
+  classification: '',
   groupId: '',
   name: '',
   code: '',
@@ -111,6 +114,12 @@ function activeBadge(active: boolean) {
   return <span className={active ? 'status-badge status-badge-active' : 'status-badge'}>{active ? 'Active' : 'Inactive'}</span>;
 }
 
+function classificationLabel(classification: ResourcePersonClassification | null): string {
+  if (classification === 'INTERNAL') return 'Internal';
+  if (classification === 'THIRD_PARTY') return 'Third party';
+  return 'Unclassified';
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof AdministrationRequestError) {
     if (error.status === 412) {
@@ -147,6 +156,7 @@ function valuesFromRecord(collection: AdminCollection, record: AdminRecord): For
         displayName: person.displayName,
         email: person.email,
         role: person.role,
+        classification: person.classification ?? '',
         groupId: person.groupId ?? '',
         active: person.active,
       };
@@ -181,6 +191,7 @@ function payloadFromValues(collection: AdminCollection, values: FormValues) {
         displayName: values.displayName.trim(),
         email: values.email.trim(),
         role: values.role,
+        classification: values.classification || null,
         groupId: values.groupId || null,
         active: values.active,
       };
@@ -422,7 +433,7 @@ function RecordTable({
   onEdit: (record: AdminRecord & { id: string }) => void;
 }) {
   const headings: Record<AdminCollection, string[]> = {
-    people: ['Person', 'Role', 'Primary group and coverage', 'Status', 'Actions'],
+    people: ['Person', 'Role', 'Classification', 'Primary group and coverage', 'Status', 'Actions'],
     groups: ['Group', 'Supervisor', 'Manager', 'Status', 'Actions'],
     'resource-profiles': ['Resource profile', 'Group', 'Status', 'Actions'],
     initiatives: ['Code', 'Name', 'Status', 'Actions'],
@@ -457,6 +468,7 @@ function RecordTable({
                   <tr key={person.id}>
                     <td><strong>{person.displayName}</strong><span>{person.email}</span></td>
                     <td>{roleLabel(person.role)}</td>
+                    <td>{classificationLabel(person.classification)}</td>
                     <td>{groupDetails.length ? groupDetails.join(' · ') : 'None'}</td>
                     <td>{activeBadge(person.active)}</td>
                     <td>{editButton(person)}</td>
@@ -719,6 +731,17 @@ function RecordEditor({
               </select>
               {formState.errors.role?.message && <span className="field-error">{formState.errors.role.message}</span>}
             </label>
+            <div className="field-with-help">
+              <label className="form-field" htmlFor="admin-classification">
+                <span>Classification</span>
+                <select id="admin-classification" aria-describedby="admin-classification-help" {...register('classification')}>
+                  <option value="">Unclassified</option>
+                  <option value="INTERNAL">Internal</option>
+                  <option value="THIRD_PARTY">Third party</option>
+                </select>
+              </label>
+              <p id="admin-classification-help" className="field-help">Classification is informational. It does not change access or roles, and it does not reclassify existing allocations.</p>
+            </div>
             <div className="field-with-help">
               {renderSelect('groupId', 'Group', groupOptions.map((group) => ({ id: group.id, label: group.name })), role === 'ALLOCATION_MODERATOR')}
               <p className="field-help">Group is optional for most roles. Moderators need an active group. Supervisor and Manager coverage is managed separately on the Groups tab.</p>

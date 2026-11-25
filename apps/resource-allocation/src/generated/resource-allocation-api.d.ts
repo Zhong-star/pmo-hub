@@ -108,6 +108,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/resource-allocation/v1/admin/people/{id}/classification-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List immutable classification changes for an administrative person */
+        get: operations["ResourceAllocationAdministrationController_listPersonClassificationHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/resource-allocation/v1/admin/people/{id}": {
         parameters: {
             query?: never;
@@ -169,11 +186,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List administrative resource profiles */
+        /** List resource profiles in the current administrative or leadership scope */
         get: operations["ResourceAllocationAdministrationController_listResourceProfiles"];
         put?: never;
-        /** Create an administrative resource profile */
+        /** Create a resource profile in the current administrative or leadership scope */
         post: operations["ResourceAllocationAdministrationController_createResourceProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resource-allocation/v1/admin/resource-profile-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List groups where the current user can manage resource profiles */
+        get: operations["ResourceAllocationAdministrationController_listManageableResourceProfileGroups"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -187,14 +221,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get an administrative resource profile */
+        /** Get a resource profile in the current administrative or leadership scope */
         get: operations["ResourceAllocationAdministrationController_getResourceProfile"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** Update an administrative resource profile */
+        /** Update a resource profile in the current administrative or leadership scope */
         patch: operations["ResourceAllocationAdministrationController_updateResourceProfile"];
         trace?: never;
     };
@@ -741,6 +775,24 @@ export interface paths {
         /** List allocations visible to the current person, leadership scope, or Admin */
         get: operations["ResourceAllocationController_list"];
         put?: never;
+        /** Record an approved allocation without a request: own operational time or vacation, or a direct allocation by in-scope leadership */
+        post: operations["ResourceAllocationController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resource-allocation/v1/allocation-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List active groups where the current person may record direct allocations */
+        get: operations["ResourceAllocationController_listDirectAllocationGroups"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -762,7 +814,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Change the person, profile, operational category, dates, hours, or description of an open allocation */
+        patch: operations["ResourceAllocationController_update"];
         trace?: never;
     };
     "/api/resource-allocation/v1/allocation-load": {
@@ -884,6 +937,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/resource-allocation/v1/allocations/{id}/reopenings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reopen a done or canceled allocation with new dates (Admin only) */
+        post: operations["ResourceAllocationController_reopen"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/resource-allocation/v1/allocations/{id}/cancellations": {
         parameters: {
             query?: never;
@@ -895,6 +965,94 @@ export interface paths {
         put?: never;
         /** Cancel an open allocation */
         post: operations["ResourceAllocationController_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resource-allocation/v1/capacity-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List active groups and resource profiles available for new capacity entries */
+        get: operations["ResourceCapacityController_options"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resource-allocation/v1/capacity-comparison": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Compare weekly planned load with FTE capacity for authorized groups */
+        get: operations["ResourceCapacityController_comparison"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resource-allocation/v1/capacities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List capacity entries visible to the current leadership scope or Admin */
+        get: operations["ResourceCapacityController_list"];
+        put?: never;
+        /** Create a dated FTE capacity entry */
+        post: operations["ResourceCapacityController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resource-allocation/v1/capacities/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a capacity entry */
+        get: operations["ResourceCapacityController_get"];
+        put?: never;
+        post?: never;
+        /** Remove a capacity entry while retaining its audit history */
+        delete: operations["ResourceCapacityController_remove"];
+        options?: never;
+        head?: never;
+        /** Update the FTE value or effective date of a capacity entry */
+        patch: operations["ResourceCapacityController_update"];
+        trace?: never;
+    };
+    "/api/resource-allocation/v1/capacities/{id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read immutable capacity changes, including a removed entry */
+        get: operations["ResourceCapacityController_history"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -991,6 +1149,8 @@ export interface components {
             active: boolean;
             /** @enum {string} */
             role: "ALLOCATION_USER" | "ALLOCATION_MODERATOR" | "ALLOCATION_SUPERVISOR" | "ALLOCATION_MANAGER" | "ALLOCATION_ADMIN";
+            /** @enum {string|null} */
+            classification: "INTERNAL" | "THIRD_PARTY" | null;
             /** Format: uuid */
             groupId: string | null;
             coveredGroupIds: string[];
@@ -1000,12 +1160,35 @@ export interface components {
             page: components["schemas"]["CursorPageInfoDto"];
             items: components["schemas"]["ResourcePersonResponseDto"][];
         };
+        ResourcePersonClassificationActorDto: {
+            /** Format: uuid */
+            personId: string;
+            displayName: string;
+            role: string;
+        };
+        ResourcePersonClassificationHistoryEventDto: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string|null} */
+            previousClassification: "INTERNAL" | "THIRD_PARTY" | null;
+            /** @enum {string|null} */
+            nextClassification: "INTERNAL" | "THIRD_PARTY" | null;
+            actor: components["schemas"]["ResourcePersonClassificationActorDto"];
+            /** Format: date-time */
+            occurredAt: string;
+        };
+        ResourcePersonClassificationHistoryCollectionResponseDto: {
+            page: components["schemas"]["CursorPageInfoDto"];
+            items: components["schemas"]["ResourcePersonClassificationHistoryEventDto"][];
+        };
         CreateResourcePersonRequestDto: {
             localUserId: string;
             displayName: string;
             email: string;
             /** @enum {string} */
             role: "ALLOCATION_USER" | "ALLOCATION_MODERATOR" | "ALLOCATION_SUPERVISOR" | "ALLOCATION_MANAGER" | "ALLOCATION_ADMIN";
+            /** @enum {string|null} */
+            classification?: "INTERNAL" | "THIRD_PARTY" | null;
             /** Format: uuid */
             groupId?: string | null;
             /** @default true */
@@ -1017,6 +1200,8 @@ export interface components {
             email?: string;
             /** @enum {string} */
             role?: "ALLOCATION_USER" | "ALLOCATION_MODERATOR" | "ALLOCATION_SUPERVISOR" | "ALLOCATION_MANAGER" | "ALLOCATION_ADMIN";
+            /** @enum {string|null} */
+            classification?: "INTERNAL" | "THIRD_PARTY" | null;
             /** Format: uuid */
             groupId?: string | null;
             active?: boolean;
@@ -1066,6 +1251,15 @@ export interface components {
             page: components["schemas"]["CursorPageInfoDto"];
             items: components["schemas"]["ResourceProfileResponseDto"][];
         };
+        ResourceGroupSelectionDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        ResourceGroupSelectionCollectionDto: {
+            page: components["schemas"]["CursorPageInfoDto"];
+            items: components["schemas"]["ResourceGroupSelectionDto"][];
+        };
         CreateResourceProfileRequestDto: {
             name: string;
             /** Format: uuid */
@@ -1104,15 +1298,6 @@ export interface components {
         ResourcePersonSelectionCollectionDto: {
             page: components["schemas"]["CursorPageInfoDto"];
             items: components["schemas"]["ResourcePersonSelectionDto"][];
-        };
-        ResourceGroupSelectionDto: {
-            /** Format: uuid */
-            id: string;
-            name: string;
-        };
-        ResourceGroupSelectionCollectionDto: {
-            page: components["schemas"]["CursorPageInfoDto"];
-            items: components["schemas"]["ResourceGroupSelectionDto"][];
         };
         ResourceProfileSelectionDto: {
             /** Format: uuid */
@@ -1349,14 +1534,36 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
+            active: boolean;
         };
         AllocationApprovalResponseDto: {
             /** Format: uuid */
             id: string;
+            /**
+             * Format: uuid
+             * @description Null when the allocation was created without a request.
+             */
+            requestId: string | null;
+            /** @enum {string} */
+            source: "REQUEST" | "SELF" | "DIRECT";
+            /**
+             * @description Initiative or operational category captured when the allocation was created. Null only for legacy allocations whose request has no category.
+             * @enum {string|null}
+             */
+            category: "ROUTINE_SUPPORT" | "TRAINING" | "INTERNAL_ACTIVITIES" | "VACATION" | "DEMAND_ANALYSIS" | "POC_BBP" | "EXECUTION_PROJECT" | "EXECUTION_FAST_TRACK" | "EXECUTION_ENHANCEMENT" | null;
+            /**
+             * @description Classification captured at allocation creation. Null means Unclassified.
+             * @enum {string|null}
+             */
+            classification: "INTERNAL" | "THIRD_PARTY" | null;
+            /** @description Operational activity description recorded at creation. */
+            comment: string | null;
             person: components["schemas"]["AllocationPersonSummaryDto"];
             group: components["schemas"]["AllocationGroupSummaryDto"];
-            initiative: components["schemas"]["AllocationInitiativeSummaryDto"];
-            resourceProfile: components["schemas"]["AllocationResourceProfileSummaryDto"];
+            /** @description Null for operational allocations without an initiative. */
+            initiative: components["schemas"]["AllocationInitiativeSummaryDto"] | null;
+            /** @description Null for Vacation, which never uses a resource profile. */
+            resourceProfile: components["schemas"]["AllocationResourceProfileSummaryDto"] | null;
             /** Format: date */
             startDate: string;
             /** Format: date */
@@ -1440,10 +1647,31 @@ export interface components {
         AllocationViewDto: {
             /** Format: uuid */
             id: string;
+            /**
+             * Format: uuid
+             * @description Null when the allocation was created without a request.
+             */
+            requestId: string | null;
+            /** @enum {string} */
+            source: "REQUEST" | "SELF" | "DIRECT";
+            /**
+             * @description Initiative or operational category captured when the allocation was created. Null only for legacy allocations whose request has no category.
+             * @enum {string|null}
+             */
+            category: "ROUTINE_SUPPORT" | "TRAINING" | "INTERNAL_ACTIVITIES" | "VACATION" | "DEMAND_ANALYSIS" | "POC_BBP" | "EXECUTION_PROJECT" | "EXECUTION_FAST_TRACK" | "EXECUTION_ENHANCEMENT" | null;
+            /**
+             * @description Classification captured at allocation creation. Null means Unclassified.
+             * @enum {string|null}
+             */
+            classification: "INTERNAL" | "THIRD_PARTY" | null;
+            /** @description Operational activity description recorded at creation. */
+            comment: string | null;
             person: components["schemas"]["AllocationPersonSummaryDto"];
             group: components["schemas"]["AllocationGroupSummaryDto"];
-            initiative: components["schemas"]["AllocationInitiativeSummaryDto"];
-            resourceProfile: components["schemas"]["AllocationResourceProfileSummaryDto"];
+            /** @description Null for operational allocations without an initiative. */
+            initiative: components["schemas"]["AllocationInitiativeSummaryDto"] | null;
+            /** @description Null for Vacation, which never uses a resource profile. */
+            resourceProfile: components["schemas"]["AllocationResourceProfileSummaryDto"] | null;
             /** Format: date */
             startDate: string;
             /** Format: date */
@@ -1454,16 +1682,14 @@ export interface components {
             /** Format: date-time */
             approvedAt: string;
             version: number;
-            /** Format: uuid */
-            requestId: string;
             approvedPeriod: components["schemas"]["AllocationPeriodDto"];
             availableActions: ("SUSPEND" | "RESERVE" | "RESUME" | "ACTIVATE" | "COMPLETE" | "CANCEL")[];
         };
         ResourceNotificationTargetDto: {
             /** @enum {string} */
-            type: "REQUEST";
+            type: "REQUEST" | "ALLOCATION";
             /** Format: uuid */
-            requestId: string;
+            requestId: string | null;
             /** @description Whether the current recipient can still open the request. */
             available: boolean;
             /**
@@ -1747,6 +1973,51 @@ export interface components {
             explanation?: string;
         };
         AcceptRequestChangesDto: Record<string, never>;
+        CreateAllocationDto: {
+            /**
+             * Format: uuid
+             * @description Person to allocate. Omit it, or send the current person, for an own operational allocation; any other person makes a direct allocation that requires leadership scope over the person's group.
+             */
+            personId?: string;
+            /**
+             * @description Operational categories (ROUTINE_SUPPORT, TRAINING, INTERNAL_ACTIVITIES, VACATION) never use an initiative. Initiative categories require initiativeId and are available only to direct allocations.
+             * @enum {string}
+             */
+            category: "ROUTINE_SUPPORT" | "TRAINING" | "INTERNAL_ACTIVITIES" | "VACATION" | "DEMAND_ANALYSIS" | "POC_BBP" | "EXECUTION_PROJECT" | "EXECUTION_FAST_TRACK" | "EXECUTION_ENHANCEMENT";
+            /**
+             * Format: uuid
+             * @description Required except for VACATION, which never has a resource profile.
+             */
+            resourceProfileId?: string | null;
+            /**
+             * Format: uuid
+             * @description ITDM initiative; required for initiative categories and rejected for operational categories.
+             */
+            initiativeId?: string | null;
+            /**
+             * Format: date
+             * @description Inclusive start date in America/Sao_Paulo. Past dates are allowed.
+             */
+            startDate: string;
+            /**
+             * Format: date
+             * @description Inclusive end date in America/Sao_Paulo; on or after startDate.
+             */
+            endDate: string;
+            /** @description Required except for VACATION, which is always 40. Rounded half up to one decimal place; overlaps and totals above 40 are not blocked. */
+            weeklyHours?: number;
+            /** @description Required for ROUTINE_SUPPORT, TRAINING, and INTERNAL_ACTIVITIES. */
+            comment?: string | null;
+        };
+        AllocationGroupOptionDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        AllocationGroupCollectionResponseDto: {
+            items: components["schemas"]["AllocationGroupOptionDto"][];
+            page: components["schemas"]["CursorPageInfoDto"];
+        };
         AllocationCollectionResponseDto: {
             items: components["schemas"]["AllocationViewDto"][];
             page: components["schemas"]["CursorPageInfoDto"];
@@ -1796,6 +2067,226 @@ export interface components {
         };
         AllocationCommandDto: {
             reason: string;
+        };
+        UpdateAllocationDto: {
+            /** @description Justification recorded in the allocation history. */
+            reason: string;
+            /**
+             * Format: uuid
+             * @description New person, active and in the same group; copies their current classification.
+             */
+            personId?: string;
+            /**
+             * Format: uuid
+             * @description New active profile of the same group; not used for Vacation.
+             */
+            resourceProfileId?: string | null;
+            /**
+             * @description Switch only among operational categories. Entering Vacation fixes 40 hours and removes the profile and description; leaving it needs profile, hours, and description.
+             * @enum {string}
+             */
+            category?: "ROUTINE_SUPPORT" | "TRAINING" | "INTERNAL_ACTIVITIES" | "VACATION";
+            /** Format: date */
+            startDate?: string;
+            /** Format: date */
+            endDate?: string;
+            weeklyHours?: number;
+            comment?: string | null;
+            /**
+             * @description Admin-only explicit correction of the recorded classification; null means Unclassified.
+             * @enum {string|null}
+             */
+            classification?: "INTERNAL" | "THIRD_PARTY" | null;
+            /** @description Must be true when a suspended or reserved allocation becomes Vacation and its state is derived from the dates. */
+            confirmDerivedState?: boolean;
+        };
+        ReopenAllocationDto: {
+            /** @description Justification recorded in the allocation history. */
+            reason: string;
+            /**
+             * Format: uuid
+             * @description Replacement person, active and in the same group.
+             */
+            personId?: string;
+            /**
+             * Format: uuid
+             * @description Replacement active profile of the same group; never used for Vacation.
+             */
+            resourceProfileId?: string | null;
+            /**
+             * Format: date
+             * @description New inclusive start date (America/Sao_Paulo).
+             */
+            startDate: string;
+            /**
+             * Format: date
+             * @description New inclusive end date (America/Sao_Paulo).
+             */
+            endDate: string;
+        };
+        CapacityProfileDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            active: boolean;
+        };
+        CapacityOptionsGroupDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            resourceProfiles: components["schemas"]["CapacityProfileDto"][];
+        };
+        CapacityOptionsResponseDto: {
+            groups: components["schemas"]["CapacityOptionsGroupDto"][];
+        };
+        CapacityGroupDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        CapacityComparisonClassificationDto: {
+            /** @description Planned work hours (Not Started, In Progress, Allocated without action, Done) in the week; full precision. */
+            plannedHours: number;
+            /** @description Hours of suspended allocations, shown apart from planned work. */
+            suspendedHours: number;
+            /** @description Known capacity hours (FTE × 8 per weekday with an entry); null when not configured for any weekday. */
+            capacityHours: number | null;
+            /** @description capacityHours / 40. */
+            capacityFte: number | null;
+            /** @description Every weekday of every component has capacity and no Unclassified load is included. */
+            complete: boolean;
+            /** @description plannedHours / capacityHours × 100 when complete and capacity is above zero; may exceed 100. */
+            utilizationPercent: number | null;
+            /**
+             * @description Null for Unclassified load, which never has capacity.
+             * @enum {string|null}
+             */
+            classification: "INTERNAL" | "THIRD_PARTY" | null;
+        };
+        CapacityComparisonFiguresDto: {
+            /** @description Planned work hours (Not Started, In Progress, Allocated without action, Done) in the week; full precision. */
+            plannedHours: number;
+            /** @description Hours of suspended allocations, shown apart from planned work. */
+            suspendedHours: number;
+            /** @description Known capacity hours (FTE × 8 per weekday with an entry); null when not configured for any weekday. */
+            capacityHours: number | null;
+            /** @description capacityHours / 40. */
+            capacityFte: number | null;
+            /** @description Every weekday of every component has capacity and no Unclassified load is included. */
+            complete: boolean;
+            /** @description plannedHours / capacityHours × 100 when complete and capacity is above zero; may exceed 100. */
+            utilizationPercent: number | null;
+        };
+        CapacityComparisonProfileDto: {
+            resourceProfile: components["schemas"]["CapacityProfileDto"];
+            classifications: components["schemas"]["CapacityComparisonClassificationDto"][];
+            total: components["schemas"]["CapacityComparisonFiguresDto"];
+        };
+        CapacityComparisonGroupDto: {
+            group: components["schemas"]["CapacityGroupDto"];
+            profiles: components["schemas"]["CapacityComparisonProfileDto"][];
+            /** @description Planned hours from allocations recorded without a classification. */
+            unclassifiedHours: number;
+            /** @description Vacation hours in the week, outside the work numerator and not deducted from capacity. */
+            vacationHours: number;
+            total: components["schemas"]["CapacityComparisonFiguresDto"];
+        };
+        CapacityComparisonWeekDto: {
+            /** Format: date */
+            weekStart: string;
+            /** Format: date */
+            weekEnd: string;
+            groups: components["schemas"]["CapacityComparisonGroupDto"][];
+            /** @description All authorized groups in the filter, summed before dividing. */
+            total: components["schemas"]["CapacityComparisonFiguresDto"];
+        };
+        CapacityComparisonResponseDto: {
+            /**
+             * Format: date
+             * @description Current business date in America/Sao_Paulo.
+             */
+            businessDate: string;
+            /** @description False when a profile or classification filter is applied: Vacation has neither, so vacation hours are not reported. */
+            vacationIncluded: boolean;
+            weeks: components["schemas"]["CapacityComparisonWeekDto"][];
+        };
+        CapacityListItemDto: {
+            /** Format: uuid */
+            id: string;
+            group: components["schemas"]["CapacityGroupDto"];
+            resourceProfile: components["schemas"]["CapacityProfileDto"];
+            /** @enum {string} */
+            classification: "INTERNAL" | "THIRD_PARTY";
+            /** Format: date */
+            effectiveDate: string;
+            fte: number;
+            version: number;
+            /**
+             * Format: date
+             * @description Last inclusive day of this value: the day before the next entry for the same group, profile, and classification; null when no later entry exists.
+             */
+            effectiveUntil: string | null;
+        };
+        CapacityCollectionResponseDto: {
+            /** @description Ordered by group, resource profile, classification, effective date, then id. */
+            items: components["schemas"]["CapacityListItemDto"][];
+            page: components["schemas"]["CursorPageInfoDto"];
+        };
+        CreateCapacityRequestDto: {
+            /** Format: uuid */
+            groupId: string;
+            /** Format: uuid */
+            resourceProfileId: string;
+            /** @enum {string} */
+            classification: "INTERNAL" | "THIRD_PARTY";
+            /** Format: date */
+            effectiveDate: string;
+            /** @description FTE value; excess precision is rounded to one decimal place. No upper bound. */
+            fte: number;
+            reason: string;
+        };
+        CapacityResponseDto: {
+            /** Format: uuid */
+            id: string;
+            group: components["schemas"]["CapacityGroupDto"];
+            resourceProfile: components["schemas"]["CapacityProfileDto"];
+            /** @enum {string} */
+            classification: "INTERNAL" | "THIRD_PARTY";
+            /** Format: date */
+            effectiveDate: string;
+            fte: number;
+            version: number;
+        };
+        UpdateCapacityRequestDto: {
+            /** Format: date */
+            effectiveDate?: string;
+            /** @description FTE value; excess precision is rounded to one decimal place. No upper bound. */
+            fte?: number;
+            reason: string;
+        };
+        RemoveCapacityRequestDto: {
+            reason: string;
+        };
+        CapacityHistoryActorDto: {
+            /** Format: uuid */
+            id: string;
+            displayName: string;
+        };
+        CapacityHistoryEventDto: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            action: "CREATED" | "UPDATED" | "REMOVED";
+            actor: components["schemas"]["CapacityHistoryActorDto"];
+            reason: string;
+            before: components["schemas"]["CapacityResponseDto"] | null;
+            after: components["schemas"]["CapacityResponseDto"] | null;
+            /** Format: date-time */
+            occurredAt: string;
+        };
+        CapacityHistoryCollectionResponseDto: {
+            items: components["schemas"]["CapacityHistoryEventDto"][];
+            page: components["schemas"]["CursorPageInfoDto"];
         };
     };
     responses: never;
@@ -2192,6 +2683,86 @@ export interface operations {
             };
             /** @description The role or group reference is not eligible. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceAllocationAdministrationController_listPersonClassificationHistory: {
+        parameters: {
+            query?: {
+                /** @description Page size (default 50, maximum 100). */
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourcePersonClassificationHistoryCollectionResponseDto"];
+                };
+            };
+            /** @description The page limit or cursor is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description Only an active Admin may view administrative records. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The person was not found. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2713,6 +3284,15 @@ export interface operations {
                     "application/json": components["schemas"]["ResourceProfileCollectionResponseDto"];
                 };
             };
+            /** @description The page limit, cursor, or active filter is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
             /** @description A local Hub profile is required. */
             401: {
                 headers: {
@@ -2723,7 +3303,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
-            /** @description Only an active Admin may manage administrative records. */
+            /** @description An active Admin or an in-scope Moderator, Supervisor, or Manager is required. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2779,6 +3359,15 @@ export interface operations {
                     "application/json": components["schemas"]["ResourceProfileResponseDto"];
                 };
             };
+            /** @description The Idempotency-Key is missing or invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
             /** @description A local Hub profile is required. */
             401: {
                 headers: {
@@ -2789,7 +3378,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
-            /** @description Only an active Admin may manage administrative records. */
+            /** @description An active Admin or an in-scope Moderator, Supervisor, or Manager is required. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2800,6 +3389,76 @@ export interface operations {
             };
             /** @description The profile must belong to an active group. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceAllocationAdministrationController_listManageableResourceProfileGroups: {
+        parameters: {
+            query?: {
+                /** @description Page size (default 50, maximum 100). */
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Only active groups in the current profile-management scope, with identifier and name. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceGroupSelectionCollectionDto"];
+                };
+            };
+            /** @description The page limit or cursor is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An active Admin or an in-scope Moderator, Supervisor, or Manager is required. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2857,7 +3516,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
-            /** @description Only an active Admin may manage administrative records. */
+            /** @description An active Admin or an in-scope Moderator, Supervisor, or Manager is required. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2940,7 +3599,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
                 };
             };
-            /** @description Only an active Admin may manage administrative records. */
+            /** @description An active Admin or an in-scope Moderator, Supervisor, or Manager is required. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2951,6 +3610,15 @@ export interface operations {
             };
             /** @description The resource profile was not found. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A profile referenced by an allocation cannot be moved to another group. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6118,6 +6786,170 @@ export interface operations {
             };
         };
     };
+    ResourceAllocationController_create: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Correlation-ID": string;
+                /** @description UUID for this exact allocation creation. */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAllocationDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    Location?: string;
+                    /** @description Omitted on a replayed receipt; fetch the allocation for its current version. */
+                    ETag?: string;
+                    "Idempotency-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllocationViewDto"];
+                };
+            };
+            /** @description A required header or allocation field is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An active local profile is required; direct allocations require leadership scope over the person, and own allocations use operational categories only. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The idempotency key was reused with different content. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The profile, group, dates, or hours do not meet allocation rules. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceAllocationController_listDirectAllocationGroups: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Empty for a User; all active groups for an Admin. Ordered by id with a cursor. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllocationGroupCollectionResponseDto"];
+                };
+            };
+            /** @description The limit or cursor is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An active local profile is required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
     ResourceAllocationController_get: {
         parameters: {
             query?: never;
@@ -6159,6 +6991,121 @@ export interface operations {
             };
             /** @description The allocation does not exist. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceAllocationController_update: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Correlation-ID"?: string;
+                "Idempotency-Key": string;
+                /** @description Strong ETag of the allocation version that was reviewed. */
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["UpdateAllocationDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    /** @description Omitted on a replayed receipt. */
+                    ETag?: string;
+                    "Idempotency-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllocationViewDto"];
+                };
+            };
+            /** @description A header, field, or field combination is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description Only leadership in scope or an Admin can change an allocation; only an Admin can correct its classification. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The allocation was not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The idempotency key was reused with different content. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The allocation version changed. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The allocation is done or canceled, the category change crosses initiative and operational work, the dates are reversed, or the derived Vacation state needs confirmation. */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6852,6 +7799,120 @@ export interface operations {
             };
         };
     };
+    ResourceAllocationController_reopen: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Correlation-ID"?: string;
+                "Idempotency-Key": string;
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReopenAllocationDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    /** @description Omitted on a replayed receipt. */
+                    ETag?: string;
+                    "Idempotency-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllocationViewDto"];
+                };
+            };
+            /** @description A header, reason, date, person, or profile is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description Only an Admin can reopen an allocation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The allocation was not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The idempotency key was reused with different content. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The allocation version changed. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The allocation is still open, or its group or ITDM must be reactivated first. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
     ResourceAllocationController_cancel: {
         parameters: {
             query?: never;
@@ -6929,6 +7990,656 @@ export interface operations {
             };
             /** @description A closed allocation cannot be canceled. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_options: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityOptionsResponseDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description Capacity planning is only available to leaders in scope and Admins. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_comparison: {
+        parameters: {
+            query?: {
+                /** @description Monday of the first week (America/Sao_Paulo). Defaults to the current week. */
+                weekStart?: string;
+                /** @description Monday of the last week, inclusive; at most 26 weeks after weekStart. Defaults to weekStart. */
+                weekEnd?: string;
+                groupId?: string;
+                resourceProfileId?: string;
+                /** @description Limits capacity, load, and totals to one classification; Unclassified load and vacation are then omitted. */
+                classification?: "INTERNAL" | "THIRD_PARTY";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Weeks run Monday–Sunday in America/Sao_Paulo; only weekdays count. Aggregates cover every authorized record, not a page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityComparisonResponseDto"];
+                };
+            };
+            /** @description A week is not a Monday, the range is reversed or longer than 26 weeks, or a filter is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description Capacity comparison is only available to leaders in scope and Admins. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_list: {
+        parameters: {
+            query?: {
+                /** @description Page size (default 50, maximum 100). */
+                limit?: number;
+                cursor?: string;
+                groupId?: string;
+                resourceProfileId?: string;
+                classification?: "INTERNAL" | "THIRD_PARTY";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityCollectionResponseDto"];
+                };
+            };
+            /** @description A filter, limit, or cursor is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The current profile is outside the requested capacity scope. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_create: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCapacityRequestDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    Location?: string;
+                    /** @description Omitted on a replayed receipt; fetch the resource for its current version. */
+                    ETag?: string;
+                    "Idempotency-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityResponseDto"];
+                };
+            };
+            /** @description The capacity value, date, justification, or required header is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The current profile cannot maintain the requested group or effective date. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description Another capacity entry exists for this group, profile, classification, and date. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The group or resource profile is not eligible. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityResponseDto"];
+                };
+            };
+            /** @description The capacity id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The current profile is outside the capacity group scope. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The capacity entry was not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_remove: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                /** @description Strong ETag version from the latest capacity response. */
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoveCapacityRequestDto"];
+            };
+        };
+        responses: {
+            /** @description The capacity entry was removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description If-Match, Idempotency-Key, or justification is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The current profile cannot remove a capacity entry for a past date or outside its group scope. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The capacity entry was not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The capacity version changed. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_update: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                /** @description Strong ETag version from the latest capacity response. */
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["UpdateCapacityRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    /** @description Omitted on a replayed receipt; fetch the entry for its current version. */
+                    ETag?: string;
+                    "Idempotency-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityResponseDto"];
+                };
+            };
+            /** @description If-Match, Idempotency-Key, or merge patch is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The current profile cannot change the original or resulting effective date. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The capacity entry was not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The requested effective date already has capacity for this group, profile, and classification. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The capacity version changed. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_history: {
+        parameters: {
+            query?: {
+                /** @description Page size (default 50, maximum 100). */
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityHistoryCollectionResponseDto"];
+                };
+            };
+            /** @description The capacity id, limit, or cursor is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The current profile is outside the capacity group scope. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The capacity entry was not found. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

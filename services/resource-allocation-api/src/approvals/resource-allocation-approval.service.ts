@@ -1,3 +1,4 @@
+import { requestCategory } from '../allocations/allocation-category';
 import { Inject, Injectable } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 import { RESOURCE_ALLOCATION_DATA_SOURCE, RESOURCE_ALLOCATION_DATABASE_CONFIGURED } from '../database/database.module';
@@ -383,6 +384,7 @@ export class ResourceAllocationApprovalService extends ResourceAllocationApprova
 
     const allocation = await createResourceAllocationForRequest(manager, {
       requestId: request.id,
+      category: requestCategory(request.requestedConditions),
       person: selectedPerson,
       group,
       initiative,

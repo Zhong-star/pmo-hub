@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsEmail, IsEnum, IsString, IsUUID, ValidateIf } from 'class-validator';
 import { ResourceAllocationRole } from '../people/resource-allocation-role';
+import { ResourcePersonClassification } from '../people/resource-person-classification';
 import { IsTrimmedLength } from './trimmed-length.validator';
 import { CursorPageInfoDto } from '../common/resource-allocation-contract.dto';
 
@@ -23,6 +24,11 @@ export class CreateResourcePersonRequestDto {
   @ApiProperty({ enum: ResourceAllocationRole })
   @IsEnum(ResourceAllocationRole)
   role!: ResourceAllocationRole;
+
+  @ApiPropertyOptional({ enum: ResourcePersonClassification, nullable: true })
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsEnum(ResourcePersonClassification)
+  classification?: ResourcePersonClassification | null;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @ValidateIf((_object, value) => value !== undefined && value !== null)
@@ -58,6 +64,11 @@ export class UpdateResourcePersonRequestDto {
   @ValidateIf((_object, value) => value !== undefined)
   @IsEnum(ResourceAllocationRole)
   role?: ResourceAllocationRole;
+
+  @ApiPropertyOptional({ enum: ResourcePersonClassification, nullable: true })
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsEnum(ResourcePersonClassification)
+  classification?: ResourcePersonClassification | null;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   @ValidateIf((_object, value) => value !== undefined && value !== null)
@@ -161,6 +172,7 @@ export class ResourcePersonResponseDto {
   @ApiProperty({ type: String, format: 'email' }) email!: string;
   @ApiProperty({ type: Boolean }) active!: boolean;
   @ApiProperty({ enum: ResourceAllocationRole }) role!: ResourceAllocationRole;
+  @ApiProperty({ enum: ResourcePersonClassification, nullable: true }) classification!: ResourcePersonClassification | null;
   @ApiProperty({ type: String, format: 'uuid', nullable: true }) groupId!: string | null;
   @ApiProperty({ type: [String], items: { type: 'string', format: 'uuid' } }) coveredGroupIds!: string[];
   @ApiProperty({ type: Number }) version!: number;
@@ -185,6 +197,24 @@ export class ResourceProfileResponseDto {
 
 export class ResourcePersonCollectionResponseDto extends AdminPageResponseDto {
   @ApiProperty({ type: () => ResourcePersonResponseDto, isArray: true }) items!: ResourcePersonResponseDto[];
+}
+
+export class ResourcePersonClassificationActorDto {
+  @ApiProperty({ type: String, format: 'uuid' }) personId!: string;
+  @ApiProperty({ type: String }) displayName!: string;
+  @ApiProperty({ type: String }) role!: ResourceAllocationRole;
+}
+
+export class ResourcePersonClassificationHistoryEventDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ enum: ResourcePersonClassification, nullable: true }) previousClassification!: ResourcePersonClassification | null;
+  @ApiProperty({ enum: ResourcePersonClassification, nullable: true }) nextClassification!: ResourcePersonClassification | null;
+  @ApiProperty({ type: () => ResourcePersonClassificationActorDto }) actor!: ResourcePersonClassificationActorDto;
+  @ApiProperty({ type: String, format: 'date-time' }) occurredAt!: string;
+}
+
+export class ResourcePersonClassificationHistoryCollectionResponseDto extends AdminPageResponseDto {
+  @ApiProperty({ type: () => ResourcePersonClassificationHistoryEventDto, isArray: true }) items!: ResourcePersonClassificationHistoryEventDto[];
 }
 
 export class ResourceGroupCollectionResponseDto extends AdminPageResponseDto {

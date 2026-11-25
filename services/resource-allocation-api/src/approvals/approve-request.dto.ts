@@ -1,3 +1,4 @@
+import { allocationCategories } from '../allocations/allocation-category';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsDateString, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -54,17 +55,32 @@ export class AllocationApprovalResponseDto {
   @ApiProperty({ type: String, format: 'uuid' })
   id!: string;
 
+  @ApiProperty({ type: String, format: 'uuid', nullable: true, description: 'Null when the allocation was created without a request.' })
+  requestId!: string | null;
+
+  @ApiProperty({ enum: ['REQUEST', 'SELF', 'DIRECT'] })
+  source!: 'REQUEST' | 'SELF' | 'DIRECT';
+
+  @ApiProperty({ enum: allocationCategories, nullable: true, description: 'Initiative or operational category captured when the allocation was created. Null only for legacy allocations whose request has no category.' })
+  category!: string | null;
+
+  @ApiProperty({ enum: ['INTERNAL', 'THIRD_PARTY'], nullable: true, description: 'Classification captured at allocation creation. Null means Unclassified.' })
+  classification!: 'INTERNAL' | 'THIRD_PARTY' | null;
+
+  @ApiProperty({ type: String, nullable: true, description: 'Operational activity description recorded at creation.' })
+  comment!: string | null;
+
   @ApiProperty({ type: () => AllocationPersonSummaryDto })
   person!: AllocationPersonSummaryDto;
 
   @ApiProperty({ type: () => AllocationGroupSummaryDto })
   group!: AllocationGroupSummaryDto;
 
-  @ApiProperty({ type: () => AllocationInitiativeSummaryDto })
-  initiative!: AllocationInitiativeSummaryDto;
+  @ApiProperty({ type: () => AllocationInitiativeSummaryDto, nullable: true, description: 'Null for operational allocations without an initiative.' })
+  initiative!: AllocationInitiativeSummaryDto | null;
 
-  @ApiProperty({ type: () => AllocationResourceProfileSummaryDto })
-  resourceProfile!: AllocationResourceProfileSummaryDto;
+  @ApiProperty({ type: () => AllocationResourceProfileSummaryDto, nullable: true, description: 'Null for Vacation, which never uses a resource profile.' })
+  resourceProfile!: AllocationResourceProfileSummaryDto | null;
 
   @ApiProperty({ type: String, format: 'date' })
   startDate!: string;

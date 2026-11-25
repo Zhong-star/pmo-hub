@@ -1,12 +1,28 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, VersionColumn } from 'typeorm';
+import type { ResourcePersonClassification } from '../people/resource-person-classification';
 
 @Entity({ name: 'resource_allocations' })
 export class ResourceAllocation {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'source_request_id', type: 'uuid', unique: true })
-  sourceRequestId!: string;
+  @Column({ name: 'source_request_id', type: 'uuid', unique: true, nullable: true })
+  sourceRequestId!: string | null;
+
+  @Column({ name: 'origin', type: 'varchar', length: 16, default: 'REQUEST' })
+  origin!: 'REQUEST' | 'SELF' | 'DIRECT';
+
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  category!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  comment!: string | null;
+
+  @Column({ name: 'classification', type: 'varchar', length: 20, nullable: true })
+  classification!: ResourcePersonClassification | null;
+
+  @Column({ name: 'created_by_person_id', type: 'uuid', nullable: true })
+  createdByPersonId!: string | null;
 
   @Column({ name: 'person_id', type: 'uuid' })
   personId!: string;
@@ -20,17 +36,17 @@ export class ResourceAllocation {
   @Column({ name: 'group_snapshot', type: 'jsonb' })
   groupSnapshot!: Record<string, unknown>;
 
-  @Column({ name: 'initiative_id', type: 'uuid' })
-  initiativeId!: string;
+  @Column({ name: 'initiative_id', type: 'uuid', nullable: true })
+  initiativeId!: string | null;
 
-  @Column({ name: 'initiative_snapshot', type: 'jsonb' })
-  initiativeSnapshot!: Record<string, unknown>;
+  @Column({ name: 'initiative_snapshot', type: 'jsonb', nullable: true })
+  initiativeSnapshot!: Record<string, unknown> | null;
 
-  @Column({ name: 'resource_profile_id', type: 'uuid' })
-  resourceProfileId!: string;
+  @Column({ name: 'resource_profile_id', type: 'uuid', nullable: true })
+  resourceProfileId!: string | null;
 
-  @Column({ name: 'resource_profile_snapshot', type: 'jsonb' })
-  resourceProfileSnapshot!: Record<string, unknown>;
+  @Column({ name: 'resource_profile_snapshot', type: 'jsonb', nullable: true })
+  resourceProfileSnapshot!: Record<string, unknown> | null;
 
   @Column({ name: 'approved_start_date', type: 'date' })
   approvedStartDate!: string;

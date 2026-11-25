@@ -10,6 +10,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
 import { RESOURCE_ALLOCATION_DATA_SOURCE } from '../src/database/database.module';
 import { ResourcePerson } from '../src/people/resource-person.entity';
+import { ResourcePersonClassification } from '../src/people/resource-person-classification';
 import { ResourceAllocationRole } from '../src/people/resource-allocation-role';
 import { ResourceGroup } from '../src/groups/resource-group.entity';
 import { ResourceProfile } from '../src/resource-profiles/resource-profile.entity';
@@ -504,6 +505,102 @@ describe('Tech Resource Allocation allocations (#69)', () => {
     expect(savedCanceled).toMatchObject({ state: 'CANCELED', version: 1 });
     expect(await dataSource!.getRepository(ResourceAllocationHistory).countBy({ allocationId: starting.allocation.id })).toBe(1);
     expect(await dataSource!.getRepository(ResourceAllocationHistory).countBy({ allocationId: ending.allocation.id })).toBe(1);
+  });
+
+  it('creates an own operational allocation with history and a group-lead notification', async () => {
+    const fixture = await setup();
+    fixture.assignee.groupId = fixture.group.id;
+    fixture.assignee.classification = ResourcePersonClassification.Internal;
+    await dataSource!.getRepository(ResourcePerson).save(fixture.assignee);
+    const today = await businessDate();
+    const startDate = addDays(today, 1);
+    const endDate = addDays(today, 8);
+    const allocation = await request(app!.getHttpServer())
+      .post('/api/resource-allocation/v1/allocations')
+      .set({
+        'X-PMO-Local-User-ID': fixture.assignee.localUserId,
+        'Idempotency-Key': randomUUID(),
+        'X-Correlation-ID': randomUUID(),
+      })
+      .send({
+        category: 'TRAINING',
+        resourceProfileId: fixture.profile.id,
+        startDate,
+        endDate,
+        weeklyHours: 12.5,
+        comment: 'Complete the cloud security course.',
+      })
+      .expect(201)
+      .expect('Location', /^\/api\/resource-allocation\/v1\/allocations\/[0-9a-f-]+$/i);
+
+    expect(allocation.body).toMatchObject({
+      requestId: null,
+      source: 'SELF',
+      category: 'TRAINING',
+      classification: 'INTERNAL',
+      comment: 'Complete the cloud security course.',
+      person: { personId: fixture.assignee.id, displayName: fixture.assignee.displayName },
+      group: { id: fixture.group.id, name: fixture.group.name },
+      initiative: null,
+      resourceProfile: { id: fixture.profile.id, name: fixture.profile.name },
+      startDate,
+      endDate,
+      weeklyHours: 12.5,
+      state: 'NOT_STARTED',
+    });
+
+    const listed = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/allocations')
+      .set('X-PMO-Local-User-ID', fixture.assignee.localUserId)
+      .expect(200);
+    expect(listed.body.items).toEqual([expect.objectContaining({ id: allocation.body.id, source: 'SELF', category: 'TRAINING' })]);
+
+    const history = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/allocations/${allocation.body.id}/history`)
+      .set('X-PMO-Local-User-ID', fixture.assignee.localUserId)
+      .expect(200);
+    expect(history.body.items[0]).toMatchObject({
+      actor: { personId: fixture.assignee.id },
+      action: 'SELF_ALLOCATION_CREATED',
+      after: { source: 'SELF', category: 'TRAINING', classification: 'INTERNAL' },
+    });
+
+    const notifications = await request(app!.getHttpServer())
+      .get('/api/resource-allocation/v1/notifications')
+      .set('X-PMO-Local-User-ID', fixture.moderator.localUserId)
+      .expect(200);
+    expect(notifications.body.items[0]).toMatchObject({
+      eventCode: 'ALLOCATION_CREATED',
+      target: { type: 'ALLOCATION', requestId: null, available: true, destination: 'ALLOCATION_DETAIL', allocationId: allocation.body.id },
+    });
+  });
+
+  it('keeps pre-existing request allocations and notices intact and Unclassified when operational allocations migrate', async () => {
+    const fixture = await setup();
+    const created = await createAllocation(fixture);
+    await dataSource!.query(
+      "INSERT INTO resource_allocation_notifications (recipient_id, source_request_id, event_code, title, message) VALUES ($1::uuid, $2::uuid, 'LEGACY_NOTICE', 'Legacy', 'Legacy notice')",
+      [fixture.requester.id, created.requestItem.id],
+    );
+    const migrationTable = dataSource!.options.migrationsTableName ?? 'migrations';
+    const applied = async () => (await dataSource!.query(`SELECT 1 FROM ${migrationTable} WHERE name = 'CreateOperationalAllocations2026112300092'`)).length > 0;
+    while (await applied()) await dataSource!.undoLastMigration();
+    expect(await dataSource!.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'resource_allocations' AND column_name = 'classification'")).toEqual([]);
+    await dataSource!.query("UPDATE resource_people SET classification = 'INTERNAL' WHERE id = $1::uuid", [fixture.assignee.id]);
+    await dataSource!.runMigrations();
+
+    const rows = await dataSource!.query(
+      'SELECT origin, category, classification, created_by_person_id, initiative_id::text AS initiative_id FROM resource_allocations WHERE id = $1::uuid',
+      [created.allocation.id],
+    );
+    expect(rows).toEqual([{ origin: 'REQUEST', category: 'EXECUTION_PROJECT', classification: null, created_by_person_id: null, initiative_id: fixture.initiative.id }]);
+    expect(await dataSource!.query("SELECT source_request_id::text AS request_id, source_allocation_id FROM resource_allocation_notifications WHERE event_code = 'LEGACY_NOTICE'"))
+      .toEqual([{ request_id: created.requestItem.id, source_allocation_id: null }]);
+    const detail = await request(app!.getHttpServer())
+      .get(`/api/resource-allocation/v1/allocations/${created.allocation.id}`)
+      .set('X-PMO-Local-User-ID', fixture.assignee.localUserId)
+      .expect(200);
+    expect(detail.body).toMatchObject({ source: 'REQUEST', requestId: created.requestItem.id, classification: null, category: 'EXECUTION_PROJECT' });
   });
 
   it('serializes DTO query and body validation field errors into RFC 9457 errors[]', async () => {

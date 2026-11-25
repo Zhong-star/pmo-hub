@@ -7,6 +7,7 @@ import { ResourceProfile } from '../resource-profiles/resource-profile.entity';
 
 export interface CreateResourceAllocationForRequestInput {
   requestId: string;
+  category: string | null;
   person: ResourcePerson;
   group: ResourceGroup;
   initiative: ResourceInitiative;
@@ -27,6 +28,11 @@ export async function createResourceAllocationForRequest(
   const repository = manager.getRepository(ResourceAllocation);
   return repository.save(repository.create({
     sourceRequestId: input.requestId,
+    origin: 'REQUEST',
+    category: input.category,
+    comment: null,
+    classification: input.person.classification ?? null,
+    createdByPersonId: null,
     personId: input.person.id,
     personSnapshot: { personId: input.person.id, displayName: input.person.displayName, role: input.person.role },
     groupId: input.group.id,

@@ -494,7 +494,7 @@ test('denies direct Administration links before protected content mounts', async
   };
   await openAdminWorkspace(page, user);
   await page.goto('/resource-allocation/?page=administration');
-  await expect(page.getByRole('alert')).toContainText('Administration is only available to Admins.');
+  await expect(page.getByRole('alert')).toContainText('Resource profile administration is only available to Admins and in-scope resource leaders.');
   await expect(page.getByRole('heading', { name: 'Administration', exact: true })).toHaveCount(0);
   await capture(page, 'state-access-denied-administration-light');
 });
