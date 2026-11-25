@@ -42,6 +42,8 @@ import {
   CreateCapacityRequestDto,
   RemoveCapacityRequestDto,
   UpdateCapacityRequestDto,
+  CapacityComparisonQueryDto,
+  CapacityComparisonResponseDto,
 } from './capacity.dto';
 import { ResourceCapacityService } from './resource-capacity.service';
 
@@ -70,6 +72,18 @@ export class ResourceCapacityController {
   @ApiForbiddenResponse({ description: 'Capacity planning is only available to leaders in scope and Admins.' })
   options(@Headers(localProfileHeader) localUserId: string | undefined) {
     return this.capacityService.getOptions(localUserId);
+  }
+
+  @Get('capacity-comparison')
+  @ApiOperation({ summary: 'Compare weekly planned load with FTE capacity for authorized groups' })
+  @ApiOkResponse({ type: CapacityComparisonResponseDto, description: 'Weeks run Monday–Sunday in America/Sao_Paulo; only weekdays count. Aggregates cover every authorized record, not a page.' })
+  @ApiBadRequestResponse({ description: 'A week is not a Monday, the range is reversed or longer than 26 weeks, or a filter is invalid.' })
+  @ApiForbiddenResponse({ description: 'Capacity comparison is only available to leaders in scope and Admins.' })
+  comparison(
+    @Headers(localProfileHeader) localUserId: string | undefined,
+    @Query(createValidationPipe(CapacityComparisonQueryDto)) query: CapacityComparisonQueryDto,
+  ) {
+    return this.capacityService.compare(localUserId, query);
   }
 
   @Get('capacities')

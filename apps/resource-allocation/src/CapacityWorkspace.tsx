@@ -17,6 +17,7 @@ import {
   type CapacityFilters,
   type CapacityHistoryEvent,
 } from './capacityApi';
+import { CapacityComparison } from './CapacityComparison';
 import './CapacityWorkspace.css';
 
 interface CapacityWorkspaceProps {
@@ -344,7 +345,7 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
         <div>
           <p className="eyebrow">Team planning</p>
           <h2 id="capacity-title">Capacity</h2>
-          <p className="capacity-intro">Maintain internal and third-party FTE capacity by group, resource profile, and effective date.</p>
+          <p className="capacity-intro">Compare weekly planned work with capacity, and maintain internal and third-party FTE capacity by group, resource profile, and effective date.</p>
         </div>
         {editor === null && <button className="primary-button" type="button" onClick={openCreate}>Add capacity</button>}
       </div>
@@ -386,6 +387,8 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
           </select>
         </label>
       </section>
+
+      <CapacityComparison localUserId={localUserId} filters={filters} onAccessDenied={onAccessDenied} />
 
       {editor && (
         <section className="capacity-editor" aria-labelledby="capacity-editor-title">

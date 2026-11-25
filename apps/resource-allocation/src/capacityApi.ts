@@ -127,3 +127,21 @@ export async function removeCapacity(
     return throwApiRequestError(error, CapacityRequestError);
   }
 }
+
+type CapacityComparisonPath = '/api/resource-allocation/v1/capacity-comparison';
+export type CapacityComparison = ApiResponse<CapacityComparisonPath, 'get'>;
+export type CapacityComparisonWeek = CapacityComparison['weeks'][number];
+export type CapacityComparisonFigures = CapacityComparisonWeek['total'];
+export type CapacityComparisonQuery = ApiQuery<CapacityComparisonPath, 'get'>;
+
+export async function getCapacityComparison(localUserId: string, query: CapacityComparisonQuery): Promise<CapacityComparison> {
+  try {
+    const response = await api.get<CapacityComparison>(`${API_ROOT}/capacity-comparison`, {
+      headers: headers(localUserId),
+      params: query,
+    });
+    return response.data;
+  } catch (error) {
+    return throwApiRequestError(error, CapacityRequestError);
+  }
+}

@@ -179,3 +179,72 @@ export class CapacityHistoryCollectionResponseDto {
   @ApiProperty({ type: () => CapacityHistoryEventDto, isArray: true }) items!: CapacityHistoryEventDto[];
   @ApiProperty({ type: () => CursorPageInfoDto }) page!: CursorPageInfoDto;
 }
+
+export class CapacityComparisonQueryDto {
+  @ApiPropertyOptional({ type: String, format: 'date', description: 'Monday of the first week (America/Sao_Paulo). Defaults to the current week.' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  weekStart?: string;
+
+  @ApiPropertyOptional({ type: String, format: 'date', description: 'Monday of the last week, inclusive; at most 26 weeks after weekStart. Defaults to weekStart.' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  weekEnd?: string;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  groupId?: string;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  resourceProfileId?: string;
+
+  @ApiPropertyOptional({ enum: CapacityClassification, description: 'Limits capacity and load to one classification; Unclassified load and vacation are then omitted.' })
+  @IsOptional()
+  @IsEnum(CapacityClassification)
+  classification?: CapacityClassification;
+}
+
+export class CapacityComparisonFiguresDto {
+  @ApiProperty({ type: Number, description: 'Planned work hours (Not Started, In Progress, Allocated without action, Done) in the week; full precision.' }) plannedHours!: number;
+  @ApiProperty({ type: Number, description: 'Hours of suspended allocations, shown apart from planned work.' }) suspendedHours!: number;
+  @ApiProperty({ type: Number, nullable: true, description: 'Known capacity hours (FTE × 8 per weekday with an entry); null when not configured for any weekday.' }) capacityHours!: number | null;
+  @ApiProperty({ type: Number, nullable: true, description: 'capacityHours / 40.' }) capacityFte!: number | null;
+  @ApiProperty({ type: Boolean, description: 'Every weekday of every component has capacity and no Unclassified load is included.' }) complete!: boolean;
+  @ApiProperty({ type: Number, nullable: true, description: 'plannedHours / capacityHours × 100 when complete and capacity is above zero; may exceed 100.' }) utilizationPercent!: number | null;
+}
+
+export class CapacityComparisonClassificationDto extends CapacityComparisonFiguresDto {
+  @ApiProperty({ enum: CapacityClassification, nullable: true, description: 'Null for Unclassified load, which never has capacity.' })
+  classification!: CapacityClassification | null;
+}
+
+export class CapacityComparisonProfileDto {
+  @ApiProperty({ type: () => CapacityProfileDto }) resourceProfile!: CapacityProfileDto;
+  @ApiProperty({ type: () => CapacityComparisonClassificationDto, isArray: true }) classifications!: CapacityComparisonClassificationDto[];
+  @ApiProperty({ type: () => CapacityComparisonFiguresDto }) total!: CapacityComparisonFiguresDto;
+}
+
+export class CapacityComparisonGroupDto {
+  @ApiProperty({ type: () => CapacityGroupDto }) group!: CapacityGroupDto;
+  @ApiProperty({ type: () => CapacityComparisonProfileDto, isArray: true }) profiles!: CapacityComparisonProfileDto[];
+  @ApiProperty({ type: Number, description: 'Planned hours from allocations recorded without a classification.' }) unclassifiedHours!: number;
+  @ApiProperty({ type: Number, description: 'Vacation hours in the week, outside the work numerator and not deducted from capacity.' }) vacationHours!: number;
+  @ApiProperty({ type: () => CapacityComparisonFiguresDto }) total!: CapacityComparisonFiguresDto;
+}
+
+export class CapacityComparisonWeekDto {
+  @ApiProperty({ type: String, format: 'date' }) weekStart!: string;
+  @ApiProperty({ type: String, format: 'date' }) weekEnd!: string;
+  @ApiProperty({ type: () => CapacityComparisonGroupDto, isArray: true }) groups!: CapacityComparisonGroupDto[];
+  @ApiProperty({ type: () => CapacityComparisonFiguresDto, description: 'All authorized groups in the filter, summed before dividing.' }) total!: CapacityComparisonFiguresDto;
+}
+
+export class CapacityComparisonResponseDto {
+  @ApiProperty({ type: String, format: 'date', description: 'Current business date in America/Sao_Paulo.' }) businessDate!: string;
+  @ApiProperty({ type: () => CapacityComparisonWeekDto, isArray: true }) weeks!: CapacityComparisonWeekDto[];
+}

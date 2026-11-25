@@ -11,8 +11,19 @@ import { ResourceProfile } from '../resource-profiles/resource-profile.entity';
 import { runIdempotentOperation } from '../administration/idempotency/run-idempotent-operation';
 import { decodeOpaqueCursor, encodeOpaqueCursor } from '../common/opaque-cursor';
 import {
+  addDays,
+  compareWeeks,
+  isMonday,
+  mondayOf,
+  type ComparisonAllocation,
+  type ComparisonCapacity,
+  type ComparisonFigures,
+  type WeekComparison,
+} from './capacity-comparison';
+import {
   CapacityClassification,
   CapacityCollectionQueryDto,
+  CapacityComparisonQueryDto,
   CreateCapacityRequestDto,
   RemoveCapacityRequestDto,
   UpdateCapacityRequestDto,
@@ -49,6 +60,7 @@ interface CapacityCursor {
   effectiveDate?: string;
 }
 
+const maximumComparisonWeeks = 26;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -136,6 +148,150 @@ export class ResourceCapacityService {
     } catch (error) {
       throw translateResourceAllocationDatabaseError(error);
     }
+  }
+
+  async compare(localUserId: string | undefined, query: CapacityComparisonQueryDto) {
+    const actor = await this.requireLeader(localUserId);
+    try {
+      const clock = await this.dataSource.query(
+        "SELECT (clock_timestamp() AT TIME ZONE 'America/Sao_Paulo')::date::text AS business_date",
+      ) as Array<{ business_date: string }>;
+      const businessDate = clock[0].business_date;
+      const firstWeek = query.weekStart ?? mondayOf(businessDate);
+      const lastWeek = query.weekEnd ?? firstWeek;
+      for (const [name, value] of [['weekStart', firstWeek], ['weekEnd', lastWeek]] as const) {
+        this.requireValidDate(value);
+        if (!isMonday(value)) throw this.validationError(`${name} must be a Monday.`);
+      }
+      if (lastWeek < firstWeek) throw this.validationError('weekEnd must be on or after weekStart.');
+      const weekStarts: string[] = [];
+      for (let week = firstWeek; week <= lastWeek; week = addDays(week, 7)) weekStarts.push(week);
+      if (weekStarts.length > maximumComparisonWeeks) throw this.validationError(`Choose at most ${maximumComparisonWeeks} weeks.`);
+      const rangeEnd = addDays(lastWeek, 6);
+
+      const scope = await this.authorizedGroupIds(this.dataSource.manager, actor);
+      const groupId = query.groupId?.toLowerCase();
+      if (groupId && scope && !scope.includes(groupId)) throw this.accessDenied();
+      const groupIds = groupId ? [groupId] : scope;
+      if (groupIds && groupIds.length === 0) return { businessDate, weeks: compareWeeks(weekStarts, [], [], []).map((week) => this.toComparisonWeek(week, new Map(), new Map())) };
+
+      const profileId = query.resourceProfileId?.toLowerCase();
+      const classification = query.classification;
+      const parameters: unknown[] = [firstWeek, rangeEnd];
+      const clauses = ["allocation.state <> 'CANCELED'", 'allocation.effective_start_date <= $2::date', 'allocation.effective_end_date >= $1::date'];
+      if (groupIds) {
+        parameters.push(groupIds);
+        clauses.push(`allocation.group_id = ANY($${parameters.length}::uuid[])`);
+      }
+      if (profileId) {
+        parameters.push(profileId);
+        clauses.push(`allocation.resource_profile_id = $${parameters.length}::uuid`);
+      }
+      if (classification) {
+        parameters.push(classification);
+        clauses.push(`allocation.classification = $${parameters.length}::varchar`);
+      }
+      const allocationRows = await this.dataSource.query(`
+        SELECT allocation.group_id, allocation.resource_profile_id, allocation.classification, allocation.category,
+          allocation.effective_start_date::text AS start_date, allocation.effective_end_date::text AS end_date,
+          allocation.weekly_hours::text AS weekly_hours, allocation.state
+        FROM resource_allocations AS allocation
+        WHERE ${clauses.join(' AND ')}
+      `, parameters) as Array<{
+        group_id: string; resource_profile_id: string | null; classification: CapacityClassification | null; category: string | null;
+        start_date: string; end_date: string; weekly_hours: string; state: string;
+      }>;
+
+      const capacityParameters: unknown[] = [rangeEnd];
+      const capacityClauses = ['capacity.deleted_at IS NULL', 'capacity.effective_date <= $1::date'];
+      if (groupIds) {
+        capacityParameters.push(groupIds);
+        capacityClauses.push(`capacity.group_id = ANY($${capacityParameters.length}::uuid[])`);
+      }
+      if (profileId) {
+        capacityParameters.push(profileId);
+        capacityClauses.push(`capacity.resource_profile_id = $${capacityParameters.length}::uuid`);
+      }
+      if (classification) {
+        capacityParameters.push(classification);
+        capacityClauses.push(`capacity.classification = $${capacityParameters.length}::varchar`);
+      }
+      const capacityRows = await this.dataSource.query(`
+        SELECT capacity.group_id, capacity.resource_profile_id, capacity.classification,
+          capacity.effective_date::text AS effective_date, capacity.fte::text AS fte
+        FROM resource_capacities AS capacity
+        WHERE ${capacityClauses.join(' AND ')}
+      `, capacityParameters) as Array<{ group_id: string; resource_profile_id: string; classification: CapacityClassification; effective_date: string; fte: string }>;
+
+      const allocations: ComparisonAllocation[] = allocationRows.map((row) => {
+        const suspended = row.state === 'SUSPENDED' && row.end_date >= businessDate;
+        return {
+          groupId: row.group_id,
+          resourceProfileId: row.resource_profile_id,
+          classification: row.classification,
+          startDate: row.start_date,
+          endDate: row.end_date,
+          weeklyHours: Number(row.weekly_hours),
+          kind: row.category === 'VACATION' ? 'VACATION' : suspended ? 'SUSPENDED' : 'PLANNED',
+        };
+      });
+      const capacities: ComparisonCapacity[] = capacityRows.map((row) => ({
+        groupId: row.group_id,
+        resourceProfileId: row.resource_profile_id,
+        classification: row.classification,
+        effectiveDate: row.effective_date,
+        fte: Number(row.fte),
+      }));
+      const involvedGroups = [...new Set([...allocations.map((item) => item.groupId), ...capacities.map((item) => item.groupId)])];
+      const involvedProfiles = [...new Set([...allocations.map((item) => item.resourceProfileId), ...capacities.map((item) => item.resourceProfileId)]
+        .filter((id): id is string => id !== null))];
+      const groups = involvedGroups.length === 0 ? [] : await this.dataSource.query(
+        'SELECT id, name FROM resource_groups WHERE id = ANY($1::uuid[])', [involvedGroups],
+      ) as Array<{ id: string; name: string }>;
+      const profiles = involvedProfiles.length === 0 ? [] : await this.dataSource.query(
+        'SELECT id, name, active FROM resource_profiles WHERE id = ANY($1::uuid[])', [involvedProfiles],
+      ) as Array<{ id: string; name: string; active: boolean }>;
+      const groupNames = new Map(groups.map((group) => [group.id, group.name]));
+      const profileInfo = new Map(profiles.map((profile) => [profile.id, { name: profile.name, active: profile.active }]));
+      const orderedGroups = [...involvedGroups].sort((left, right) => (groupNames.get(left) ?? '').localeCompare(groupNames.get(right) ?? '') || left.localeCompare(right));
+      return {
+        businessDate,
+        weeks: compareWeeks(weekStarts, allocations, capacities, orderedGroups).map((week) => this.toComparisonWeek(week, groupNames, profileInfo)),
+      };
+    } catch (error) {
+      if (error instanceof ResourceAllocationException) throw error;
+      throw translateResourceAllocationDatabaseError(error);
+    }
+  }
+
+  private toComparisonWeek(
+    week: WeekComparison,
+    groupNames: Map<string, string>,
+    profileInfo: Map<string, { name: string; active: boolean }>,
+  ) {
+    const withFte = (value: ComparisonFigures) => ({ ...value, capacityFte: value.capacityHours === null ? null : value.capacityHours / 40 });
+    return {
+      weekStart: week.weekStart,
+      weekEnd: week.weekEnd,
+      total: withFte(week.total),
+      groups: week.groups.map((group) => ({
+        group: { id: group.groupId, name: groupNames.get(group.groupId) ?? 'Unknown group' },
+        unclassifiedHours: group.unclassifiedHours,
+        vacationHours: group.vacationHours,
+        total: withFte(group.total),
+        profiles: [...group.profiles]
+          .sort((left, right) => (profileInfo.get(left.resourceProfileId)?.name ?? '').localeCompare(profileInfo.get(right.resourceProfileId)?.name ?? ''))
+          .map((profile) => ({
+            resourceProfile: {
+              id: profile.resourceProfileId,
+              name: profileInfo.get(profile.resourceProfileId)?.name ?? 'Unknown profile',
+              active: profileInfo.get(profile.resourceProfileId)?.active ?? false,
+            },
+            classifications: profile.classifications.map(withFte),
+            total: withFte(profile.total),
+          })),
+      })),
+    };
   }
 
   async getOptions(localUserId: string | undefined) {

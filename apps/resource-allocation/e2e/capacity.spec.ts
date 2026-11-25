@@ -41,6 +41,7 @@ async function installBaseRoutes(page: Page, person: typeof admin = admin) {
   await page.route(`${apiRoot}/groups**`, (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/resource-profiles**`, (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/initiatives**`, (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
+  await page.route(`${apiRoot}/capacity-comparison**`, (route) => route.fulfill({ json: { businessDate: '2026-11-24', weeks: [] } }));
   await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), {
     key: profileStorageKey,
     value: person.localUserId,

@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { useNavigationFormProtection } from './NavigationProtection';
 import { AllocationCreation, type AllocationCreatorRole } from './AllocationCreation';
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
+import { CAPACITY_QUERY_ROOT } from './capacityApi';
 import { REQUESTS_QUERY_ROOT } from './requestApi';
 import { businessDate, formatBusinessTimestamp, formatCalendarDate } from './timeAndHours';
 import {
@@ -245,6 +246,7 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
         queryClient.invalidateQueries({ queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId] }),
         queryClient.invalidateQueries({ queryKey: REQUESTS_QUERY_ROOT }),
         queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_ROOT }),
+        queryClient.invalidateQueries({ queryKey: CAPACITY_QUERY_ROOT }),
       ]);
     },
     onError: (error) => {
@@ -367,6 +369,7 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId] }),
       queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_ROOT }),
+      queryClient.invalidateQueries({ queryKey: CAPACITY_QUERY_ROOT }),
     ]);
   }
 

@@ -970,6 +970,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/resource-allocation/v1/capacity-comparison": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Compare weekly planned load with FTE capacity for authorized groups */
+        get: operations["ResourceCapacityController_comparison"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/resource-allocation/v1/capacities": {
         parameters: {
             query?: never;
@@ -2051,6 +2068,70 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
+        };
+        CapacityComparisonClassificationDto: {
+            /** @description Planned work hours (Not Started, In Progress, Allocated without action, Done) in the week; full precision. */
+            plannedHours: number;
+            /** @description Hours of suspended allocations, shown apart from planned work. */
+            suspendedHours: number;
+            /** @description Known capacity hours (FTE × 8 per weekday with an entry); null when not configured for any weekday. */
+            capacityHours: number | null;
+            /** @description capacityHours / 40. */
+            capacityFte: number | null;
+            /** @description Every weekday of every component has capacity and no Unclassified load is included. */
+            complete: boolean;
+            /** @description plannedHours / capacityHours × 100 when complete and capacity is above zero; may exceed 100. */
+            utilizationPercent: number | null;
+            /**
+             * @description Null for Unclassified load, which never has capacity.
+             * @enum {string|null}
+             */
+            classification: "INTERNAL" | "THIRD_PARTY" | null;
+        };
+        CapacityComparisonFiguresDto: {
+            /** @description Planned work hours (Not Started, In Progress, Allocated without action, Done) in the week; full precision. */
+            plannedHours: number;
+            /** @description Hours of suspended allocations, shown apart from planned work. */
+            suspendedHours: number;
+            /** @description Known capacity hours (FTE × 8 per weekday with an entry); null when not configured for any weekday. */
+            capacityHours: number | null;
+            /** @description capacityHours / 40. */
+            capacityFte: number | null;
+            /** @description Every weekday of every component has capacity and no Unclassified load is included. */
+            complete: boolean;
+            /** @description plannedHours / capacityHours × 100 when complete and capacity is above zero; may exceed 100. */
+            utilizationPercent: number | null;
+        };
+        CapacityComparisonProfileDto: {
+            resourceProfile: components["schemas"]["CapacityProfileDto"];
+            classifications: components["schemas"]["CapacityComparisonClassificationDto"][];
+            total: components["schemas"]["CapacityComparisonFiguresDto"];
+        };
+        CapacityComparisonGroupDto: {
+            group: components["schemas"]["CapacityGroupDto"];
+            profiles: components["schemas"]["CapacityComparisonProfileDto"][];
+            /** @description Planned hours from allocations recorded without a classification. */
+            unclassifiedHours: number;
+            /** @description Vacation hours in the week, outside the work numerator and not deducted from capacity. */
+            vacationHours: number;
+            total: components["schemas"]["CapacityComparisonFiguresDto"];
+        };
+        CapacityComparisonWeekDto: {
+            /** Format: date */
+            weekStart: string;
+            /** Format: date */
+            weekEnd: string;
+            groups: components["schemas"]["CapacityComparisonGroupDto"][];
+            /** @description All authorized groups in the filter, summed before dividing. */
+            total: components["schemas"]["CapacityComparisonFiguresDto"];
+        };
+        CapacityComparisonResponseDto: {
+            /**
+             * Format: date
+             * @description Current business date in America/Sao_Paulo.
+             */
+            businessDate: string;
+            weeks: components["schemas"]["CapacityComparisonWeekDto"][];
         };
         CapacityListItemDto: {
             /** Format: uuid */
@@ -7645,6 +7726,81 @@ export interface operations {
                 };
             };
             /** @description Capacity planning is only available to leaders in scope and Admins. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceCapacityController_comparison: {
+        parameters: {
+            query?: {
+                /** @description Monday of the first week (America/Sao_Paulo). Defaults to the current week. */
+                weekStart?: string;
+                /** @description Monday of the last week, inclusive; at most 26 weeks after weekStart. Defaults to weekStart. */
+                weekEnd?: string;
+                groupId?: string;
+                resourceProfileId?: string;
+                /** @description Limits capacity and load to one classification; Unclassified load and vacation are then omitted. */
+                classification?: "INTERNAL" | "THIRD_PARTY";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Weeks run Monday–Sunday in America/Sao_Paulo; only weekdays count. Aggregates cover every authorized record, not a page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapacityComparisonResponseDto"];
+                };
+            };
+            /** @description A week is not a Monday, the range is reversed or longer than 26 weeks, or a filter is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description Capacity comparison is only available to leaders in scope and Admins. */
             403: {
                 headers: {
                     [name: string]: unknown;
