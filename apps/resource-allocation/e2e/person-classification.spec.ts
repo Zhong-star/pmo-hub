@@ -64,7 +64,7 @@ async function openAdmin(page: Page) {
 test('Admin can classify a legacy person and sees non-retroactive and access guidance', async ({ page }) => {
   await openAdmin(page);
 
-  const row = page.getByRole('row', { name: /Legacy Person.*USER.*Unclassified/ });
+  const row = page.getByRole('row', { name: /Legacy Person.*User.*Unclassified/ });
   await expect(row).toBeVisible();
   await row.getByRole('button', { name: 'Edit person Legacy Person' }).click();
   await expect(page.getByLabel('Classification')).toHaveValue('');
@@ -87,7 +87,7 @@ test('Admin can classify a legacy person and sees non-retroactive and access gui
   await page.getByLabel('Classification').selectOption('THIRD_PARTY');
   await page.getByRole('button', { name: 'Save person' }).click();
 
-  await expect(page.getByRole('row', { name: /Legacy Person.*USER.*Third party/ })).toBeVisible();
+  await expect(page.getByRole('row', { name: /Legacy Person.*User.*Third party/ })).toBeVisible();
 
   await page.getByRole('button', { name: 'Morgan Admin' }).click();
   await page.getByRole('button', { name: 'Dark' }).click();
