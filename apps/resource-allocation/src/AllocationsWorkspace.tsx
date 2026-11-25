@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useForm } from 'react-hook-form';
 import { useNavigationFormProtection } from './NavigationProtection';
 import { AllocationCreation, type AllocationCreatorRole } from './AllocationCreation';
+import { AllocationMaintenance } from './AllocationMaintenance';
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
 import { CAPACITY_QUERY_ROOT } from './capacityApi';
 import { REQUESTS_QUERY_ROOT } from './requestApi';
@@ -16,6 +17,7 @@ import {
   getAllocationLoad,
   getAllocations,
   allocationCategoryLabel,
+  getDirectAllocationGroups,
   isAllocationAction,
   type AllocationAction,
   type AllocationFilters,
@@ -129,6 +131,28 @@ function allocationTitle(allocation: AllocationRecord): string {
   return allocationCategoryLabel(allocation.category) ?? 'Operational allocation';
 }
 
+function snapshotValue(snapshot: Record<string, unknown> | null | undefined, field: string): string {
+  const value = snapshot?.[field];
+  if (value === null || value === undefined) return field === 'resourceProfile' ? 'none' : field === 'classification' ? 'Unclassified' : '—';
+  if (typeof value === 'object') return String((value as Record<string, unknown>).displayName ?? (value as Record<string, unknown>).name ?? '—');
+  if (field === 'category') return allocationCategoryLabel(String(value)) ?? String(value);
+  if (field === 'state') return stateLabel(value as AllocationState);
+  if (field === 'weeklyHours') return `${String(value)} h/week`;
+  return String(value);
+}
+
+/** Human-readable before → after lines for a history event; empty for creation events. */
+function historyChanges(before: Record<string, unknown> | null | undefined, after: Record<string, unknown> | null | undefined): string[] {
+  if (!before || !after || Object.keys(before).length === 0) return [];
+  const labels: Array<[string, string]> = [
+    ['person', 'Person'], ['category', 'Category'], ['resourceProfile', 'Profile'], ['startDate', 'Start'], ['endDate', 'End'],
+    ['weeklyHours', 'Hours'], ['classification', 'Classification'], ['comment', 'Description'], ['state', 'State'],
+  ];
+  return labels
+    .filter(([field]) => snapshotValue(before, field) !== snapshotValue(after, field))
+    .map(([field, label]) => `${label}: ${snapshotValue(before, field)} → ${snapshotValue(after, field)}`);
+}
+
 function allocationOrigin(allocation: AllocationRecord): string {
   if (allocation.source === 'SELF') return 'Own allocation';
   if (allocation.source === 'DIRECT') return 'Direct allocation';
@@ -177,6 +201,7 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
   const [isStale, setIsStale] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [maintenanceMode, setMaintenanceMode] = useState<'edit' | 'reopen' | null>(null);
   const [creationMessage, setCreationMessage] = useState('');
 
   const filterForm = useForm<AllocationFilterForm>({ defaultValues: emptyFilterForm() });
@@ -216,6 +241,15 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
     retry: false,
   });
   const allocation = detailQuery.data?.allocation;
+  const directGroupsQuery = useQuery({
+    queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId, 'creation-groups'],
+    queryFn: () => getDirectAllocationGroups(localUserId),
+    enabled: role !== 'ALLOCATION_USER' && role !== 'ALLOCATION_ADMIN',
+    retry: false,
+  });
+  const closed = allocation?.state === 'DONE' || allocation?.state === 'CANCELED';
+  const leadsAllocationGroup = role === 'ALLOCATION_ADMIN' || (allocation ? (directGroupsQuery.data ?? []).some((group) => group.id === allocation.group.id) : false);
+  const canEdit = closed ? role === 'ALLOCATION_ADMIN' : leadsAllocationGroup;
   const historyQuery = useQuery({
     queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId, selectedAllocationId, 'history'],
     queryFn: () => getAllocationHistory(localUserId, selectedAllocationId!),
@@ -290,6 +324,7 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
   }
 
   function resetAllocationAction() {
+    setMaintenanceMode(null);
     setSelectedAction(null);
     setAttempt(null);
     setIsStale(false);
@@ -356,6 +391,26 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
       setCreationMessage('');
       setIsCreating(true);
     });
+  }
+
+  function startMaintenance(mode: 'edit' | 'reopen') {
+    if (currentAllocationRefreshFailed) return;
+    guardActionClose(() => {
+      resetAllocationAction();
+      setMaintenanceMode(mode);
+    });
+  }
+
+  async function handleMaintained(saved: AllocationRecord) {
+    setMaintenanceMode(null);
+    setActionMessage(maintenanceMode === 'reopen' ? 'The allocation was reopened.' : 'The allocation was changed.');
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: [...ALLOCATIONS_QUERY_ROOT, localUserId] }),
+      queryClient.invalidateQueries({ queryKey: REQUESTS_QUERY_ROOT }),
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_ROOT }),
+      queryClient.invalidateQueries({ queryKey: CAPACITY_QUERY_ROOT }),
+    ]);
+    void saved;
   }
 
   async function handleCreated(created: AllocationRecord) {
@@ -589,6 +644,28 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
               {currentAllocationRefreshFailed && (
                 <p className="allocation-action-message" role="status">Actions are paused until the current allocation refreshes successfully.</p>
               )}
+              {!maintenanceMode && canEdit && (
+                <div className="allocation-actions" aria-label="Allocation maintenance">
+                  <div className="allocation-action-buttons">
+                    {!closed && <button type="button" className="secondary-button" onClick={() => startMaintenance('edit')} disabled={currentAllocationRefreshFailed}>Change allocation</button>}
+                    {closed && role === 'ALLOCATION_ADMIN' && <button type="button" className="secondary-button" onClick={() => startMaintenance('reopen')} disabled={currentAllocationRefreshFailed}>Reopen allocation</button>}
+                  </div>
+                </div>
+              )}
+              {maintenanceMode && detailQuery.data && (
+                <AllocationMaintenance
+                  key={`${allocation.id}:${maintenanceMode}`}
+                  localUserId={localUserId}
+                  allocation={allocation}
+                  etag={detailQuery.data.etag}
+                  mode={maintenanceMode}
+                  isAdmin={role === 'ALLOCATION_ADMIN'}
+                  onSaved={(saved) => void handleMaintained(saved)}
+                  onClose={() => setMaintenanceMode(null)}
+                  onReload={async () => (await detailQuery.refetch()).data?.allocation}
+                  onAccessDenied={onAccessDenied}
+                />
+              )}
               {allocation.availableActions.some(isAllocationAction) && (
                 <div className="allocation-actions" aria-label="Available allocation actions">
                   <h4>Available actions</h4>
@@ -669,6 +746,11 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
                         <strong>{event.action.replaceAll('_', ' ').toLowerCase()}</strong>
                         <span>{formatBusinessTimestamp(event.occurredAt)}</span>
                         {event.reason && <p>{event.reason}</p>}
+                        {historyChanges(event.before, event.after).length > 0 && (
+                          <ul className="allocation-history-changes">
+                            {historyChanges(event.before, event.after).map((change) => <li key={change}>{change}</li>)}
+                          </ul>
+                        )}
                       </li>
                     ))}
                   </ol>

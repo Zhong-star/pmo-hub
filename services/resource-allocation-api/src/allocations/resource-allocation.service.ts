@@ -11,6 +11,7 @@ import { ResourceAllocation } from './resource-allocation.entity';
 import { ResourceAllocationHistory } from './resource-allocation-history.entity';
 import { ResourcePerson } from '../people/resource-person.entity';
 import { ResourceAllocationRole } from '../people/resource-allocation-role';
+import type { ResourcePersonClassification } from '../people/resource-person-classification';
 import { ResourceAllocationAccessService } from '../access/resource-allocation-access.service';
 import { ResourceAllocationNotification } from '../notifications/resource-allocation-notification.entity';
 import { normalizeRequestedWeeklyHours } from '../requests/requested-weekly-hours';
@@ -18,7 +19,7 @@ import { ResourceGroup } from '../groups/resource-group.entity';
 import { ResourceInitiative } from '../initiatives/resource-initiative.entity';
 import { allocationCategoryLabel, isOperationalAllocationCategory, isVacationAllocation, vacationWeeklyHours } from './allocation-category';
 import { ResourceProfile } from '../resource-profiles/resource-profile.entity';
-import type { CreateAllocationDto, AllocationCollectionQueryDto, AllocationCommandDto, AllocationLoadQueryDto, allocationStates } from './allocation.dto';
+import type { CreateAllocationDto, ReopenAllocationDto, UpdateAllocationDto, AllocationCollectionQueryDto, AllocationCommandDto, AllocationLoadQueryDto, allocationStates } from './allocation.dto';
 
 const defaultPageSize = 50;
 const maximumPageSize = 100;
@@ -624,7 +625,7 @@ export class ResourceAllocationService {
             correlationId: correlation,
             occurredAt: clock.now,
           });
-          await this.notifyAllocationChange(manager, allocation, actor.id, reason, nextState, clock.now);
+          await this.notifyAllocationChange(manager, allocation, actor.id, reason, nextState, clock.now, actor.id === allocation.personId ? 'LEADERS' : 'PERSON_AND_REQUESTER');
           return after;
         });
       });
@@ -632,6 +633,298 @@ export class ResourceAllocationService {
     } catch (error) {
       throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
     }
+  }
+
+  /** Structural change of an open allocation by in-scope leadership or Admin (#95). */
+  async updateAllocation(
+    localUserId: string | undefined,
+    allocationId: string,
+    ifMatch: string | undefined,
+    idempotencyKey: string | undefined,
+    correlationId: string | undefined,
+    input: UpdateAllocationDto,
+  ) {
+    return this.maintainAllocation(localUserId, allocationId, ifMatch, idempotencyKey, correlationId, input, 'update');
+  }
+
+  /** Admin-only reopening of a Done or Canceled allocation with new dates (#96). */
+  async reopenAllocation(
+    localUserId: string | undefined,
+    allocationId: string,
+    ifMatch: string | undefined,
+    idempotencyKey: string | undefined,
+    correlationId: string | undefined,
+    input: ReopenAllocationDto,
+  ) {
+    return this.maintainAllocation(localUserId, allocationId, ifMatch, idempotencyKey, correlationId, input as UpdateAllocationDto, 'reopen');
+  }
+
+  private async maintainAllocation(
+    localUserId: string | undefined,
+    allocationId: string,
+    ifMatch: string | undefined,
+    idempotencyKey: string | undefined,
+    correlationId: string | undefined,
+    input: UpdateAllocationDto,
+    mode: 'update' | 'reopen',
+  ) {
+    const expectedVersion = parseStrongVersionIfMatch(ifMatch);
+    const id = this.requireUuid(allocationId, 'allocationId');
+    const key = parseUuidHeader(idempotencyKey, 'Idempotency-Key');
+    const correlation = parseUuidHeader(correlationId, 'X-Correlation-ID', 'X-Correlation-ID must be a UUID.');
+    const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+    if (!reason || reason.length > 2000) throw this.validationError('reason must contain between 1 and 2,000 characters.');
+    if (mode === 'reopen' && (!input.startDate || !input.endDate)) {
+      throw new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, 'Reopening needs new start and end dates.', undefined, undefined, [
+        ...(!input.startDate ? [{ path: 'startDate', code: 'REQUIRED', message: 'Enter the new start date.' }] : []),
+        ...(!input.endDate ? [{ path: 'endDate', code: 'REQUIRED', message: 'Enter the new end date.' }] : []),
+      ]);
+    }
+    const changes = {
+      personId: input.personId == null ? undefined : this.requireUuid(input.personId, 'personId'),
+      resourceProfileId: input.resourceProfileId === undefined ? undefined : input.resourceProfileId === null ? null : this.requireUuid(input.resourceProfileId, 'resourceProfileId'),
+      category: input.category,
+      startDate: input.startDate === undefined ? undefined : this.requireDate(input.startDate, 'startDate'),
+      endDate: input.endDate === undefined ? undefined : this.requireDate(input.endDate, 'endDate'),
+      weeklyHours: input.weeklyHours,
+      comment: input.comment === undefined ? undefined : (typeof input.comment === 'string' && input.comment.trim() ? input.comment.trim() : null),
+      classification: input.classification,
+      confirmDerivedState: input.confirmDerivedState === true,
+    };
+    if (mode === 'reopen' && (changes.category !== undefined || changes.weeklyHours !== undefined || changes.comment !== undefined || changes.classification !== undefined)) {
+      throw this.validationError('Reopening accepts only reason, dates, person, and resource profile.');
+    }
+
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        await lockResourceAllocationAdministrationWrites(manager);
+        const actor = await this.requireActivePerson(manager, localUserId);
+        const allocation = await manager.getRepository(ResourceAllocation).createQueryBuilder('allocation')
+          .setLock('pessimistic_write')
+          .where('allocation.id = :id', { id })
+          .getOne();
+        if (!allocation) throw this.notFound('Allocation');
+        if (!await this.canReadAllocation(actor, allocation.personId, allocation.groupId, manager)) throw this.accessDenied();
+        if (mode === 'reopen' && actor.role !== ResourceAllocationRole.Admin) {
+          throw this.accessDenied('Only an Admin can reopen a done or canceled allocation.');
+        }
+        if (mode === 'update' && !await this.canLeadGroup(actor, allocation.groupId, manager)) {
+          throw this.accessDenied('Only leadership in scope or an Admin can change an allocation. You can still change its state.');
+        }
+        if (changes.classification !== undefined && actor.role !== ResourceAllocationRole.Admin) {
+          throw this.accessDenied('Only an Admin can correct the classification recorded on an allocation.');
+        }
+
+        return runIdempotentOperation(manager, {
+          actorId: actor.id,
+          operation: mode === 'reopen' ? 'allocation.reopen' : 'allocation.update',
+          key,
+          payload: { allocationId: id, ifMatch: expectedVersion, reason, ...changes },
+        }, async () => {
+          if (allocation.version !== expectedVersion) {
+            throw new ResourceAllocationException('PRECONDITION_FAILED', 'Precondition failed', 412, 'The allocation changed. Reload and review it before saving your change.');
+          }
+          const clocks = await manager.query(`
+            WITH operation_clock AS (SELECT clock_timestamp() AS now)
+            SELECT now, (now AT TIME ZONE 'America/Sao_Paulo')::date::text AS business_date
+            FROM operation_clock
+          `) as Array<OperationClock & { business_date: string }>;
+          const clock = { now: new Date(clocks[0].now), businessDate: clocks[0].business_date };
+          const currentState = this.currentState(allocation, clock.businessDate);
+          const terminal = currentState === 'DONE' || currentState === 'CANCELED';
+          if (mode === 'update' && terminal) {
+            throw this.invalidTransition('Done or canceled allocations cannot be changed. An Admin can reopen them.');
+          }
+          if (mode === 'reopen' && !terminal) {
+            throw this.invalidTransition('Only a done or canceled allocation can be reopened.');
+          }
+
+          const fieldErrors: Array<{ path: string; code: string; message: string }> = [];
+          const currentCategory = allocation.category;
+          const nextCategory = changes.category ?? currentCategory;
+          if (changes.category !== undefined && changes.category !== currentCategory) {
+            if (!isOperationalAllocationCategory(currentCategory) || !isOperationalAllocationCategory(changes.category)) {
+              throw this.invalidTransition('Only operational categories can be switched among themselves. Cancel the allocation and record a new one to move between initiative and operational work.');
+            }
+          }
+          const vacation = isVacationAllocation(nextCategory);
+          const leavingVacation = isVacationAllocation(currentCategory) && !vacation;
+          const enteringVacation = !isVacationAllocation(currentCategory) && vacation;
+
+          const startDate = changes.startDate ?? allocation.effectiveStartDate;
+          const endDate = changes.endDate ?? allocation.effectiveEndDate;
+          if (startDate > endDate) {
+            throw new ResourceAllocationException('INVALID_BUSINESS_DATE', 'Invalid business date', 422, 'The allocation end date must be on or after its start date.');
+          }
+
+          const group = await manager.getRepository(ResourceGroup).findOne({ where: { id: allocation.groupId } });
+          if (mode === 'reopen') {
+            if (!group?.active) throw this.invalidTransition('Reactivate the allocation group before reopening it.');
+            if (allocation.initiativeId) {
+              const initiative = await manager.getRepository(ResourceInitiative).findOne({ where: { id: allocation.initiativeId } });
+              if (!initiative?.active) throw this.invalidTransition('Reactivate the ITDM initiative before reopening this allocation.');
+            }
+          }
+
+          let person: ResourcePerson | null = null;
+          const personChanged = changes.personId !== undefined && changes.personId !== allocation.personId;
+          if (personChanged || mode === 'reopen') {
+            person = await manager.getRepository(ResourcePerson).findOne({ where: { id: changes.personId ?? allocation.personId } });
+            if (!person || !person.active || person.groupId !== allocation.groupId) {
+              fieldErrors.push({ path: 'personId', code: 'INVALID_REFERENCE', message: 'Choose an active person from the allocation group.' });
+            }
+          }
+
+          let profile: ResourceProfile | null | undefined;
+          if (vacation) {
+            if (changes.resourceProfileId) fieldErrors.push({ path: 'resourceProfileId', code: 'NOT_ALLOWED', message: 'Vacation does not use a resource profile.' });
+            profile = null;
+          } else {
+            const nextProfileId = changes.resourceProfileId === undefined ? allocation.resourceProfileId : changes.resourceProfileId;
+            const profileChanged = nextProfileId !== allocation.resourceProfileId;
+            if (!nextProfileId) {
+              fieldErrors.push({ path: 'resourceProfileId', code: 'REQUIRED', message: 'Choose an active resource profile.' });
+            } else if (profileChanged || mode === 'reopen') {
+              profile = await manager.getRepository(ResourceProfile).findOne({ where: { id: nextProfileId, groupId: allocation.groupId, active: true } });
+              if (!profile) fieldErrors.push({ path: 'resourceProfileId', code: 'INVALID_REFERENCE', message: 'Choose an active resource profile from the allocation group.' });
+            }
+          }
+
+          let weeklyHours = Number(allocation.weeklyHours);
+          if (vacation) {
+            if (changes.weeklyHours != null && Number(changes.weeklyHours) !== vacationWeeklyHours) {
+              fieldErrors.push({ path: 'weeklyHours', code: 'NOT_ALLOWED', message: 'Vacation always uses 40 weekly hours.' });
+            }
+            weeklyHours = vacationWeeklyHours;
+          } else if (changes.weeklyHours != null) {
+            weeklyHours = normalizeRequestedWeeklyHours(Number(changes.weeklyHours));
+          } else if (leavingVacation) {
+            fieldErrors.push({ path: 'weeklyHours', code: 'REQUIRED', message: 'Enter weekly hours for the new category.' });
+          }
+
+          let comment = allocation.comment;
+          if (vacation) {
+            if (changes.comment) fieldErrors.push({ path: 'comment', code: 'NOT_ALLOWED', message: 'Vacation does not use a description.' });
+            comment = null;
+          } else if (changes.comment !== undefined) {
+            comment = changes.comment;
+          }
+          if (!vacation && isOperationalAllocationCategory(nextCategory) && !comment) {
+            fieldErrors.push({ path: 'comment', code: 'REQUIRED', message: 'Describe the operational activity.' });
+          }
+          if (fieldErrors.length > 0) {
+            throw new ResourceAllocationException('VALIDATION_ERROR', 'Request validation failed', 400, 'One or more fields are invalid.', undefined, undefined, fieldErrors);
+          }
+
+          const keepsHeldState = !vacation && mode === 'update' && (allocation.state === 'SUSPENDED' || allocation.state === 'ALLOCATED_WITHOUT_ACTION');
+          const nextState: AllocationState = endDate < clock.businessDate
+            ? 'DONE'
+            : keepsHeldState
+              ? allocation.state as AllocationState
+              : startDate > clock.businessDate ? 'NOT_STARTED' : 'IN_PROGRESS';
+          if (enteringVacation && (allocation.state === 'SUSPENDED' || allocation.state === 'ALLOCATED_WITHOUT_ACTION') && !changes.confirmDerivedState) {
+            throw new ResourceAllocationException(
+              'DERIVED_STATE_CONFIRMATION_REQUIRED', 'Confirmation required', 422,
+              `Vacation cannot stay ${this.stateLabel(allocation.state as AllocationState).toLowerCase()}. Confirm that it becomes ${this.stateLabel(nextState).toLowerCase()} from its dates.`,
+            );
+          }
+
+          const fingerprint = (value: Record<string, unknown>) => JSON.stringify(value);
+          const unchanged = mode === 'update' && fingerprint({
+            personId: allocation.personId, profileId: allocation.resourceProfileId, category: allocation.category, comment: allocation.comment,
+            startDate: allocation.effectiveStartDate, endDate: allocation.effectiveEndDate, hours: Number(allocation.weeklyHours),
+            classification: allocation.classification, state: allocation.state,
+          }) === fingerprint({
+            personId: person && personChanged ? person.id : allocation.personId,
+            profileId: profile === undefined ? allocation.resourceProfileId : profile?.id ?? null,
+            category: nextCategory, comment, startDate, endDate, hours: weeklyHours,
+            classification: changes.classification !== undefined ? changes.classification : person && personChanged ? person.classification ?? null : allocation.classification,
+            state: nextState,
+          });
+          if (unchanged) throw this.validationError('Change at least one field before saving.');
+
+          const profileState = await this.currentResourceProfileState(manager, allocation.resourceProfileId);
+          const before = this.toResponse(this.rowFromEntity(allocation, currentState, clock.businessDate, profileState), actor);
+          const previousPersonId = allocation.personId;
+          if (person && personChanged) {
+            allocation.personId = person.id;
+            allocation.personSnapshot = { personId: person.id, displayName: person.displayName, role: person.role };
+            allocation.classification = person.classification ?? null;
+          }
+          if (changes.classification !== undefined) allocation.classification = changes.classification as ResourcePersonClassification | null;
+          if (profile !== undefined) {
+            allocation.resourceProfileId = profile?.id ?? null;
+            allocation.resourceProfileSnapshot = profile ? { id: profile.id, name: profile.name } : null;
+          }
+          allocation.category = nextCategory;
+          allocation.comment = comment;
+          allocation.effectiveStartDate = startDate;
+          allocation.effectiveEndDate = endDate;
+          allocation.weeklyHours = weeklyHours.toFixed(1);
+          if (nextState !== allocation.state) {
+            allocation.state = nextState;
+            allocation.stateEnteredAt = clock.now;
+          }
+          const saved = await manager.getRepository(ResourceAllocation).save(allocation);
+          const savedProfileState = await this.currentResourceProfileState(manager, saved.resourceProfileId);
+          const after = this.toResponse(this.rowFromEntity(saved, nextState, clock.businessDate, savedProfileState), actor);
+          await manager.getRepository(ResourceAllocationHistory).insert({
+            allocationId: saved.id,
+            actorSnapshot: { personId: actor.id, displayName: actor.displayName, role: actor.role },
+            action: mode === 'reopen' ? 'ALLOCATION_REOPENED' : 'ALLOCATION_UPDATED',
+            reason,
+            beforeSnapshot: before as never,
+            afterSnapshot: after as never,
+            correlationId: correlation,
+            occurredAt: clock.now,
+          });
+          await this.notifyAllocationMaintained(manager, saved, previousPersonId, actor.id, reason, mode, clock.now);
+          return after;
+        });
+      });
+    } catch (error) {
+      throw translateResourceAllocationDatabaseError(error, 'The Resource Allocation database is unavailable.');
+    }
+  }
+
+  private async notifyAllocationMaintained(
+    manager: EntityManager,
+    allocation: ResourceAllocation,
+    previousPersonId: string,
+    actorId: string,
+    reason: string,
+    mode: 'update' | 'reopen',
+    occurredAt: Date,
+  ): Promise<void> {
+    const requests = allocation.sourceRequestId
+      ? await manager.query('SELECT requester_id FROM resource_requests WHERE id = $1::uuid', [allocation.sourceRequestId]) as Array<{ requester_id: string }>
+      : [];
+    const requesterId = requests[0]?.requester_id ?? null;
+    const recipients = await manager.query(`
+      SELECT DISTINCT person.id::text AS id
+      FROM resource_people AS person
+      WHERE person.active = TRUE AND person.id <> $1::uuid
+        AND (person.id = $2::uuid OR person.id = $3::uuid OR ($4::uuid IS NOT NULL AND person.id = $4::uuid))
+      ORDER BY id
+    `, [actorId, allocation.personId, previousPersonId, requesterId]) as Array<{ id: string }>;
+    if (recipients.length === 0) return;
+    const subject = String(allocation.initiativeSnapshot?.code ?? allocationCategoryLabel(allocation.category) ?? 'the allocation');
+    await manager.getRepository(ResourceAllocationNotification).createQueryBuilder()
+      .insert()
+      .into(ResourceAllocationNotification)
+      .values(recipients.map(({ id }) => ({
+        recipientId: id,
+        sourceRequestId: allocation.sourceRequestId,
+        sourceAllocationId: allocation.sourceRequestId ? null : allocation.id,
+        eventCode: `ALLOCATION_${mode === 'reopen' ? 'REOPENED' : 'UPDATED'}_${allocation.version}`,
+        title: mode === 'reopen' ? 'Allocation reopened' : 'Allocation changed',
+        message: id === previousPersonId && previousPersonId !== allocation.personId
+          ? `The allocation for ${subject} was reassigned to someone else. Reason: ${reason}`
+          : `The allocation for ${subject} now runs ${allocation.effectiveStartDate} to ${allocation.effectiveEndDate} at ${Number(allocation.weeklyHours).toFixed(1)} weekly hours. Reason: ${reason}`,
+        createdAt: occurredAt,
+      })))
+      .orIgnore()
+      .execute();
   }
 
   /** Applies date-driven allocation states once per due allocation, using the database's São Paulo date. */
@@ -726,6 +1019,7 @@ export class ResourceAllocationService {
     reason: string,
     nextState: AllocationState,
     occurredAt: Date,
+    audience: 'LEADERS' | 'PERSON_AND_REQUESTER' | 'ALL' = 'ALL',
   ): Promise<void> {
     const requests = allocation.sourceRequestId
       ? await manager.query('SELECT requester_id FROM resource_requests WHERE id = $1::uuid', [allocation.sourceRequestId]) as Array<{ requester_id: string }>
@@ -737,17 +1031,19 @@ export class ResourceAllocationService {
       FROM resource_people AS person
       LEFT JOIN resource_groups AS team ON team.id = $1::uuid
       WHERE person.active = TRUE AND person.id <> $2::uuid AND (
-        person.id = $3::uuid OR ($4::uuid IS NOT NULL AND person.id = $4::uuid)
-        OR (person.role = 'ALLOCATION_MODERATOR' AND person.group_id = team.id)
-        OR (person.role = 'ALLOCATION_SUPERVISOR' AND (
-          person.covered_group_ids @> ARRAY[team.id]::uuid[] OR team.supervisor_id = person.id
-        ))
-        OR (person.role = 'ALLOCATION_MANAGER' AND (
-          person.covered_group_ids @> ARRAY[team.id]::uuid[] OR team.manager_id = person.id
+        ($5::boolean AND (person.id = $3::uuid OR ($4::uuid IS NOT NULL AND person.id = $4::uuid)))
+        OR ($6::boolean AND (
+          (person.role = 'ALLOCATION_MODERATOR' AND person.group_id = team.id)
+          OR (person.role = 'ALLOCATION_SUPERVISOR' AND (
+            person.covered_group_ids @> ARRAY[team.id]::uuid[] OR team.supervisor_id = person.id
+          ))
+          OR (person.role = 'ALLOCATION_MANAGER' AND (
+            person.covered_group_ids @> ARRAY[team.id]::uuid[] OR team.manager_id = person.id
+          ))
         ))
       )
       ORDER BY id
-    `, [allocation.groupId, actorId, allocation.personId, requesterId]) as Array<{ id: string }>;
+    `, [allocation.groupId, actorId, allocation.personId, requesterId, audience !== 'LEADERS', audience !== 'PERSON_AND_REQUESTER']) as Array<{ id: string }>;
     const titleState = this.stateLabel(nextState);
     const code = `ALLOCATION_${nextState}_${allocation.version}`;
     const sourceName = String(allocation.initiativeSnapshot?.code ?? allocationCategoryLabel(allocation.category) ?? 'the initiative');

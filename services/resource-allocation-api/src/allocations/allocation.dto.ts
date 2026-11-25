@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Matches, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Matches, Min } from 'class-validator';
 import { AllocationApprovalResponseDto } from '../approvals/approve-request.dto';
 import {
   AllocationHoursByStateDto,
@@ -9,7 +9,7 @@ import {
   CursorPageInfoDto,
   allocationStateValues,
 } from '../common/resource-allocation-contract.dto';
-import { allocationCategories, type AllocationCategory } from './allocation-category';
+import { allocationCategories, operationalAllocationCategories, type AllocationCategory, type OperationalAllocationCategory } from './allocation-category';
 
 export const allocationStates = allocationStateValues;
 export class CreateAllocationDto {
@@ -184,6 +184,94 @@ export class AllocationCommandDto {
   @MaxLength(2000)
   @Matches(/\S/, { message: 'reason must contain at least one non-space character.' })
   reason!: string;
+}
+
+export class ReopenAllocationDto {
+  @ApiProperty({ type: String, minLength: 1, maxLength: 2000, description: 'Justification recorded in the allocation history.' })
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MaxLength(2000)
+  @Matches(/\S/, { message: 'reason must contain at least one non-space character.' })
+  reason!: string;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid', description: 'Replacement person, active and in the same group.' })
+  @IsOptional()
+  @IsUUID()
+  personId?: string;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, description: 'Replacement active profile of the same group; never used for Vacation.' })
+  @IsOptional()
+  @IsUUID()
+  resourceProfileId?: string | null;
+
+  @ApiProperty({ type: String, format: 'date', description: 'New inclusive start date (America/Sao_Paulo).' })
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  startDate!: string;
+
+  @ApiProperty({ type: String, format: 'date', description: 'New inclusive end date (America/Sao_Paulo).' })
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  endDate!: string;
+}
+
+export class UpdateAllocationDto {
+  @ApiProperty({ type: String, minLength: 1, maxLength: 2000, description: 'Justification recorded in the allocation history.' })
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MaxLength(2000)
+  @Matches(/\S/, { message: 'reason must contain at least one non-space character.' })
+  reason!: string;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid', description: 'New person, active and in the same group; copies their current classification.' })
+  @IsOptional()
+  @IsUUID()
+  personId?: string;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, description: 'New active profile of the same group; not used for Vacation.' })
+  @IsOptional()
+  @IsUUID()
+  resourceProfileId?: string | null;
+
+  @ApiPropertyOptional({ enum: operationalAllocationCategories, description: 'Switch only among operational categories. Entering Vacation fixes 40 hours and removes the profile and description; leaving it needs profile, hours, and description.' })
+  @IsOptional()
+  @IsIn(operationalAllocationCategories)
+  category?: OperationalAllocationCategory;
+
+  @ApiPropertyOptional({ type: String, format: 'date' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  startDate?: string;
+
+  @ApiPropertyOptional({ type: String, format: 'date' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  endDate?: string;
+
+  @ApiPropertyOptional({ type: Number, minimum: 0.01, maximum: 40 })
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0.01)
+  @Max(40)
+  weeklyHours?: number;
+
+  @ApiPropertyOptional({ type: String, maxLength: 2000, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  comment?: string | null;
+
+  @ApiPropertyOptional({ enum: ['INTERNAL', 'THIRD_PARTY'], nullable: true, description: 'Admin-only explicit correction of the recorded classification; null means Unclassified.' })
+  @IsOptional()
+  @IsIn(['INTERNAL', 'THIRD_PARTY', null])
+  classification?: 'INTERNAL' | 'THIRD_PARTY' | null;
+
+  @ApiPropertyOptional({ type: Boolean, description: 'Must be true when a suspended or reserved allocation becomes Vacation and its state is derived from the dates.' })
+  @IsOptional()
+  @IsBoolean()
+  confirmDerivedState?: boolean;
 }
 
 export class AllocationViewDto extends AllocationApprovalResponseDto {

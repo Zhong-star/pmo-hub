@@ -247,3 +247,51 @@ export async function getInitiativeOptions(localUserId: string): Promise<Allocat
     return throwApiRequestError(error, AllocationRequestError);
   }
 }
+
+export type UpdateAllocationInput = ApiRequestBody<AllocationDetailPath, 'patch'>;
+export type ReopenAllocationInput = ApiRequestBody<'/api/resource-allocation/v1/allocations/{id}/reopenings', 'post'>;
+
+function writeHeaders(localUserId: string, version: number, idempotencyKey: string, correlationId: string) {
+  return {
+    ...headers(localUserId),
+    'If-Match': `"${version}"`,
+    'Idempotency-Key': idempotencyKey,
+    'X-Correlation-ID': correlationId,
+  };
+}
+
+export async function updateAllocation(
+  localUserId: string,
+  allocationId: string,
+  version: number,
+  input: UpdateAllocationInput,
+  idempotencyKey: string,
+  correlationId: string,
+): Promise<AllocationRecord> {
+  try {
+    const response = await api.patch<AllocationRecord>(`${API_ROOT}/allocations/${encodeURIComponent(allocationId)}`, input, {
+      headers: { ...writeHeaders(localUserId, version, idempotencyKey, correlationId), 'Content-Type': 'application/merge-patch+json' },
+    });
+    return response.data;
+  } catch (error) {
+    return throwApiRequestError(error, AllocationRequestError);
+  }
+}
+
+export async function reopenAllocation(
+  localUserId: string,
+  allocationId: string,
+  version: number,
+  input: ReopenAllocationInput,
+  idempotencyKey: string,
+  correlationId: string,
+): Promise<AllocationRecord> {
+  try {
+    const response = await api.post<AllocationRecord>(`${API_ROOT}/allocations/${encodeURIComponent(allocationId)}/reopenings`, input, {
+      headers: writeHeaders(localUserId, version, idempotencyKey, correlationId),
+    });
+    return response.data;
+  } catch (error) {
+    return throwApiRequestError(error, AllocationRequestError);
+  }
+}

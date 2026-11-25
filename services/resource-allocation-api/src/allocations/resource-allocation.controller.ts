@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Inject,
   Param,
+  Patch,
   ParseUUIDPipe,
   Post,
   Query,
@@ -14,6 +15,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiHeader,
@@ -33,6 +35,8 @@ import {
   AllocationCollectionResponseDto,
   AllocationCommandDto,
   CreateAllocationDto,
+  ReopenAllocationDto,
+  UpdateAllocationDto,
   AllocationGroupCollectionResponseDto,
   AllocationHistoryCollectionResponseDto,
   AllocationLoadQueryDto,
@@ -48,6 +52,8 @@ interface ResponseWithHeaders {
 const collectionQueryValidation = createValidationPipe(AllocationCollectionQueryDto);
 const loadQueryValidation = createValidationPipe(AllocationLoadQueryDto);
 const commandValidation = createValidationPipe(AllocationCommandDto);
+const updateValidation = createValidationPipe(UpdateAllocationDto);
+const reopenValidation = createValidationPipe(ReopenAllocationDto);
 const createAllocationValidation = createValidationPipe(CreateAllocationDto);
 
 @ApiTags('Tech Resource Allocations')
@@ -235,6 +241,52 @@ export class ResourceAllocationController {
     @Headers('x-correlation-id') correlationId: string | undefined, @Body(commandValidation) input: AllocationCommandDto,
     @Res({ passthrough: true }) response: ResponseWithHeaders) {
     return this.change(userId, id, 'complete', ifMatch, key, correlationId, input, response);
+  }
+
+  @Patch('allocations/:id')
+  @ApiOperation({ summary: 'Change the person, profile, operational category, dates, hours, or description of an open allocation' })
+  @ApiConsumes('application/merge-patch+json')
+  @ApiHeader({ name: 'If-Match', required: true, description: 'Strong ETag of the allocation version that was reviewed.' })
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiHeader({ name: 'X-Correlation-ID', required: false })
+  @ApiOkResponse({ type: AllocationViewDto, headers: { ETag: { description: 'Omitted on a replayed receipt.', schema: { type: 'string' } }, 'Idempotency-Replayed': { schema: { type: 'string' } } } })
+  @ApiBadRequestResponse({ description: 'A header, field, or field combination is invalid.' })
+  @ApiForbiddenResponse({ description: 'Only leadership in scope or an Admin can change an allocation; only an Admin can correct its classification.' })
+  @ApiNotFoundResponse({ description: 'The allocation was not found.' })
+  @ApiResponse({ status: 409, description: 'The idempotency key was reused with different content.' })
+  @ApiResponse({ status: 412, description: 'The allocation version changed.' })
+  @ApiUnprocessableEntityResponse({ description: 'The allocation is done or canceled, the category change crosses initiative and operational work, the dates are reversed, or the derived Vacation state needs confirmation.' })
+  async update(@Headers(localProfileHeader) userId: string | undefined, @Param('id', new ParseUUIDPipe()) id: string,
+    @Headers('if-match') ifMatch: string | undefined, @Headers('idempotency-key') key: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined, @Body(updateValidation) input: UpdateAllocationDto,
+    @Res({ passthrough: true }) response: ResponseWithHeaders) {
+    const result = await this.allocationService.updateAllocation(userId, id, ifMatch, key, correlationId, input);
+    if (result.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    else response.setHeader('ETag', `"${result.result.version}"`);
+    return result.result;
+  }
+
+  @Post('allocations/:id/reopenings')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reopen a done or canceled allocation with new dates (Admin only)' })
+  @ApiHeader({ name: 'If-Match', required: true })
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiHeader({ name: 'X-Correlation-ID', required: false })
+  @ApiOkResponse({ type: AllocationViewDto, headers: { ETag: { description: 'Omitted on a replayed receipt.', schema: { type: 'string' } }, 'Idempotency-Replayed': { schema: { type: 'string' } } } })
+  @ApiBadRequestResponse({ description: 'A header, reason, date, person, or profile is invalid.' })
+  @ApiForbiddenResponse({ description: 'Only an Admin can reopen an allocation.' })
+  @ApiNotFoundResponse({ description: 'The allocation was not found.' })
+  @ApiResponse({ status: 409, description: 'The idempotency key was reused with different content.' })
+  @ApiResponse({ status: 412, description: 'The allocation version changed.' })
+  @ApiUnprocessableEntityResponse({ description: 'The allocation is still open, or its group or ITDM must be reactivated first.' })
+  async reopen(@Headers(localProfileHeader) userId: string | undefined, @Param('id', new ParseUUIDPipe()) id: string,
+    @Headers('if-match') ifMatch: string | undefined, @Headers('idempotency-key') key: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined, @Body(reopenValidation) input: ReopenAllocationDto,
+    @Res({ passthrough: true }) response: ResponseWithHeaders) {
+    const result = await this.allocationService.reopenAllocation(userId, id, ifMatch, key, correlationId, input);
+    if (result.replayed) response.setHeader('Idempotency-Replayed', 'true');
+    else response.setHeader('ETag', `"${result.result.version}"`);
+    return result.result;
   }
 
   @Post('allocations/:id/cancellations')
