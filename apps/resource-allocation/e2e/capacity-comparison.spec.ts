@@ -124,3 +124,51 @@ test('captures the weekly comparison in both themes, desktop and narrow, and at 
   await page.evaluate(() => { document.body.style.zoom = '200%'; });
   await page.screenshot({ path: testInfo.outputPath('comparison-dark-zoom-200.png'), fullPage: true });
 });
+
+test('shows changed weekly figures after an allocation change made in the Allocations area', async ({ page }) => {
+  let planned = 20;
+  const allocationId = 'f9c6026c-4143-4d78-b5ba-07308b18cff7';
+  const record = () => ({
+    id: allocationId, requestId: null, source: 'SELF', category: 'TRAINING', classification: 'INTERNAL', comment: 'Course',
+    person: { personId: 'm1', displayName: 'Casey Member' }, group: { id: groupId, name: 'Platform Engineering' }, initiative: null,
+    resourceProfile: { id: 'p1', name: 'Cloud Engineering', active: true },
+    startDate: '2099-01-04', endDate: '2099-01-15', approvedPeriod: { startDate: '2099-01-04', endDate: '2099-01-15' },
+    weeklyHours: planned, state: 'NOT_STARTED', approvedAt: '2026-11-24T14:30:00.000Z', version: planned === 20 ? 1 : 2,
+    availableActions: ['SUSPEND', 'RESERVE', 'CANCEL'],
+  });
+  await open(page, (url) => {
+    const start = url.searchParams.get('weekStart')!;
+    const base = week(start, start);
+    base.groups[0].profiles[0].classifications[0] = { classification: 'INTERNAL', ...figures(planned, 40, true, planned / 40 * 100) };
+    return { businessDate: '2026-11-25', vacationIncluded: true, weeks: [base] };
+  });
+  await page.route(`${apiRoot}/allocation-load**`, (route) => route.fulfill({ json: { date: '2026-11-25', items: [], page: emptyPage } }));
+  await page.route(`${apiRoot}/allocation-groups`, (route) => route.fulfill({ json: { items: [{ id: groupId, name: 'Platform Engineering' }] } }));
+  await page.route(`${apiRoot}/people**`, (route) => route.fulfill({ json: { items: [{ id: 'm1', displayName: 'Casey Member', groupId }], page: emptyPage } }));
+  await page.route(`${apiRoot}/resource-profiles**`, (route) => route.fulfill({ json: { items: [{ id: 'p1', name: 'Cloud Engineering', groupId }], page: emptyPage } }));
+  await page.route(`${apiRoot}/allocations**`, async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'PATCH') {
+      planned = 30;
+      return route.fulfill({ json: record(), headers: { ETag: '"2"' } });
+    }
+    if (path.endsWith('/history')) return route.fulfill({ json: { items: [], page: emptyPage } });
+    if (path.endsWith(allocationId)) return route.fulfill({ json: record(), headers: { ETag: `"${record().version}"` } });
+    return route.fulfill({ json: { items: [record()], page: emptyPage } });
+  });
+  await expect(page.getByRole('row', { name: /Cloud Engineering \(inactive profile\) · Internal/ })).toContainText('50.0%');
+
+  await page.getByRole('link', { name: 'Allocations and capacity' }).click();
+  await page.getByRole('button', { name: /View allocation Training/ }).click();
+  await page.getByRole('button', { name: 'Change allocation' }).click();
+  const form = page.getByRole('form', { name: 'Change allocation' });
+  await form.getByLabel('Weekly hours').fill('30');
+  await form.getByLabel('Reason for this change').fill('More work');
+  await form.getByRole('button', { name: 'Save change' }).click();
+  await expect(page.getByText('The allocation was changed.')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Capacity', exact: true }).click();
+  await expect(page.getByRole('row', { name: /Cloud Engineering \(inactive profile\) · Internal/ })).toContainText('75.0%');
+  await expect(page.getByText('not a closed accounting period')).toBeVisible();
+});
