@@ -23,13 +23,13 @@
 }
 
 .workspace-sidebar {
-  padding: 24px 12px;
-  background: var(--rule);
+  padding: 16px 10px;
+  background: var(--page-background);
   border-inline-end: 1px solid var(--surface-border, var(--border));
 }
 
 .workspace-panel {
-  padding: clamp(20px, 3vw, 48px);
+  padding: clamp(16px, 2.5vw, 32px);
   background: var(--surface);
 }
 
@@ -44,23 +44,26 @@
   align-items: center;
   min-height: 44px;
   padding: 8px 12px;
-  border-radius: 8px;
-  color: var(--link);
+  border-radius: var(--control-radius);
+  color: var(--muted);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .workspace-navigation a {
   text-decoration: none;
 }
 
-.workspace-navigation a:hover,
-.workspace-navigation a[aria-current='page'] {
-  background: var(--surface);
+.workspace-navigation a:hover {
+  color: var(--text);
+  background: var(--surface-muted);
 }
 
 .workspace-navigation a[aria-current='page'] {
-  box-shadow: inset 3px 0 var(--link);
+  color: var(--text);
+  background: var(--surface-muted);
+  font-weight: 600;
+  box-shadow: inset 2px 0 var(--link);
 }
 
 .workspace-navigation a:focus-visible,

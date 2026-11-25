@@ -262,7 +262,7 @@ test('uses reasons to escalate and cancel when the server authorizes each action
   const escalationForm = page.getByRole('form', { name: `Escalate exception ${itemId}` });
   await escalationForm.getByLabel('Reason').fill('The requester supplied a revised scope for review.');
   await escalationForm.getByRole('button', { name: 'Confirm escalation' }).click();
-  await expect(page.getByRole('article', { name: /ITDM-66/ })).toContainText('ESCALATION');
+  await expect(page.getByRole('article', { name: /ITDM-66/ })).toContainText('Escalation');
 
   await page.getByRole('button', { name: 'Cancel request' }).click();
   const cancellationForm = page.getByRole('form', { name: `Cancel exception ${itemId}` });

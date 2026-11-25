@@ -11,6 +11,7 @@ import { invalidateRequestSurfaces } from '../requestSurfaces';
 import { businessDate, formatBusinessTimestamp } from '../timeAndHours';
 import { requestResponsibleLabel } from '../revalidation';
 import { useNavigationFormProtection } from '../NavigationProtection';
+import { enumLabel } from '../labels';
 
 export type QueueFilterValues = Omit<RequestQueueFilters, 'decisionState'>;
 
@@ -189,7 +190,6 @@ export function useQueueActionRunner(localUserId: string, onAccessDenied: () => 
 
 export function RequestQueueCard({
   item,
-  queueLabel,
   highlighted,
   children,
 }: {
@@ -206,11 +206,10 @@ export function RequestQueueCard({
     <article id={`resource-request-${item.id}`} tabIndex={-1} className={`request-queue-card${highlighted ? ' request-queue-card-highlighted' : ''}`} aria-labelledby={`request-title-${item.id}`}>
       <div className="request-queue-card-heading">
         <div>
-          <p className="eyebrow">{queueLabel}</p>
           <h3 id={`request-title-${item.id}`}>{conditions.initiativeCode ?? 'ITDM'} — {conditions.initiativeName ?? 'Resource request'}</h3>
           <p className="request-queue-requester">Requested by {item.requester.displayName ?? 'Unknown requester'}</p>
         </div>
-        <span className="status-badge">{item.decisionState.replaceAll('_', ' ')}</span>
+        <span className="status-badge">{enumLabel(item.decisionState)}</span>
       </div>
 
       <dl className="request-queue-details">

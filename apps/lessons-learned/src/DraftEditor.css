@@ -5,7 +5,7 @@
   margin: auto;
   overflow-y: auto;
   border: 1px solid var(--surface-border);
-  border-radius: 16px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 22px 64px rgba(9, 30, 66, .3);
@@ -36,7 +36,7 @@
   height: 44px;
   place-items: center;
   border: 1px solid var(--surface-border);
-  border-radius: 9px;
+  border-radius: var(--control-radius);
   background: var(--theme-control-background);
   color: var(--theme-control-text);
   cursor: pointer;
@@ -52,7 +52,7 @@
   margin: 0;
   padding: 12px;
   border: 1px solid var(--surface-border);
-  border-radius: 9px;
+  border-radius: var(--control-radius);
   background: var(--theme-control-background);
 }
 .draft-editor-catalog-status p { margin: 0; }
@@ -60,7 +60,7 @@
   min-height: 44px;
   padding: 7px 11px;
   border: 1px solid var(--surface-border);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
@@ -79,7 +79,7 @@
   min-height: 44px;
   padding: 10px 12px;
   border: 1px solid var(--surface-border);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text);
   font: inherit;
@@ -110,7 +110,7 @@
   min-height: 44px;
   padding: 9px 14px;
   border: 1px solid var(--surface-border);
-  border-radius: 9px;
+  border-radius: var(--control-radius);
   cursor: pointer;
   font: inherit;
   font-size: 14px;
@@ -142,7 +142,7 @@
 .return-guidance-notice span { overflow-wrap: anywhere; }
 
 @media (max-width: 560px) {
-  .draft-editor-dialog { border-radius: 12px; }
+  .draft-editor-dialog { border-radius: var(--card-radius); }
   .draft-editor-catalog-status { align-items: flex-start; flex-direction: column; }
   .draft-editor-grid { grid-template-columns: minmax(0, 1fr); }
   .draft-editor-primary { margin-left: 0; }
@@ -204,7 +204,7 @@
 
 .comment-thread {
   border: 1px solid var(--surface-border);
-  border-radius: 0.5rem;
+  border-radius: var(--control-radius);
   padding: 0.85rem;
   background: var(--surface);
   display: grid;
@@ -243,7 +243,7 @@
 .comment-moderation-audit {
   border: 1px solid var(--warning-border, var(--surface-border));
   background: var(--warning-background, transparent);
-  border-radius: 0.4rem;
+  border-radius: var(--control-radius);
   padding: 0.6rem 0.75rem;
   font-size: 0.875rem;
   display: grid;

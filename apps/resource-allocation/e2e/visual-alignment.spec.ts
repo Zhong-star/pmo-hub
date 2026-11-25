@@ -278,7 +278,7 @@ test('keeps all six areas readable in both themes and reflows for keyboard and n
       });
       expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewportWidth);
       expect(layout.panelWidth).toBeGreaterThan(layout.viewportWidth * 0.7);
-      expect(layout.panelBackground).toBe(theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(28, 43, 66)');
+      expect(layout.panelBackground).toBe(theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(26, 28, 31)');
       await capture(page, `desktop-${theme}-${area.page}`);
 
       if (area.page === 'requests') {

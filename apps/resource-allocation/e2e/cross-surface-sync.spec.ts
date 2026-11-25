@@ -936,7 +936,7 @@ test('updates Exceptions, Revalidation queues, Submissions, and Notifications im
 
   await navigateToArea(page, 'request-queues');
   await queuesRegion.getByRole('tab', { name: 'Admin exceptions' }).click();
-  await expect(queuesRegion.getByRole('article', { name: /ITDM-10/ })).toContainText('PRE N3');
+  await expect(queuesRegion.getByRole('article', { name: /ITDM-10/ })).toContainText('Pre N3');
   await navigateToArea(page, 'notifications');
   await expect(notificationsRegion.getByRole('heading', { name: 'Denial contested into Pre N3' })).toBeVisible();
   await navigateToArea(page, 'new-request');
@@ -1072,7 +1072,7 @@ test('updates Requests and Notifications immediately without reload when an allo
   const allocationsRegion = page.getByRole('region', { name: 'Allocations and capacity' });
   const notificationsRegion = page.getByRole('region', { name: 'Notifications' });
 
-  await expect(requestDetail.getByRole('region', { name: 'Approved allocation' })).toContainText('IN PROGRESS');
+  await expect(requestDetail.getByRole('region', { name: 'Approved allocation' })).toContainText('In progress');
   await navigateToArea(page, 'allocations');
   await expect(allocationsRegion.getByRole('row', { name: /Alex Engineer/ })).toContainText('20 hours/week');
 
@@ -1085,7 +1085,7 @@ test('updates Requests and Notifications immediately without reload when an allo
   await expect(allocDetail).toContainText('Suspended');
   await navigateToArea(page, 'requests');
   await page.getByRole('button', { name: new RegExp(requestId) }).click();
-  await expect(requestDetail.getByRole('region', { name: 'Approved allocation' })).toContainText('SUSPENDED');
+  await expect(requestDetail.getByRole('region', { name: 'Approved allocation' })).toContainText('Suspended');
   await navigateToArea(page, 'notifications');
   await expect(notificationsRegion.getByRole('heading', { name: 'Allocation suspended' })).toBeVisible();
   expect(state.accessCount).toBe(1);

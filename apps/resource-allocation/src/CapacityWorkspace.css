@@ -214,3 +214,10 @@
   .capacity-compare-controls label, .capacity-compare-nav { width: 100%; }
   .capacity-compare-nav button { flex: 1; }
 }
+
+/* Capacity sections follow the same single-border direction as the other inner cards. */
+.capacity-filters,
+.capacity-editor,
+.capacity-list-panel,
+.capacity-history-panel,
+.capacity-compare { box-shadow: none; }

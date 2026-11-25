@@ -632,7 +632,6 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
       <div id="new-request-batch" className="submission-panel" aria-labelledby="new-submission-heading">
         <div className="submission-panel-heading">
           <div>
-            <p className="eyebrow">Request capacity</p>
             <h2 id="new-submission-heading">New request batch</h2>
             <p className="supporting-copy">Prepare up to 100 request lines, review the final hours, then send them together.</p>
           </div>

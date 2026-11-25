@@ -22,6 +22,7 @@ import {
   type ResourceAllocationRole,
   type ResourcePersonClassification,
 } from './administrationApi';
+import { roleLabel } from './labels';
 
 interface AdministrationProps {
   localUserId: string;
@@ -287,7 +288,6 @@ function Administration({ localUserId, onAccessDenied }: AdministrationProps) {
     <section className="administration-card" aria-labelledby="administration-title">
       <div className="administration-heading">
         <div>
-          <p className="eyebrow">Admin workspace</p>
           <h2 id="administration-title">Administration</h2>
           <p className="supporting-copy">Manage people, groups, resource profiles, and initiatives.</p>
         </div>
@@ -467,7 +467,7 @@ function RecordTable({
                 return (
                   <tr key={person.id}>
                     <td><strong>{person.displayName}</strong><span>{person.email}</span></td>
-                    <td>{person.role.replace('ALLOCATION_', '').replaceAll('_', ' ')}</td>
+                    <td>{roleLabel(person.role)}</td>
                     <td>{classificationLabel(person.classification)}</td>
                     <td>{groupDetails.length ? groupDetails.join(' · ') : 'None'}</td>
                     <td>{activeBadge(person.active)}</td>

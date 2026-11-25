@@ -2,6 +2,7 @@ import { hasNonBlankText } from './formValidation';
 import { useForm } from 'react-hook-form';
 import type { RequestQueueItem } from './requestQueueApi';
 import { useNavigationFormProtection } from './NavigationProtection';
+import { enumLabel } from './labels';
 
 interface ExceptionStageActionProps {
   item: RequestQueueItem;
@@ -23,7 +24,7 @@ export function ExceptionStageAction({ item, action, disabled, open, onToggle, o
   const progressLabel = action === 'escalate' ? 'Escalating…' : 'Cancelling…';
   const copy = action === 'escalate'
     ? 'This explicitly moves the request from Pre N3 to Escalation. It will remain open for Admin resolution.'
-    : `Cancellation is final. The request history will remain available. Current stage: ${item.decisionState.replaceAll('_', ' ')}.`;
+    : `Cancellation is final. The request history will remain available. Current stage: ${enumLabel(item.decisionState)}.`;
 
   function toggleAction() {
     if (!open) {
