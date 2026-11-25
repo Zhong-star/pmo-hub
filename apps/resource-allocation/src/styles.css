@@ -902,3 +902,9 @@ h1 {
   .allocation-heading-actions { justify-content: stretch; }
   .allocation-heading-actions button { flex: 1; }
 }
+
+.allocation-history-changes { grid-column: 1 / -1; display: grid; gap: 3px; margin: 4px 0 0; padding-left: 18px; color: var(--text-body); font-size: 12px; }
+.allocation-state-preview { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--surface); color: var(--text-body); font-size: 13px; }
+.allocation-confirm-derived { display: flex; align-items: flex-start; gap: 10px; color: var(--text-body); font-size: 13px; line-height: 1.45; }
+.allocation-confirm-derived input { margin-top: 3px; }
+.allocation-maintenance-form h4:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }

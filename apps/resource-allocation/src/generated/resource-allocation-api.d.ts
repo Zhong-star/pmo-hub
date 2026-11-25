@@ -814,7 +814,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Change the person, profile, operational category, dates, hours, or description of an open allocation */
+        patch: operations["ResourceAllocationController_update"];
         trace?: never;
     };
     "/api/resource-allocation/v1/allocation-load": {
@@ -930,6 +931,23 @@ export interface paths {
         put?: never;
         /** Complete an allocation that has started */
         post: operations["ResourceAllocationController_complete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resource-allocation/v1/allocations/{id}/reopenings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reopen a done or canceled allocation with new dates (Admin only) */
+        post: operations["ResourceAllocationController_reopen"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2031,6 +2049,62 @@ export interface components {
         };
         AllocationCommandDto: {
             reason: string;
+        };
+        UpdateAllocationDto: {
+            /** @description Justification recorded in the allocation history. */
+            reason: string;
+            /**
+             * Format: uuid
+             * @description New person, active and in the same group; copies their current classification.
+             */
+            personId?: string;
+            /**
+             * Format: uuid
+             * @description New active profile of the same group; not used for Vacation.
+             */
+            resourceProfileId?: string | null;
+            /**
+             * @description Switch only among operational categories. Entering Vacation fixes 40 hours and removes the profile and description; leaving it needs profile, hours, and description.
+             * @enum {string}
+             */
+            category?: "ROUTINE_SUPPORT" | "TRAINING" | "INTERNAL_ACTIVITIES" | "VACATION";
+            /** Format: date */
+            startDate?: string;
+            /** Format: date */
+            endDate?: string;
+            weeklyHours?: number;
+            comment?: string | null;
+            /**
+             * @description Admin-only explicit correction of the recorded classification; null means Unclassified.
+             * @enum {string|null}
+             */
+            classification?: "INTERNAL" | "THIRD_PARTY" | null;
+            /** @description Must be true when a suspended or reserved allocation becomes Vacation and its state is derived from the dates. */
+            confirmDerivedState?: boolean;
+        };
+        ReopenAllocationDto: {
+            /** @description Justification recorded in the allocation history. */
+            reason: string;
+            /**
+             * Format: uuid
+             * @description Replacement person, active and in the same group.
+             */
+            personId?: string;
+            /**
+             * Format: uuid
+             * @description Replacement active profile of the same group; never used for Vacation.
+             */
+            resourceProfileId?: string | null;
+            /**
+             * Format: date
+             * @description New inclusive start date (America/Sao_Paulo).
+             */
+            startDate: string;
+            /**
+             * Format: date
+             * @description New inclusive end date (America/Sao_Paulo).
+             */
+            endDate: string;
         };
         CapacityProfileDto: {
             /** Format: uuid */
@@ -6847,6 +6921,112 @@ export interface operations {
             };
         };
     };
+    ResourceAllocationController_update: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Correlation-ID"?: string;
+                "Idempotency-Key": string;
+                /** @description Strong ETag of the allocation version that was reviewed. */
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["UpdateAllocationDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    /** @description Omitted on a replayed receipt. */
+                    ETag?: string;
+                    "Idempotency-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllocationViewDto"];
+                };
+            };
+            /** @description A header, field, or field combination is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description Only leadership in scope or an Admin can change an allocation; only an Admin can correct its classification. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The idempotency key was reused with different content. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The allocation version changed. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The allocation is done or canceled, the category change crosses initiative and operational work, the dates are reversed, or the derived Vacation state needs confirmation. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
     ResourceAllocationController_load: {
         parameters: {
             query: {
@@ -7485,6 +7665,111 @@ export interface operations {
                 };
             };
             /** @description A future or closed allocation cannot be completed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description An unexpected server error occurred. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The Resource Allocation database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+        };
+    };
+    ResourceAllocationController_reopen: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Correlation-ID"?: string;
+                "Idempotency-Key": string;
+                "If-Match": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReopenAllocationDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    /** @description Omitted on a replayed receipt. */
+                    ETag?: string;
+                    "Idempotency-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllocationViewDto"];
+                };
+            };
+            /** @description A header, reason, date, person, or profile is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description A local Hub profile is required. */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description Only an Admin can reopen an allocation. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The idempotency key was reused with different content. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The allocation version changed. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ResourceAllocationProblemDto"];
+                };
+            };
+            /** @description The allocation is still open, or its group or ITDM must be reactivated first. */
             422: {
                 headers: {
                     [name: string]: unknown;
