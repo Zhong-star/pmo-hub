@@ -67,7 +67,7 @@ export interface WeekComparison {
 }
 
 const hoursPerFteDay = 8;
-const classifications: Classification[] = ['INTERNAL', 'THIRD_PARTY'];
+const allClassifications: Classification[] = ['INTERNAL', 'THIRD_PARTY'];
 
 export function addDays(date: string, days: number): string {
   const value = new Date(`${date}T00:00:00.000Z`);
@@ -77,6 +77,12 @@ export function addDays(date: string, days: number): string {
 
 export function isMonday(date: string): boolean {
   return new Date(`${date}T00:00:00.000Z`).getUTCDay() === 1;
+}
+
+/** Number of whole weeks between two Mondays, inclusive of both. */
+export function weekSpan(firstMonday: string, lastMonday: string): number {
+  const days = (Date.parse(`${lastMonday}T00:00:00.000Z`) - Date.parse(`${firstMonday}T00:00:00.000Z`)) / 86_400_000;
+  return Math.floor(days / 7) + 1;
 }
 
 export function mondayOf(date: string): string {
@@ -135,6 +141,7 @@ export function compareWeeks(
   allocations: ComparisonAllocation[],
   capacities: ComparisonCapacity[],
   groupIds: string[],
+  classifications: Classification[] = allClassifications,
 ): WeekComparison[] {
   return weekStarts.map((weekStart) => {
     const weekEnd = addDays(weekStart, 6);

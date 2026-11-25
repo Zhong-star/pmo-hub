@@ -8807,7 +8807,7 @@
             "name": "classification",
             "required": false,
             "in": "query",
-            "description": "Limits capacity and load to one classification; Unclassified load and vacation are then omitted.",
+            "description": "Limits capacity, load, and totals to one classification; Unclassified load and vacation are then omitted.",
             "schema": {
               "type": "string",
               "enum": [
@@ -13249,6 +13249,10 @@
             "format": "date",
             "description": "Current business date in America/Sao_Paulo."
           },
+          "vacationIncluded": {
+            "type": "boolean",
+            "description": "False when a profile or classification filter is applied: Vacation has neither, so vacation hours are not reported."
+          },
           "weeks": {
             "type": "array",
             "items": {
@@ -13258,6 +13262,7 @@
         },
         "required": [
           "businessDate",
+          "vacationIncluded",
           "weeks"
         ]
       },

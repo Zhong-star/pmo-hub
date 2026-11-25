@@ -2131,6 +2131,8 @@ export interface components {
              * @description Current business date in America/Sao_Paulo.
              */
             businessDate: string;
+            /** @description False when a profile or classification filter is applied: Vacation has neither, so vacation hours are not reported. */
+            vacationIncluded: boolean;
             weeks: components["schemas"]["CapacityComparisonWeekDto"][];
         };
         CapacityListItemDto: {
@@ -7763,7 +7765,7 @@ export interface operations {
                 weekEnd?: string;
                 groupId?: string;
                 resourceProfileId?: string;
-                /** @description Limits capacity and load to one classification; Unclassified load and vacation are then omitted. */
+                /** @description Limits capacity, load, and totals to one classification; Unclassified load and vacation are then omitted. */
                 classification?: "INTERNAL" | "THIRD_PARTY";
             };
             header?: never;

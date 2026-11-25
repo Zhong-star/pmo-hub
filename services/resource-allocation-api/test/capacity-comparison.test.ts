@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareWeeks, mondayOf, type ComparisonAllocation, type ComparisonCapacity } from '../src/capacities/capacity-comparison';
+import { compareWeeks, mondayOf, weekSpan, type ComparisonAllocation, type ComparisonCapacity } from '../src/capacities/capacity-comparison';
 
 const group = 'group-a';
 const profile = 'profile-a';
@@ -78,6 +78,33 @@ describe('weekly capacity comparison', () => {
     ], [capacity(), capacity({ classification: 'THIRD_PARTY', fte: 0 })], [group]);
     expect(week.groups[0]).toMatchObject({ vacationHours: 16 });
     expect(week.groups[0].profiles[0].total).toMatchObject({ plannedHours: 20, capacityHours: 40, utilizationPercent: 50 });
+  });
+
+  it('limits totals to the filtered classification', () => {
+    const [week] = compareWeeks([monday], [allocation({ weeklyHours: 20 })], [capacity()], [group], ['INTERNAL']);
+    expect(week.groups[0].profiles[0].classifications.map((row) => row.classification)).toEqual(['INTERNAL']);
+    expect(week.groups[0].profiles[0].total).toMatchObject({ complete: true, utilizationPercent: 50 });
+    expect(week.total).toMatchObject({ complete: true, utilizationPercent: 50 });
+  });
+
+  it('keeps group and week totals without a percentage when Unclassified load exists, and mixes zero with known capacity', () => {
+    const [week] = compareWeeks([monday], [
+      allocation({ classification: null, weeklyHours: 5 }),
+      allocation({ resourceProfileId: 'profile-b', weeklyHours: 10 }),
+    ], [
+      capacity(), capacity({ classification: 'THIRD_PARTY' }),
+      capacity({ resourceProfileId: 'profile-b', fte: 0 }), capacity({ resourceProfileId: 'profile-b', classification: 'THIRD_PARTY', fte: 1 }),
+    ], [group]);
+    expect(week.groups[0].total).toMatchObject({ plannedHours: 15, capacityHours: 120, complete: false, utilizationPercent: null });
+    expect(week.total.utilizationPercent).toBeNull();
+    const profileB = week.groups[0].profiles.find((row) => row.resourceProfileId === 'profile-b')!;
+    expect(profileB.total).toMatchObject({ plannedHours: 10, capacityHours: 40, complete: true, utilizationPercent: 25 });
+  });
+
+  it('spans weeks across a year boundary', () => {
+    expect(weekSpan('2026-12-28', '2027-01-04')).toBe(2);
+    const weeks = compareWeeks(['2026-12-28', '2027-01-04'], [allocation({ startDate: '2026-12-31', endDate: '2027-01-05' })], [], [group]);
+    expect(weeks.map((item) => item.groups[0]?.profiles[0]?.total.plannedHours)).toEqual([16, 16]);
   });
 
   it('finds the Monday of any date', () => {

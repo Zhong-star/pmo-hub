@@ -42,7 +42,7 @@ function capacityText(figures: CapacityComparisonFigures): string {
 
 function utilizationText(figures: CapacityComparisonFigures): string {
   if (figures.utilizationPercent !== null) return `${oneDecimal.format(figures.utilizationPercent)}%`;
-  if (figures.capacityHours === null) return 'No percentage';
+  if (figures.capacityHours === null) return 'No percentage (not configured)';
   if (!figures.complete) return 'Incomplete';
   return 'No percentage (zero capacity)';
 }
@@ -66,7 +66,7 @@ function FigureCells({ figures }: { figures: CapacityComparisonFigures }) {
   );
 }
 
-function WeekTable({ week }: { week: CapacityComparisonWeek }) {
+function WeekTable({ week, vacationIncluded }: { week: CapacityComparisonWeek; vacationIncluded: boolean }) {
   const caption = `Week of ${formatCalendarDate(week.weekStart)} – ${formatCalendarDate(week.weekEnd)}`;
   return (
     <section className="capacity-compare-week" aria-label={caption}>
@@ -97,7 +97,7 @@ function WeekTable({ week }: { week: CapacityComparisonWeek }) {
                 ))}
                 <tr className="capacity-compare-note">
                   <th scope="row">Vacation · {group.group.name}</th>
-                  <td colSpan={4}>{group.vacationHours > 0 ? `${hours(group.vacationHours)} (not deducted from capacity)` : 'None'}</td>
+                  <td colSpan={4}>{!vacationIncluded ? 'Not shown with a profile or classification filter' : group.vacationHours > 0 ? `${hours(group.vacationHours)} (not deducted from capacity)` : 'None'}</td>
                 </tr>
               </tbody>
             ))}
@@ -162,7 +162,7 @@ export function CapacityComparison({ localUserId, filters, onAccessDenied }: Cap
       <div className="capacity-compare-controls">
         <label>
           <span>First week (Monday)</span>
-          <input type="date" value={weekStart} step={7} onChange={(event) => event.target.value && setWeekStart(mondayOf(event.target.value))} />
+          <input type="date" value={weekStart} min="1900-01-01" max="9998-12-31" step={7} onChange={(event) => event.target.value && event.target.value <= '9998-12-31' && setWeekStart(mondayOf(event.target.value))} />
         </label>
         <label>
           <span>Weeks</span>
@@ -183,7 +183,7 @@ export function CapacityComparison({ localUserId, filters, onAccessDenied }: Cap
           <button type="button" className="secondary-button" onClick={() => void query.refetch()} disabled={query.isFetching}>Try again</button>
         </div>
       )}
-      {query.isSuccess && query.data.weeks.map((week) => <WeekTable key={week.weekStart} week={week} />)}
+      {query.isSuccess && query.data.weeks.map((week) => <WeekTable key={week.weekStart} week={week} vacationIncluded={query.data.vacationIncluded} />)}
       <p className="capacity-compare-legend">
         “Incomplete” means some weekdays, a classification, or Unclassified load lack capacity, so no percentage is shown; known values stay visible.
         Utilization above 100% is shown without blocking or alerts.

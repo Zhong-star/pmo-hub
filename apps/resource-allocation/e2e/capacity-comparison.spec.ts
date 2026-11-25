@@ -59,7 +59,7 @@ test('shows the current week with incomplete, unclassified, inactive, vacation, 
   const queries: URL[] = [];
   await open(page, (url) => {
     queries.push(url);
-    return { businessDate: '2026-11-25', weeks: [week(url.searchParams.get('weekStart')!, '2026-11-29')] };
+    return { businessDate: '2026-11-25', vacationIncluded: true, weeks: [week(url.searchParams.get('weekStart')!, '2026-11-29')] };
   });
   const table = page.getByRole('table');
   await expect(table).toBeVisible();
@@ -80,7 +80,7 @@ test('moves between weeks, requests a range, applies filters, and retries after 
     queries.push(url);
     if (fail) return 'error';
     const start = url.searchParams.get('weekStart')!;
-    return { businessDate: '2026-11-25', weeks: [week(start, start)] };
+    return { businessDate: '2026-11-25', vacationIncluded: !url.searchParams.get('classification'), weeks: [week(start, start)] };
   });
   await expect(page.getByRole('table')).toBeVisible();
   const first = queries.at(-1)!.searchParams.get('weekStart')!;
@@ -91,6 +91,7 @@ test('moves between weeks, requests a range, applies filters, and retries after 
   await expect.poll(() => queries.at(-1)!.searchParams.get('weekEnd')).not.toBe(first);
   await page.getByLabel('Classification').first().selectOption('INTERNAL');
   await expect.poll(() => queries.at(-1)!.searchParams.get('classification')).toBe('INTERNAL');
+  await expect(page.getByRole('row', { name: /Vacation · Platform Engineering/ })).toContainText('Not shown with a profile or classification filter');
 
   fail = true;
   await page.getByLabel('Weeks').selectOption('2');
@@ -101,7 +102,7 @@ test('moves between weeks, requests a range, applies filters, and retries after 
 });
 
 test('captures the weekly comparison in both themes, desktop and narrow, and at 200% zoom', async ({ page }, testInfo) => {
-  await open(page, (url) => ({ businessDate: '2026-11-25', weeks: [week(url.searchParams.get('weekStart')!, '2026-11-29')] }));
+  await open(page, (url) => ({ businessDate: '2026-11-25', vacationIncluded: true, weeks: [week(url.searchParams.get('weekStart')!, '2026-11-29')] }));
   await expect(page.getByRole('table')).toBeVisible();
   await page.getByRole('button', { name: 'Previous week' }).focus();
   await page.keyboard.press('Tab');

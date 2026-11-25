@@ -203,7 +203,7 @@ export class CapacityComparisonQueryDto {
   @IsUUID()
   resourceProfileId?: string;
 
-  @ApiPropertyOptional({ enum: CapacityClassification, description: 'Limits capacity and load to one classification; Unclassified load and vacation are then omitted.' })
+  @ApiPropertyOptional({ enum: CapacityClassification, description: 'Limits capacity, load, and totals to one classification; Unclassified load and vacation are then omitted.' })
   @IsOptional()
   @IsEnum(CapacityClassification)
   classification?: CapacityClassification;
@@ -246,5 +246,6 @@ export class CapacityComparisonWeekDto {
 
 export class CapacityComparisonResponseDto {
   @ApiProperty({ type: String, format: 'date', description: 'Current business date in America/Sao_Paulo.' }) businessDate!: string;
+  @ApiProperty({ type: Boolean, description: 'False when a profile or classification filter is applied: Vacation has neither, so vacation hours are not reported.' }) vacationIncluded!: boolean;
   @ApiProperty({ type: () => CapacityComparisonWeekDto, isArray: true }) weeks!: CapacityComparisonWeekDto[];
 }

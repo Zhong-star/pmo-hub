@@ -139,10 +139,12 @@ describe('Tech Resource Allocation weekly capacity comparison (#99)', () => {
     const thirdParty = group.profiles[0].classifications.find((row: { classification: string }) => row.classification === 'THIRD_PARTY');
     expect(thirdParty).toMatchObject({ capacityHours: 0, complete: true, utilizationPercent: null });
 
+    const endedSuspension = await allocate(f.admin, f.internal, f.profile.id, '2001-01-01', '2001-01-05', 5);
+    await dataSource!.query("UPDATE resource_allocations SET state = 'SUSPENDED' WHERE id = $1::uuid", [endedSuspension.body.id]);
     const past = await allocate(f.admin, f.internal, f.profile.id, '2001-01-01', '2001-01-05', 10);
     expect(past.body.state).toBe('DONE');
     const pastWeek = await compare(f.moderator, { weekStart: '2001-01-01' }).expect(200);
-    expect(pastWeek.body.weeks[0].groups[0].profiles[0].total.plannedHours).toBe(10);
+    expect(pastWeek.body.weeks[0].groups[0].profiles[0].total).toMatchObject({ plannedHours: 15, suspendedHours: 0 });
   });
 
   it('aggregates every authorized record, applies scope and filters, and rejects invalid ranges', async () => {
@@ -158,13 +160,18 @@ describe('Tech Resource Allocation weekly capacity comparison (#99)', () => {
     expect(admin.body.weeks[0].groups.map(({ group }: { group: { name: string } }) => group.name)).toEqual(['Data', 'Platform']);
     expect(admin.body.weeks[0].total.plannedHours).toBe(68);
     const filtered = await compare(f.admin, { weekStart: week, groupId: f.otherGroup.id, classification: 'INTERNAL' }).expect(200);
-    expect(filtered.body.weeks[0].groups[0].profiles[0].total).toMatchObject({ plannedHours: 8, capacityHours: 40 });
+    expect(filtered.body).toMatchObject({ vacationIncluded: false });
+    expect(filtered.body.weeks[0].groups[0].profiles[0].total).toMatchObject({ plannedHours: 8, capacityHours: 40, complete: true, utilizationPercent: 20 });
+    expect(filtered.body.weeks[0].total).toMatchObject({ complete: true, utilizationPercent: 20 });
 
     await compare(f.moderator, { weekStart: week, groupId: f.otherGroup.id }).expect(403);
     await compare(f.internal).expect(403);
     await compare(f.admin, { weekStart: '2099-01-06' }).expect(400);
     await compare(f.admin, { weekStart: week, weekEnd: '2098-12-29' }).expect(400);
     await compare(f.admin, { weekStart: week, weekEnd: '2099-12-28' }).expect(400);
+    const farFuture = await compare(f.admin, { weekStart: '9999-12-27' }).expect(400);
+    expect(farFuture.body.detail).toContain('weekStart');
+    expect((await compare(f.admin, { weekStart: '2099-02-30' }).expect(400)).body.detail).toContain('weekStart');
     const range = await compare(f.admin, { weekStart: week, weekEnd: '2099-01-19' }).expect(200);
     expect(range.body.weeks.map(({ weekStart }: { weekStart: string }) => weekStart)).toEqual([week, '2099-01-12', '2099-01-19']);
     const current = await compare(f.admin, {}).expect(200);

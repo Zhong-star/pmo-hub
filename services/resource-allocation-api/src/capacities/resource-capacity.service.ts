@@ -15,6 +15,7 @@ import {
   compareWeeks,
   isMonday,
   mondayOf,
+  weekSpan,
   type ComparisonAllocation,
   type ComparisonCapacity,
   type ComparisonFigures,
@@ -160,25 +161,28 @@ export class ResourceCapacityService {
       const firstWeek = query.weekStart ?? mondayOf(businessDate);
       const lastWeek = query.weekEnd ?? firstWeek;
       for (const [name, value] of [['weekStart', firstWeek], ['weekEnd', lastWeek]] as const) {
-        this.requireValidDate(value);
+        this.requireValidDate(value, name);
         if (!isMonday(value)) throw this.validationError(`${name} must be a Monday.`);
+        if (value < '1900-01-01' || value > '9998-12-31') throw this.validationError(`${name} must be between 1900 and 9998.`);
       }
       if (lastWeek < firstWeek) throw this.validationError('weekEnd must be on or after weekStart.');
-      const weekStarts: string[] = [];
-      for (let week = firstWeek; week <= lastWeek; week = addDays(week, 7)) weekStarts.push(week);
-      if (weekStarts.length > maximumComparisonWeeks) throw this.validationError(`Choose at most ${maximumComparisonWeeks} weeks.`);
+      const span = weekSpan(firstWeek, lastWeek);
+      if (span > maximumComparisonWeeks) throw this.validationError(`Choose at most ${maximumComparisonWeeks} weeks.`);
+      const weekStarts = Array.from({ length: span }, (_, index) => addDays(firstWeek, index * 7));
       const rangeEnd = addDays(lastWeek, 6);
 
       const scope = await this.authorizedGroupIds(this.dataSource.manager, actor);
       const groupId = query.groupId?.toLowerCase();
       if (groupId && scope && !scope.includes(groupId)) throw this.accessDenied();
       const groupIds = groupId ? [groupId] : scope;
-      if (groupIds && groupIds.length === 0) return { businessDate, weeks: compareWeeks(weekStarts, [], [], []).map((week) => this.toComparisonWeek(week, new Map(), new Map())) };
+      if (groupIds && groupIds.length === 0) return { businessDate, vacationIncluded: !query.resourceProfileId && !query.classification, weeks: compareWeeks(weekStarts, [], [], []).map((week) => this.toComparisonWeek(week, new Map(), new Map())) };
 
       const profileId = query.resourceProfileId?.toLowerCase();
       const classification = query.classification;
       const parameters: unknown[] = [firstWeek, rangeEnd];
       const clauses = ["allocation.state <> 'CANCELED'", 'allocation.effective_start_date <= $2::date', 'allocation.effective_end_date >= $1::date'];
+      // Vacation has no profile or capacity classification, so it is reported only without those filters.
+      if (profileId || classification) clauses.push("allocation.category IS DISTINCT FROM 'VACATION'");
       if (groupIds) {
         parameters.push(groupIds);
         clauses.push(`allocation.group_id = ANY($${parameters.length}::uuid[])`);
@@ -256,7 +260,8 @@ export class ResourceCapacityService {
       const orderedGroups = [...involvedGroups].sort((left, right) => (groupNames.get(left) ?? '').localeCompare(groupNames.get(right) ?? '') || left.localeCompare(right));
       return {
         businessDate,
-        weeks: compareWeeks(weekStarts, allocations, capacities, orderedGroups).map((week) => this.toComparisonWeek(week, groupNames, profileInfo)),
+        vacationIncluded: !profileId && !classification,
+        weeks: compareWeeks(weekStarts, allocations, capacities, orderedGroups, classification ? [classification as 'INTERNAL' | 'THIRD_PARTY'] : undefined).map((week) => this.toComparisonWeek(week, groupNames, profileInfo)),
       };
     } catch (error) {
       if (error instanceof ResourceAllocationException) throw error;
@@ -712,11 +717,11 @@ export class ResourceCapacityService {
     return encodeOpaqueCursor(cursor);
   }
 
-  private requireValidDate(value: string): void {
-    if (!datePattern.test(value)) throw this.validationError('effectiveDate must be a valid ISO date.');
+  private requireValidDate(value: string, name = 'effectiveDate'): void {
+    if (!datePattern.test(value)) throw this.validationError(`${name} must be a valid ISO date.`);
     const date = new Date(`${value}T00:00:00.000Z`);
     if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
-      throw this.validationError('effectiveDate must be a valid ISO date.');
+      throw this.validationError(`${name} must be a valid ISO date.`);
     }
   }
 
