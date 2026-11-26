@@ -290,10 +290,9 @@ test('captures the creation form in both themes, desktop and narrow, with keyboa
   await expect(page.getByRole('button', { name: 'Review allocation' }).or(creation(page).getByLabel('Start date'))).toHaveCount(2);
 
   for (const theme of ['Light', 'Dark'] as const) {
-    await page.getByRole('button', { name: moderator.displayName }).click();
-    await page.getByRole('button', { name: theme }).click();
+    const themeToggle = page.getByRole('button', { name: 'Dark theme' });
+    if ((await themeToggle.getAttribute('aria-pressed')) !== String(theme === 'Dark')) await themeToggle.click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme.toLowerCase());
-    await page.getByRole('button', { name: moderator.displayName }).click();
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.getByRole('heading', { name: 'Record an allocation' }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath(`allocation-create-${theme.toLowerCase()}-desktop.png`), fullPage: true });

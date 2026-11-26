@@ -1132,8 +1132,7 @@ test('migrates the existing Lessons Learned theme preference to the shared sessi
   await page.goto('/lessons-learned');
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.getByRole('button', { name: 'Local Contributor' }).click();
-  await expect(page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => sessionStorage.getItem('pmo-hub.theme'))).toBe('dark');
   expect(await page.evaluate(() => sessionStorage.getItem('pmo-hub.lessons-learned.theme'))).toBeNull();
 });
