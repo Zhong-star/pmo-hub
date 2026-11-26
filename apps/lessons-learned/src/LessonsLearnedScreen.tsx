@@ -1265,8 +1265,6 @@ export function LessonsLearnedScreen() {
                 <HomeView
                   home={home}
                   showOverview={hasHomeOverview}
-                  theme={theme}
-                  onThemeChange={selectTheme}
                   onOpenLesson={openLessonFromHome}
                   onNavigate={navigateFromHome}
                 />

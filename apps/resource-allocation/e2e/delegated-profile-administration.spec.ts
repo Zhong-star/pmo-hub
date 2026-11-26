@@ -393,16 +393,12 @@ test('supports keyboard editing and captures desktop, narrow, 200% zoom, and bot
   const editButton = page.getByRole('button', { name: 'Edit resource profile Platform Engineer' });
   await editButton.focus();
   await expect(editButton).toBeFocused();
-  await page.getByRole('button', { name: 'profile-manager' }).click();
-  await page.getByRole('button', { name: 'Dark' }).click();
+  await page.getByRole('button', { name: 'Dark theme' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.getByRole('button', { name: 'profile-manager' }).click();
   await page.screenshot({ path: testInfo.outputPath('profile-administration-dark-desktop.png'), fullPage: true });
 
-  await page.getByRole('button', { name: 'profile-manager' }).click();
-  await page.getByRole('button', { name: 'Light' }).click();
+  await page.getByRole('button', { name: 'Dark theme' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  await page.getByRole('button', { name: 'profile-manager' }).click();
   await page.screenshot({ path: testInfo.outputPath('profile-administration-light-desktop.png'), fullPage: true });
 
   await page.setViewportSize({ width: 375, height: 812 });
@@ -411,10 +407,8 @@ test('supports keyboard editing and captures desktop, narrow, 200% zoom, and bot
   const narrowOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
   expect(narrowOverflow).toBe(false);
 
-  await page.getByRole('button', { name: 'profile-manager' }).click();
-  await page.getByRole('button', { name: 'Dark' }).click();
+  await page.getByRole('button', { name: 'Dark theme' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.getByRole('button', { name: 'profile-manager' }).click();
   await page.screenshot({ path: testInfo.outputPath('profile-administration-dark-narrow.png'), fullPage: true });
 
   await page.evaluate(() => { document.body.style.zoom = '200%'; });

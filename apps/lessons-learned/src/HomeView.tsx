@@ -1,11 +1,8 @@
-import type { Theme } from '../../shared-ui/src/theme';
 import type { HomeLessonSummary, HomeResponse, HomeTargetPage } from './api';
 
 interface HomeViewProps {
   home: HomeResponse;
   showOverview: boolean;
-  theme: Theme;
-  onThemeChange: (theme: Theme) => void;
   /** Opens Lesson Detail through the operational path that never records a view (D7). */
   onOpenLesson: (lessonId: number) => void;
   onNavigate: (targetPage: HomeTargetPage) => void;
@@ -44,7 +41,7 @@ function LessonButton({ lesson, onOpenLesson }: { lesson: HomeLessonSummary; onO
   );
 }
 
-export function HomeView({ home, showOverview, theme, onThemeChange, onOpenLesson, onNavigate }: HomeViewProps) {
+export function HomeView({ home, showOverview, onOpenLesson, onNavigate }: HomeViewProps) {
   return (
     <div className="home-view">
       <div className="home-header">
@@ -52,10 +49,6 @@ export function HomeView({ home, showOverview, theme, onThemeChange, onOpenLesso
           <h1 id="page-title" tabIndex={-1}>Home</h1>
           <p className="intro">Welcome, {home.profile.displayName}</p>
           <p className="active-role">Active role: <strong>{getRoleLabel(home.profile.role)}</strong></p>
-        </div>
-        <div className="home-theme-controls" role="group" aria-label="Home theme preference">
-          <button type="button" aria-pressed={theme === 'light'} onClick={() => onThemeChange('light')}>Light</button>
-          <button type="button" aria-pressed={theme === 'dark'} onClick={() => onThemeChange('dark')}>Dark</button>
         </div>
       </div>
 

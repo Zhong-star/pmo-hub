@@ -946,18 +946,6 @@ h1 + .api-status {
 /* Home (#52) */
 .home-view { display: grid; gap: 18px; }
 .home-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.home-theme-controls { display: inline-flex; gap: 6px; }
-.home-theme-controls button {
-  min-height: 44px;
-  padding: 6px 12px;
-  border: 1px solid var(--surface-border);
-  border-radius: var(--control-radius);
-  background: var(--theme-control-background);
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-}
-.home-theme-controls button[aria-pressed='true'] { border-color: var(--primary-background); font-weight: 700; }
 .home-primary-action {
   padding: 20px;
   border: 1px solid var(--surface-border);

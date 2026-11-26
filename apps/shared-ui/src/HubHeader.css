@@ -60,6 +60,28 @@
   position: relative;
 }
 
+.hub-header__theme-toggle {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--button-radius);
+  color: var(--header-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.hub-header__theme-toggle:hover {
+  color: var(--header-text);
+  background: var(--header-hover);
+}
+
+.hub-header__theme-toggle svg {
+  display: block;
+}
+
 .hub-header__profile-trigger {
   display: inline-flex;
   min-height: 40px;
@@ -113,32 +135,6 @@
 
 .hub-header__profile-menu button:hover {
   background: var(--header-hover);
-}
-
-.hub-header__theme-controls {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-}
-
-.hub-header__profile-menu .hub-header__theme-controls button {
-  width: auto;
-  flex: 1;
-  min-height: 36px;
-  border-radius: var(--control-radius);
-  color: var(--header-muted);
-  text-align: center;
-}
-
-.hub-header__profile-menu .hub-header__theme-controls button[aria-pressed='true'] {
-  color: #fff;
-  background: var(--primary-background);
-}
-
-.hub-header__menu-divider {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--header-border);
 }
 
 .hub-header :focus-visible {

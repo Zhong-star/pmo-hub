@@ -70,15 +70,11 @@ test('selecting a configured local profile opens the module catalog', async ({ p
   await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 390);
   await page.setViewportSize({ width: 1440, height: 900 });
 
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Dark theme' })).toBeVisible();
   await page.getByRole('button', { name: 'Local Developer' }).click();
   const changeProfileButton = page.getByRole('button', { name: 'Change profile' });
-  const lightThemeButton = page.getByRole('button', { name: 'Light' });
-  const darkThemeButton = page.getByRole('button', { name: 'Dark' });
   await expect(changeProfileButton).toBeVisible();
-  await page.keyboard.press('Tab');
-  await expect(lightThemeButton).toBeFocused();
-  await page.keyboard.press('Tab');
-  await expect(darkThemeButton).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Light' })).toHaveCount(0);
   await page.keyboard.press('Tab');
   await expect(changeProfileButton).toBeFocused();
   await expect(changeProfileButton).toHaveCSS('outline-style', 'solid');

@@ -302,10 +302,10 @@ describe('Role-aware Home screen integration (#52)', () => {
     expect(within(shortcutsRegion).queryByRole('button', { name: /PMO Dashboard/i })).not.toBeInTheDocument();
     expect(within(shortcutsRegion).queryByRole('button', { name: /PMO Review Queue/i })).not.toBeInTheDocument();
 
-    // Theme toggle accessible from Home
+    // Theme toggle accessible from Home through the shared header icon button
     const user = userEvent.setup();
-    const homeThemeGroup = screen.getByRole('group', { name: 'Home theme preference' });
-    await user.click(within(homeThemeGroup).getByRole('button', { name: 'Dark' }));
+    expect(screen.queryByRole('group', { name: 'Home theme preference' })).not.toBeInTheDocument();
+    await user.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Dark theme' }));
     expect(document.documentElement.dataset.theme).toBe('dark');
 
     // D7: Opening a published lesson from Recent Work opens Lesson Detail via getLessonDetails and NEVER calls recordLibraryView
