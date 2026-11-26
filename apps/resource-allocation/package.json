@@ -8,9 +8,10 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "openapi:types": "openapi-typescript ../../services/resource-allocation-api/openapi/resource-allocation-v1.json -o src/generated/resource-allocation-api.d.ts",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.performance.json",
     "test:e2e": "playwright test",
-    "test:e2e:real": "node ../../services/resource-allocation-api/run-playwright-e2e.mjs"
+    "test:e2e:real": "node ../../services/resource-allocation-api/run-playwright-e2e.mjs",
+    "perf:measure": "playwright test --config playwright.performance.config.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.0",
