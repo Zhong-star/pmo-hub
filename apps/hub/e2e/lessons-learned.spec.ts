@@ -1062,7 +1062,7 @@ test('header theme icon is keyboard operable, readable, and shared across both a
   const expectThemeToggle = async (theme: 'light' | 'dark', target = page) => {
     const toggle = themeToggle(target);
     await expect(toggle).toHaveAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
-    await expect(toggle).toHaveAttribute('data-theme-icon', theme === 'dark' ? 'moon' : 'sun');
+    await expect(toggle).toHaveAttribute('data-theme-icon', theme === 'dark' ? 'sun' : 'moon');
     await expect(toggle).toHaveAttribute('title', theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
     await expect(toggle.locator('svg')).toHaveCount(1);
   };

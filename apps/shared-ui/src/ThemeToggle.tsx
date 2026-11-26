@@ -37,7 +37,7 @@ function MoonIcon() {
 
 /**
  * Single icon button that toggles the color theme.
- * The icon shows the active theme (sun = light, moon = dark); the button is a
+ * The icon shows the theme it switches to (moon in light mode, sun in dark mode); the button is a
  * pressed/unpressed "Dark theme" toggle for assistive technology.
  */
 export function ThemeToggle({ theme, onThemeChange, className }: ThemeToggleProps) {
@@ -51,10 +51,10 @@ export function ThemeToggle({ theme, onThemeChange, className }: ThemeToggleProp
       aria-label="Dark theme"
       aria-pressed={isDark}
       title={actionLabel}
-      data-theme-icon={isDark ? 'moon' : 'sun'}
+      data-theme-icon={isDark ? 'sun' : 'moon'}
       onClick={() => onThemeChange(isDark ? 'light' : 'dark')}
     >
-      {isDark ? <MoonIcon /> : <SunIcon />}
+      {isDark ? <SunIcon /> : <MoonIcon />}
     </button>
   );
 }
