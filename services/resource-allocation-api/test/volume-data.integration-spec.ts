@@ -41,11 +41,6 @@ describe('Tech Resource Allocation volume dataset (#105)', () => {
   let app: INestApplication | undefined;
   let dataSource: DataSource | undefined;
 
-  async function businessDate(): Promise<string> {
-    const rows = await dataSource!.query("SELECT (clock_timestamp() AT TIME ZONE 'America/Sao_Paulo')::date::text AS today") as Array<{ today: string }>;
-    return rows[0].today;
-  }
-
   async function countRows(sql: string, parameters: unknown[] = []): Promise<number> {
     const rows = await dataSource!.query(sql, parameters) as Array<{ count: number }>;
     return Number(rows[0].count);
@@ -123,7 +118,7 @@ describe('Tech Resource Allocation volume dataset (#105)', () => {
 
   it('generates the requested volume on the minimal baseline with domain-valid records readable through the API', async () => {
     const result = await prepareVolumeData(dataSource!, reducedVolume);
-    const today = await businessDate();
+    const today = result.businessDate;
 
     expect(result.counts).toMatchObject({ people: 60, groups: 4, profiles: 12, initiatives: 8 });
     expect(result.peopleByRole).toEqual({

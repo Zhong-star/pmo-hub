@@ -90,7 +90,7 @@ O runner de medição cronometra no navegador as seis operações do release 1 e
 
 As aberturas vão da navegação até o conteúdo utilizável (sem indicadores de carregamento), cada uma em duas séries: fria (contexto de navegador novo, sem cache) e quente (nova navegação no mesmo contexto). As ações vão do clique de confirmação até o resultado lido de volta da API na interface. Cada repetição de aprovação consome um pedido diferente da fila (a massa padrão tem 90) e cada criação grava uma alocação de 1 h/semana numa semana futura. Uma operação é reprovada quando qualquer amostra passa da meta ou quando falta amostra; nenhuma amostra é omitida.
 
-Antes de medir, prepare o banco com a [massa de volume](services/resource-allocation-api/README.md#prepare-volume-data-for-performance-measurement) no mesmo dia da medição e guarde a saída do comando, que contém a linha `VOLUME_DATASET_SUMMARY`.
+Antes de medir, prepare o banco com a [massa de volume](services/resource-allocation-api/README.md#prepare-volume-data-for-performance-measurement) no mesmo dia da medição e guarde a saída do comando, que contém a linha `VOLUME_DATASET_SUMMARY`. O relatório separa as contagens no banco, que vêm só desse resumo (o runner não acessa o PostgreSQL), dos volumes visíveis via API para cada identidade da medição. Sem `RESOURCE_ALLOCATION_PERF_VOLUME_SUMMARY`, o relatório abre com um aviso de que faltam as contagens no banco e não serve como evidência do release.
 
 Contra o kind, depois do deploy com `backend --with-postgres` e `frontend`, mantenha o port-forward do router em `:8080` e rode a massa pelo [PostgreSQL do kind](services/resource-allocation-api/README.md#run-against-the-kind-postgresql). Na raiz do monorepo:
 
@@ -123,7 +123,7 @@ O relatório fica em `apps/resource-allocation/performance-results/<data>/report
 - `RESOURCE_ALLOCATION_PERF_REPETITIONS` (padrão: `10`): repetições por operação e por série. Use `1` para uma execução de fumaça.
 - `RESOURCE_ALLOCATION_PERF_CHROMIUM_EXECUTABLE`: executável do Chromium a usar no lugar do navegador instalado pelo Playwright.
 - `RESOURCE_ALLOCATION_PERF_ENVIRONMENT`: rótulo do ambiente no relatório.
-- `RESOURCE_ALLOCATION_PERF_VOLUME_SUMMARY`: arquivo com a saída do `prepare:volume`; o relatório inclui as contagens por estado. Os volumes contados pela API entram sempre.
+- `RESOURCE_ALLOCATION_PERF_VOLUME_SUMMARY`: arquivo com a saída do `prepare:volume`; é a única fonte das contagens no banco (registros e contagens por estado) no relatório. Sem ele, o relatório traz um aviso de que essas contagens faltam. Os volumes visíveis via API para cada identidade entram sempre.
 - `RESOURCE_ALLOCATION_PERF_BUILD_MODE`: substitui o modo de build detectado (o runner reconhece o servidor de desenvolvimento do Vite pela página).
 - `RESOURCE_ALLOCATION_PERF_DEPLOYED_SHA`: SHA da versão implantada, quando difere do checkout que roda a medição.
 - `RESOURCE_ALLOCATION_PERF_ADMIN_ID`, `RESOURCE_ALLOCATION_PERF_LEADERSHIP_ID`, `RESOURCE_ALLOCATION_PERF_USER_ID`: identidades locais (padrões `volume-admin`, `volume-manager-01`, `volume-user-0001`).

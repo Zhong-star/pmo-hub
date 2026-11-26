@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { ensureInitiative, prepareTeam } from './support/admin-preparation';
 import { addDays, businessDateAfterHours, businessToday } from './support/business-calendar';
 import { localAdminUserId, openPageAs } from './support/local-identity';
@@ -20,6 +20,11 @@ function queueCard(page: Page) {
 
 function requestDetail(page: Page) {
   return page.getByRole('region', { name: initiativeCode, exact: true });
+}
+
+/** The detail shows the decision as the visible text "Decision" followed by the state label. */
+function decisionState(detail: Locator, label: string) {
+  return detail.getByText(new RegExp(`^Decision\\s*${label}$`));
 }
 
 test('approves with changes, takes the contest to Pre N3, and resolves it into the requester’s allocation', async ({ browser, baseURL, request }) => {
@@ -98,7 +103,7 @@ test('approves with changes, takes the contest to Pre N3, and resolves it into t
   // Requester: sees the proposal and contests it with an explanation; the request moves to Pre N3.
   await requesterPage.goto(`/resource-allocation/?requestId=${requestId}`);
   const detail = requestDetail(requesterPage);
-  await expect(detail.locator('.request-metadata')).toContainText('Approved with changes');
+  await expect(decisionState(detail, 'Approved with changes')).toBeVisible();
   const proposal = detail.getByRole('region', { name: 'Proposed conditions', exact: true });
   await expect(proposal).toContainText(`${proposedStart} to ${proposedEnd}`);
   await expect(proposal).toContainText('16 hours per week');
@@ -106,7 +111,7 @@ test('approves with changes, takes the contest to Pre N3, and resolves it into t
   await detail.getByRole('button', { name: 'Contest proposed changes' }).click();
   await detail.getByLabel('Reason for contesting').fill('The initiative needs the original start date.');
   await detail.getByRole('button', { name: 'Submit contest' }).click();
-  await expect(detail.locator('.request-metadata')).toContainText('Pre N3');
+  await expect(decisionState(detail, 'Pre N3')).toBeVisible();
 
   // Admin: resolves the Pre N3 request by a strategy with a reason, keeping the requested period.
   await adminPage.goto('/resource-allocation/?queue=exceptions&decisionState=PRE_N3');
@@ -130,10 +135,11 @@ test('approves with changes, takes the contest to Pre N3, and resolves it into t
 
   // Requester: the request ends Approved, and the allocation appears in their own allocations.
   await requesterPage.goto(`/resource-allocation/?requestId=${requestId}`);
-  const finalDecision = detail.locator('.request-metadata');
-  await expect(finalDecision).toContainText('Approved');
-  await expect(finalDecision).not.toContainText('Approved with changes');
-  await expect(finalDecision).not.toContainText('Pre N3');
+  await expect(decisionState(detail, 'Approved')).toBeVisible();
+  await expect(decisionState(detail, 'Approved with changes')).toHaveCount(0);
+  await expect(decisionState(detail, 'Pre N3')).toHaveCount(0);
+  await expect(detail.getByRole('region', { name: 'Proposed conditions', exact: true })).toHaveCount(0);
+  await expect(detail.getByRole('region', { name: 'Approved conditions', exact: true })).toBeVisible();
   const allocated = detail.getByRole('region', { name: 'Approved allocation', exact: true });
   await expect(allocated).toContainText(requester.displayName);
   await expect(allocated).toContainText(`${requestedStart} to ${requestedEnd}`);

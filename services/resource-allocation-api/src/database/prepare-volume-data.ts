@@ -4,6 +4,7 @@ import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialE
 import { lockResourceAllocationAdministrationWrites } from '../administration/resource-allocation-write-lock';
 import { ResourceAllocationHistory } from '../allocations/resource-allocation-history.entity';
 import { ResourceAllocation } from '../allocations/resource-allocation.entity';
+import { addDays, mondayOf } from '../capacities/capacity-comparison';
 import { ResourceCapacityHistory } from '../capacities/resource-capacity-history.entity';
 import { ResourceCapacity } from '../capacities/resource-capacity.entity';
 import { ResourceGroup } from '../groups/resource-group.entity';
@@ -329,11 +330,6 @@ function padNumber(value: number, width: number): string {
   return String(value).padStart(width, '0');
 }
 
-function addDays(isoDate: string, days: number): string {
-  const [year, month, day] = isoDate.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
-}
-
 function addMonths(isoDate: string, months: number): string {
   const [year, month, day] = isoDate.split('-').map(Number);
   const lastDay = new Date(Date.UTC(year, month - 1 + months + 1, 0)).getUTCDate();
@@ -342,11 +338,6 @@ function addMonths(isoDate: string, months: number): string {
 
 function daysBetween(startDate: string, endDate: string): number {
   return Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86_400_000);
-}
-
-function mondayOf(isoDate: string): string {
-  const weekday = new Date(`${isoDate}T00:00:00Z`).getUTCDay();
-  return addDays(isoDate, weekday === 0 ? -6 : 1 - weekday);
 }
 
 /** América/São Paulo has kept a fixed UTC-03:00 offset since 2019. */

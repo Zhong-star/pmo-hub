@@ -1,14 +1,13 @@
 import { readFileSync } from 'node:fs';
 import type { APIRequestContext } from '@playwright/test';
+import { listAll } from '../../e2e/real/support/admin-preparation';
 import { performanceSettings } from './settings';
 
 /**
- * Real volumes behind the measurement, counted through the API with the measurement identities
- * before any sample runs, plus the optional `prepare:volume` summary.
+ * Volumes behind the measurement: what each measurement identity sees through the API, counted
+ * before any sample runs (the request context must use the measured base URL), plus the optional
+ * `prepare:volume` summary, which is the only source of counts taken in the database.
  */
-
-const apiRoot = '/api/resource-allocation/v1';
-const localProfileHeader = 'X-PMO-Local-User-ID';
 
 export interface VolumeCount {
   label: string;
@@ -23,30 +22,13 @@ export interface VolumeReport {
   summary: { source: string; json: Record<string, unknown> } | { source: string; error: string } | null;
 }
 
-interface CollectionPage {
-  items: unknown[];
-  page?: { nextCursor?: string | null };
-}
-
 async function countCollection(
   request: APIRequestContext,
   identity: string,
   path: string,
   params: Record<string, string> = {},
 ): Promise<number> {
-  let total = 0;
-  let cursor: string | null = null;
-  do {
-    const response = await request.get(`${performanceSettings.baseURL}${apiRoot}${path}`, {
-      headers: { [localProfileHeader]: identity },
-      params: { ...params, limit: '100', ...(cursor ? { cursor } : {}) },
-    });
-    if (!response.ok()) throw new Error(`GET ${path} as ${identity} returned HTTP ${response.status()}.`);
-    const body = (await response.json()) as CollectionPage;
-    total += body.items.length;
-    cursor = body.page?.nextCursor ?? null;
-  } while (cursor);
-  return total;
+  return (await listAll<unknown>(request, path, params, identity)).length;
 }
 
 function readSummary(): VolumeReport['summary'] {

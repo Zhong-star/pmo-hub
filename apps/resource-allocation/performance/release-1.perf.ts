@@ -1,6 +1,6 @@
 import { devices, expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { addDays, businessToday } from '../e2e/real/support/business-calendar';
-import { localProfileStorageKey } from '../e2e/real/support/local-identity';
+import { signInContextAs } from '../e2e/real/support/local-identity';
 import { describeEnvironment } from './support/environment';
 import { timeAction, timeOpening, waitUntilUsable, type OpeningCheck } from './support/probes';
 import { OperationRecorder, writeRunFile, type OperationId } from './support/results';
@@ -14,10 +14,7 @@ void _defaultBrowserType;
 /** A new browser context has an empty HTTP cache and storage; only the local profile is set. */
 async function newSignedInContext(browser: Browser, localUserId: string): Promise<BrowserContext> {
   const context = await browser.newContext({ ...desktopChrome, baseURL: performanceSettings.baseURL });
-  await context.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), {
-    key: localProfileStorageKey,
-    value: localUserId,
-  });
+  await signInContextAs(context, localUserId);
   return context;
 }
 
@@ -31,7 +28,7 @@ async function measure(recorder: OperationRecorder, body: () => Promise<void>): 
 }
 
 test('records the environment and the real volumes before measuring', async ({ browser, playwright }, testInfo) => {
-  const request = await playwright.request.newContext();
+  const request = await playwright.request.newContext({ baseURL: performanceSettings.baseURL });
   try {
     writeRunFile('environment.json', await describeEnvironment(browser, request, testInfo.project.use.headless ?? true));
     writeRunFile('volumes.json', await countVolumes(request));

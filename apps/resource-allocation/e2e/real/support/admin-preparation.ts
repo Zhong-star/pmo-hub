@@ -8,7 +8,8 @@ import { localAdminUserId, localProfileHeader } from './local-identity';
  * another journey, or again on the same database. Nothing here touches the database directly.
  */
 
-const apiRoot = '/api/resource-allocation/v1';
+/** Path of the module API, relative to the origin that serves the module. */
+export const apiRoot = '/api/resource-allocation/v1';
 
 export type AllocationRole =
   | 'ALLOCATION_USER'
@@ -109,12 +110,18 @@ async function expectOk(response: APIResponse, action: string): Promise<void> {
   throw new Error(`${action} failed with HTTP ${response.status()}: ${await response.text()}`);
 }
 
-async function listAll<T>(request: APIRequestContext, path: string, params: Record<string, string> = {}): Promise<T[]> {
+/** Reads every page of a collection as the local profile (the local Admin unless another is given). */
+export async function listAll<T>(
+  request: APIRequestContext,
+  path: string,
+  params: Record<string, string> = {},
+  localUserId: string = localAdminUserId,
+): Promise<T[]> {
   const items: T[] = [];
   let cursor: string | null = null;
   do {
     const response = await request.get(`${apiRoot}${path}`, {
-      headers: { [localProfileHeader]: localAdminUserId },
+      headers: { [localProfileHeader]: localUserId },
       params: { ...params, limit: '100', ...(cursor ? { cursor } : {}) },
     });
     await expectOk(response, `GET ${path}`);

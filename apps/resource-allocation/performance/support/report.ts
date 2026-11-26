@@ -1,5 +1,6 @@
 import type { MeasurementEnvironment } from './environment';
 import { operations, type OperationDefinition, type OperationRecord, type Sample, type SampleSeries } from './results';
+import { performanceSettings } from './settings';
 import type { VolumeReport } from './volumes';
 
 /**
@@ -61,19 +62,29 @@ export function buildReport(
   volumes: VolumeReport | null,
   records: Map<string, OperationRecord | null>,
 ): string {
-  const expected = environment?.repetitions ?? 0;
+  // Without environment.json the configured repetitions still apply, so missing samples always fail.
+  const expected = environment?.repetitions ?? performanceSettings.repetitions;
   const lines: string[] = [];
   const verdicts = operations.map((definition) => {
     const record = records.get(definition.id) ?? null;
     return { definition, record, series: seriesOf(definition).map((series) => verdictFor(definition, record, series, expected)) };
   });
   const failed = verdicts.filter((entry) => entry.series.some((series) => !series.passed));
+  const summary = volumes?.summary ?? null;
+  const databaseCounts = summary && 'json' in summary ? summary.json : null;
+  const missingDatabaseCounts = !volumes
+    ? 'A etapa de preparação falhou antes de ler o resumo do `prepare:volume`'
+    : summary === null
+      ? 'O resumo do `prepare:volume` não foi informado (RESOURCE_ALLOCATION_PERF_VOLUME_SUMMARY)'
+      : 'error' in summary ? `O resumo do \`prepare:volume\` em ${summary.source} não pôde ser lido: ${summary.error.replace(/\r?\n/g, ' ')}` : null;
+  const databaseWarning = `> **Atenção: faltam as contagens no banco.** ${missingDatabaseCounts}. Este relatório não registra os volumes reais contados no banco; as contagens via API abaixo dependem do que cada identidade enxerga e não os substituem. Rode de novo com a saída do \`prepare:volume\` em RESOURCE_ALLOCATION_PERF_VOLUME_SUMMARY.`;
 
   lines.push('# Medição de desempenho — Tech Resource Allocation, release 1', '');
   lines.push(`Início: ${metadata.startedAt}. Fim: ${metadata.finishedAt}.`, '');
   lines.push(failed.length === 0
     ? '**Resultado geral: todas as operações cumprem a meta.**'
     : `**Resultado geral: ${failed.length} de ${operations.length} operações reprovadas** (${failed.map((entry) => entry.definition.title).join(', ')}).`, '');
+  if (missingDatabaseCounts) lines.push(databaseWarning, '');
 
   lines.push('## Ambiente', '');
   if (environment) {
@@ -112,25 +123,31 @@ export function buildReport(
   lines.push('');
 
   lines.push('## Volumes reais', '');
+  lines.push('### Contagens no banco (resumo do `prepare:volume`)', '');
+  if (databaseCounts && summary) {
+    lines.push(`Contadas no PostgreSQL pelo \`prepare:volume\` ao gerar a massa (${summary.source}).`, '');
+    const counts = databaseCounts.counts;
+    if (counts && typeof counts === 'object') {
+      lines.push('| Registro | Total no banco |', '| --- | --- |');
+      for (const [key, value] of Object.entries(counts as Record<string, unknown>)) lines.push(`| ${cell(key)} | ${cell(String(value))} |`);
+      lines.push('');
+    }
+    for (const key of ['businessDate', 'options', 'requestsByState', 'allocationsByState', 'allocationsByOrigin', 'peopleByRole']) {
+      if (databaseCounts[key] !== undefined) lines.push(`- ${key}: \`${JSON.stringify(databaseCounts[key])}\``);
+    }
+    lines.push('');
+  } else {
+    lines.push(databaseWarning, '');
+  }
+
+  lines.push('### Visíveis via API para cada identidade', '');
   if (volumes) {
-    lines.push(`Contados pela API antes da primeira amostra, em ${volumes.countedAt}, com as identidades da medição.`, '');
+    lines.push(`Contados pela API antes da primeira amostra, em ${volumes.countedAt}, com as identidades da medição. Mostram o que cada identidade enxerga, não o total do banco.`, '');
     lines.push('| Coleção | Identidade | Total |', '| --- | --- | --- |');
     for (const count of volumes.counts) {
       lines.push(`| ${count.label} | \`${count.identity}\` | ${count.count ?? `erro: ${cell(count.error ?? 'desconhecido')}`} |`);
     }
     lines.push('');
-    if (volumes.summary && 'json' in volumes.summary) {
-      const summary = volumes.summary.json;
-      lines.push(`Resumo do \`prepare:volume\` (${volumes.summary.source}):`, '');
-      for (const key of ['businessDate', 'options', 'counts', 'requestsByState', 'allocationsByState', 'allocationsByOrigin', 'peopleByRole']) {
-        if (summary[key] !== undefined) lines.push(`- ${key}: \`${JSON.stringify(summary[key])}\``);
-      }
-      lines.push('');
-    } else if (volumes.summary) {
-      lines.push(`O resumo do \`prepare:volume\` em ${volumes.summary.source} não pôde ser lido: ${volumes.summary.error}`, '');
-    } else {
-      lines.push('Resumo do `prepare:volume` não informado (RESOURCE_ALLOCATION_PERF_VOLUME_SUMMARY).', '');
-    }
   } else {
     lines.push('Os volumes não foram contados: a etapa de preparação falhou.', '');
   }
