@@ -74,3 +74,57 @@ kubectl --context kind-pmo-hub -n pmo-hub get deployments -l layer -o custom-col
 Se o processo for interrompido à força e deixar a trava da camada, confirme que nenhum deploy dessa camada está em execução e remova o ConfigMap `pmo-frontend-deploy-lock` ou `pmo-backend-deploy-lock` do namespace `pmo-hub` antes de tentar de novo.
 
 Antes de remover a trava do backend, confirme também que os Jobs `lessons-learned-migrate-*` terminaram com sucesso ou falha. Use `kubectl --context kind-pmo-hub -n pmo-hub get jobs` para consultar o estado e `kubectl logs job/<nome>` com o mesmo contexto e namespace para diagnosticar uma falha.
+
+## Medição de desempenho de Tech Resource Allocation
+
+O runner de medição cronometra no navegador as seis operações do release 1 e gera um relatório Markdown com o ambiente, os volumes reais, todas as amostras, mediana, máximo e aprovado/reprovado por meta. Ele usa uma configuração Playwright própria (`apps/resource-allocation/playwright.performance.config.ts`), fora do CI e das outras suítes. Não é teste de carga: mede um usuário por vez.
+
+| Operação | Identidade | Meta |
+| --- | --- | --- |
+| Abrir o módulo (`/resource-allocation/`, lista de Requests) | `volume-user-0001` | 3 s |
+| Fila de apresentação | `volume-admin` | 3 s |
+| Minhas alocações | `volume-user-0001` | 3 s |
+| Comparação semanal de capacidade | `volume-manager-01` | 3 s |
+| Aprovar pedido sem alterações na fila de apresentação | `volume-admin` | 1 s |
+| Criar alocação operacional própria | `volume-user-0001` | 1 s |
+
+As aberturas vão da navegação até o conteúdo utilizável (sem indicadores de carregamento), cada uma em duas séries: fria (contexto de navegador novo, sem cache) e quente (nova navegação no mesmo contexto). As ações vão do clique de confirmação até o resultado lido de volta da API na interface. Cada repetição de aprovação consome um pedido diferente da fila (a massa padrão tem 90) e cada criação grava uma alocação de 1 h/semana numa semana futura. Uma operação é reprovada quando qualquer amostra passa da meta ou quando falta amostra; nenhuma amostra é omitida.
+
+Antes de medir, prepare o banco com a [massa de volume](services/resource-allocation-api/README.md#prepare-volume-data-for-performance-measurement) no mesmo dia da medição e guarde a saída do comando, que contém a linha `VOLUME_DATASET_SUMMARY`.
+
+Contra o kind, depois do deploy com `backend --with-postgres` e `frontend`, mantenha o port-forward do router em `:8080` e rode a massa pelo [PostgreSQL do kind](services/resource-allocation-api/README.md#run-against-the-kind-postgresql). Na raiz do monorepo:
+
+```powershell
+npm run prepare:volume --workspace @pmo-hub/resource-allocation-api | Tee-Object volume-summary.txt
+$env:RESOURCE_ALLOCATION_PERF_ENVIRONMENT = 'kind'
+$env:RESOURCE_ALLOCATION_PERF_VOLUME_SUMMARY = (Resolve-Path volume-summary.txt).Path
+npm run perf:measure --workspace @pmo-hub/resource-allocation
+```
+
+Contra um ambiente local, prepare o PostgreSQL do módulo com migrações, primeiro Admin, cadastros mínimos e massa de volume, inicie a API e o worker e sirva o frontend com o proxy apontando para a API. Para medir o build de produção, use `vite preview`; o servidor de desenvolvimento também funciona, mas mede outro modo de build:
+
+```powershell
+npm run build --workspace @pmo-hub/resource-allocation
+$env:RESOURCE_ALLOCATION_API_TARGET = 'http://127.0.0.1:3003'
+npx --workspace @pmo-hub/resource-allocation vite preview --host 127.0.0.1 --port 5189 --strictPort
+```
+
+Em outro terminal:
+
+```powershell
+$env:RESOURCE_ALLOCATION_PERF_BASE_URL = 'http://127.0.0.1:5189'
+$env:RESOURCE_ALLOCATION_PERF_ENVIRONMENT = 'local'
+npm run perf:measure --workspace @pmo-hub/resource-allocation
+```
+
+O relatório fica em `apps/resource-allocation/performance-results/<data>/report.md`, junto com as amostras em JSON, e o caminho é impresso no fim da execução. O comando termina com código diferente de zero quando uma operação não consegue ser medida; uma operação medida acima da meta aparece como reprovada no relatório. Variáveis opcionais:
+
+- `RESOURCE_ALLOCATION_PERF_BASE_URL` (padrão: `http://127.0.0.1:8080`, o router do kind): origem que serve `/resource-allocation/` e `/api/resource-allocation/v1`.
+- `RESOURCE_ALLOCATION_PERF_REPETITIONS` (padrão: `10`): repetições por operação e por série. Use `1` para uma execução de fumaça.
+- `RESOURCE_ALLOCATION_PERF_CHROMIUM_EXECUTABLE`: executável do Chromium a usar no lugar do navegador instalado pelo Playwright.
+- `RESOURCE_ALLOCATION_PERF_ENVIRONMENT`: rótulo do ambiente no relatório.
+- `RESOURCE_ALLOCATION_PERF_VOLUME_SUMMARY`: arquivo com a saída do `prepare:volume`; o relatório inclui as contagens por estado. Os volumes contados pela API entram sempre.
+- `RESOURCE_ALLOCATION_PERF_BUILD_MODE`: substitui o modo de build detectado (o runner reconhece o servidor de desenvolvimento do Vite pela página).
+- `RESOURCE_ALLOCATION_PERF_DEPLOYED_SHA`: SHA da versão implantada, quando difere do checkout que roda a medição.
+- `RESOURCE_ALLOCATION_PERF_ADMIN_ID`, `RESOURCE_ALLOCATION_PERF_LEADERSHIP_ID`, `RESOURCE_ALLOCATION_PERF_USER_ID`: identidades locais (padrões `volume-admin`, `volume-manager-01`, `volume-user-0001`).
+- `RESOURCE_ALLOCATION_PERF_OUTPUT_DIR` (padrão: `performance-results`, relativo a `apps/resource-allocation`) e `RESOURCE_ALLOCATION_PERF_SAMPLE_TIMEOUT_MS` (padrão: `60000`).
