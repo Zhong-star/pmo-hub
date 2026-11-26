@@ -15,9 +15,9 @@ if (!npmCliPath) {
 const port = process.env.PLAYWRIGHT_PORT ?? '5188';
 const apiPort = process.env.RESOURCE_ALLOCATION_E2E_API_PORT ?? '5303';
 
-function runNpm(args, env) {
+function runNode(args, env) {
   return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(process.execPath, [npmCliPath, ...args], {
+    const child = spawn(process.execPath, args, {
       cwd: repositoryRoot,
       env,
       stdio: 'inherit',
@@ -27,9 +27,13 @@ function runNpm(args, env) {
     child.once('error', rejectRun);
     child.once('exit', (code, signal) => {
       if (code === 0) resolveRun();
-      else rejectRun(new Error(`npm ${args.join(' ')} exited with ${code ?? signal ?? 'an unknown error'}.`));
+      else rejectRun(new Error(`node ${args.join(' ')} exited with ${code ?? signal ?? 'an unknown error'}.`));
     });
   });
+}
+
+function runNpm(args, env) {
+  return runNode([npmCliPath, ...args], env);
 }
 
 function startNode(scriptPath, env) {
@@ -87,6 +91,10 @@ const env = {
   PORT: apiPort,
   RESOURCE_ALLOCATION_DATABASE_URL: postgres.getConnectionUri(),
   RESOURCE_ALLOCATION_API_TARGET: `http://127.0.0.1:${apiPort}`,
+  // The real journeys prepare what the minimal baseline lacks through the API as this local Admin.
+  RESOURCE_ALLOCATION_FIRST_ADMIN_LOCAL_USER_ID: process.env.RESOURCE_ALLOCATION_FIRST_ADMIN_LOCAL_USER_ID ?? 'local-developer',
+  RESOURCE_ALLOCATION_FIRST_ADMIN_DISPLAY_NAME: process.env.RESOURCE_ALLOCATION_FIRST_ADMIN_DISPLAY_NAME ?? 'Local Developer',
+  RESOURCE_ALLOCATION_FIRST_ADMIN_EMAIL: process.env.RESOURCE_ALLOCATION_FIRST_ADMIN_EMAIL ?? 'local-developer@example.test',
 };
 
 let apiProcess;
@@ -96,6 +104,7 @@ try {
   await runNpm(['run', 'build', '--workspace', '@pmo-hub/resource-allocation-api'], env);
   await runNpm(['run', 'migration:run', '--workspace', '@pmo-hub/resource-allocation-api'], env);
   await runNpm(['run', 'prepare:minimal', '--workspace', '@pmo-hub/resource-allocation-api'], env);
+  await runNode([resolve(repositoryRoot, 'services/resource-allocation-api/dist/database/prepare-first-admin.js')], env);
 
   apiProcess = startNode(resolve(repositoryRoot, 'services/resource-allocation-api/dist/main.js'), env);
   workerProcess = startNode(resolve(repositoryRoot, 'services/resource-allocation-api/dist/submissions/run-submission-worker.js'), env);
