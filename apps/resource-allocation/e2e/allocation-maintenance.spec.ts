@@ -178,9 +178,9 @@ test('guards unsaved changes and captures the form in both themes, narrow, and a
   await navigate;
   await expect(maintenance(page).getByLabel('Weekly hours')).toHaveValue('11');
   for (const theme of ['Light', 'Dark'] as const) {
-    await page.getByRole('button', { name: moderator.displayName }).click();
-    await page.getByRole('button', { name: theme }).click();
-    await page.getByRole('button', { name: moderator.displayName }).click();
+    const themeToggle = page.getByRole('button', { name: 'Dark theme' });
+    if ((await themeToggle.getAttribute('aria-pressed')) !== String(theme === 'Dark')) await themeToggle.click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme.toLowerCase());
     await page.setViewportSize({ width: 1280, height: 900 });
     await maintenance(page).scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath(`maintenance-${theme.toLowerCase()}-desktop.png`), fullPage: true });

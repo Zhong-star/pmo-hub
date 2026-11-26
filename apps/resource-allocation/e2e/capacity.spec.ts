@@ -230,10 +230,9 @@ test('captures capacity in both themes, desktop and narrow, with keyboard focus 
   await expect(page.getByLabel('Resource profile Required')).toBeFocused();
 
   for (const theme of ['Light', 'Dark'] as const) {
-    await page.getByRole('button', { name: admin.displayName }).click();
-    await page.getByRole('button', { name: theme }).click();
+    const themeToggle = page.getByRole('button', { name: 'Dark theme' });
+    if ((await themeToggle.getAttribute('aria-pressed')) !== String(theme === 'Dark')) await themeToggle.click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme.toLowerCase());
-    await page.getByRole('button', { name: admin.displayName }).click();
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.screenshot({ path: testInfo.outputPath(`capacity-${theme.toLowerCase()}-desktop.png`), fullPage: true });
     await page.setViewportSize({ width: 375, height: 812 });

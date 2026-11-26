@@ -110,9 +110,9 @@ test('captures the weekly comparison in both themes, desktop and narrow, and at 
     await expect(page.getByRole('button', { name: 'Next week' })).toBeFocused();
   });
   for (const theme of ['Light', 'Dark'] as const) {
-    await page.getByRole('button', { name: manager.displayName }).click();
-    await page.getByRole('button', { name: theme }).click();
-    await page.getByRole('button', { name: manager.displayName }).click();
+    const themeToggle = page.getByRole('button', { name: 'Dark theme' });
+    if ((await themeToggle.getAttribute('aria-pressed')) !== String(theme === 'Dark')) await themeToggle.click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme.toLowerCase());
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.getByRole('heading', { name: 'Weekly comparison' }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath(`comparison-${theme.toLowerCase()}-desktop.png`), fullPage: true });

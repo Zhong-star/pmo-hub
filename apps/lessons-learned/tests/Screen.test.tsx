@@ -1842,31 +1842,27 @@ describe('Lessons Learned access check', () => {
     const view = renderScreen('local-contributor');
 
     await screen.findByRole('navigation', { name: 'Lessons Learned' });
-    const profileTrigger = screen.getByRole('button', { name: 'Local Contributor' });
-    await user.click(profileTrigger);
-    const headerTheme = screen.getByRole('group', { name: 'Color theme' });
-    const lightTheme = within(headerTheme).getByRole('button', { name: 'Light' });
-    const darkTheme = within(headerTheme).getByRole('button', { name: 'Dark' });
-    expect(lightTheme).toHaveAttribute('aria-pressed', 'true');
-    expect(darkTheme).toHaveAttribute('aria-pressed', 'false');
-    expect(headerTheme).toBeInTheDocument();
+    const themeToggle = within(screen.getByRole('banner')).getByRole('button', { name: 'Dark theme' });
+    expect(themeToggle).toHaveAttribute('aria-pressed', 'false');
+    expect(themeToggle).toHaveAttribute('title', 'Switch to dark theme');
+    expect(themeToggle.querySelector('svg')).not.toBeNull();
+    expect(themeToggle).toHaveAttribute('data-theme-icon', 'sun');
+    expect(screen.queryByRole('group', { name: 'Color theme' })).not.toBeInTheDocument();
     expect(document.querySelector('.module-sidebar .theme-controls')).toBeNull();
 
-    await user.tab();
-    await user.tab();
-    expect(darkTheme).toHaveFocus();
+    themeToggle.focus();
     await user.keyboard('{Enter}');
 
-    expect(darkTheme).toHaveAttribute('aria-pressed', 'true');
-    expect(lightTheme).toHaveAttribute('aria-pressed', 'false');
+    expect(themeToggle).toHaveAttribute('aria-pressed', 'true');
+    expect(themeToggle).toHaveAttribute('title', 'Switch to light theme');
+    expect(themeToggle).toHaveAttribute('data-theme-icon', 'moon');
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
     expect(window.sessionStorage.getItem('pmo-hub.theme')).toBe('dark');
 
     view.unmount();
     renderScreen('local-contributor');
     await screen.findByRole('navigation', { name: 'Lessons Learned' });
-    await user.click(screen.getByRole('button', { name: 'Local Contributor' }));
-    expect(within(screen.getByRole('group', { name: 'Color theme' })).getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('shows the PMO role returned by the API', async () => {

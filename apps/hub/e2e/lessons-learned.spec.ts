@@ -69,21 +69,18 @@ async function getThemeContrastRatios(page: import('@playwright/test').Page) {
     }
 
     const card = document.querySelector<HTMLElement>('.module-card, .welcome-card') ?? document.querySelector<HTMLElement>('main')!;
-    const themeMenu = document.querySelector<HTMLElement>('.hub-header__profile-menu')!;
-    const activeTheme = document.querySelector<HTMLButtonElement>('.hub-header__profile-menu button[aria-pressed="true"]')!;
-    const inactiveTheme = document.querySelector<HTMLButtonElement>('.hub-header__profile-menu button[aria-pressed="false"]')!;
+    const themeToggle = document.querySelector<HTMLButtonElement>('.hub-header__theme-toggle')!;
     const primaryAction = document.querySelector<HTMLElement>('.home-primary-button, .module-action')!;
     const header = document.querySelector<HTMLElement>('.hub-header')!;
-    const focusedThemeButton = document.querySelector<HTMLButtonElement>('.hub-header__profile-menu button:focus-visible');
+    const focusedThemeToggle = document.querySelector<HTMLButtonElement>('.hub-header__theme-toggle:focus-visible');
 
     return {
       heading: contrast(getComputedStyle(document.querySelector('#page-title')!).color, backgroundOf(card)),
       intro: contrast(getComputedStyle(document.querySelector('.intro, .profile-bar h2')!).color, backgroundOf(card)),
       primaryAction: contrast(getComputedStyle(primaryAction).color, getComputedStyle(primaryAction).backgroundColor),
-      activeTheme: contrast(getComputedStyle(activeTheme).color, getComputedStyle(activeTheme).backgroundColor),
-      inactiveTheme: contrast(getComputedStyle(inactiveTheme).color, getComputedStyle(themeMenu).backgroundColor),
+      themeToggleIcon: contrast(getComputedStyle(themeToggle).color, backgroundOf(themeToggle)),
       headerBrand: contrast(getComputedStyle(document.querySelector('.hub-header__brand')!).color, getComputedStyle(header).backgroundColor),
-      focus: focusedThemeButton ? contrast(getComputedStyle(focusedThemeButton).outlineColor, getComputedStyle(themeMenu).backgroundColor) : null,
+      focus: focusedThemeToggle ? contrast(getComputedStyle(focusedThemeToggle).outlineColor, getComputedStyle(header).backgroundColor) : null,
     };
   });
 }
@@ -1055,97 +1052,76 @@ test.describe('change profile from PMO moderation destinations', () => {
   });
 });
 
-test('profile menu theme is keyboard operable, readable, and shared across both apps in the current tab', async ({ page }) => {
+test('header theme icon is keyboard operable, readable, and shared across both apps in the current tab', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('pmo-hub.local-user-id', 'local-contributor'));
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 
-  const profileTrigger = page.getByRole('button', { name: 'Local Contributor' });
-  const selectDarkWithKeyboard = async () => {
-    const lightTheme = page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Light' });
-    const darkTheme = page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' });
-    if (!(await darkTheme.isVisible())) {
-      await profileTrigger.focus();
-      await page.keyboard.press('Enter');
-    }
-    await profileTrigger.focus();
-    await expect(lightTheme).toBeVisible();
+  const themeToggle = (target = page) => target.getByRole('banner').getByRole('button', { name: 'Dark theme' });
+  const expectThemeToggle = async (theme: 'light' | 'dark', target = page) => {
+    const toggle = themeToggle(target);
+    await expect(toggle).toHaveAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+    await expect(toggle).toHaveAttribute('data-theme-icon', theme === 'dark' ? 'moon' : 'sun');
+    await expect(toggle).toHaveAttribute('title', theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+    await expect(toggle.locator('svg')).toHaveCount(1);
+  };
+  const toggleWithKeyboard = async () => {
+    await page.getByRole('banner').getByRole('link', { name: 'PMO Hub', exact: true }).focus();
     await page.keyboard.press('Tab');
-    await expect(lightTheme).toBeFocused();
-    await page.keyboard.press('Tab');
-    await expect(darkTheme).toBeFocused();
+    await expect(themeToggle()).toBeFocused();
+    await expect(themeToggle()).toHaveCSS('outline-style', 'solid');
     await page.keyboard.press('Enter');
-    await expect(darkTheme).toHaveAttribute('aria-pressed', 'true');
-    await expect(lightTheme).toHaveAttribute('aria-pressed', 'false');
   };
   const assertReadableTheme = async () => {
     const ratios = await getThemeContrastRatios(page);
-    const { focus, ...textAndControlRatios } = ratios;
+    const { focus, themeToggleIcon, ...textAndControlRatios } = ratios;
     for (const [element, ratio] of Object.entries(textAndControlRatios)) {
       expect(ratio, `${element} contrast`).toBeGreaterThanOrEqual(4.5);
     }
+    expect(themeToggleIcon, 'theme icon contrast').toBeGreaterThanOrEqual(3);
     if (focus !== null) expect(focus).toBeGreaterThanOrEqual(3);
   };
-  const selectLightWithKeyboard = async () => {
-    const lightTheme = page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Light' });
-    const darkTheme = page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' });
-    await expect(darkTheme).toBeFocused();
-    await page.keyboard.press('Shift+Tab');
-    await expect(lightTheme).toBeFocused();
-    await page.keyboard.press('Enter');
-    await expect(lightTheme).toHaveAttribute('aria-pressed', 'true');
-    await expect(darkTheme).toHaveAttribute('aria-pressed', 'false');
-  };
 
-  await profileTrigger.click();
-  await expect(page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Light' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByRole('group', { name: 'Color theme' })).toHaveCount(0);
+  await expectThemeToggle('light');
   await assertReadableTheme();
 
-  await selectDarkWithKeyboard();
+  await toggleWithKeyboard();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expectThemeToggle('dark');
   await expect(page.getByRole('link', { name: 'Open Lessons Learned' }).locator('.module-action')).toHaveCSS('background-color', 'rgb(24, 104, 219)');
   await assertReadableTheme();
 
   await page.getByRole('link', { name: 'Open Lessons Learned' }).click();
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.getByRole('button', { name: 'Local Contributor' }).focus();
-  await page.keyboard.press('Enter');
-  const darkTheme = page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' });
-  await expect(darkTheme).toHaveAttribute('aria-pressed', 'true');
+  await expectThemeToggle('dark');
   await assertReadableTheme();
-  await darkTheme.focus();
-  await selectLightWithKeyboard();
+  await toggleWithKeyboard();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expectThemeToggle('light');
   await expect(page.locator('.home-primary-button')).toHaveCSS('background-color', 'rgb(24, 104, 219)');
   await assertReadableTheme();
 
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  if (!(await page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Light' }).isVisible())) {
-    await page.getByRole('button', { name: 'Local Contributor' }).click();
-  }
-  await expect(page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Light' })).toHaveAttribute('aria-pressed', 'true');
-  await selectDarkWithKeyboard();
+  await expectThemeToggle('light');
+  await toggleWithKeyboard();
   await page.goForward();
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
   await page.reload();
-  await page.getByRole('button', { name: 'Local Contributor' }).click();
-  await expect(page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
+  await expectThemeToggle('dark');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
   const freshTab = await page.context().newPage();
   await freshTab.addInitScript(() => localStorage.setItem('pmo-hub.local-user-id', 'local-contributor'));
   await freshTab.goto('/');
   await expect(freshTab.getByRole('heading', { name: 'Module catalog' })).toBeVisible();
-  await freshTab.getByRole('button', { name: 'Local Contributor' }).click();
-  await expect(freshTab.getByRole('button', { name: 'Light' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(freshTab.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'false');
+  await expectThemeToggle('light', freshTab);
 });
 
 test('migrates the existing Lessons Learned theme preference to the shared session preference', async ({ page }) => {
@@ -1156,8 +1132,7 @@ test('migrates the existing Lessons Learned theme preference to the shared sessi
   await page.goto('/lessons-learned');
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.getByRole('button', { name: 'Local Contributor' }).click();
-  await expect(page.getByRole('group', { name: 'Color theme' }).getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => sessionStorage.getItem('pmo-hub.theme'))).toBe('dark');
   expect(await page.evaluate(() => sessionStorage.getItem('pmo-hub.lessons-learned.theme'))).toBeNull();
 });

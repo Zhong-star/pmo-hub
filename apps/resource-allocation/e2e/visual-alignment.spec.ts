@@ -236,9 +236,7 @@ test('keeps all six areas readable in both themes and reflows for keyboard and n
 
   for (const theme of ['light', 'dark'] as const) {
     if (theme === 'dark') {
-      await page.getByRole('button', { name: 'Casey Admin' }).click();
-      await page.getByRole('button', { name: 'Dark', exact: true }).click();
-      await page.getByRole('button', { name: 'Casey Admin' }).click();
+      await page.getByRole('button', { name: 'Dark theme' }).click();
     }
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 
@@ -443,9 +441,7 @@ test('shows loading, empty, and retryable error states in the selected area', as
   await expect(page.getByText('No notifications match this filter.')).toBeVisible();
   await capture(page, 'state-empty-notifications-light');
 
-  await page.getByRole('button', { name: 'Casey Admin' }).click();
-  await page.getByRole('button', { name: 'Dark', exact: true }).click();
-  await page.getByRole('button', { name: 'Casey Admin' }).click();
+  await page.getByRole('button', { name: 'Dark theme' }).click();
   await page.route(`${apiRoot}/requests**`, async (route) => route.fulfill({
     status: 503,
     contentType: 'application/problem+json',
@@ -471,9 +467,7 @@ test('keeps conflicts and denied destinations readable before protected content 
     await route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 50 } } });
   });
   await page.goto('/resource-allocation/?page=administration');
-  await page.getByRole('button', { name: 'Casey Admin' }).click();
-  await page.getByRole('button', { name: 'Dark', exact: true }).click();
-  await page.getByRole('button', { name: 'Casey Admin' }).click();
+  await page.getByRole('button', { name: 'Dark theme' }).click();
   await page.getByRole('button', { name: 'Add person' }).click();
   await page.getByLabel('Local user ID').fill('duplicate-local-user');
   await page.getByLabel('Display name').fill('Avery Engineer');

@@ -89,10 +89,8 @@ test('Admin can classify a legacy person and sees non-retroactive and access gui
 
   await expect(page.getByRole('row', { name: /Legacy Person.*User.*Third party/ })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Morgan Admin' }).click();
-  await page.getByRole('button', { name: 'Dark' }).click();
+  await page.getByRole('button', { name: 'Dark theme' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Edit person Legacy Person' }).click();
   await expect(page.getByLabel('Classification')).toHaveValue('THIRD_PARTY');
 

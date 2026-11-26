@@ -1,5 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react';
 import type { Theme } from './theme';
+import { ThemeToggle } from './ThemeToggle';
 import './HubHeader.css';
 
 export interface HubHeaderProps {
@@ -22,67 +23,49 @@ export function HubHeader({ profileName, onChangeProfile, theme, onThemeChange, 
         <span>PMO Hub</span>
       </a>
 
-      {(actions || (canChangeProfile && profileName && onChangeProfile)) && (
-        <div className="hub-header__right">
-          {actions}
-          {canChangeProfile && profileName && onChangeProfile && (
+      <div className="hub-header__right">
+        <ThemeToggle className="hub-header__theme-toggle" theme={theme} onThemeChange={onThemeChange} />
+        {actions}
+        {canChangeProfile && profileName && onChangeProfile && (
+          <div
+            className="hub-header__profile"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setIsProfileMenuOpen(false);
+                profileMenuTrigger.current?.focus();
+              }
+            }}
+          >
+            <button
+              ref={profileMenuTrigger}
+              className="hub-header__profile-trigger"
+              type="button"
+              aria-label={profileName}
+              aria-expanded={isProfileMenuOpen}
+              aria-controls="hub-profile-menu"
+              onClick={() => setIsProfileMenuOpen((isOpen) => !isOpen)}
+            >
+              <span>{profileName}</span>
+              <span className="hub-header__chevron" aria-hidden="true">⌄</span>
+            </button>
             <div
-              className="hub-header__profile"
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  setIsProfileMenuOpen(false);
-                  profileMenuTrigger.current?.focus();
-                }
-              }}
+              className="hub-header__profile-menu"
+              id="hub-profile-menu"
+              aria-label="Profile actions"
+              hidden={!isProfileMenuOpen}
             >
               <button
-                ref={profileMenuTrigger}
-                className="hub-header__profile-trigger"
                 type="button"
-                aria-label={profileName}
-                aria-expanded={isProfileMenuOpen}
-                aria-controls="hub-profile-menu"
-                onClick={() => setIsProfileMenuOpen((isOpen) => !isOpen)}
+                onClick={() => {
+                  if (onChangeProfile() !== false) setIsProfileMenuOpen(false);
+                }}
               >
-                <span>{profileName}</span>
-                <span className="hub-header__chevron" aria-hidden="true">⌄</span>
+                Change profile
               </button>
-              <div
-                className="hub-header__profile-menu"
-                id="hub-profile-menu"
-                aria-label="Profile actions"
-                hidden={!isProfileMenuOpen}
-              >
-                <div className="hub-header__theme-controls" role="group" aria-label="Color theme">
-                  <button
-                    type="button"
-                    aria-pressed={theme === 'light'}
-                    onClick={() => onThemeChange('light')}
-                  >
-                    Light
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={theme === 'dark'}
-                    onClick={() => onThemeChange('dark')}
-                  >
-                    Dark
-                  </button>
-                </div>
-                <div className="hub-header__menu-divider" aria-hidden="true" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onChangeProfile() !== false) setIsProfileMenuOpen(false);
-                  }}
-                >
-                  Change profile
-                </button>
-              </div>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </header>
   );
 }
