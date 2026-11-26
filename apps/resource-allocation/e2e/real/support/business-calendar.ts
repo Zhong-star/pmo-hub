@@ -16,6 +16,11 @@ export function businessToday(now: Date = new Date()): string {
   return `${part('year')}-${part('month')}-${part('day')}`;
 }
 
+/** Business date (YYYY-MM-DD) in America/Sao_Paulo once the given number of hours has passed. */
+export function businessDateAfterHours(hours: number, now: Date = new Date()): string {
+  return businessToday(new Date(now.getTime() + hours * 3_600_000));
+}
+
 /** Adds calendar days to a date-only value. */
 export function addDays(date: string, days: number): string {
   const value = new Date(`${date}T00:00:00.000Z`);

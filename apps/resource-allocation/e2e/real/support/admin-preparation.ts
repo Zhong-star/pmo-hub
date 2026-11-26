@@ -42,6 +42,12 @@ export interface PreparedProfile {
   groupId: string;
 }
 
+export interface PreparedInitiative {
+  id: string;
+  code: string;
+  name: string;
+}
+
 export interface PreparedCapacity {
   id: string;
   effectiveDate: string;
@@ -214,6 +220,22 @@ export async function prepareTeam(request: APIRequestContext, spec: TeamSpec): P
     members.push(await ensurePerson(request, { ...member, role: member.role ?? 'ALLOCATION_USER', groupId: group.id }));
   }
   return { group, profile, supervisor, manager, members };
+}
+
+/** Ensures an active ITDM with this code exists, created with the given name. */
+export async function ensureInitiative(request: APIRequestContext, code: string, name: string): Promise<PreparedInitiative> {
+  const initiatives = await listAll<PreparedInitiative & { active: boolean }>(request, '/admin/initiatives');
+  const existing = initiatives.find((initiative) => initiative.code.toUpperCase() === code.toUpperCase());
+  if (existing) {
+    if (!existing.active) throw new Error(`ITDM ${code} already exists but is inactive.`);
+    return existing;
+  }
+  const response = await request.post(`${apiRoot}/admin/initiatives`, {
+    headers: writeHeaders(),
+    data: { code, name, active: true },
+  });
+  await expectOk(response, `Creating ITDM ${code}`);
+  return (await response.json()) as PreparedInitiative;
 }
 
 /** Ensures an FTE capacity entry for the group, profile, and classification from the effective date. */
