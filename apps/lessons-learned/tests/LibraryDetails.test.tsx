@@ -439,4 +439,27 @@ describe('published Library lesson details', () => {
     expect(getLibraryLessonDetails).toHaveBeenCalledTimes(1);
     expect(recordLibraryView).not.toHaveBeenCalled();
   });
+
+  it('omits redundant footer close buttons and closes when clicking outside on the backdrop', async () => {
+    vi.mocked(getLibrary).mockResolvedValue([libraryLesson()]);
+    renderLibrary('/lessons-learned/?page=library');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('link', { name: 'View Improve release handover' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Published lesson details' });
+    expect(await within(dialog).findByText('The handover omitted the runbook.')).toBeVisible();
+
+    expect(within(dialog).getByRole('button', { name: 'Close published lesson details' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Back to Lessons Library' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Close details' })).not.toBeInTheDocument();
+
+    // Clicking inside the dialog content does not close it
+    await user.click(within(dialog).getByText('The handover omitted the runbook.'));
+    expect(screen.getByRole('dialog', { name: 'Published lesson details' })).toBeInTheDocument();
+
+    // Clicking outside on the dialog backdrop closes it
+    await user.click(dialog);
+    await waitFor(() => expect(window.location.search).toBe('?page=library'));
+    expect(screen.queryByRole('dialog', { name: 'Published lesson details' })).not.toBeInTheDocument();
+  });
 });

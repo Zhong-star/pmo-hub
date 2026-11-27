@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { XIcon } from '../../shared-ui/src/Icons';
 import type { LessonDraft, LessonProject, SubmitLessonBody, UpdateLessonDraftBody } from './api';
-import { useDialogFocus } from './useDialogFocus';
+import { useDialogBackdropClose, useDialogFocus } from './useDialogFocus';
 import './DraftEditor.css';
 
 type DraftFields = Required<Omit<UpdateLessonDraftBody, 'version' | 'etag'>>;
@@ -208,6 +209,8 @@ export function DraftEditor({
     onClose();
     return true;
   }, [isDirty, isReloading, isSaving, onClose]);
+
+  const backdropHandlers = useDialogBackdropClose(requestClose);
 
   useEffect(() => {
     onRegisterNavigationCloseRequest?.(requestClose);
@@ -427,29 +430,62 @@ export function DraftEditor({
     }
   }
 
+  const hasFeedback = Object.keys(submissionFieldErrors).length > 0 || Boolean(error) || isSaved || isSubmitted;
+
+  function renderTextareaField(field: (typeof longFields)[number]) {
+    const fieldError = submissionFieldErrors[field.name];
+    return (
+      <div className="draft-editor-field" key={field.name}>
+        <div className="draft-editor-field-header">
+          <label htmlFor={`lesson-${field.name}`}>{field.label}</label>
+          <p id={`lesson-${field.name}-count`} className="draft-editor-counter">
+            {(fields[field.name] ?? '').length}/4000 characters
+          </p>
+        </div>
+        <textarea
+          id={`lesson-${field.name}`}
+          rows={4}
+          maxLength={4000}
+          disabled={isSaving || isReloading || isSubmitted}
+          value={fields[field.name] ?? ''}
+          aria-invalid={fieldError ? 'true' : undefined}
+          aria-describedby={fieldError
+            ? `lesson-${field.name}-error lesson-${field.name}-count`
+            : `lesson-${field.name}-count`}
+          onChange={(event) => updateField(field.name, event.target.value)}
+        />
+        {fieldError && (
+          <p id={`lesson-${field.name}-error`} className="draft-editor-error">{fieldError}</p>
+        )}
+      </div>
+    );
+  }
+
   return createPortal(
     <dialog
-        ref={dialogRef}
-        className="draft-editor-dialog"
-        aria-modal="true"
-        aria-labelledby="draft-editor-title"
-        onKeyDown={handleKeyDown}
-        onCancel={(event) => {
-          event.preventDefault();
-          requestClose();
-        }}
-      >
-        <form className="draft-editor-form" noValidate onSubmit={save}>
-          <div className="draft-editor-heading">
-            <div>
-              {draftId !== null && <p className="draft-editor-eyebrow">{isSubmitted || isEvaluationDraft ? `Lesson #${draftId} · PMO evaluation` : `Draft #${draftId} · Open`}</p>}
-              <h2 id="draft-editor-title">{isSubmitted ? 'Lesson submitted' : draftId === null ? 'Create lesson' : 'Edit lesson'}</h2>
-            </div>
-            <button className="draft-editor-close" type="button" aria-label="Close editor" disabled={isSaving || isReloading} onClick={requestClose}>
-              ×
-            </button>
+      ref={dialogRef}
+      className="draft-editor-dialog"
+      aria-modal="true"
+      aria-labelledby="draft-editor-title"
+      {...backdropHandlers}
+      onKeyDown={handleKeyDown}
+      onCancel={(event) => {
+        event.preventDefault();
+        requestClose();
+      }}
+    >
+      <form className="draft-editor-form" noValidate onSubmit={save}>
+        <div className="draft-editor-heading">
+          <div className="draft-editor-heading__meta">
+            {draftId !== null && <p className="draft-editor-eyebrow">{isSubmitted || isEvaluationDraft ? `Lesson #${draftId} · PMO evaluation` : `Draft #${draftId} · Open`}</p>}
+            <h2 id="draft-editor-title">{isSubmitted ? 'Lesson submitted' : draftId === null ? 'Create lesson' : 'Edit lesson'}</h2>
           </div>
+          <button className="draft-editor-close" type="button" aria-label="Close editor" disabled={isSaving || isReloading} onClick={requestClose}>
+            <XIcon size={18} />
+          </button>
+        </div>
 
+        <div className="draft-editor-body">
           {projectsLoading && <p className="draft-editor-catalog-status" role="status">Loading project options…</p>}
           {projectsError && (
             <div className="draft-editor-catalog-status" role="alert" aria-label="Project options error">
@@ -468,209 +504,202 @@ export function DraftEditor({
             </div>
           )}
 
-          <div className="draft-editor-field">
-            <label htmlFor="lesson-title">Title</label>
-            <input
-              ref={titleRef}
-              id="lesson-title"
-              type="text"
-              required
-              maxLength={150}
-              disabled={isSaving || isReloading || isSubmitted}
-              value={fields.title}
-              aria-invalid={titleError || submissionFieldErrors.title ? 'true' : undefined}
-              aria-describedby={titleError
-                ? 'lesson-title-error'
-                : submissionFieldErrors.title ? 'lesson-title-submission-error' : 'lesson-title-count'}
-              onChange={(event) => updateField('title', event.target.value)}
-            />
-            {titleError ? (
-              <p id="lesson-title-error" className="draft-editor-error" role="alert" aria-live="assertive">{titleError}</p>
-            ) : submissionFieldErrors.title ? (
-              <p id="lesson-title-submission-error" className="draft-editor-error">{submissionFieldErrors.title}</p>
-            ) : (
-              <p id="lesson-title-count" className="draft-editor-counter">{fields.title.length}/150 characters</p>
-            )}
-          </div>
-
-          <div className="draft-editor-field">
-            <label htmlFor="lesson-project">Project</label>
-            <select
-              ref={projectRef}
-              id="lesson-project"
-              disabled={isSaving || isReloading || isSubmitted}
-              value={selectedProjectValue}
-              aria-invalid={hasUnavailableProjectSelection || submissionFieldErrors.projectId || submissionFieldErrors.projectName
-                ? 'true' : undefined}
-              aria-describedby={hasUnavailableProjectSelection
-                ? 'lesson-project-error'
-                : submissionFieldErrors.projectId || submissionFieldErrors.projectName ? 'lesson-project-submission-error' : undefined}
-              onChange={(event) => setProject(event.target.value)}
-            >
-              <option value="">No project</option>
-              {projectChoices.map((project) => (
-                <option key={projectKey(project)} value={projectKey(project)}>
-                  {project.name}
-                  {project.isSavedSnapshot ? ' (saved project)' : ''}
-                  {project.isUnavailableSelection ? ' (no longer available; choose another project)' : ''}
-                </option>
-              ))}
-            </select>
-            {hasUnavailableProjectSelection && (
-              <p id="lesson-project-error" className="draft-editor-error" role="alert">
-                This project is no longer available. Choose a current project or No project before saving.
-              </p>
-            )}
-            {!hasUnavailableProjectSelection && (submissionFieldErrors.projectId || submissionFieldErrors.projectName) && (
-              <p id="lesson-project-submission-error" className="draft-editor-error">
-                {submissionFieldErrors.projectId ?? submissionFieldErrors.projectName}
-              </p>
-            )}
-          </div>
-
-          <div className="draft-editor-grid">
+          <section className="draft-editor-section" aria-label="Overview and classification">
+            <h3 className="draft-editor-section__title">Overview &amp; classification</h3>
             <div className="draft-editor-field">
-              <label htmlFor="lesson-project-category">Project category</label>
-              <select
-                id="lesson-project-category"
-                disabled={isSaving || isReloading || isSubmitted}
-                value={fields.projectCategory ?? ''}
-                aria-invalid={submissionFieldErrors.projectCategory ? 'true' : undefined}
-                aria-describedby={submissionFieldErrors.projectCategory ? 'lesson-project-category-error' : undefined}
-                onChange={(event) => updateField('projectCategory', (event.target.value || null) as DraftFields['projectCategory'])}
-              >
-                <option value="">Select category</option>
-                {categories.map((category) => <option key={category}>{category}</option>)}
-              </select>
-              {submissionFieldErrors.projectCategory && (
-                <p id="lesson-project-category-error" className="draft-editor-error">{submissionFieldErrors.projectCategory}</p>
-              )}
-            </div>
-            <div className="draft-editor-field">
-              <label htmlFor="lesson-project-phase">Project phase</label>
-              <select
-                id="lesson-project-phase"
-                disabled={isSaving || isReloading || isSubmitted}
-                value={fields.projectPhase ?? ''}
-                aria-invalid={submissionFieldErrors.projectPhase ? 'true' : undefined}
-                aria-describedby={submissionFieldErrors.projectPhase ? 'lesson-project-phase-error' : undefined}
-                onChange={(event) => updateField('projectPhase', (event.target.value || null) as DraftFields['projectPhase'])}
-              >
-                <option value="">Select phase</option>
-                {phases.map((phase) => <option key={phase}>{phase}</option>)}
-              </select>
-              {submissionFieldErrors.projectPhase && (
-                <p id="lesson-project-phase-error" className="draft-editor-error">{submissionFieldErrors.projectPhase}</p>
-              )}
-            </div>
-          </div>
-
-          {longFields.slice(0, 2).map((field) => (
-            <div className="draft-editor-field" key={field.name}>
-              <label htmlFor={`lesson-${field.name}`}>{field.label}</label>
-              <textarea
-                id={`lesson-${field.name}`}
-                rows={4}
-                maxLength={4000}
-                disabled={isSaving || isReloading || isSubmitted}
-                value={fields[field.name] ?? ''}
-                aria-invalid={submissionFieldErrors[field.name] ? 'true' : undefined}
-                aria-describedby={submissionFieldErrors[field.name]
-                  ? `lesson-${field.name}-error lesson-${field.name}-count`
-                  : `lesson-${field.name}-count`}
-                onChange={(event) => updateField(field.name, event.target.value)}
-              />
-              {submissionFieldErrors[field.name] && (
-                <p id={`lesson-${field.name}-error`} className="draft-editor-error">{submissionFieldErrors[field.name]}</p>
-              )}
-              <p id={`lesson-${field.name}-count`} className="draft-editor-counter">
-                {(fields[field.name] ?? '').length}/4000 characters
-              </p>
-            </div>
-          ))}
-
-          <div className="draft-editor-field">
-            <label htmlFor="lesson-type">Lesson type</label>
-            <select
-              id="lesson-type"
-              disabled={isSaving || isReloading || isSubmitted}
-              value={fields.lessonType ?? ''}
-              aria-invalid={submissionFieldErrors.lessonType ? 'true' : undefined}
-              aria-describedby={submissionFieldErrors.lessonType ? 'lesson-type-error' : undefined}
-              onChange={(event) => updateField('lessonType', (event.target.value || null) as DraftFields['lessonType'])}
-            >
-              <option value="">Select lesson type</option>
-              {types.map((lessonType) => <option key={lessonType}>{lessonType}</option>)}
-            </select>
-            {submissionFieldErrors.lessonType && (
-              <p id="lesson-type-error" className="draft-editor-error">{submissionFieldErrors.lessonType}</p>
-            )}
-          </div>
-
-          {longFields.slice(2).map((field) => (
-            <div className="draft-editor-field" key={field.name}>
-              <label htmlFor={`lesson-${field.name}`}>{field.label}</label>
-              <textarea
-                id={`lesson-${field.name}`}
-                rows={4}
-                maxLength={4000}
-                disabled={isSaving || isReloading || isSubmitted}
-                value={fields[field.name] ?? ''}
-                aria-invalid={submissionFieldErrors[field.name] ? 'true' : undefined}
-                aria-describedby={submissionFieldErrors[field.name]
-                  ? `lesson-${field.name}-error lesson-${field.name}-count`
-                  : `lesson-${field.name}-count`}
-                onChange={(event) => updateField(field.name, event.target.value)}
-              />
-              {submissionFieldErrors[field.name] && (
-                <p id={`lesson-${field.name}-error`} className="draft-editor-error">{submissionFieldErrors[field.name]}</p>
-              )}
-              <p id={`lesson-${field.name}-count`} className="draft-editor-counter">
-                {(fields[field.name] ?? '').length}/4000 characters
-              </p>
-            </div>
-          ))}
-
-          {Object.keys(submissionFieldErrors).length > 0 && (
-            <div className="draft-editor-error" role="alert" aria-label="Submission errors">
-              <p>{isEvaluationEdit ? 'Review these fields before saving:' : 'Review these fields before submitting:'}</p>
-              <ul>
-                {Object.entries(submissionFieldErrors).map(([field, message]) => (
-                  <li key={field}>{submissionFieldLabels[field as keyof DraftFields]}: {message}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {error && <p className="draft-editor-error" role="alert">{error}</p>}
-          {isSaved && <p className="draft-editor-success" role="status">Draft saved.</p>}
-          {isSubmitted && <p className="draft-editor-success" role="status">Lesson submitted for PMO review.</p>}
-          <div className="draft-editor-actions">
-            {!isSubmitted && hasConflict && draftId !== null && (
-              <button className="draft-editor-secondary" type="button" disabled={isReloading} onClick={() => void reloadLatestVersion()}>
-                {isReloading ? 'Reloading…' : 'Reload latest version'}
-              </button>
-            )}
-            {isLessonNotOpen && draftId !== null && onViewCurrent && (
-              <button className="draft-editor-secondary" type="button" onClick={() => onViewCurrent(draftId)}>
-                View current lesson details and history
-              </button>
-            )}
-            {!isSubmitted && (
-              <>
-                <button className="draft-editor-primary" type="submit" disabled={isSaving || isReloading || isLessonNotOpen}>
-                  {isSaving ? isSubmitting ? 'Submitting…' : 'Saving…' : 'Save Draft'}
-                </button>
-                {canSubmit && (
-                  <button className="draft-editor-primary" type="button" disabled={isSaving || isReloading || isLessonNotOpen} onClick={() => void submit()}>
-                    {isSubmitting ? 'Submitting…' : 'Submit for PMO Review'}
-                  </button>
+              <div className="draft-editor-field-header">
+                <label htmlFor="lesson-title">Title</label>
+                {!titleError && !submissionFieldErrors.title && (
+                  <p id="lesson-title-count" className="draft-editor-counter">{fields.title.length}/150 characters</p>
                 )}
-              </>
+              </div>
+              <input
+                ref={titleRef}
+                id="lesson-title"
+                type="text"
+                required
+                maxLength={150}
+                disabled={isSaving || isReloading || isSubmitted}
+                value={fields.title}
+                aria-invalid={titleError || submissionFieldErrors.title ? 'true' : undefined}
+                aria-describedby={titleError
+                  ? 'lesson-title-error'
+                  : submissionFieldErrors.title ? 'lesson-title-submission-error' : 'lesson-title-count'}
+                onChange={(event) => updateField('title', event.target.value)}
+              />
+              {titleError ? (
+                <p id="lesson-title-error" className="draft-editor-error" role="alert" aria-live="assertive">{titleError}</p>
+              ) : submissionFieldErrors.title ? (
+                <p id="lesson-title-submission-error" className="draft-editor-error">{submissionFieldErrors.title}</p>
+              ) : null}
+            </div>
+
+            <div className="draft-editor-grid">
+              <div className="draft-editor-field">
+                <label htmlFor="lesson-project">Project</label>
+                <select
+                  ref={projectRef}
+                  id="lesson-project"
+                  disabled={isSaving || isReloading || isSubmitted}
+                  value={selectedProjectValue}
+                  aria-invalid={hasUnavailableProjectSelection || submissionFieldErrors.projectId || submissionFieldErrors.projectName
+                    ? 'true' : undefined}
+                  aria-describedby={hasUnavailableProjectSelection
+                    ? 'lesson-project-error'
+                    : submissionFieldErrors.projectId || submissionFieldErrors.projectName ? 'lesson-project-submission-error' : undefined}
+                  onChange={(event) => setProject(event.target.value)}
+                >
+                  <option value="">No project</option>
+                  {projectChoices.map((project) => (
+                    <option key={projectKey(project)} value={projectKey(project)}>
+                      {project.name}
+                      {project.isSavedSnapshot ? ' (saved project)' : ''}
+                      {project.isUnavailableSelection ? ' (no longer available; choose another project)' : ''}
+                    </option>
+                  ))}
+                </select>
+                {hasUnavailableProjectSelection && (
+                  <p id="lesson-project-error" className="draft-editor-error" role="alert">
+                    This project is no longer available. Choose a current project or No project before saving.
+                  </p>
+                )}
+                {!hasUnavailableProjectSelection && (submissionFieldErrors.projectId || submissionFieldErrors.projectName) && (
+                  <p id="lesson-project-submission-error" className="draft-editor-error">
+                    {submissionFieldErrors.projectId ?? submissionFieldErrors.projectName}
+                  </p>
+                )}
+              </div>
+
+              <div className="draft-editor-field">
+                <label htmlFor="lesson-type">Lesson type</label>
+                <select
+                  id="lesson-type"
+                  disabled={isSaving || isReloading || isSubmitted}
+                  value={fields.lessonType ?? ''}
+                  aria-invalid={submissionFieldErrors.lessonType ? 'true' : undefined}
+                  aria-describedby={submissionFieldErrors.lessonType ? 'lesson-type-error' : undefined}
+                  onChange={(event) => updateField('lessonType', (event.target.value || null) as DraftFields['lessonType'])}
+                >
+                  <option value="">Select lesson type</option>
+                  {types.map((lessonType) => <option key={lessonType}>{lessonType}</option>)}
+                </select>
+                {submissionFieldErrors.lessonType && (
+                  <p id="lesson-type-error" className="draft-editor-error">{submissionFieldErrors.lessonType}</p>
+                )}
+              </div>
+
+              <div className="draft-editor-field">
+                <label htmlFor="lesson-project-category">Project category</label>
+                <select
+                  id="lesson-project-category"
+                  disabled={isSaving || isReloading || isSubmitted}
+                  value={fields.projectCategory ?? ''}
+                  aria-invalid={submissionFieldErrors.projectCategory ? 'true' : undefined}
+                  aria-describedby={submissionFieldErrors.projectCategory ? 'lesson-project-category-error' : undefined}
+                  onChange={(event) => updateField('projectCategory', (event.target.value || null) as DraftFields['projectCategory'])}
+                >
+                  <option value="">Select category</option>
+                  {categories.map((category) => <option key={category}>{category}</option>)}
+                </select>
+                {submissionFieldErrors.projectCategory && (
+                  <p id="lesson-project-category-error" className="draft-editor-error">{submissionFieldErrors.projectCategory}</p>
+                )}
+              </div>
+
+              <div className="draft-editor-field">
+                <label htmlFor="lesson-project-phase">Project phase</label>
+                <select
+                  id="lesson-project-phase"
+                  disabled={isSaving || isReloading || isSubmitted}
+                  value={fields.projectPhase ?? ''}
+                  aria-invalid={submissionFieldErrors.projectPhase ? 'true' : undefined}
+                  aria-describedby={submissionFieldErrors.projectPhase ? 'lesson-project-phase-error' : undefined}
+                  onChange={(event) => updateField('projectPhase', (event.target.value || null) as DraftFields['projectPhase'])}
+                >
+                  <option value="">Select phase</option>
+                  {phases.map((phase) => <option key={phase}>{phase}</option>)}
+                </select>
+                {submissionFieldErrors.projectPhase && (
+                  <p id="lesson-project-phase-error" className="draft-editor-error">{submissionFieldErrors.projectPhase}</p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="draft-editor-section" aria-label="Context and analysis">
+            <h3 className="draft-editor-section__title">Context &amp; analysis</h3>
+            {longFields.slice(0, 3).map(renderTextareaField)}
+          </section>
+
+          <section className="draft-editor-section" aria-label="Guidance and reuse">
+            <h3 className="draft-editor-section__title">Guidance &amp; reuse</h3>
+            {longFields.slice(3).map(renderTextareaField)}
+          </section>
+        </div>
+
+        {hasFeedback && (
+          <div className="draft-editor-feedback">
+            {Object.keys(submissionFieldErrors).length > 0 && (
+              <div className="draft-editor-error-summary" role="alert" aria-label="Submission errors">
+                <p>{isEvaluationEdit ? 'Review these fields before saving:' : 'Review these fields before submitting:'}</p>
+                <ul>
+                  {Object.entries(submissionFieldErrors).map(([field, message]) => (
+                    <li key={field}>{submissionFieldLabels[field as keyof DraftFields]}: {message}</li>
+                  ))}
+                </ul>
+              </div>
             )}
-            <button className="draft-editor-secondary" type="button" disabled={isSaving || isReloading} onClick={requestClose}>Close</button>
+            {error && <p className="draft-editor-error" role="alert">{error}</p>}
+            {isSaved && <p className="draft-editor-success" role="status">Draft saved.</p>}
+            {isSubmitted && <p className="draft-editor-success" role="status">Lesson submitted for PMO review.</p>}
           </div>
-        </form>
-      </dialog>,
+        )}
+
+        <div className="draft-editor-actions">
+          {!isSubmitted && hasConflict && draftId !== null && (
+            <button
+              className="draft-editor-secondary draft-editor-actions__leading"
+              type="button"
+              disabled={isReloading}
+              onClick={() => void reloadLatestVersion()}
+            >
+              {isReloading ? 'Reloading…' : 'Reload latest version'}
+            </button>
+          )}
+          {isLessonNotOpen && draftId !== null && onViewCurrent && (
+            <button
+              className={hasConflict ? 'draft-editor-secondary' : 'draft-editor-secondary draft-editor-actions__leading'}
+              type="button"
+              onClick={() => onViewCurrent(draftId)}
+            >
+              View current lesson details and history
+            </button>
+          )}
+          {!isSubmitted && (
+            <>
+              <button
+                className={canSubmit ? 'draft-editor-secondary' : 'draft-editor-primary'}
+                type="submit"
+                disabled={isSaving || isReloading || isLessonNotOpen}
+              >
+                {isSaving ? isSubmitting ? 'Submitting…' : 'Saving…' : 'Save Draft'}
+              </button>
+              {canSubmit && (
+                <button
+                  className="draft-editor-primary"
+                  type="button"
+                  disabled={isSaving || isReloading || isLessonNotOpen}
+                  onClick={() => void submit()}
+                >
+                  {isSubmitting ? 'Submitting…' : 'Submit for PMO Review'}
+                </button>
+              )}
+            </>
+          )}
+          <button className="draft-editor-ghost" type="button" disabled={isSaving || isReloading} onClick={requestClose}>Close</button>
+        </div>
+      </form>
+    </dialog>,
     document.body,
   );
 }

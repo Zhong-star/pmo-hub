@@ -1,6 +1,33 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useRef, type MouseEvent as ReactMouseEvent, type RefObject } from 'react';
 
 const inertShells = new WeakMap<HTMLElement, { dialogs: number; wasInert: boolean }>();
+
+export function useDialogBackdropClose(onRequestClose: () => void) {
+  const mouseDownOnBackdropRef = useRef(false);
+
+  function isOutsideDialogBox(event: ReactMouseEvent<HTMLDialogElement>): boolean {
+    if (event.target !== event.currentTarget) return false;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return true;
+    return (
+      event.clientX < rect.left
+      || event.clientX > rect.right
+      || event.clientY < rect.top
+      || event.clientY > rect.bottom
+    );
+  }
+
+  return {
+    onMouseDown(event: ReactMouseEvent<HTMLDialogElement>) {
+      mouseDownOnBackdropRef.current = isOutsideDialogBox(event);
+    },
+    onClick(event: ReactMouseEvent<HTMLDialogElement>) {
+      const shouldClose = mouseDownOnBackdropRef.current && isOutsideDialogBox(event);
+      mouseDownOnBackdropRef.current = false;
+      if (shouldClose) onRequestClose();
+    },
+  };
+}
 
 export function useDialogFocus(
   dialogRef: RefObject<HTMLDialogElement | null>,

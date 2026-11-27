@@ -264,7 +264,7 @@ describe('Profile Search and Contributor Profile screens', () => {
     });
 
     // Close dialog and verify vote button on Contributor Profile is synced
-    await user.click(within(dialog).getByRole('button', { name: 'Close details' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Close lesson details' }));
     expect(screen.getByRole('button', { name: /Remove vote for Published Release Guide \(3\)/i })).toBeInTheDocument();
 
     // Return to Profiles

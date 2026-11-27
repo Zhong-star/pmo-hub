@@ -626,4 +626,43 @@ describe('Lessons Learned draft editor', () => {
     expect(screen.queryByRole('dialog', { name: 'Edit lesson' })).not.toBeInTheDocument();
     expect(screen.getByRole('main')).not.toHaveAttribute('inert');
   });
+
+  it('closes on backdrop click when clean, confirms when dirty, and ignores inner or busy clicks', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const onCloseClean = vi.fn();
+    renderEditor({ onClose: onCloseClean });
+
+    const dialog = screen.getByRole('dialog', { name: 'Edit lesson' });
+    await user.click(screen.getByRole('textbox', { name: 'Title' }));
+    expect(onCloseClean).not.toHaveBeenCalled();
+
+    await user.click(dialog);
+    expect(onCloseClean).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    const onCloseDirty = vi.fn();
+    let resolveSave!: (saved: LessonDraft) => void;
+    const onSave = vi.fn(() => new Promise<LessonDraft>((resolve) => { resolveSave = resolve; }));
+    renderEditor({ onClose: onCloseDirty, onSave });
+
+    const dirtyDialog = screen.getByRole('dialog', { name: 'Edit lesson' });
+    await user.type(screen.getByRole('textbox', { name: 'Situation observed' }), 'Added context');
+    await user.click(dirtyDialog);
+    expect(confirm).toHaveBeenCalledWith('Discard your unsaved changes?');
+    expect(onCloseDirty).not.toHaveBeenCalled();
+
+    // Backdrop click is ignored while saving
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+    await user.click(dirtyDialog);
+    expect(onCloseDirty).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveSave({ ...draft, version: 4, situationObserved: 'Added context' });
+    });
+
+    confirm.mockReturnValue(true);
+    await user.click(dirtyDialog);
+    expect(onCloseDirty).toHaveBeenCalledTimes(1);
+  });
 });
