@@ -142,7 +142,7 @@ export function RequestEditWithdrawal({
       editForm.reset(formValues(updatedDetail));
       onVersionChange(updated.version);
       onNotice('Your request was updated. The original submission and expiry dates were preserved.');
-      await invalidateRequestSurfaces(queryClient, { localUserId, requestId: item.id });
+      await invalidateRequestSurfaces(queryClient, { localUserId, requestId: item.id, preserveDetail: true });
     } catch (error) {
       if (hasAccessError(error)) {
         onAccessDenied();

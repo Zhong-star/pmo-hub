@@ -219,7 +219,7 @@ test('uses the Hub action color and full-width workspace in Administration', asy
   expect(presentation.mainWidth).toBeGreaterThan(presentation.viewportWidth / 2);
 });
 
-test('keeps all six areas readable in both themes and reflows for keyboard and narrow viewports', async ({ page }) => {
+test('keeps all workspace areas and notifications menu readable in both themes and reflows for keyboard and narrow viewports', async ({ page }) => {
   await openAdminWorkspace(page);
   await addVisualDataRoutes(page);
   await page.goto('/resource-allocation/?page=requests');
@@ -230,7 +230,6 @@ test('keeps all six areas readable in both themes and reflows for keyboard and n
     { page: 'new-request', label: 'New request', heading: 'New request batch' },
     { page: 'request-queues', label: 'Request queues', heading: 'Request queues' },
     { page: 'allocations', label: 'Allocations and capacity', heading: 'Allocations and capacity' },
-    { page: 'notifications', label: 'Notifications', heading: 'Notifications' },
     { page: 'administration', label: 'Administration', heading: 'Administration' },
   ];
 
@@ -259,9 +258,6 @@ test('keeps all six areas readable in both themes and reflows for keyboard and n
           background: getComputedStyle(input).backgroundColor,
         }));
         expect(contrastRatio(placeholderColors.foreground, placeholderColors.background)).toBeGreaterThanOrEqual(4.5);
-      }
-      if (area.page === 'notifications') {
-        await expect(page.getByRole('heading', { name: 'Capacity planning allocation started' })).toBeVisible();
       }
 
       const layout = await page.evaluate(() => {
@@ -363,6 +359,15 @@ test('keeps all six areas readable in both themes and reflows for keyboard and n
       }
     }
 
+    await page.getByRole('button', { name: /^Notifications/ }).click();
+    const notificationsMenu = page.getByRole('region', { name: 'Notifications' });
+    await expect(notificationsMenu.getByText('Capacity planning allocation started')).toBeVisible();
+    const menuOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    expect(menuOverflow).toBe(false);
+    await capture(page, `desktop-${theme}-notifications-menu`);
+    await page.keyboard.press('Escape');
+    await expect(notificationsMenu).toHaveCount(0);
+
     await navigation.getByRole('link', { name: 'Administration', exact: true }).click();
     const addPerson = page.getByRole('button', { name: 'Add person' });
     const actionColors = await addPerson.evaluate((button) => {
@@ -407,6 +412,10 @@ test('keeps all six areas readable in both themes and reflows for keyboard and n
   expect(narrowLayout.bodyWidth).toBeLessThanOrEqual(narrowLayout.viewportWidth);
   expect(narrowLayout.panelWidth).toBeGreaterThan(0);
   await capture(page, 'zoom-200-equivalent-dark-requests');
+  await page.getByRole('button', { name: /^Notifications/ }).click();
+  await expect(page.getByRole('region', { name: 'Notifications' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.keyboard.press('Escape');
 
   await page.setViewportSize({ width: 390, height: 844 });
   await menu.focus();
@@ -424,6 +433,10 @@ test('keeps all six areas readable in both themes and reflows for keyboard and n
   expect(mobileLayout.bodyWidth).toBeLessThanOrEqual(mobileLayout.viewportWidth);
   expect(mobileLayout.panelWidth).toBeGreaterThan(0);
   await capture(page, 'mobile-390-dark-requests');
+  await page.getByRole('button', { name: /^Notifications/ }).click();
+  await expect(page.getByRole('region', { name: 'Notifications' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.keyboard.press('Escape');
 });
 
 test('shows loading, empty, and retryable error states in the selected area', async ({ page }) => {
@@ -434,12 +447,15 @@ test('shows loading, empty, and retryable error states in the selected area', as
     await pendingNotifications;
     await route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 50 } } });
   });
-  await page.goto('/resource-allocation/?page=notifications');
-  await expect(page.getByRole('status')).toContainText('Loading notifications');
+  await page.goto('/resource-allocation/?page=new-request');
+  await page.getByRole('button', { name: /^Notifications/ }).click();
+  const notificationsMenu = page.getByRole('region', { name: 'Notifications' });
+  await expect(notificationsMenu.getByRole('status')).toContainText('Loading notifications');
   await capture(page, 'state-loading-notifications-light');
   releaseNotifications();
-  await expect(page.getByText('No notifications match this filter.')).toBeVisible();
+  await expect(notificationsMenu.getByText('No notifications yet.')).toBeVisible();
   await capture(page, 'state-empty-notifications-light');
+  await page.keyboard.press('Escape');
 
   await page.getByRole('button', { name: 'Dark theme' }).click();
   await page.route(`${apiRoot}/requests**`, async (route) => route.fulfill({

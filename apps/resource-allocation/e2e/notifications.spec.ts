@@ -45,16 +45,17 @@ async function openAsUser(page: Page) {
   await page.addInitScript(({ key }) => window.localStorage.setItem(key, 'profile-user'), {
     key: profileStorageKey,
   });
-  await page.goto('/resource-allocation/?page=notifications');
+  await page.goto('/resource-allocation/');
 }
 
-test('filters and reads inbox items while hiding unavailable targets', async ({ page }) => {
+test('renders the header notifications bell menu, reads single and all items, and closes on Escape or outside click', async ({ page }) => {
   await installModuleFixtures(page);
   const items = [
     notification(notificationId, 'Your request was received', true),
     notification('20000000-0000-4000-8000-000000000072', 'A request is unavailable', false),
     {
       ...notification('20000000-0000-4000-8000-000000000073', 'A team request needs review', true),
+      eventCode: 'REQUEST_REFERRED_2',
       target: {
         type: 'REQUEST' as const,
         requestId: '20000000-0000-4000-8000-000000000074',
@@ -65,22 +66,12 @@ test('filters and reads inbox items while hiding unavailable targets', async ({ 
   ];
   let readCount = 0;
   let markAllCount = 0;
-  const notificationRequests: string[] = [];
   await page.route(`${apiRoot}/notifications**`, async (route) => {
     const apiRequest = route.request();
     const url = new URL(apiRequest.url());
     if (apiRequest.method() === 'POST') {
       const headers = apiRequest.headers();
       expect(headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i);
-      if (url.pathname.endsWith('/notification-readings')) {
-        markAllCount += 1;
-        for (const item of items) {
-          item.readAt = '2026-11-20T12:30:00.000000Z';
-          item.etag = `"etag-${item.id.slice(-2)}-read"`;
-        }
-        await route.fulfill({ status: 200, json: { cutoffAt: '2026-11-20T12:30:00.000000Z', markedCount: items.length } });
-        return;
-      }
       expect(headers['if-match']).toBe(items[0].etag);
       readCount += 1;
       items[0].readAt = '2026-11-20T12:15:00.000000Z';
@@ -89,11 +80,8 @@ test('filters and reads inbox items while hiding unavailable targets', async ({ 
       return;
     }
 
-    notificationRequests.push(url.href);
-    const filter = url.searchParams.get('read');
-    const filtered = items.filter((item) => filter === null
-      || (filter === 'true' ? item.readAt !== null : item.readAt === null));
-    await route.fulfill({ json: { items: filtered, page: { nextCursor: null, limit: 50 } } });
+    expect(url.searchParams.get('read')).toBeNull();
+    await route.fulfill({ json: { items, page: { nextCursor: null, limit: 50 } } });
   });
   await page.route(`${apiRoot}/notification-readings`, async (route) => {
     expect(route.request().headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/i);
@@ -107,32 +95,49 @@ test('filters and reads inbox items while hiding unavailable targets', async ({ 
   });
 
   await openAsUser(page);
-  await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Your request was received' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'A request is unavailable' })).toBeVisible();
-  const availableLink = page.getByRole('link', { name: 'Open related request' });
-  await expect(availableLink.nth(0)).toHaveAttribute('href', `/resource-allocation/?page=requests&requestId=${requestId}`);
-  await expect(availableLink.nth(1)).toHaveAttribute(
+  const trigger = page.getByRole('button', { name: 'Notifications (3 unread)' });
+  await expect(trigger).toBeVisible();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+  const menu = page.getByRole('region', { name: 'Notifications' });
+  await expect(menu.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+  await expect(menu.getByText('3 unread')).toBeVisible();
+  await expect(menu.getByText('Request submitted')).toHaveCount(2);
+  await expect(menu.getByText('Request referred')).toBeVisible();
+  await expect(menu.getByText('Your request was received')).toBeVisible();
+  await expect(menu.getByText('A request is unavailable')).toBeVisible();
+
+  const availableLinks = menu.locator('a.notifications-menu__open-button');
+  await expect(availableLinks).toHaveCount(2);
+  await expect(availableLinks.nth(0)).toHaveAttribute('href', `/resource-allocation/?page=requests&requestId=${requestId}`);
+  await expect(availableLinks.nth(1)).toHaveAttribute(
     'href',
     '/resource-allocation/?page=request-queues&queue=team-decision&requestId=20000000-0000-4000-8000-000000000074',
   );
-  await expect(page.getByText('This request is no longer available to you.')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open related request' })).toHaveCount(2);
+  await expect(menu.getByText('This request is no longer available to you.')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Mark as read' }).first().click();
-  await expect(page.locator('.notification-status').filter({ hasText: /^Read$/ }).first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await expect(menu).toBeVisible();
+  await page.getByRole('heading', { name: 'My requests' }).click();
+  await expect(menu).toHaveCount(0);
+
+  await trigger.click();
+  await menu.getByRole('button', { name: 'Mark "Your request was received" as read' }).click();
+  await expect(menu.getByText('Read', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Notifications (2 unread)' })).toBeVisible();
   expect(readCount).toBe(1);
 
-  await page.getByLabel('Show').selectOption('unread');
-  await expect.poll(() => notificationRequests.some((value) => new URL(value).searchParams.get('read') === 'false')).toBe(true);
-  await page.getByRole('button', { name: 'Mark all as read' }).click();
-  await expect(page.getByText('0 unread on this page')).toBeVisible();
+  await menu.getByRole('button', { name: 'Mark all as read' }).click();
+  await expect(menu.getByText('All caught up')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Mark all as read' })).toBeDisabled();
   expect(markAllCount).toBe(1);
-
-  await page.getByLabel('Show').selectOption('read');
-  await expect(page.getByRole('heading', { name: 'Your request was received' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'A request is unavailable' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'A team request needs review' })).toBeVisible();
 });
 
 test('opens an owned notification in the scoped request detail view', async ({ page }) => {
@@ -174,7 +179,8 @@ test('opens an owned notification in the scoped request detail view', async ({ p
   });
 
   await openAsUser(page);
-  await page.getByRole('link', { name: 'Open related request' }).click();
+  await page.getByRole('button', { name: 'Notifications (1 unread)' }).click();
+  await page.getByRole('link', { name: /Open related request: Your request was received/ }).click();
   await expect(page).toHaveURL(new RegExp(`requestId=${requestId}`));
   await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible();
   const requestDetail = page.getByRole('region', { name: 'ITDM-70' });
@@ -220,7 +226,8 @@ test('opens the scoped team queue from a notice without requesting private owner
   }));
 
   await openAsUser(page);
-  await page.getByRole('link', { name: 'Open related request' }).click();
+  await page.getByRole('button', { name: 'Notifications (1 unread)' }).click();
+  await page.getByRole('link', { name: /Open related request: Review the referred request/ }).click();
   await expect(page).toHaveURL(new RegExp(`page=request-queues&queue=team-decision&requestId=${requestId}`));
   const item = page.locator(`[id="resource-request-${requestId}"]`);
   await expect(item).toContainText('Team planning');
@@ -238,7 +245,7 @@ test('refreshes every 30 seconds while visible and when the user returns to the 
   });
 
   await openAsUser(page);
-  await expect(page.getByRole('heading', { name: 'A fresh update' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Notifications (1 unread)' })).toBeVisible();
   await expect.poll(() => notificationRequestCount).toBeGreaterThan(0);
   const initialCount = notificationRequestCount;
 
@@ -263,11 +270,10 @@ test('keeps loaded notifications visible and offers retry when revalidation fail
   await page.clock.install({ time: new Date('2099-01-01T00:00:00Z') });
   await installModuleFixtures(page);
   let notificationRequestCount = 0;
-  let revalidationFailed = false;
+  let failRefresh = false;
   await page.route(`${apiRoot}/notifications**`, async (route) => {
     notificationRequestCount += 1;
-    if (!revalidationFailed && notificationRequestCount > 1) {
-      revalidationFailed = true;
+    if (failRefresh) {
       await route.fulfill({
         status: 503,
         contentType: 'application/problem+json',
@@ -281,12 +287,21 @@ test('keeps loaded notifications visible and offers retry when revalidation fail
   });
 
   await openAsUser(page);
-  await expect(page.getByRole('heading', { name: 'Current inbox item' })).toBeVisible();
+  const trigger = page.getByRole('button', { name: 'Notifications (1 unread)' });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const menu = page.getByRole('region', { name: 'Notifications' });
+  await expect(menu.getByText('Current inbox item')).toBeVisible();
+
+  failRefresh = true;
   await page.clock.fastForward(30_000);
-  await expect(page.getByText('Updates could not be checked. Your current inbox stays visible until you retry.')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Current inbox item' })).toBeVisible();
-  await page.getByRole('button', { name: 'Retry refresh' }).click();
-  await expect.poll(() => notificationRequestCount).toBe(3);
-  await expect(page.getByRole('heading', { name: 'Current inbox item' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Retry refresh' })).toHaveCount(0);
+  await expect(menu.getByText('Updates could not be checked. Your current notifications stay visible until you retry.')).toBeVisible();
+  await expect(menu.getByText('Current inbox item')).toBeVisible();
+
+  failRefresh = false;
+  const countBeforeRetry = notificationRequestCount;
+  await menu.getByRole('button', { name: 'Retry refresh' }).click();
+  await expect.poll(() => notificationRequestCount).toBeGreaterThan(countBeforeRetry);
+  await expect(menu.getByText('Current inbox item')).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Retry refresh' })).toHaveCount(0);
 });

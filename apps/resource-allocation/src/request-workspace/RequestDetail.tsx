@@ -154,7 +154,7 @@ export function RequestDetail({
               onChanged={(updated) => {
                 setFormVersion(updated.version);
                 void selectedRequest.refetch();
-                void invalidateRequestSurfaces(queryClient, { localUserId, requestId: updated.id });
+                void invalidateRequestSurfaces(queryClient, { localUserId, requestId: updated.id, preserveDetail: true });
               }}
               onAccessDenied={onAccessDenied}
             />

@@ -39,6 +39,9 @@ async function openWithProfile(page: Page, person = user, url = '/resource-alloc
   await page.route(`${apiRoot}/requests**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/request-queues/**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/notifications**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
+  await page.route(`${apiRoot}/allocations**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
+  await page.route(`${apiRoot}/allocation-load**`, async (route) => route.fulfill({ json: { date: '2026-11-27', items: [], page: emptyPage } }));
+  await page.route(`${apiRoot}/allocation-groups**`, async (route) => route.fulfill({ json: { items: [], page: { ...emptyPage, limit: 100 } } }));
   await page.addInitScript(({ key, localUserId }) => window.localStorage.setItem(key, localUserId), {
     key: profileStorageKey,
     localUserId: person.localUserId,
@@ -88,9 +91,11 @@ test('shows the Admin destinations and group queues allowed by the current profi
   await openWithProfile(page, admin);
 
   const navigation = page.getByRole('navigation', { name: 'Tech Resource Allocation' });
-  for (const label of ['Requests', 'New request', 'Request queues', 'Allocations and capacity', 'Notifications', 'Administration']) {
+  for (const label of ['Requests', 'New request', 'Request queues', 'Allocations and capacity', 'Administration']) {
     await expect(navigation.getByRole('link', { name: label, exact: true })).toBeVisible();
   }
+  await expect(navigation.getByRole('link', { name: 'Notifications' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Notifications/ })).toBeVisible();
 
   await navigation.getByRole('link', { name: 'Request queues' }).click();
   await expect(page.getByRole('tab', { name: 'Presentation queue' })).toBeVisible();
@@ -230,7 +235,7 @@ for (const queue of ['Admin exceptions', 'Revalidation queue']) {
       await page.getByRole('group', { name: 'Filter revalidation requests' }).getByRole('combobox', { name: 'Group', exact: true }).selectOption({ label: 'Platform Engineering' });
     }
     const queueUrl = page.url();
-    await navigation.getByRole('link', { name: 'Notifications', exact: true }).click();
+    await navigation.getByRole('link', { name: 'Allocations and capacity', exact: true }).click();
     await page.goBack();
     await page.goBack();
     await expect(page).toHaveURL(/\?page=new-request$/);
@@ -252,7 +257,7 @@ for (const queue of ['Admin exceptions', 'Revalidation queue']) {
     await expect(page.getByRole('tab', { name: queue, exact: true })).toHaveAttribute('aria-selected', 'true');
     await expect(hours).toHaveCount(0);
     await page.goForward();
-    await expect(page.getByRole('heading', { name: 'Notifications', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Allocations and capacity', exact: true })).toBeVisible();
   });
 }
 
