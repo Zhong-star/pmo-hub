@@ -39,6 +39,9 @@ async function openWithProfile(page: Page, person = user, url = '/resource-alloc
   await page.route(`${apiRoot}/requests**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/request-queues/**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/notifications**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
+  await page.route(`${apiRoot}/allocations**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
+  await page.route(`${apiRoot}/allocation-load**`, async (route) => route.fulfill({ json: { date: '2026-11-27', items: [], page: emptyPage } }));
+  await page.route(`${apiRoot}/allocation-groups**`, async (route) => route.fulfill({ json: { items: [], page: { ...emptyPage, limit: 100 } } }));
   await page.addInitScript(({ key, localUserId }) => window.localStorage.setItem(key, localUserId), {
     key: profileStorageKey,
     localUserId: person.localUserId,
