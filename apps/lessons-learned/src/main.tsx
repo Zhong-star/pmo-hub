@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LessonsLearnedScreen } from './LessonsLearnedScreen';
 import '../../shared-ui/src/theme.css';
+import '../../shared-ui/src/CollectionSurface.css';
 import './styles.css';
 
 const queryClient = new QueryClient({

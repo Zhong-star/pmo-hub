@@ -1,4 +1,5 @@
 import { useRef, type ReactNode } from 'react';
+import { ChevronDownIcon, MenuIcon } from './Icons';
 import './WorkspaceSidebar.css';
 
 export function WorkspaceSidebar({
@@ -38,7 +39,9 @@ export function WorkspaceSidebar({
         aria-expanded={open}
         onClick={onToggle}
       >
-        Module menu
+        <MenuIcon size={16} />
+        <span>Module menu</span>
+        <ChevronDownIcon size={15} className="ui-icon workspace-menu-toggle__chevron" />
       </button>
       <nav className="workspace-navigation" id={navigationId} aria-label={navigationLabel}>
         {children}

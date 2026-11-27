@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { TrophyIcon } from '../../shared-ui/src/Icons';
 import type { RankedContributor, RankedLesson, RankingsResponse } from './api';
 
 export type RankingMode = 'lessons' | 'contributors';
@@ -59,14 +60,17 @@ export function RankingsSection({
     <section className="rankings-section" aria-labelledby="rankings-heading">
       <div className="rankings-header">
         <div>
-          <h2 id="rankings-heading" className="rankings-title">Rankings</h2>
+          <h2 id="rankings-heading" className="rankings-title">
+            <TrophyIcon size={18} />
+            <span>Rankings</span>
+          </h2>
           <p className="rankings-subtitle">
             {mode === 'lessons'
               ? 'Top 3 most voted published lessons.'
               : 'Top 3 authorized contributors by published lessons.'}
           </p>
         </div>
-        <div className="rankings-mode-toggle" role="group" aria-label="Ranking mode">
+        <div className="rankings-mode-toggle segmented-toggle" role="group" aria-label="Ranking mode">
           <button
             type="button"
             className={mode === 'lessons' ? 'rankings-mode-button is-active' : 'rankings-mode-button'}

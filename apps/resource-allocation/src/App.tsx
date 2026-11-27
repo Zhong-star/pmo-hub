@@ -17,6 +17,16 @@ import { SubmissionWorkspace } from './SubmissionWorkspace';
 import { RequestWorkspace } from './RequestWorkspace';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { WorkspaceSidebar } from '../../shared-ui/src/WorkspaceSidebar';
+import {
+  BarChartIcon,
+  BellIcon,
+  BriefcaseIcon,
+  FileTextIcon,
+  InboxIcon,
+  LayersIcon,
+  PlusCircleIcon,
+  SettingsIcon,
+} from '../../shared-ui/src/Icons';
 import { useThemePreference } from '../../shared-ui/src/theme';
 import { NavigationProtectionProvider, useNavigationProtection } from './NavigationProtection';
 import {
@@ -50,6 +60,25 @@ const navigationItems: Array<{ page: ResourceAllocationPage; label: string }> = 
   { page: 'notifications', label: 'Notifications' },
   { page: 'administration', label: 'Administration' },
 ];
+
+function navigationIcon(page: ResourceAllocationPage, isDelegatedProfileAdministrator: boolean) {
+  switch (page) {
+    case 'requests':
+      return <FileTextIcon size={17} />;
+    case 'new-request':
+      return <PlusCircleIcon size={17} />;
+    case 'request-queues':
+      return <InboxIcon size={17} />;
+    case 'allocations':
+      return <BriefcaseIcon size={17} />;
+    case 'capacity':
+      return <BarChartIcon size={17} />;
+    case 'notifications':
+      return <BellIcon size={17} />;
+    case 'administration':
+      return isDelegatedProfileAdministrator ? <LayersIcon size={17} /> : <SettingsIcon size={17} />;
+  }
+}
 
 function isMissingProfile(error: unknown): boolean {
   return error instanceof AccessRequestError && error.status === 401;
@@ -372,7 +401,8 @@ function ResourceAllocationApp() {
                 data-resource-allocation-navigation="true"
                 onClick={(event) => navigateToPage(page, event)}
               >
-                {page === 'administration' && isDelegatedProfileAdministrator ? 'Resource profiles' : label}
+                {navigationIcon(page, isDelegatedProfileAdministrator)}
+                <span>{page === 'administration' && isDelegatedProfileAdministrator ? 'Resource profiles' : label}</span>
               </a>
             ))}
           </WorkspaceSidebar>
@@ -380,6 +410,7 @@ function ResourceAllocationApp() {
           <main ref={workspacePanel} id="main-content" className="workspace-panel" tabIndex={-1}>
             {navigationNotice && <p className="supporting-copy" role="status">{navigationNotice}</p>}
             <header className="module-workspace-heading">
+              <BriefcaseIcon size={15} />
               <h1>Tech Resource Allocation</h1>
               {role && <p className="module-role">{roleLabel(role)}</p>}
             </header>
@@ -460,7 +491,9 @@ function ResourceAllocationApp() {
         <main id="main-content" className="main-content" tabIndex={-1}>
           <div className="content-column">
             <section className="access-card" aria-labelledby="page-title">
-              <div className="card-mark" aria-hidden="true">RA</div>
+              <div className="card-mark" aria-hidden="true">
+                <BriefcaseIcon size={20} />
+              </div>
               <h1 id="page-title">{heading}</h1>
 
               {profileId === null && (

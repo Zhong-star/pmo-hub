@@ -4,6 +4,12 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import {
+  ChevronDownIcon,
+  RefreshCwIcon,
+  SlidersIcon,
+  XIcon,
+} from '../../../shared-ui/src/Icons';
 import type { RequestQueueCode, RequestQueueFilters, RequestQueueItem, RequestQueueCollection, QueueSelections } from '../requestQueueApi';
 import { getQueueSelections, getRequestQueue, REQUEST_QUEUES_QUERY_ROOT, RequestQueueRequestError } from '../requestQueueApi';
 import { RequestDecisionApiError } from '../requestDecisionApi';
@@ -249,29 +255,64 @@ export function RequestQueueFilterPanel({
   label: string;
   onChange: (filters: QueueFilterValues) => void;
 }) {
+  const [filtersOpen, setFiltersOpen] = useState(true);
+  const activeCount = [filters.groupId, filters.initiativeId, filters.resourceProfileId].filter(Boolean).length;
+
   return (
-    <div className="request-exception-filters" role="group" aria-label={label}>
-      <label className="form-field">
-        <span>Group</span>
-        <select value={filters.groupId ?? ''} onChange={(event) => onChange({ ...filters, groupId: event.target.value || undefined })} disabled={disabled}>
-          <option value="">All groups</option>
-          {selections?.groups.map((group) => <option key={group.id} value={group.id}>{optionLabel(group)}</option>)}
-        </select>
-      </label>
-      <label className="form-field">
-        <span>ITDM</span>
-        <select value={filters.initiativeId ?? ''} onChange={(event) => onChange({ ...filters, initiativeId: event.target.value || undefined })} disabled={disabled}>
-          <option value="">All ITDMs</option>
-          {selections?.initiatives.map((initiative) => <option key={initiative.id} value={initiative.id}>{optionLabel(initiative)}</option>)}
-        </select>
-      </label>
-      <label className="form-field">
-        <span>Resource profile</span>
-        <select value={filters.resourceProfileId ?? ''} onChange={(event) => onChange({ ...filters, resourceProfileId: event.target.value || undefined })} disabled={disabled}>
-          <option value="">All profiles</option>
-          {selections?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{optionLabel(profile)}</option>)}
-        </select>
-      </label>
+    <div className="collection-surface queue-filter-surface">
+      <div className="collection-toolbar">
+        <div className="collection-toolbar__bar">
+          <span className="collection-toolbar__title">
+            <SlidersIcon size={15} />
+            <span>Filters</span>
+            {activeCount > 0 && (
+              <span className="collection-filter-badge" aria-label={`${activeCount} active filters`}>
+                {activeCount}
+              </span>
+            )}
+          </span>
+          <div className="collection-toolbar__actions">
+            {activeCount > 0 && (
+              <button type="button" className="collection-toolbar__clear" onClick={() => onChange({})} disabled={disabled}>
+                <XIcon size={13} />
+                <span>Clear filters</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="collection-toolbar__toggle"
+              aria-expanded={filtersOpen}
+              onClick={() => setFiltersOpen((open) => !open)}
+            >
+              <span>{filtersOpen ? 'Hide filters' : 'Show filters'}</span>
+              <ChevronDownIcon size={14} />
+            </button>
+          </div>
+        </div>
+        <div className="request-exception-filters collection-toolbar__controls" role="group" aria-label={label} hidden={!filtersOpen}>
+          <label className="collection-filter-field">
+            <span>Group</span>
+            <select value={filters.groupId ?? ''} onChange={(event) => onChange({ ...filters, groupId: event.target.value || undefined })} disabled={disabled}>
+              <option value="">All groups</option>
+              {selections?.groups.map((group) => <option key={group.id} value={group.id}>{optionLabel(group)}</option>)}
+            </select>
+          </label>
+          <label className="collection-filter-field">
+            <span>ITDM</span>
+            <select value={filters.initiativeId ?? ''} onChange={(event) => onChange({ ...filters, initiativeId: event.target.value || undefined })} disabled={disabled}>
+              <option value="">All ITDMs</option>
+              {selections?.initiatives.map((initiative) => <option key={initiative.id} value={initiative.id}>{optionLabel(initiative)}</option>)}
+            </select>
+          </label>
+          <label className="collection-filter-field">
+            <span>Resource profile</span>
+            <select value={filters.resourceProfileId ?? ''} onChange={(event) => onChange({ ...filters, resourceProfileId: event.target.value || undefined })} disabled={disabled}>
+              <option value="">All profiles</option>
+              {selections?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{optionLabel(profile)}</option>)}
+            </select>
+          </label>
+        </div>
+      </div>
     </div>
   );
 }
@@ -299,9 +340,15 @@ export function RequestQueueResults({
 
   return (
     <div role="tabpanel" aria-label={label} className="request-queue-content">
-      <button type="button" className="secondary-button" onClick={() => void query.refetch()} disabled={query.isFetching}>
-        {query.isFetching ? 'Refreshing…' : 'Refresh queue'}
-      </button>
+      <div className="queue-toolbar">
+        <span className="queue-toolbar__count">
+          {query.isPending ? 'Loading queue…' : `${items.length} request${items.length === 1 ? '' : 's'} loaded`}
+        </span>
+        <button type="button" className="secondary-button ui-inline-btn" onClick={() => void query.refetch()} disabled={query.isFetching}>
+          <RefreshCwIcon size={15} />
+          <span>{query.isFetching ? 'Refreshing…' : 'Refresh queue'}</span>
+        </button>
+      </div>
       {children}
       {query.isPending && <p role="status" className="supporting-copy">Loading requests…</p>}
       {topLevelError && (

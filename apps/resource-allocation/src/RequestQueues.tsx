@@ -1,4 +1,10 @@
 import { useMemo, useState } from 'react';
+import {
+  AlertTriangleIcon,
+  InboxIcon,
+  RefreshCwIcon,
+  UsersIcon,
+} from '../../shared-ui/src/Icons';
 import { handleTabListKeyDown } from './tabNavigation';
 import { useNavigationProtection } from './NavigationProtection';
 import type { ResourceAllocationRole } from './accessApi';
@@ -24,6 +30,13 @@ const queueLabels: Record<RequestQueueCode, string> = {
   exceptions: 'Admin exceptions',
   revalidation: 'Revalidation queue',
 };
+
+function queueIcon(queue: RequestQueueCode) {
+  if (queue === 'team-decision') return <UsersIcon size={15} />;
+  if (queue === 'exceptions') return <AlertTriangleIcon size={15} />;
+  if (queue === 'revalidation') return <RefreshCwIcon size={15} />;
+  return <InboxIcon size={15} />;
+}
 
 function queuesFor(role: ResourceAllocationRole, groupId: string | null): RequestQueueCode[] {
   if (role === 'ALLOCATION_ADMIN') return groupId ? ['presentation', 'team-decision', 'exceptions', 'revalidation'] : ['presentation', 'exceptions', 'revalidation'];
@@ -100,7 +113,8 @@ export function RequestQueues({ localUserId, personId, role, groupId, onAccessDe
               });
             }}
           >
-            {queueLabels[queue]}
+            {queueIcon(queue)}
+            <span>{queueLabels[queue]}</span>
           </button>
         ))}
       </div>

@@ -2,6 +2,23 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { WorkspaceSidebar } from '../../shared-ui/src/WorkspaceSidebar';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
+import {
+  BarChartIcon,
+  BookOpenIcon,
+  ChevronDownIcon,
+  EditIcon,
+  EyeIcon,
+  FileTextIcon,
+  HomeIcon,
+  InboxIcon,
+  PlusCircleIcon,
+  PlusIcon,
+  SearchIcon,
+  SlidersIcon,
+  StarIcon,
+  UsersIcon,
+  XIcon,
+} from '../../shared-ui/src/Icons';
 import { useThemePreference } from '../../shared-ui/src/theme';
 import {
   approveLesson as approveLessonRequest,
@@ -140,6 +157,18 @@ function formatUpdatedAt(timestamp: string): string {
   }).format(new Date(timestamp))} UTC`;
 }
 
+function getLessonStatusClass(status: LessonDraft['status']): string {
+  if (status === 'Approved') return 'lesson-status-pill lesson-status-pill--approved';
+  if (status === 'PMOEvaluation') return 'lesson-status-pill lesson-status-pill--evaluation';
+  if (status === 'Closed') return 'lesson-status-pill lesson-status-pill--closed';
+  if (status === 'Archived') return 'lesson-status-pill lesson-status-pill--archived';
+  return 'lesson-status-pill lesson-status-pill--open';
+}
+
+function getLessonStatusLabel(status: LessonDraft['status']): string {
+  return status === 'PMOEvaluation' ? 'PMO Evaluation' : status;
+}
+
 type SubmissionProjectFilter =
   | { kind: 'any' }
   | { kind: 'without-project' }
@@ -244,6 +273,7 @@ export function LessonsLearnedScreen() {
   } = useLibraryNavigation();
   const { theme, selectTheme } = useThemePreference();
   const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [selectedDraft, setSelectedDraft] = useState<LessonDraft | null>(null);
   const [selectedCancellationDraft, setSelectedCancellationDraft] = useState<LessonDraft | null>(null);
@@ -1090,7 +1120,8 @@ export function LessonsLearnedScreen() {
                 ) && destination.current ? 'page' : undefined}
                 onClick={(event) => navigateTo('home', event)}
               >
-                {destination.label}
+                <HomeIcon size={17} />
+                <span>{destination.label}</span>
               </a>
             ))}
             <a
@@ -1098,14 +1129,16 @@ export function LessonsLearnedScreen() {
               aria-current={isMySubmissionsPage ? 'page' : undefined}
               onClick={(event) => navigateTo('my-submissions', event)}
             >
-              My Submissions
+              <FileTextIcon size={17} />
+              <span>My Submissions</span>
             </a>
             <a
               href="/lessons-learned/?page=library"
               aria-current={isLibraryPage ? 'page' : undefined}
               onClick={(event) => navigateTo('library', event)}
             >
-              Lessons Library
+              <BookOpenIcon size={17} />
+              <span>Lessons Library</span>
             </a>
             {hasHomeOverview && (
               <a
@@ -1113,7 +1146,8 @@ export function LessonsLearnedScreen() {
                 aria-current={isProfilesPage ? 'page' : undefined}
                 onClick={(event) => navigateTo('profiles', event)}
               >
-                Profiles
+                <UsersIcon size={17} />
+                <span>Profiles</span>
               </a>
             )}
             <a
@@ -1123,7 +1157,8 @@ export function LessonsLearnedScreen() {
                 if (!isSavingCurrentDraft) navigateFromHome('create-lesson');
               }}
             >
-              Create lesson
+              <PlusCircleIcon size={17} />
+              <span>Create lesson</span>
             </a>
             {isPmo && (
               <a
@@ -1131,7 +1166,8 @@ export function LessonsLearnedScreen() {
                 aria-current={isPmoDraftsPage ? 'page' : undefined}
                 onClick={(event) => navigateTo('pmo-drafts', event)}
               >
-                PMO Drafts
+                <EditIcon size={17} />
+                <span>PMO Drafts</span>
               </a>
             )}
             {isPmo && (
@@ -1140,7 +1176,8 @@ export function LessonsLearnedScreen() {
                 aria-current={isPmoEvaluationQueuePage ? 'page' : undefined}
                 onClick={(event) => navigateTo('evaluation-queue', event)}
               >
-                Evaluation Queue
+                <InboxIcon size={17} />
+                <span>Evaluation Queue</span>
               </a>
             )}
             {isPmo && hasHomeOverview && (
@@ -1149,7 +1186,8 @@ export function LessonsLearnedScreen() {
                 aria-current={isPmoDashboardPage ? 'page' : undefined}
                 onClick={(event) => navigateTo('pmo-dashboard', event)}
               >
-                PMO Dashboard
+                <BarChartIcon size={17} />
+                <span>PMO Dashboard</span>
               </a>
             )}
           </WorkspaceSidebar>
@@ -1360,39 +1398,78 @@ export function LessonsLearnedScreen() {
                       )}
                     </div>
                     {!isPmoReviewListPage && (
-                      <button className="draft-action" type="button" disabled={isSavingCurrentDraft} onClick={() => {
+                      <button className="draft-action ui-inline-btn" type="button" disabled={isSavingCurrentDraft} onClick={() => {
                         setSelectedDraft(null);
                         setIsCreateFormOpen(true);
                       }}>
-                        Create lesson
+                        <PlusIcon size={16} />
+                        <span>Create lesson</span>
                       </button>
                     )}
                   </div>
 
+                  {isLibraryPage && !isLegacyLibrary && hasHomeOverview && (
+                    <RankingsSection
+                      data={rankingsQuery.data}
+                      isLoading={rankingsQuery.isPending}
+                      isError={rankingsQuery.isError}
+                      onRetry={() => void rankingsQuery.refetch()}
+                      onOpenLesson={openLibraryLessonFromList}
+                      onOpenContributor={(userId) => openContributorProfile(userId, { page: 'library', label: 'Back to Lessons Library' })}
+                    />
+                  )}
+
+                  <div className="collection-surface">
                   {isLibraryPage && !isLegacyLibrary && (
-                    <>
-                      {hasHomeOverview && (
-                        <RankingsSection
-                          data={rankingsQuery.data}
-                          isLoading={rankingsQuery.isPending}
-                          isError={rankingsQuery.isError}
-                          onRetry={() => void rankingsQuery.refetch()}
-                          onOpenLesson={openLibraryLessonFromList}
-                          onOpenContributor={(userId) => openContributorProfile(userId, { page: 'library', label: 'Back to Lessons Library' })}
-                        />
-                      )}
-                      <div className="submission-filters" role="group" aria-label="Search, filter, and sort Lessons Library">
-                        <div className="draft-editor-field">
-                          <label htmlFor="library-search">Search title or ID</label>
-                          <input
-                            id="library-search"
-                            type="search"
-                            value={submissionSearch}
-                            placeholder="Title prefix, ID or #ID"
-                            onChange={(event) => setSubmissionSearch(event.target.value)}
-                          />
+                    <div className="collection-toolbar">
+                      <div className="collection-toolbar__bar">
+                        <span className="collection-toolbar__title">
+                          <SlidersIcon size={15} />
+                          <span>Filters</span>
+                          {activeLibraryFilterLabels.length > 0 && (
+                            <span className="collection-filter-badge" aria-label={`${activeLibraryFilterLabels.length} active filters`}>
+                              {activeLibraryFilterLabels.length}
+                            </span>
+                          )}
+                        </span>
+                        <div className="collection-toolbar__actions">
+                          {activeLibraryFilterLabels.length > 0 && (
+                            <button className="collection-toolbar__clear" type="button" onClick={() => {
+                              setSubmissionSearch('');
+                              setSubmissionProjectFilter({ kind: 'any' });
+                              setSubmissionLessonType('');
+                            }}>
+                              <XIcon size={13} />
+                              <span>Clear filters</span>
+                            </button>
+                          )}
+                          <button
+                            className="collection-toolbar__toggle"
+                            type="button"
+                            aria-expanded={filtersOpen}
+                            aria-controls="library-filter-controls"
+                            onClick={() => setFiltersOpen((open) => !open)}
+                          >
+                            <span>{filtersOpen ? 'Hide filters' : 'Show filters'}</span>
+                            <ChevronDownIcon size={14} />
+                          </button>
                         </div>
-                        <div className="draft-editor-field">
+                      </div>
+                      <div id="library-filter-controls" className="collection-toolbar__controls" role="group" aria-label="Search, filter, and sort Lessons Library" hidden={!filtersOpen}>
+                        <div className="collection-filter-field collection-filter-field--search">
+                          <label htmlFor="library-search">Search title or ID</label>
+                          <div className="search-field-wrap">
+                            <SearchIcon size={15} className="ui-icon search-field-wrap__icon" />
+                            <input
+                              id="library-search"
+                              type="search"
+                              value={submissionSearch}
+                              placeholder="Title prefix, ID or #ID"
+                              onChange={(event) => setSubmissionSearch(event.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="collection-filter-field">
                           <label htmlFor="library-project">Project</label>
                           <select
                             id="library-project"
@@ -1408,7 +1485,7 @@ export function LessonsLearnedScreen() {
                             ))}
                           </select>
                         </div>
-                        <div className="draft-editor-field">
+                        <div className="collection-filter-field">
                           <label htmlFor="library-type">Lesson type</label>
                           <select id="library-type" value={submissionLessonType} onChange={(event) => setSubmissionLessonType(event.target.value as NonNullable<LessonDraft['lessonType']> | '')}>
                             <option value="">Any type</option>
@@ -1418,7 +1495,7 @@ export function LessonsLearnedScreen() {
                             <option value="Communication">Communication</option>
                           </select>
                         </div>
-                        <div className="draft-editor-field">
+                        <div className="collection-filter-field">
                           <label htmlFor="library-sort">Sort by</label>
                           <select
                             id="library-sort"
@@ -1433,96 +1510,140 @@ export function LessonsLearnedScreen() {
                             <option value="type">Lesson type</option>
                           </select>
                         </div>
-                        {activeLibraryFilterLabels.length > 0 && (
-                          <button className="draft-cancel" type="button" onClick={() => {
-                            setSubmissionSearch('');
-                            setSubmissionProjectFilter({ kind: 'any' });
-                            setSubmissionLessonType('');
-                          }}>
-                            Clear filters
-                          </button>
-                        )}
                       </div>
                       {activeLibraryFilterLabels.length > 0 && (
-                        <p className="draft-meta" role="status">Active filters: {activeLibraryFilterLabels.join(' · ')}</p>
+                        <p className="collection-toolbar__active" role="status">Active filters: {activeLibraryFilterLabels.join(' · ')}</p>
                       )}
-                    </>
+                    </div>
                   )}
 
-                  {!isLibraryPage && <div className="submission-filters" role="group" aria-label={isPmoEvaluationQueuePage
-                    ? 'Filter Evaluation Queue'
-                    : isPmoDraftsPage ? 'Filter PMO Drafts' : 'Filter My Submissions'}>
-                    <div className="draft-editor-field">
-                      <label htmlFor="submission-search">Search title or ID</label>
-                      <input
-                        id="submission-search"
-                        type="search"
-                        value={submissionSearch}
-                        placeholder="Title prefix or exact ID"
-                        onChange={(event) => setSubmissionSearch(event.target.value)}
-                      />
-                    </div>
-                    <div className="draft-editor-field">
-                      <label htmlFor="submission-project">Project</label>
-                      <select
-                        id="submission-project"
-                        value={getProjectFilterOptionValue(submissionProjectFilter)}
-                        onChange={(event) => setSubmissionProjectFilter(readProjectFilterOptionValue(event.target.value))}
-                      >
-                        <option value="">Any project</option>
-                        <option value="without-project">No project</option>
-                        {projectFilterOptions.map((project) => (
-                          <option key={project.id} value={getProjectFilterOptionValue({ kind: 'project', id: project.id })}>
-                            {project.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="draft-editor-field">
-                      <label htmlFor="submission-type">Lesson type</label>
-                      <select id="submission-type" value={submissionLessonType} onChange={(event) => setSubmissionLessonType(event.target.value as NonNullable<LessonDraft['lessonType']> | '')}>
-                        <option value="">Any type</option>
-                        <option value="Future Prevention">Future Prevention</option>
-                        <option value="Success to Repeat">Success to Repeat</option>
-                        <option value="Risk Avoided">Risk Avoided</option>
-                        <option value="Communication">Communication</option>
-                      </select>
-                    </div>
-                    {!isPmoEvaluationQueuePage && <div className="draft-editor-field">
-                      <label htmlFor="submission-status">Status</label>
-                      <select id="submission-status" value={submissionStatus} onChange={(event) => setSubmissionStatus(event.target.value as LessonDraft['status'] | '')}>
-                        <option value="">Any status</option>
-                        <option value="Open">Open</option>
-                        <option value="PMOEvaluation">PMO Evaluation</option>
-                        <option value="Approved">Approved</option>
-                        <option value="Closed">Closed</option>
-                        <option value="Archived">Archived</option>
-                      </select>
-                    </div>}
-                    {isPmoDraftsPage && (
-                      <div className="draft-editor-field">
-                        <label htmlFor="submission-author">Author</label>
-                        <select
-                          id="submission-author"
-                          value={submissionAuthorFilter}
-                          onChange={(event) => setSubmissionAuthorFilter(event.target.value)}
-                        >
-                          <option value="">Any author</option>
-                          {authorFilterOptions.map((authorId) => (
-                            <option key={authorId} value={authorId}>{authorId}</option>
-                          ))}
-                        </select>
+                  {!isLibraryPage && (() => {
+                    const activeFilterCount = (submissionSearch.trim() ? 1 : 0)
+                      + (submissionProjectFilter.kind !== 'any' ? 1 : 0)
+                      + (submissionLessonType ? 1 : 0)
+                      + (!isPmoEvaluationQueuePage && submissionStatus !== (isPmoDraftsPage ? 'Open' : '') ? 1 : 0)
+                      + (isPmoDraftsPage && submissionAuthorFilter ? 1 : 0);
+                    return (
+                      <div className="collection-toolbar">
+                        <div className="collection-toolbar__bar">
+                          <span className="collection-toolbar__title">
+                            <SlidersIcon size={15} />
+                            <span>Filters</span>
+                            {activeFilterCount > 0 && (
+                              <span className="collection-filter-badge" aria-label={`${activeFilterCount} active filters`}>
+                                {activeFilterCount}
+                              </span>
+                            )}
+                          </span>
+                          <div className="collection-toolbar__actions">
+                            {activeFilterCount > 0 && (
+                              <button
+                                className="collection-toolbar__clear"
+                                type="button"
+                                onClick={() => {
+                                  setSubmissionSearch('');
+                                  setSubmissionProjectFilter({ kind: 'any' });
+                                  setSubmissionLessonType('');
+                                  setSubmissionStatus(isPmoDraftsPage ? 'Open' : '');
+                                  setSubmissionAuthorFilter('');
+                                }}
+                              >
+                                <XIcon size={13} />
+                                <span>Clear filters</span>
+                              </button>
+                            )}
+                            <button
+                              className="collection-toolbar__toggle"
+                              type="button"
+                              aria-expanded={filtersOpen}
+                              aria-controls="submission-filter-controls"
+                              onClick={() => setFiltersOpen((open) => !open)}
+                            >
+                              <span>{filtersOpen ? 'Hide filters' : 'Show filters'}</span>
+                              <ChevronDownIcon size={14} />
+                            </button>
+                          </div>
+                        </div>
+                        <div id="submission-filter-controls" className="collection-toolbar__controls" role="group" aria-label={isPmoEvaluationQueuePage
+                          ? 'Filter Evaluation Queue'
+                          : isPmoDraftsPage ? 'Filter PMO Drafts' : 'Filter My Submissions'} hidden={!filtersOpen}>
+                          <div className="collection-filter-field collection-filter-field--search">
+                            <label htmlFor="submission-search">Search title or ID</label>
+                            <div className="search-field-wrap">
+                              <SearchIcon size={15} className="ui-icon search-field-wrap__icon" />
+                              <input
+                                id="submission-search"
+                                type="search"
+                                value={submissionSearch}
+                                placeholder="Title prefix or exact ID"
+                                onChange={(event) => setSubmissionSearch(event.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="collection-filter-field">
+                            <label htmlFor="submission-project">Project</label>
+                            <select
+                              id="submission-project"
+                              value={getProjectFilterOptionValue(submissionProjectFilter)}
+                              onChange={(event) => setSubmissionProjectFilter(readProjectFilterOptionValue(event.target.value))}
+                            >
+                              <option value="">Any project</option>
+                              <option value="without-project">No project</option>
+                              {projectFilterOptions.map((project) => (
+                                <option key={project.id} value={getProjectFilterOptionValue({ kind: 'project', id: project.id })}>
+                                  {project.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="collection-filter-field">
+                            <label htmlFor="submission-type">Lesson type</label>
+                            <select id="submission-type" value={submissionLessonType} onChange={(event) => setSubmissionLessonType(event.target.value as NonNullable<LessonDraft['lessonType']> | '')}>
+                              <option value="">Any type</option>
+                              <option value="Future Prevention">Future Prevention</option>
+                              <option value="Success to Repeat">Success to Repeat</option>
+                              <option value="Risk Avoided">Risk Avoided</option>
+                              <option value="Communication">Communication</option>
+                            </select>
+                          </div>
+                          {!isPmoEvaluationQueuePage && <div className="collection-filter-field">
+                            <label htmlFor="submission-status">Status</label>
+                            <select id="submission-status" value={submissionStatus} onChange={(event) => setSubmissionStatus(event.target.value as LessonDraft['status'] | '')}>
+                              <option value="">Any status</option>
+                              <option value="Open">Open</option>
+                              <option value="PMOEvaluation">PMO Evaluation</option>
+                              <option value="Approved">Approved</option>
+                              <option value="Closed">Closed</option>
+                              <option value="Archived">Archived</option>
+                            </select>
+                          </div>}
+                          {isPmoDraftsPage && (
+                            <div className="collection-filter-field">
+                              <label htmlFor="submission-author">Author</label>
+                              <select
+                                id="submission-author"
+                                value={submissionAuthorFilter}
+                                onChange={(event) => setSubmissionAuthorFilter(event.target.value)}
+                              >
+                                <option value="">Any author</option>
+                                {authorFilterOptions.map((authorId) => (
+                                  <option key={authorId} value={authorId}>{authorId}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
-                  </div>}
+                    );
+                  })()}
                   {projectsQuery.isError && !projectsQuery.isFetching && (
-                    <div className="draft-error" role="alert">
+                    <div className="draft-error collection-surface__error" role="alert">
                       <p>The project filter options could not be loaded.</p>
                       <button className="draft-cancel" type="button" onClick={() => void projectsQuery.refetch()}>Retry projects</button>
                     </div>
                   )}
                   {currentProjectOptionsQuery.isError && !currentProjectOptionsQuery.isFetching && !isLegacyLibrary && (
-                    <div className="draft-error" role="alert">
+                    <div className="draft-error collection-surface__error" role="alert">
                       <p>{isLibraryPage ? 'Published project filter options could not be loaded.' : 'Past project filter options could not be loaded.'}</p>
                       <button className="draft-cancel" type="button" onClick={() => void currentProjectOptionsQuery.refetch()}>
                         Retry project filters
@@ -1530,13 +1651,13 @@ export function LessonsLearnedScreen() {
                     </div>
                   )}
 
-                  {currentSubmissionsQuery.isPending && <p role="status">{isLibraryPage
+                  {currentSubmissionsQuery.isPending && <p className="collection-surface__body-note" role="status">{isLibraryPage
                     ? 'Loading published lessons…'
                     : isPmoEvaluationQueuePage
                       ? 'Loading the evaluation queue…'
                       : isPmoDraftsPage ? 'Loading PMO Drafts…' : 'Loading your submissions…'}</p>}
                   {currentSubmissionsQuery.isError && !pagedQuery?.isFetchNextPageError && (
-                    <div className="draft-error" role="alert">
+                    <div className="draft-error collection-surface__error" role="alert">
                       <p>{submissionsReadError ?? (currentSubmissionsQuery.data
                         ? 'Could not refresh. Showing the last loaded results.'
                         : isLibraryPage
@@ -1548,7 +1669,7 @@ export function LessonsLearnedScreen() {
                     </div>
                   )}
                   {currentSubmissionsQuery.isSuccess && submissionItems.length === 0 && (
-                    <p className="draft-empty">{isLibraryPage
+                    <p className="collection-surface__empty">{isLibraryPage
                       ? !isLegacyLibrary && currentSubmissionFilters && Object.keys(currentSubmissionFilters).length > 0
                         ? 'No published lessons match these filters.'
                         : 'No lessons have been published yet.'
@@ -1561,12 +1682,12 @@ export function LessonsLearnedScreen() {
                           : Object.keys(currentSubmissionFilters).length ? 'No submissions match these filters.' : 'You have no submissions yet.'}</p>
                   )}
                   {isLibraryPage && voteError && !isLibraryDetailOpen && (
-                    <div className="draft-error" role="alert">
+                    <div className="draft-error collection-surface__error" role="alert">
                       <p>{voteError.message}</p>
                     </div>
                   )}
                   {isSubmissionTablePage && submissionItems.length > 0 && (
-                    <div className="submission-table-wrapper">
+                    <div className="submission-table-wrapper submission-table-wrapper--flush">
                       <table className="submission-table">
                         <caption className="visually-hidden">{isLibraryPage
                           ? getLibrarySortCaption(librarySort)
@@ -1622,7 +1743,7 @@ export function LessonsLearnedScreen() {
                                   <p className="library-description">{draft.situationObserved || 'No description available.'}</p>
                                 )}
                               </th>
-                              <td>#{draft.id}</td>
+                              <td className="tabular-cell">#{draft.id}</td>
                               <td>
                                 {isLibraryPage && hasHomeOverview ? (
                                   <button
@@ -1637,11 +1758,11 @@ export function LessonsLearnedScreen() {
                               </td>
                               <td>{draft.projectName ?? 'No project'}</td>
                               <td>{draft.lessonType ?? 'Not specified'}</td>
-                              <td>{draft.status}</td>
-                              {isLibraryPage && <td>{draft.approvedAt
+                              <td><span className={getLessonStatusClass(draft.status)}>{getLessonStatusLabel(draft.status)}</span></td>
+                              {isLibraryPage && <td className="tabular-cell">{draft.approvedAt
                                 ? <time dateTime={draft.approvedAt}>{formatUpdatedAt(draft.approvedAt)}</time>
                                 : 'Not available'}</td>}
-                              {isLibraryPage && !isLegacyLibrary && <td>{isLibraryLesson(draft) ? draft.viewCount : 0}</td>}
+                              {isLibraryPage && !isLegacyLibrary && <td className="tabular-cell">{isLibraryLesson(draft) ? draft.viewCount : 0}</td>}
                               {isLibraryPage && !isLegacyLibrary && hasHomeOverview && (
                                 <td>
                                   {isLibraryLesson(draft) ? (
@@ -1655,21 +1776,21 @@ export function LessonsLearnedScreen() {
                                       disabled={pendingVoteIds.has(draft.id)}
                                       onClick={() => void toggleLessonVote(draft)}
                                     >
-                                      <span aria-hidden="true">{draft.hasVoted ? '★' : '☆'}</span>
+                                      <StarIcon size={15} filled={draft.hasVoted} />
                                       <span>{draft.hasVoted ? 'Voted' : 'Vote'}</span>
                                       <span className="vote-count">{draft.votesCount}</span>
                                     </button>
                                   ) : 0}
                                 </td>
                               )}
-                              {isLibraryPage && !isLegacyLibrary && hasHomeOverview && <td>{isLibraryLesson(draft) ? draft.commentCount : 0}</td>}
-                              {isPmoDraftsPage && <td><time dateTime={draft.updatedAt}>{formatUpdatedAt(draft.updatedAt)}</time></td>}
+                              {isLibraryPage && !isLegacyLibrary && hasHomeOverview && <td className="tabular-cell">{isLibraryLesson(draft) ? draft.commentCount : 0}</td>}
+                              {isPmoDraftsPage && <td className="tabular-cell"><time dateTime={draft.updatedAt}>{formatUpdatedAt(draft.updatedAt)}</time></td>}
                               {isPmoReviewListPage && <td>
                                 <div className="submission-actions">
                                   {draft.status === 'Open' && (
                                     <>
                                       <button
-                                        className="draft-cancel"
+                                        className="draft-cancel table-action-btn ui-inline-btn"
                                         type="button"
                                         onClick={() => {
                                           setIsCreateFormOpen(false);
@@ -1677,21 +1798,23 @@ export function LessonsLearnedScreen() {
                                         }}
                                         aria-label={`Edit ${draft.title}`}
                                       >
-                                        Edit
+                                        <EditIcon size={14} />
+                                        <span>Edit</span>
                                       </button>
                                       <button
-                                        className="draft-cancel"
+                                        className="draft-cancel table-action-btn ui-inline-btn"
                                         type="button"
                                         onClick={() => setSelectedCancellationDraft(draft)}
                                         aria-label={`Cancel ${draft.title}`}
                                       >
-                                        Cancel
+                                        <XIcon size={14} />
+                                        <span>Cancel</span>
                                       </button>
                                     </>
                                   )}
                                   {isPmoEvaluationQueuePage && draft.status === 'PMOEvaluation' && (
                                     <button
-                                      className="draft-cancel"
+                                      className="draft-cancel table-action-btn"
                                       type="button"
                                       onClick={() => setSelectedRejectionDraft(draft)}
                                       aria-label={`Reject ${draft.title}`}
@@ -1708,7 +1831,7 @@ export function LessonsLearnedScreen() {
                     </div>
                   )}
                   {pagedQuery?.hasNextPage && (
-                    <div>
+                    <div className="collection-surface__footer">
                       {pagedQuery.isFetchNextPageError && <p role="alert">The next page could not be loaded.</p>}
                       <button className="draft-cancel" type="button" disabled={pagedQuery.isFetching || (pagedQuery.isError && !pagedQuery.isFetchNextPageError)}
                         onClick={() => void pagedQuery.fetchNextPage()}>
@@ -1717,12 +1840,18 @@ export function LessonsLearnedScreen() {
                     </div>
                   )}
                   {!isSubmissionTablePage && currentSubmissionsQuery.isSuccess && submissionItems.length > 0 && (
-                    <ul className="draft-list">
+                    <ul className="draft-list draft-list--flush">
                       {submissionItems.map((draft) => (
                         <li key={draft.id}>
-                          <div>
-                            <p className="draft-title">{draft.title}</p>
+                          <div className="draft-list__main">
+                            <div className="draft-list__title-row">
+                              <p className="draft-title">{draft.title}</p>
+                              <span className={getLessonStatusClass(draft.status)}>{getLessonStatusLabel(draft.status)}</span>
+                            </div>
                             <p className="draft-meta">{draft.status === 'Open' ? 'Draft' : 'Lesson'} #{draft.id} · {draft.status}</p>
+                            {(draft.projectName || draft.lessonType) && (
+                              <p className="draft-meta">{[draft.projectName, draft.lessonType].filter(Boolean).join(' · ')}</p>
+                            )}
                             {draft.status === 'Open' && draft.latestReviewGuidance && (
                               <p className="return-guidance-notice">
                                 <strong>Latest PMO guidance</strong>
@@ -1733,15 +1862,16 @@ export function LessonsLearnedScreen() {
                           {draft.status === 'Open' ? (
                             <div className="submission-actions">
                               <button
-                                className="draft-cancel"
+                                className="draft-cancel table-action-btn ui-inline-btn"
                                 type="button"
                                 onClick={() => setSelectedCancellationDraft(draft)}
                                 aria-label={`Cancel ${draft.title}`}
                               >
-                                Cancel
+                                <XIcon size={14} />
+                                <span>Cancel</span>
                               </button>
                               <button
-                                className="draft-cancel"
+                                className="draft-cancel table-action-btn ui-inline-btn"
                                 type="button"
                                 onClick={() => {
                                   setIsCreateFormOpen(false);
@@ -1749,33 +1879,37 @@ export function LessonsLearnedScreen() {
                                 }}
                                 aria-label={`Reopen ${draft.title}`}
                               >
-                                Reopen
+                                <EditIcon size={14} />
+                                <span>Reopen</span>
                               </button>
                               <button
-                                className="draft-cancel"
+                                className="draft-cancel table-action-btn ui-inline-btn"
                                 type="button"
                                 onClick={() => setSelectedSubmissionId(draft.id)}
                                 aria-label={`View ${draft.title}`}
                                 data-lesson-view-id={draft.id}
                               >
-                                View
+                                <EyeIcon size={14} />
+                                <span>View</span>
                               </button>
                             </div>
                           ) : (
                             <button
-                              className="draft-cancel"
+                              className="draft-cancel table-action-btn ui-inline-btn"
                               type="button"
                               onClick={() => setSelectedSubmissionId(draft.id)}
                               aria-label={`View ${draft.title}`}
                               data-lesson-view-id={draft.id}
                             >
-                              View
+                              <EyeIcon size={14} />
+                              <span>View</span>
                             </button>
                           )}
                         </li>
                       ))}
                     </ul>
                   )}
+                  </div>
                     </>
                   )}
                   {collectionQuery?.hasNextPage && !getReadErrorLabel(collectionQuery.error) && (

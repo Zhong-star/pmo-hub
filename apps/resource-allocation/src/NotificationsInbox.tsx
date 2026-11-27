@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ArrowUpRightIcon, CheckCircleIcon } from '../../shared-ui/src/Icons';
 import {
   getNotifications,
   markAllNotificationsRead,
@@ -135,77 +136,80 @@ export function NotificationsInbox({ localUserId, onAccessDenied }: Notification
         </div>
         <button
           type="button"
-          className="secondary-button"
+          className="secondary-button ui-inline-btn"
           onClick={() => markAll.mutate({ idempotencyKey: getOrCreateReadAttempt(localUserId, 'all') })}
           disabled={markAll.isPending || markOne.isPending || readFilter === 'read'}
         >
-          {markAll.isPending ? 'Marking all as read…' : 'Mark all as read'}
+          <CheckCircleIcon size={15} />
+          <span>{markAll.isPending ? 'Marking all as read…' : 'Mark all as read'}</span>
         </button>
-      </div>
-
-      <div className="notification-toolbar">
-        <label className="notification-filter" htmlFor="notification-read-filter">
-          <span>Show</span>
-          <select
-            id="notification-read-filter"
-            value={readFilter}
-            onChange={(event) => setReadFilter(event.target.value as NotificationReadFilter)}
-          >
-            <option value="all">All notifications</option>
-            <option value="unread">Unread</option>
-            <option value="read">Read</option>
-          </select>
-        </label>
-        <span className="notification-count" aria-live="polite">
-          {unreadCount} unread on this page
-        </span>
       </div>
 
       {actionError && <p className="notification-action-error" role="alert">{actionError}</p>}
 
-      {notificationQuery.isPending && <p className="notification-loading" role="status">Loading notifications…</p>}
-      {notificationQuery.isError && !notificationQuery.data && (
-        <div className="notification-error" role="alert">
-          <p>{errorMessage(notificationQuery.error)}</p>
-          <button type="button" className="secondary-button" onClick={() => void notificationQuery.refetch()} disabled={notificationQuery.isFetching}>
-            {notificationQuery.isFetching ? 'Retrying…' : 'Try again'}
-          </button>
+      <div className="collection-surface">
+        <div className="notification-toolbar">
+          <label className="notification-filter" htmlFor="notification-read-filter">
+            <span>Show</span>
+            <select
+              id="notification-read-filter"
+              value={readFilter}
+              onChange={(event) => setReadFilter(event.target.value as NotificationReadFilter)}
+            >
+              <option value="all">All notifications</option>
+              <option value="unread">Unread</option>
+              <option value="read">Read</option>
+            </select>
+          </label>
+          <span className="notification-count" aria-live="polite">
+            {unreadCount} unread on this page
+          </span>
         </div>
-      )}
-      {notificationQuery.isError && notificationQuery.data && !notificationQuery.isFetchNextPageError && (
-        <div className="notification-stale" role="alert">
-          <p>Updates could not be checked. Your current inbox stays visible until you retry.</p>
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => void notificationQuery.refetch()}
-            disabled={notificationQuery.isFetching}
-          >
-            {notificationQuery.isFetching ? 'Retrying…' : 'Retry refresh'}
-          </button>
-        </div>
-      )}
 
-      {notificationQuery.data && items.length === 0 && (
-        <p className="notification-empty">No notifications match this filter.</p>
-      )}
+        {notificationQuery.isPending && <p className="collection-surface__body-note" role="status">Loading notifications…</p>}
+        {notificationQuery.isError && !notificationQuery.data && (
+          <div className="notification-error collection-surface__error" role="alert">
+            <p>{errorMessage(notificationQuery.error)}</p>
+            <button type="button" className="secondary-button" onClick={() => void notificationQuery.refetch()} disabled={notificationQuery.isFetching}>
+              {notificationQuery.isFetching ? 'Retrying…' : 'Try again'}
+            </button>
+          </div>
+        )}
+        {notificationQuery.isError && notificationQuery.data && !notificationQuery.isFetchNextPageError && (
+          <div className="notification-stale" role="alert">
+            <p>Updates could not be checked. Your current inbox stays visible until you retry.</p>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => void notificationQuery.refetch()}
+              disabled={notificationQuery.isFetching}
+            >
+              {notificationQuery.isFetching ? 'Retrying…' : 'Retry refresh'}
+            </button>
+          </div>
+        )}
 
-      {items.length > 0 && (
-        <ul className="notification-list" aria-label="Your notifications">
-          {items.map((notification) => (
-            <NotificationCard
-              key={notification.id}
-              notification={notification}
-              isUpdating={markOne.isPending || markAll.isPending}
-              onMarkRead={() => markOne.mutate({
-                notificationId: notification.id,
-                etag: notification.etag,
-                idempotencyKey: getOrCreateReadAttempt(localUserId, notification.id),
-              })}
-            />
-          ))}
-        </ul>
-      )}
+        {notificationQuery.data && items.length === 0 && (
+          <p className="collection-surface__empty">No notifications match this filter.</p>
+        )}
+
+        {items.length > 0 && (
+          <ul className="notification-list notification-list--flush" aria-label="Your notifications">
+            {items.map((notification) => (
+              <NotificationCard
+                key={notification.id}
+                notification={notification}
+                isUpdating={markOne.isPending || markAll.isPending}
+                onMarkRead={() => markOne.mutate({
+                  notificationId: notification.id,
+                  etag: notification.etag,
+                  idempotencyKey: getOrCreateReadAttempt(localUserId, notification.id),
+                })}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
 
       {notificationQuery.hasNextPage && (
         <div className="notification-load-more">
@@ -257,8 +261,9 @@ function NotificationCard({
         <p className="notification-message">{notification.message}</p>
         <p className="notification-date">{formatBusinessTimestamp(notification.createdAt)}</p>
         {notification.target.available && notification.target.destination ? (
-          <a className="notification-target-link" href={notificationTargetHref(notification)}>
-            {notification.target.destination === 'ALLOCATION_DETAIL' ? 'Open related allocation' : 'Open related request'}
+          <a className="notification-target-link ui-inline-btn" href={notificationTargetHref(notification)}>
+            <span>{notification.target.destination === 'ALLOCATION_DETAIL' ? 'Open related allocation' : 'Open related request'}</span>
+            <ArrowUpRightIcon size={14} />
           </a>
         ) : (
           <p className={`notification-target${notification.target.available ? '' : ' notification-target-unavailable'}`}>
