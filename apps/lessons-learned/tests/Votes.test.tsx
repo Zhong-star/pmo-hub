@@ -186,7 +186,7 @@ describe('Lessons Learned voting', () => {
     expect(detailVoteButton).toHaveTextContent('1');
 
     // Close modal and confirm Library row is synchronized with Detail
-    await user.click(within(dialog).getByRole('button', { name: 'Back to Lessons Library' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Close published lesson details' }));
     const syncedRowButton = screen.getByRole('button', { name: /vote for improve release handover/i });
     expect(syncedRowButton).toHaveAttribute('aria-pressed', 'false');
     expect(syncedRowButton).toHaveTextContent('1');

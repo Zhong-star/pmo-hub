@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { XIcon } from '../../shared-ui/src/Icons';
 import type { ApproveLessonBody, LessonDetails, LessonDraft } from './api';
-import { useDialogFocus } from './useDialogFocus';
+import { useDialogBackdropClose, useDialogFocus } from './useDialogFocus';
 import './DraftEditor.css';
 
 type ApprovalDialogProps = {
@@ -29,6 +30,10 @@ export function ApprovalDialog({ lesson, onConfirm, onReload, onClose }: Approva
   const [requestError, setRequestError] = useState<string | null>(null);
 
   useDialogFocus(dialogRef, closeRef);
+
+  const backdropHandlers = useDialogBackdropClose(() => {
+    if (!isApproving && !isReloading) onClose();
+  });
 
   async function confirmApproval() {
     if (isApproving || isReloading || hasVersionConflict) return;
@@ -70,10 +75,11 @@ export function ApprovalDialog({ lesson, onConfirm, onReload, onClose }: Approva
   return createPortal(
     <dialog
       ref={dialogRef}
-      className="draft-editor-dialog"
+      className="draft-editor-dialog draft-editor-dialog--compact"
       aria-modal="true"
       aria-labelledby="approve-lesson-title"
       aria-describedby="approve-lesson-explanation"
+      {...backdropHandlers}
       onCancel={(event) => {
         event.preventDefault();
         if (!isApproving && !isReloading) onClose();
@@ -81,7 +87,7 @@ export function ApprovalDialog({ lesson, onConfirm, onReload, onClose }: Approva
     >
       <div className="draft-editor-form">
         <div className="draft-editor-heading">
-          <div>
+          <div className="draft-editor-heading__meta">
             <p className="draft-editor-eyebrow">Lesson #{lesson.id} · version {lesson.version}</p>
             <h2 id="approve-lesson-title">Approve lesson</h2>
           </div>
@@ -93,23 +99,25 @@ export function ApprovalDialog({ lesson, onConfirm, onReload, onClose }: Approva
             disabled={isApproving || isReloading}
             onClick={onClose}
           >
-            ×
+            <XIcon size={18} />
           </button>
         </div>
-        <p id="approve-lesson-explanation">
-          You are approving version {lesson.version} of “{lesson.title}”. Approval publishes it in the Lessons Library.
-        </p>
-        {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
-        {hasVersionConflict && (
-          <button
-            className="draft-editor-secondary"
-            type="button"
-            disabled={isApproving || isReloading}
-            onClick={() => void reloadCurrentVersion()}
-          >
-            {isReloading ? 'Reloading…' : 'Reload current version'}
-          </button>
-        )}
+        <div className="draft-editor-body">
+          <p id="approve-lesson-explanation">
+            You are approving version {lesson.version} of “{lesson.title}”. Approval publishes it in the Lessons Library.
+          </p>
+          {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
+          {hasVersionConflict && (
+            <button
+              className="draft-editor-secondary"
+              type="button"
+              disabled={isApproving || isReloading}
+              onClick={() => void reloadCurrentVersion()}
+            >
+              {isReloading ? 'Reloading…' : 'Reload current version'}
+            </button>
+          )}
+        </div>
         <div className="draft-editor-actions">
           <button className="draft-editor-secondary" type="button" disabled={isApproving || isReloading} onClick={onClose}>
             Keep reviewing

@@ -277,11 +277,13 @@ test('FT-015, FT-028: Contributor cancels an Open lesson by keyboard and can reo
   await expect(history.getByText('Cancelled', { exact: true })).toBeVisible();
   await expect(history.getByText('Cancellation reason: The project scope changed.')).toBeVisible();
   await expect(details.getByRole('button', { name: /^Reopen / })).toHaveCount(0);
+  await expect(details.getByRole('button', { name: 'Close details' })).toHaveCount(0);
+  await expect(details.getByRole('button', { name: 'Back to Lessons Library' })).toHaveCount(0);
   const closeIcon = details.getByRole('button', { name: 'Close lesson details' });
-  const closeDetails = details.getByRole('button', { name: 'Close details' });
+  const postComment = details.getByRole('button', { name: 'Post comment' });
   await expect(closeIcon).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(closeDetails).toBeFocused();
+  await expect(postComment).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(closeIcon).toBeFocused();
   await page.keyboard.press('Escape');
@@ -392,7 +394,7 @@ test('PMO Drafts lists, edits, and cancels Contributor lessons with their histor
   await expect(firstDetails.getByText(editedTitle, { exact: true })).toBeVisible();
   await expect(firstDetails.getByText('Author', { exact: true }).locator('..')).toContainText('local-developer');
   await expect(firstDetails.getByRole('region', { name: 'History' }).getByText('Created', { exact: true })).toBeVisible();
-  await firstDetails.getByRole('button', { name: 'Close details' }).click();
+  await firstDetails.getByRole('button', { name: 'Close lesson details' }).click();
 
   await page.getByRole('button', { name: `Edit ${editedTitle}` }).click();
   const editor = page.getByRole('dialog', { name: 'Edit lesson' });
@@ -406,7 +408,7 @@ test('PMO Drafts lists, edits, and cancels Contributor lessons with their histor
   const assistedDetails = page.getByRole('dialog', { name: 'Lesson details' });
   await expect(assistedDetails.getByText('Author', { exact: true }).locator('..')).toContainText('local-developer');
   await expect(assistedDetails.getByText('Updated by', { exact: true }).locator('..')).toContainText('local-pmo');
-  await assistedDetails.getByRole('button', { name: 'Close details' }).click();
+  await assistedDetails.getByRole('button', { name: 'Close lesson details' }).click();
 
   await page.getByRole('button', { name: `Cancel ${cancelledTitle}` }).click();
   const cancellation = page.getByRole('dialog', { name: 'Cancel lesson' });

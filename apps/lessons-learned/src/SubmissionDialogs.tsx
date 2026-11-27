@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { StarIcon, XIcon } from '../../shared-ui/src/Icons';
 import type { CancelLessonBody, LessonDetails, LessonDraft, RejectLessonBody } from './api';
 import { LessonCommentsSection } from './LessonCommentsSection';
-import { useDialogFocus } from './useDialogFocus';
+import { useDialogBackdropClose, useDialogFocus } from './useDialogFocus';
 import './DraftEditor.css';
 
 type CancelLessonDialogProps = {
@@ -74,6 +75,8 @@ export function CancelLessonDialog({ draft, onClose, onReload, onConfirm, onRegi
     return true;
   }, [isCancelling, isReloading, onClose, reason]);
 
+  const backdropHandlers = useDialogBackdropClose(requestClose);
+
   useEffect(() => {
     onRegisterNavigationCloseRequest?.(requestClose);
     return () => onRegisterNavigationCloseRequest?.(null);
@@ -139,10 +142,11 @@ export function CancelLessonDialog({ draft, onClose, onReload, onConfirm, onRegi
   return createPortal(
     <dialog
       ref={dialogRef}
-      className="draft-editor-dialog"
+      className="draft-editor-dialog draft-editor-dialog--compact"
       aria-modal="true"
       aria-labelledby="cancel-lesson-title"
       aria-describedby="cancel-lesson-explanation"
+      {...backdropHandlers}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.preventDefault();
@@ -156,44 +160,49 @@ export function CancelLessonDialog({ draft, onClose, onReload, onConfirm, onRegi
     >
       <form className="draft-editor-form" noValidate onSubmit={(event) => void confirmCancellation(event)}>
         <div className="draft-editor-heading">
-          <div>
+          <div className="draft-editor-heading__meta">
             <p className="draft-editor-eyebrow">Draft #{currentDraft.id} · Open</p>
             <h2 id="cancel-lesson-title">Cancel lesson</h2>
           </div>
           <button className="draft-editor-close" type="button" aria-label="Close cancellation" disabled={isCancelling || isReloading} onClick={requestClose}>
-            ×
+            <XIcon size={18} />
           </button>
         </div>
-        <p id="cancel-lesson-explanation">This will archive “{currentDraft.title}”. The lesson will stay in My Submissions as read-only.</p>
-        <div className="draft-editor-field">
-          <label htmlFor="lesson-cancellation-reason">Reason for cancellation</label>
-          <textarea
-            ref={reasonRef}
-            id="lesson-cancellation-reason"
-            required
-            maxLength={1000}
-            value={reason}
-            aria-invalid={reasonError ? 'true' : undefined}
-            aria-describedby={reasonError ? 'lesson-cancellation-reason-error' : 'lesson-cancellation-reason-count'}
-            disabled={isCancelling || isReloading}
-            onChange={(event) => {
-              setReason(event.target.value);
-              setReasonError(null);
-              setRequestError(null);
-            }}
-          />
-          {reasonError ? (
-            <p id="lesson-cancellation-reason-error" className="draft-editor-error" role="alert">{reasonError}</p>
-          ) : (
-            <p id="lesson-cancellation-reason-count" className="draft-editor-counter">{reason.length}/1,000 characters</p>
+        <div className="draft-editor-body">
+          <p id="cancel-lesson-explanation">This will archive “{currentDraft.title}”. The lesson will stay in My Submissions as read-only.</p>
+          <div className="draft-editor-field">
+            <div className="draft-editor-field-header">
+              <label htmlFor="lesson-cancellation-reason">Reason for cancellation</label>
+              {!reasonError && (
+                <p id="lesson-cancellation-reason-count" className="draft-editor-counter">{reason.length}/1,000 characters</p>
+              )}
+            </div>
+            <textarea
+              ref={reasonRef}
+              id="lesson-cancellation-reason"
+              required
+              maxLength={1000}
+              value={reason}
+              aria-invalid={reasonError ? 'true' : undefined}
+              aria-describedby={reasonError ? 'lesson-cancellation-reason-error' : 'lesson-cancellation-reason-count'}
+              disabled={isCancelling || isReloading}
+              onChange={(event) => {
+                setReason(event.target.value);
+                setReasonError(null);
+                setRequestError(null);
+              }}
+            />
+            {reasonError && (
+              <p id="lesson-cancellation-reason-error" className="draft-editor-error" role="alert">{reasonError}</p>
+            )}
+          </div>
+          {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
+          {hasVersionConflict && isDraftOpen && (
+            <button className="draft-editor-secondary" type="button" disabled={isCancelling || isReloading} onClick={() => void reloadCurrentDraft()}>
+              {isReloading ? 'Reloading…' : 'Reload current version'}
+            </button>
           )}
         </div>
-        {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
-        {hasVersionConflict && isDraftOpen && (
-          <button className="draft-editor-secondary" type="button" disabled={isCancelling || isReloading} onClick={() => void reloadCurrentDraft()}>
-            {isReloading ? 'Reloading…' : 'Reload current version'}
-          </button>
-        )}
         <div className="draft-editor-actions">
           <button className="draft-editor-secondary" type="button" disabled={isCancelling || isReloading} onClick={requestClose}>Keep draft</button>
           <button className="draft-editor-primary" type="submit" disabled={isCancelling || isReloading || hasVersionConflict || !isDraftOpen}>
@@ -240,6 +249,8 @@ export function RejectLessonDialog({ draft, onClose, onReload, onConfirm, onRegi
     onClose();
     return true;
   }, [isRejecting, isReloading, onClose, reason]);
+
+  const backdropHandlers = useDialogBackdropClose(requestClose);
 
   useEffect(() => {
     onRegisterNavigationCloseRequest?.(requestClose);
@@ -306,10 +317,11 @@ export function RejectLessonDialog({ draft, onClose, onReload, onConfirm, onRegi
   return createPortal(
     <dialog
       ref={dialogRef}
-      className="draft-editor-dialog"
+      className="draft-editor-dialog draft-editor-dialog--compact"
       aria-modal="true"
       aria-labelledby="reject-lesson-title"
       aria-describedby="reject-lesson-explanation"
+      {...backdropHandlers}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.preventDefault();
@@ -323,44 +335,49 @@ export function RejectLessonDialog({ draft, onClose, onReload, onConfirm, onRegi
     >
       <form className="draft-editor-form" noValidate onSubmit={(event) => void confirmRejection(event)}>
         <div className="draft-editor-heading">
-          <div>
+          <div className="draft-editor-heading__meta">
             <p className="draft-editor-eyebrow">Lesson #{currentDraft.id} · PMO Evaluation</p>
             <h2 id="reject-lesson-title">Reject lesson</h2>
           </div>
           <button className="draft-editor-close" type="button" aria-label="Close rejection" disabled={isRejecting || isReloading} onClick={requestClose}>
-            ×
+            <XIcon size={18} />
           </button>
         </div>
-        <p id="reject-lesson-explanation">This will archive “{currentDraft.title}”. The author can read the reason in My Submissions.</p>
-        <div className="draft-editor-field">
-          <label htmlFor="lesson-rejection-reason">Reason for rejection</label>
-          <textarea
-            ref={reasonRef}
-            id="lesson-rejection-reason"
-            required
-            maxLength={1000}
-            value={reason}
-            aria-invalid={reasonError ? 'true' : undefined}
-            aria-describedby={reasonError ? 'lesson-rejection-reason-error' : 'lesson-rejection-reason-count'}
-            disabled={isRejecting || isReloading}
-            onChange={(event) => {
-              setReason(event.target.value);
-              setReasonError(null);
-              setRequestError(null);
-            }}
-          />
-          {reasonError ? (
-            <p id="lesson-rejection-reason-error" className="draft-editor-error" role="alert">{reasonError}</p>
-          ) : (
-            <p id="lesson-rejection-reason-count" className="draft-editor-counter">{reason.length}/1,000 characters</p>
+        <div className="draft-editor-body">
+          <p id="reject-lesson-explanation">This will archive “{currentDraft.title}”. The author can read the reason in My Submissions.</p>
+          <div className="draft-editor-field">
+            <div className="draft-editor-field-header">
+              <label htmlFor="lesson-rejection-reason">Reason for rejection</label>
+              {!reasonError && (
+                <p id="lesson-rejection-reason-count" className="draft-editor-counter">{reason.length}/1,000 characters</p>
+              )}
+            </div>
+            <textarea
+              ref={reasonRef}
+              id="lesson-rejection-reason"
+              required
+              maxLength={1000}
+              value={reason}
+              aria-invalid={reasonError ? 'true' : undefined}
+              aria-describedby={reasonError ? 'lesson-rejection-reason-error' : 'lesson-rejection-reason-count'}
+              disabled={isRejecting || isReloading}
+              onChange={(event) => {
+                setReason(event.target.value);
+                setReasonError(null);
+                setRequestError(null);
+              }}
+            />
+            {reasonError && (
+              <p id="lesson-rejection-reason-error" className="draft-editor-error" role="alert">{reasonError}</p>
+            )}
+          </div>
+          {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
+          {(hasVersionConflict || !isAwaitingEvaluation) && (
+            <button className="draft-editor-secondary" type="button" disabled={isRejecting || isReloading} onClick={() => void reloadCurrentEvaluation()}>
+              {isReloading ? 'Reloading…' : 'Reload current version'}
+            </button>
           )}
         </div>
-        {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
-        {(hasVersionConflict || !isAwaitingEvaluation) && (
-          <button className="draft-editor-secondary" type="button" disabled={isRejecting || isReloading} onClick={() => void reloadCurrentEvaluation()}>
-            {isReloading ? 'Reloading…' : 'Reload current version'}
-          </button>
-        )}
         <div className="draft-editor-actions">
           <button className="draft-editor-secondary" type="button" disabled={isRejecting || isReloading} onClick={requestClose}>Keep review</button>
           <button className="draft-editor-primary" type="submit" disabled={isRejecting || isReloading || hasVersionConflict || !isAwaitingEvaluation}>
@@ -436,26 +453,38 @@ export function LessonSubmissionDetailsDialog({
     if (closeGuardRef.current?.() !== false) onClose();
   }
 
-  const fields: Array<[string, string]> = lesson ? [
-    ['Title', lesson.title],
-    ['Author', lesson.authorName ?? lesson.authorId],
-    ['Updated by', lesson.updatedBy],
-    ['Status', lesson.status],
-    ['Project', lesson.projectName ?? 'No project'],
-    ['Project category', lesson.projectCategory ?? 'Not provided'],
-    ['Project phase', lesson.projectPhase ?? 'Not provided'],
-    ['Situation observed', lesson.situationObserved ?? 'Not provided'],
-    ...(lesson.rootCause?.trim() ? [['Root cause', lesson.rootCause] as [string, string]] : []),
-    ['Lesson type', lesson.lessonType ?? 'Not provided'],
-    ['Impact', lesson.impact ?? 'Not provided'],
-    ['Recommendation', lesson.recommendation ?? 'Not provided'],
-    ['Applicability', lesson.applicability ?? 'Not provided'],
+  const backdropHandlers = useDialogBackdropClose(requestClose);
+
+  const metadataItems: Array<{ label: string; value: string; isStatus?: boolean; isAuthor?: boolean }> = lesson ? [
+    { label: 'Status', value: lesson.status, isStatus: true },
+    { label: 'Lesson type', value: lesson.lessonType ?? 'Not provided' },
+    { label: 'Project', value: lesson.projectName ?? 'No project' },
+    { label: 'Project category', value: lesson.projectCategory ?? 'Not provided' },
+    { label: 'Project phase', value: lesson.projectPhase ?? 'Not provided' },
+    { label: 'Author', value: lesson.authorName ?? lesson.authorId, isAuthor: true },
+    { label: 'Updated by', value: lesson.updatedBy },
   ] : [];
+
+  const narrativeItems: Array<{ label: string; value: string; highlight?: boolean }> = lesson ? [
+    { label: 'Situation observed', value: lesson.situationObserved ?? 'Not provided' },
+    ...(lesson.rootCause?.trim() ? [{ label: 'Root cause', value: lesson.rootCause }] : []),
+    { label: 'Impact', value: lesson.impact ?? 'Not provided' },
+    { label: 'Recommendation', value: lesson.recommendation ?? 'Not provided', highlight: true },
+    { label: 'Applicability', value: lesson.applicability ?? 'Not provided' },
+  ] : [];
+
   const dates: Array<[string, string]> = lesson ? [
     ['Created', lesson.createdAt],
     ['Last updated', lesson.updatedAt],
     ...(lesson.approvedAt ? [['Approved', lesson.approvedAt] as [string, string]] : []),
   ] : [];
+
+  const hasFooterActions = Boolean(
+    (lesson && lesson.status === 'PMOEvaluation' && onReturn)
+    || (canApprove && lesson?.status === 'PMOEvaluation' && onApprove)
+    || (canEdit && onEdit)
+    || (canClose && lesson?.status === 'Approved' && onCloseLesson),
+  );
 
   return createPortal(
     <dialog
@@ -463,6 +492,7 @@ export function LessonSubmissionDetailsDialog({
       className="draft-editor-dialog"
       aria-modal="true"
       aria-labelledby="lesson-details-title"
+      {...backdropHandlers}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.preventDefault();
@@ -476,120 +506,165 @@ export function LessonSubmissionDetailsDialog({
     >
       <div className="draft-editor-form">
         <div className="draft-editor-heading">
-          <div>
-            <p className="draft-editor-eyebrow">{isLibrarySurface ? 'Published lesson' : 'Lesson'} #{lesson?.id ?? lessonId}{lesson ? ` · ${lesson.status}` : ''}</p>
+          <div className="draft-editor-heading__meta">
+            <p className="draft-editor-eyebrow">{isLibrarySurface ? 'Published lesson' : 'Lesson'} #{lesson?.id ?? lessonId}</p>
             <h2 id="lesson-details-title">{isLibrarySurface ? 'Published lesson details' : 'Lesson details'}</h2>
           </div>
           <button ref={closeRef} className="draft-editor-close" type="button" aria-label={isLibrarySurface ? 'Close published lesson details' : 'Close lesson details'} onClick={requestClose}>
-            ×
+            <XIcon size={18} />
           </button>
         </div>
-        {isLoading && <p role="status">Loading lesson details…</p>}
-        {hasError && (
-          <div className="draft-error" role="alert">
-            {errorStatus === 404 && <strong>Lesson not found</strong>}
-            {(errorStatus === 401 || errorStatus === 403) && <strong>Access denied</strong>}
-            <p>Lesson details and history could not be loaded.</p>
-            <button className="draft-cancel" type="button" onClick={onRetry}>Retry</button>
+        <div className="draft-editor-body">
+          {isLoading && <p role="status">Loading lesson details…</p>}
+          {hasError && (
+            <div className="draft-error" role="alert">
+              {errorStatus === 404 && <strong>Lesson not found</strong>}
+              {(errorStatus === 401 || errorStatus === 403) && <strong>Access denied</strong>}
+              <p>Lesson details and history could not be loaded.</p>
+              <button className="draft-cancel" type="button" onClick={onRetry}>Retry</button>
+            </div>
+          )}
+          {lesson && (
+            <>
+              <div className="lesson-detail-hero">
+                <dl className="lesson-detail-title-group">
+                  <div>
+                    <dt className="visually-hidden">Title</dt>
+                    <dd className="lesson-detail-title">{lesson.title}</dd>
+                  </div>
+                </dl>
+                {isPublished && onToggleVote && (
+                  <div className="lesson-detail-vote">
+                    <button
+                      type="button"
+                      className={lesson.hasVoted ? 'vote-button is-voted' : 'vote-button'}
+                      aria-pressed={lesson.hasVoted}
+                      aria-label={lesson.hasVoted
+                        ? `Remove vote for ${lesson.title} (${lesson.votesCount})`
+                        : `Vote for ${lesson.title} (${lesson.votesCount})`}
+                      disabled={isVotePending}
+                      onClick={() => onToggleVote(lesson)}
+                    >
+                      <StarIcon filled={lesson.hasVoted} size={15} />
+                      <span>{lesson.hasVoted ? 'Voted' : 'Vote'}</span>
+                      <span className="vote-count">{lesson.votesCount}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+              {isPublished && onToggleVote && voteError && (
+                <p className="draft-error" role="alert">{voteError}</p>
+              )}
+
+              <div className="lesson-detail-meta-card">
+                <dl className="lesson-detail-meta-grid">
+                  {metadataItems.map((item) => (
+                    <div key={item.label}>
+                      <dt>{item.label}</dt>
+                      {item.isStatus ? (
+                        <dd className={getLessonStatusClass(lesson.status)}>{item.value}</dd>
+                      ) : (
+                        <dd>
+                          {item.isAuthor && onOpenAuthorProfile ? (
+                            <button
+                              type="button"
+                              className="author-profile-link"
+                              aria-label={`View profile of ${item.value}`}
+                              onClick={() => onOpenAuthorProfile(lesson.authorId)}
+                            >
+                              {item.value}
+                            </button>
+                          ) : item.value}
+                        </dd>
+                      )}
+                    </div>
+                  ))}
+                </dl>
+                <dl className="lesson-detail-dates-grid">
+                  {dates.map(([label, value]) => (
+                    <div key={label}>
+                      <dt>{label}</dt>
+                      <dd><time dateTime={value}>{formatTimestampUtc(value)}</time></dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+
+              <dl className="lesson-detail-narrative">
+                {narrativeItems.map((item) => (
+                  <div
+                    key={item.label}
+                    className={item.highlight
+                      ? 'lesson-detail-section lesson-detail-section--highlight'
+                      : 'lesson-detail-section'}
+                  >
+                    <dt>{item.label}</dt>
+                    <dd>{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              {lesson.history.length > 0 && (
+                <section className="submission-history" aria-labelledby="lesson-history-title">
+                  <h3 id="lesson-history-title">History</h3>
+                  <ol>
+                    {lesson.history.map((event) => (
+                      <li key={event.id}>
+                        <p><strong>{event.eventType}</strong> · {event.previousStatus ? `${event.previousStatus} → ` : ''}{event.newStatus}</p>
+                        <p>{event.actorId} · <time dateTime={event.occurredAt}>{formatTimestampUtc(event.occurredAt)}</time></p>
+                        {event.reason && <p>{getHistoryReasonLabel(event.eventType)}: {event.reason}</p>}
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              )}
+              {profileId && (
+                <LessonCommentsSection
+                  lessonId={lesson.id}
+                  profileId={profileId}
+                  isPmo={isPmo}
+                  initialPublicCommentCount={lesson.commentCount ?? 0}
+                  onPublicCommentCountChange={onPublicCommentCountChange}
+                  closeGuardRef={closeGuardRef}
+                />
+              )}
+            </>
+          )}
+        </div>
+        {hasFooterActions && (
+          <div className="draft-editor-actions">
+            {lesson && lesson.status === 'PMOEvaluation' && onReturn && (
+              <button className="draft-editor-secondary" type="button" onClick={() => onReturn(lesson)}>
+                Return for changes
+              </button>
+            )}
+            {canApprove && lesson?.status === 'PMOEvaluation' && onApprove && (
+              <button className="draft-editor-primary" type="button" onClick={() => onApprove(lesson)}>
+                Approve and publish
+              </button>
+            )}
+            {canEdit && onEdit && (
+              <button className="draft-editor-primary" type="button" onClick={onEdit}>Edit lesson</button>
+            )}
+            {canClose && lesson?.status === 'Approved' && onCloseLesson && (
+              <button className="draft-editor-primary" type="button" onClick={() => onCloseLesson(lesson)}>
+                Close lesson
+              </button>
+            )}
           </div>
         )}
-        {lesson && (
-          <>
-            {isPublished && onToggleVote && (
-              <div className="lesson-vote-bar">
-                <button
-                  type="button"
-                  className={lesson.hasVoted ? 'vote-button is-voted' : 'vote-button'}
-                  aria-pressed={lesson.hasVoted}
-                  aria-label={lesson.hasVoted
-                    ? `Remove vote for ${lesson.title} (${lesson.votesCount})`
-                    : `Vote for ${lesson.title} (${lesson.votesCount})`}
-                  disabled={isVotePending}
-                  onClick={() => onToggleVote(lesson)}
-                >
-                  <span aria-hidden="true">{lesson.hasVoted ? '★' : '☆'}</span>
-                  <span>{lesson.hasVoted ? 'Voted' : 'Vote'}</span>
-                  <span className="vote-count">{lesson.votesCount}</span>
-                </button>
-                {voteError && <p className="draft-error" role="alert">{voteError}</p>}
-              </div>
-            )}
-            <dl className="submission-detail-list">
-              {fields.map(([label, value]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>
-                    {label === 'Author' && onOpenAuthorProfile ? (
-                      <button
-                        type="button"
-                        className="author-profile-link"
-                        aria-label={`View profile of ${value}`}
-                        onClick={() => onOpenAuthorProfile(lesson.authorId)}
-                      >
-                        {value}
-                      </button>
-                    ) : value}
-                  </dd>
-                </div>
-              ))}
-              {dates.map(([label, value]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd><time dateTime={value}>{formatTimestampUtc(value)}</time></dd>
-                </div>
-              ))}
-            </dl>
-            {lesson.history.length > 0 && (
-              <section className="submission-history" aria-labelledby="lesson-history-title">
-                <h3 id="lesson-history-title">History</h3>
-                <ol>
-                  {lesson.history.map((event) => (
-                    <li key={event.id}>
-                      <p><strong>{event.eventType}</strong> · {event.previousStatus ? `${event.previousStatus} → ` : ''}{event.newStatus}</p>
-                      <p>{event.actorId} · <time dateTime={event.occurredAt}>{formatTimestampUtc(event.occurredAt)}</time></p>
-                      {event.reason && <p>{getHistoryReasonLabel(event.eventType)}: {event.reason}</p>}
-                    </li>
-                  ))}
-                </ol>
-              </section>
-            )}
-            {profileId && (
-              <LessonCommentsSection
-                lessonId={lesson.id}
-                profileId={profileId}
-                isPmo={isPmo}
-                initialPublicCommentCount={lesson.commentCount ?? 0}
-                onPublicCommentCountChange={onPublicCommentCountChange}
-                closeGuardRef={closeGuardRef}
-              />
-            )}
-          </>
-        )}
-        <div className="draft-editor-actions">
-          {lesson && lesson.status === 'PMOEvaluation' && onReturn && (
-            <button className="draft-editor-secondary" type="button" onClick={() => onReturn(lesson)}>
-              Return for changes
-            </button>
-          )}
-          {canApprove && lesson?.status === 'PMOEvaluation' && onApprove && (
-            <button className="draft-editor-primary" type="button" onClick={() => onApprove(lesson)}>
-              Approve and publish
-            </button>
-          )}
-          {canEdit && onEdit && (
-            <button className="draft-editor-primary" type="button" onClick={onEdit}>Edit lesson</button>
-          )}
-          {canClose && lesson?.status === 'Approved' && onCloseLesson && (
-            <button className="draft-editor-primary" type="button" onClick={() => onCloseLesson(lesson)}>
-              Close lesson
-            </button>
-          )}
-          <button className="draft-editor-secondary" type="button" onClick={requestClose}>{isLibrarySurface ? 'Back to Lessons Library' : 'Close details'}</button>
-        </div>
       </div>
     </dialog>,
     document.body,
   );
+}
+
+function getLessonStatusClass(status: LessonDetails['status']): string {
+  if (status === 'Approved') return 'lesson-status-pill lesson-status-pill--approved';
+  if (status === 'PMOEvaluation') return 'lesson-status-pill lesson-status-pill--evaluation';
+  if (status === 'Closed') return 'lesson-status-pill lesson-status-pill--closed';
+  if (status === 'Archived') return 'lesson-status-pill lesson-status-pill--archived';
+  return 'lesson-status-pill lesson-status-pill--open';
 }
 
 function getHistoryReasonLabel(eventType: string): string {

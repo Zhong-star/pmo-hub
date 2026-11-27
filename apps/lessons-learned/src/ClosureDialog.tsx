@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { XIcon } from '../../shared-ui/src/Icons';
 import type { CloseLessonBody, LessonDetails, LessonDraft } from './api';
-import { useDialogFocus } from './useDialogFocus';
+import { useDialogBackdropClose, useDialogFocus } from './useDialogFocus';
 import './DraftEditor.css';
 
 type ClosureDialogProps = {
@@ -29,6 +30,10 @@ export function ClosureDialog({ lesson, onConfirm, onReload, onClose }: ClosureD
   const [requestError, setRequestError] = useState<string | null>(null);
 
   useDialogFocus(dialogRef, closeRef);
+
+  const backdropHandlers = useDialogBackdropClose(() => {
+    if (!isClosing && !isReloading) onClose();
+  });
 
   async function confirmClosure() {
     if (isClosing || isReloading || hasVersionConflict) return;
@@ -69,10 +74,11 @@ export function ClosureDialog({ lesson, onConfirm, onReload, onClose }: ClosureD
   return createPortal(
     <dialog
       ref={dialogRef}
-      className="draft-editor-dialog"
+      className="draft-editor-dialog draft-editor-dialog--compact"
       aria-modal="true"
       aria-labelledby="close-lesson-title"
       aria-describedby="close-lesson-explanation"
+      {...backdropHandlers}
       onCancel={(event) => {
         event.preventDefault();
         if (!isClosing && !isReloading) onClose();
@@ -80,7 +86,7 @@ export function ClosureDialog({ lesson, onConfirm, onReload, onClose }: ClosureD
     >
       <div className="draft-editor-form">
         <div className="draft-editor-heading">
-          <div>
+          <div className="draft-editor-heading__meta">
             <p className="draft-editor-eyebrow">Lesson #{lesson.id} · version {lesson.version}</p>
             <h2 id="close-lesson-title">Close lesson</h2>
           </div>
@@ -92,23 +98,25 @@ export function ClosureDialog({ lesson, onConfirm, onReload, onClose }: ClosureD
             disabled={isClosing || isReloading}
             onClick={onClose}
           >
-            ×
+            <XIcon size={18} />
           </button>
         </div>
-        <p id="close-lesson-explanation">
-          You are closing version {lesson.version} of “{lesson.title}”. It will remain in the Lessons Library with its original approval date.
-        </p>
-        {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
-        {hasVersionConflict && (
-          <button
-            className="draft-editor-secondary"
-            type="button"
-            disabled={isClosing || isReloading}
-            onClick={() => void reloadCurrentVersion()}
-          >
-            {isReloading ? 'Reloading…' : 'Reload current version'}
-          </button>
-        )}
+        <div className="draft-editor-body">
+          <p id="close-lesson-explanation">
+            You are closing version {lesson.version} of “{lesson.title}”. It will remain in the Lessons Library with its original approval date.
+          </p>
+          {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
+          {hasVersionConflict && (
+            <button
+              className="draft-editor-secondary"
+              type="button"
+              disabled={isClosing || isReloading}
+              onClick={() => void reloadCurrentVersion()}
+            >
+              {isReloading ? 'Reloading…' : 'Reload current version'}
+            </button>
+          )}
+        </div>
         <div className="draft-editor-actions">
           <button className="draft-editor-secondary" type="button" disabled={isClosing || isReloading} onClick={onClose}>
             Keep published

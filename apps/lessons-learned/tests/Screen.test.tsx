@@ -536,7 +536,7 @@ describe('Lessons Learned access check', () => {
       .getByRole('cell', { name: '1' })).toBeInTheDocument());
     expect(within(details).getByText('The handover omitted the current runbook.')).toBeInTheDocument();
     expect(within(details).queryByRole('heading', { name: 'History' })).not.toBeInTheDocument();
-    await user.click(within(details).getByRole('button', { name: 'Back to Lessons Library' }));
+    await user.click(within(details).getByRole('button', { name: 'Close published lesson details' }));
     await waitFor(() => expect(window.location.search).toBe('?page=library'));
     expect(within(table).getByRole('link', { name: 'View Published release verification' })).toHaveFocus();
   });
@@ -924,7 +924,7 @@ describe('Lessons Learned access check', () => {
     expect(await within(details).findByText('PMOEvaluation')).toBeInTheDocument();
     expect(within(details).getByText('Submitted')).toBeInTheDocument();
     expect(title).toHaveValue('Unsaved title remains visible');
-    await user.click(within(details).getByRole('button', { name: 'Close details' }));
+    await user.click(within(details).getByRole('button', { name: 'Close lesson details' }));
     expect(screen.getByRole('dialog', { name: 'Edit lesson' })).toBeInTheDocument();
     expect(title).toHaveValue('Unsaved title remains visible');
   });
@@ -1078,7 +1078,7 @@ describe('Lessons Learned access check', () => {
     expect(within(details).getAllByText('local-contributor').length).toBeGreaterThan(1);
     expect(within(details).getAllByText('Created').length).toBeGreaterThan(1);
     expect(within(details).getByText('Cancelled')).toBeInTheDocument();
-    await user.click(within(details).getByRole('button', { name: 'Close details' }));
+    await user.click(within(details).getByRole('button', { name: 'Close lesson details' }));
     expect(archivedView).toHaveFocus();
     expect(screen.getByRole('searchbox', { name: 'Search title or ID' })).toHaveValue('Archived');
     expect(screen.getByRole('combobox', { name: 'Project' })).toHaveValue('without-project');
@@ -1245,7 +1245,7 @@ describe('Lessons Learned access check', () => {
     expect(within(details).getByText('Cancellation reason: The project scope changed.')).toBeInTheDocument();
     expect(within(details).queryByRole('button', { name: /^Cancel / })).not.toBeInTheDocument();
     expect(within(details).queryByRole('button', { name: /^Reopen / })).not.toBeInTheDocument();
-    await user.click(within(details).getByRole('button', { name: 'Close details' }));
+    await user.click(within(details).getByRole('button', { name: 'Close lesson details' }));
     expect(viewButton).toHaveFocus();
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('');
   });
@@ -1272,7 +1272,7 @@ describe('Lessons Learned access check', () => {
     await user.click(await screen.findByRole('button', { name: `View ${openDraft.title}` }));
     const firstDetails = screen.getByRole('dialog', { name: 'Lesson details' });
     expect(await within(firstDetails).findByText('Open', { exact: true })).toBeInTheDocument();
-    await user.click(within(firstDetails).getByRole('button', { name: 'Close details' }));
+    await user.click(within(firstDetails).getByRole('button', { name: 'Close lesson details' }));
 
     await user.click(await screen.findByRole('button', { name: `Cancel ${openDraft.title}` }));
     const cancelDialog = screen.getByRole('dialog', { name: 'Cancel lesson' });

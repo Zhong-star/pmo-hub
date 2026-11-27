@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { XIcon } from '../../shared-ui/src/Icons';
 import type { LessonDetails, LessonDraft, ReturnLessonBody } from './api';
-import { useDialogFocus } from './useDialogFocus';
+import { useDialogBackdropClose, useDialogFocus } from './useDialogFocus';
 import './DraftEditor.css';
 
 type ReturnLessonDialogProps = {
@@ -66,6 +67,8 @@ export function ReturnLessonDialog({
     return true;
   }, [guidance.length, isReloading, isReturning, onClose]);
 
+  const backdropHandlers = useDialogBackdropClose(requestClose);
+
   useEffect(() => {
     onRegisterNavigationCloseRequest?.(requestClose);
     return () => onRegisterNavigationCloseRequest?.(null);
@@ -128,9 +131,10 @@ export function ReturnLessonDialog({
   return createPortal(
     <dialog
       ref={dialogRef}
-      className="draft-editor-dialog"
+      className="draft-editor-dialog draft-editor-dialog--compact"
       aria-modal="true"
       aria-labelledby="return-lesson-title"
+      {...backdropHandlers}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.preventDefault();
@@ -144,44 +148,49 @@ export function ReturnLessonDialog({
     >
       <form className="draft-editor-form" noValidate onSubmit={(event) => void confirmReturn(event)}>
         <div className="draft-editor-heading">
-          <div>
+          <div className="draft-editor-heading__meta">
             <p className="draft-editor-eyebrow">Lesson #{currentLesson.id} · {currentLesson.status}</p>
             <h2 id="return-lesson-title">Return lesson</h2>
           </div>
           <button className="draft-editor-close" type="button" aria-label="Close return" disabled={isReturning || isReloading} onClick={requestClose}>
-            ×
+            <XIcon size={18} />
           </button>
         </div>
-        <p>Return “{currentLesson.title}” to its author with the changes needed before it can be reviewed again.</p>
-        <div className="draft-editor-field">
-          <label htmlFor="lesson-return-guidance">Guidance for author</label>
-          <textarea
-            ref={guidanceRef}
-            id="lesson-return-guidance"
-            required
-            maxLength={1000}
-            value={guidance}
-            aria-invalid={guidanceError ? 'true' : undefined}
-            aria-describedby={guidanceError ? 'lesson-return-guidance-error' : 'lesson-return-guidance-count'}
-            disabled={isReturning || isReloading}
-            onChange={(event) => {
-              setGuidance(event.target.value);
-              setGuidanceError(null);
-              setRequestError(null);
-            }}
-          />
-          {guidanceError ? (
-            <p id="lesson-return-guidance-error" className="draft-editor-error" role="alert">{guidanceError}</p>
-          ) : (
-            <p id="lesson-return-guidance-count" className="draft-editor-counter">{guidance.length}/1,000 characters</p>
+        <div className="draft-editor-body">
+          <p>Return “{currentLesson.title}” to its author with the changes needed before it can be reviewed again.</p>
+          <div className="draft-editor-field">
+            <div className="draft-editor-field-header">
+              <label htmlFor="lesson-return-guidance">Guidance for author</label>
+              {!guidanceError && (
+                <p id="lesson-return-guidance-count" className="draft-editor-counter">{guidance.length}/1,000 characters</p>
+              )}
+            </div>
+            <textarea
+              ref={guidanceRef}
+              id="lesson-return-guidance"
+              required
+              maxLength={1000}
+              value={guidance}
+              aria-invalid={guidanceError ? 'true' : undefined}
+              aria-describedby={guidanceError ? 'lesson-return-guidance-error' : 'lesson-return-guidance-count'}
+              disabled={isReturning || isReloading}
+              onChange={(event) => {
+                setGuidance(event.target.value);
+                setGuidanceError(null);
+                setRequestError(null);
+              }}
+            />
+            {guidanceError && (
+              <p id="lesson-return-guidance-error" className="draft-editor-error" role="alert">{guidanceError}</p>
+            )}
+          </div>
+          {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
+          {(hasVersionConflict || !isAwaitingEvaluation) && (
+            <button className="draft-editor-secondary" type="button" disabled={isReturning || isReloading} onClick={() => void reloadCurrentLesson()}>
+              {isReloading ? 'Reloading…' : 'Reload current version'}
+            </button>
           )}
         </div>
-        {requestError && <p className="draft-editor-error" role="alert">{requestError}</p>}
-        {(hasVersionConflict || !isAwaitingEvaluation) && (
-          <button className="draft-editor-secondary" type="button" disabled={isReturning || isReloading} onClick={() => void reloadCurrentLesson()}>
-            {isReloading ? 'Reloading…' : 'Reload current version'}
-          </button>
-        )}
         <div className="draft-editor-actions">
           <button className="draft-editor-secondary" type="button" disabled={isReturning || isReloading} onClick={requestClose}>Keep in queue</button>
           <button className="draft-editor-primary" type="submit" disabled={isReturning || isReloading || hasVersionConflict || !isAwaitingEvaluation}>
