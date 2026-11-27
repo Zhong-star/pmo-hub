@@ -1846,7 +1846,7 @@ describe('Lessons Learned access check', () => {
     expect(themeToggle).toHaveAttribute('aria-pressed', 'false');
     expect(themeToggle).toHaveAttribute('title', 'Switch to dark theme');
     expect(themeToggle.querySelector('svg')).not.toBeNull();
-    expect(themeToggle).toHaveAttribute('data-theme-icon', 'sun');
+    expect(themeToggle).toHaveAttribute('data-theme-icon', 'moon');
     expect(screen.queryByRole('group', { name: 'Color theme' })).not.toBeInTheDocument();
     expect(document.querySelector('.module-sidebar .theme-controls')).toBeNull();
 
@@ -1855,7 +1855,7 @@ describe('Lessons Learned access check', () => {
 
     expect(themeToggle).toHaveAttribute('aria-pressed', 'true');
     expect(themeToggle).toHaveAttribute('title', 'Switch to light theme');
-    expect(themeToggle).toHaveAttribute('data-theme-icon', 'moon');
+    expect(themeToggle).toHaveAttribute('data-theme-icon', 'sun');
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
     expect(window.sessionStorage.getItem('pmo-hub.theme')).toBe('dark');
 
