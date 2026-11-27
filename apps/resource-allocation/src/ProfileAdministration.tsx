@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
+import { EditIcon, PlusIcon, XIcon } from '../../shared-ui/src/Icons';
 import {
   AdministrationRequestError,
   createAdminResource,
@@ -111,7 +112,6 @@ export function ProfileAdministration({ localUserId, role, onAccessDenied }: Pro
     <section className="administration-card" aria-labelledby="profile-administration-title">
       <div className="administration-heading">
         <div>
-          <p className="eyebrow">Resource administration</p>
           <h2 id="profile-administration-title">Resource profiles</h2>
           <p className="supporting-copy">
             Manage profiles in your current {role === 'ALLOCATION_MODERATOR' ? 'group' : 'group scope'}. Existing allocations and capacity remain unchanged when a profile is deactivated.
@@ -126,12 +126,13 @@ export function ProfileAdministration({ localUserId, role, onAccessDenied }: Pro
             <p>Inactive profiles remain visible in existing records and are unavailable for new selections.</p>
           </div>
           <button
-            className="primary-button"
+            className="primary-button ui-inline-btn"
             type="button"
             onClick={() => openEditor({ mode: 'create' })}
             disabled={groupsQuery.isPending || groups.length === 0 || groupsQuery.isError}
           >
-            Add resource profile
+            <PlusIcon size={15} />
+            <span>Add resource profile</span>
           </button>
         </div>
 
@@ -160,32 +161,35 @@ export function ProfileAdministration({ localUserId, role, onAccessDenied }: Pro
         )}
 
         {profiles.length > 0 && (
-          <div className="table-scroll">
-            <table className="admin-table">
-              <caption className="sr-only">Resource profiles in your current group scope</caption>
-              <thead>
-                <tr><th scope="col">Resource profile</th><th scope="col">Group</th><th scope="col">Status</th><th scope="col">Actions</th></tr>
-              </thead>
-              <tbody>
-                {profiles.map((profile) => (
-                  <tr key={profile.id}>
-                    <td><strong>{profile.name}</strong></td>
-                    <td>{groupNameById.get(profile.groupId) ?? 'Group unavailable'}</td>
-                    <td>{activeBadge(profile.active)}</td>
-                    <td>
-                      <button
-                        className="text-button"
-                        type="button"
-                        aria-label={`Edit resource profile ${profile.name}`}
-                        onClick={() => openEditor({ mode: 'edit', id: profile.id })}
-                      >
-                        Edit
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="collection-surface">
+            <div className="table-scroll table-scroll--flush">
+              <table className="admin-table">
+                <caption className="sr-only">Resource profiles in your current group scope</caption>
+                <thead>
+                  <tr><th scope="col">Resource profile</th><th scope="col">Group</th><th scope="col">Status</th><th scope="col">Actions</th></tr>
+                </thead>
+                <tbody>
+                  {profiles.map((profile) => (
+                    <tr key={profile.id}>
+                      <td><strong>{profile.name}</strong></td>
+                      <td>{groupNameById.get(profile.groupId) ?? 'Group unavailable'}</td>
+                      <td>{activeBadge(profile.active)}</td>
+                      <td>
+                        <button
+                          className="text-button ui-inline-btn"
+                          type="button"
+                          aria-label={`Edit resource profile ${profile.name}`}
+                          onClick={() => openEditor({ mode: 'edit', id: profile.id })}
+                        >
+                          <EditIcon size={14} />
+                          <span>Edit</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -389,7 +393,10 @@ function ResourceProfileEditorForm({
           <h3 id="resource-profile-editor-title">{editorHeading}</h3>
           <p>Only profile name, group, and active status are available here.</p>
         </div>
-        <button className="icon-button" type="button" onClick={close}>Close form</button>
+        <button className="icon-button ui-inline-btn" type="button" onClick={close}>
+          <XIcon size={15} />
+          <span>Close form</span>
+        </button>
       </div>
 
       {editId && detailRefreshError && (

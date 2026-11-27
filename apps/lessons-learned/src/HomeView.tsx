@@ -1,3 +1,13 @@
+import {
+  AlertTriangleIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  BellIcon,
+  ClockIcon,
+  CompassIcon,
+  InboxIcon,
+  UserIcon,
+} from '../../shared-ui/src/Icons';
 import type { HomeLessonSummary, HomeResponse, HomeTargetPage } from './api';
 
 interface HomeViewProps {
@@ -47,14 +57,22 @@ export function HomeView({ home, showOverview, onOpenLesson, onNavigate }: HomeV
       <div className="home-header">
         <div>
           <h1 id="page-title" tabIndex={-1}>Home</h1>
-          <p className="intro">Welcome, {home.profile.displayName}</p>
-          <p className="active-role">Active role: <strong>{getRoleLabel(home.profile.role)}</strong></p>
+          <div className="home-welcome-meta">
+            <p className="intro">Welcome, {home.profile.displayName}</p>
+            <p className="active-role">
+              <UserIcon size={14} />
+              <span>Active role: <strong>{getRoleLabel(home.profile.role)}</strong></span>
+            </p>
+          </div>
         </div>
       </div>
 
       {showOverview && <HomeOverview home={home} onOpenLesson={onOpenLesson} onNavigate={onNavigate} />}
 
-      <a className="primary-link" href="/">Back to PMO Hub</a>
+      <a className="primary-link home-back-link ui-inline-btn" href="/">
+        <ArrowLeftIcon size={15} />
+        <span>Back to PMO Hub</span>
+      </a>
     </div>
   );
 }
@@ -71,17 +89,26 @@ function HomeOverview({ home, onOpenLesson, onNavigate }: Pick<HomeViewProps, 'h
   return (
     <>
       <section className="home-primary-action" aria-labelledby="home-primary-action-title">
-        <h2 id="home-primary-action-title">Recommended next action</h2>
-        <p>{primaryAction.description}</p>
-        <button className="draft-action home-primary-button" type="button" onClick={runPrimaryAction}>
-          {primaryAction.label}
+        <div className="home-primary-action__copy">
+          <h2 id="home-primary-action-title" className="home-section-heading">
+            <CompassIcon size={18} />
+            <span>Recommended next action</span>
+          </h2>
+          <p>{primaryAction.description}</p>
+        </div>
+        <button className="draft-action home-primary-button ui-inline-btn" type="button" onClick={runPrimaryAction}>
+          <span>{primaryAction.label}</span>
+          <ArrowRightIcon size={15} />
         </button>
       </section>
 
       <div className="home-grid">
         {isPmo ? (
           <section className="home-card" aria-labelledby="home-pending-title">
-            <h2 id="home-pending-title">Pending PMO evaluation</h2>
+            <h2 id="home-pending-title" className="home-card__heading">
+              <InboxIcon size={16} />
+              <span>Pending PMO evaluation</span>
+            </h2>
             <p className="home-card-count">
               {highlights.pendingEvaluationCount === 1
                 ? '1 lesson awaiting evaluation'
@@ -105,7 +132,10 @@ function HomeOverview({ home, onOpenLesson, onNavigate }: Pick<HomeViewProps, 'h
           </section>
         ) : (
           <section className="home-card" aria-labelledby="home-returned-title">
-            <h2 id="home-returned-title">Returned lessons</h2>
+            <h2 id="home-returned-title" className="home-card__heading">
+              <AlertTriangleIcon size={16} />
+              <span>Returned lessons</span>
+            </h2>
             <p className="home-card-count">
               {highlights.returnedCount === 1
                 ? '1 lesson returned for changes'
@@ -129,7 +159,10 @@ function HomeOverview({ home, onOpenLesson, onNavigate }: Pick<HomeViewProps, 'h
         )}
 
         <section className="home-card" aria-labelledby="home-notifications-title">
-          <h2 id="home-notifications-title">Unread notifications summary</h2>
+          <h2 id="home-notifications-title" className="home-card__heading">
+            <BellIcon size={16} />
+            <span>Unread notifications summary</span>
+          </h2>
           <p className="home-card-count">{notifications.unreadCount} unread</p>
           {notifications.items.length === 0 ? (
             <p className="draft-empty">You are all caught up.</p>
@@ -149,7 +182,10 @@ function HomeOverview({ home, onOpenLesson, onNavigate }: Pick<HomeViewProps, 'h
         </section>
 
         <section className="home-card" aria-labelledby="home-recent-title">
-          <h2 id="home-recent-title">Recent work</h2>
+          <h2 id="home-recent-title" className="home-card__heading">
+            <ClockIcon size={16} />
+            <span>Recent work</span>
+          </h2>
           {recentWork.length === 0 ? (
             <p className="draft-empty">No recent work yet.</p>
           ) : (
@@ -173,14 +209,16 @@ function HomeOverview({ home, onOpenLesson, onNavigate }: Pick<HomeViewProps, 'h
           {shortcuts.map((shortcut) => (
             <li key={shortcut.id}>
               <button className="home-shortcut" type="button" onClick={() => onNavigate(shortcut.targetPage)}>
-                <strong>{shortcut.label}</strong>
+                <span className="home-shortcut__top">
+                  <strong>{shortcut.label}</strong>
+                  <ArrowRightIcon size={14} className="ui-icon home-shortcut__arrow" />
+                </span>
                 <span className="library-description">{shortcut.description}</span>
               </button>
             </li>
           ))}
         </ul>
       </section>
-
     </>
   );
 }

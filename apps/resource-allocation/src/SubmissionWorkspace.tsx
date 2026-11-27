@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFieldArray, useForm, useWatch, type UseFormReturn } from 'react-hook-form';
+import { PlusIcon, RefreshCwIcon } from '../../shared-ui/src/Icons';
 import { NOTIFICATIONS_QUERY_ROOT } from './notificationsApi';
 import { REQUESTS_QUERY_ROOT } from './requestApi';
 import { REQUEST_QUEUES_QUERY_ROOT } from './requestQueueApi';
@@ -333,11 +334,12 @@ function SubmissionResults({
         </div>
         <button
           type="button"
-          className="secondary-button"
+          className="secondary-button ui-inline-btn"
           onClick={() => { void detailQuery.refetch(); void linesQuery.refetch(); }}
           disabled={detailQuery.isFetching || linesQuery.isFetching}
         >
-          Refresh results
+          <RefreshCwIcon size={15} />
+          <span>Refresh results</span>
         </button>
       </div>
 
@@ -741,8 +743,9 @@ export function SubmissionWorkspace({ localUserId, onAccessDenied }: SubmissionW
                             {editingIndex === null ? 'Discard draft' : 'Cancel'}
                           </button>
                         )}
-                        <button type="submit" className="primary-button" disabled={lineSubmitting || (editingIndex === null && fields.length >= 100)}>
-                          {editingIndex === null ? 'Add request line' : 'Save changes'}
+                        <button type="submit" className="primary-button ui-inline-btn" disabled={lineSubmitting || (editingIndex === null && fields.length >= 100)}>
+                          {editingIndex === null && <PlusIcon size={15} />}
+                          <span>{editingIndex === null ? 'Add request line' : 'Save changes'}</span>
                         </button>
                       </div>
                     </LineEditor>

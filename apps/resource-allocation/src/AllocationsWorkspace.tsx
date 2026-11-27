@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import {
+  CalendarIcon,
+  ChevronDownIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  SlidersIcon,
+  XIcon,
+} from '../../shared-ui/src/Icons';
 import { useNavigationFormProtection } from './NavigationProtection';
 import { AllocationCreation, type AllocationCreatorRole } from './AllocationCreation';
 import { AllocationMaintenance } from './AllocationMaintenance';
@@ -201,6 +209,7 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
   const [isStale, setIsStale] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const [maintenanceMode, setMaintenanceMode] = useState<'edit' | 'reopen' | null>(null);
   const [creationMessage, setCreationMessage] = useState('');
 
@@ -436,9 +445,15 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
           <p className="supporting-copy">Review commitments in your authorized scope, check weekly hours by state, record operational time or vacation, and change an allocation's state.</p>
         </div>
         <div className="allocation-heading-actions">
-          {!isCreating && <button type="button" className="primary-button" onClick={openCreation}>Record allocation</button>}
-          <button type="button" className="secondary-button" onClick={() => void allocationQuery.refetch()} disabled={allocationQuery.isFetching}>
-            {allocationQuery.isFetching ? 'Refreshing…' : 'Refresh allocations'}
+          {!isCreating && (
+            <button type="button" className="primary-button ui-inline-btn" onClick={openCreation}>
+              <PlusIcon size={16} />
+              <span>Record allocation</span>
+            </button>
+          )}
+          <button type="button" className="secondary-button ui-inline-btn" onClick={() => void allocationQuery.refetch()} disabled={allocationQuery.isFetching}>
+            <RefreshCwIcon size={15} />
+            <span>{allocationQuery.isFetching ? 'Refreshing…' : 'Refresh allocations'}</span>
           </button>
         </div>
       </div>
@@ -455,48 +470,13 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
         />
       )}
 
-      <form className="allocation-filters" onSubmit={filterForm.handleSubmit((values) => setFilters(filtersFromForm(values)))}>
-        <label>
-          <span>Initiative ID</span>
-          <input {...filterForm.register('initiativeId')} placeholder="Optional" />
-        </label>
-        <label>
-          <span>Person ID</span>
-          <input {...filterForm.register('personId')} placeholder="Optional" />
-        </label>
-        <label>
-          <span>Group ID</span>
-          <input {...filterForm.register('groupId')} placeholder="Optional" />
-        </label>
-        <label>
-          <span>Resource profile ID</span>
-          <input {...filterForm.register('resourceProfileId')} placeholder="Optional" />
-        </label>
-        <label>
-          <span>Operational state</span>
-          <select {...filterForm.register('operationalState')}>
-            <option value="">All states</option>
-            {allocationStates.map((state) => <option key={state.value} value={state.value}>{state.label}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Effective period from</span>
-          <input type="date" {...filterForm.register('periodStart')} />
-        </label>
-        <label>
-          <span>Effective period to</span>
-          <input type="date" {...filterForm.register('periodEnd')} />
-        </label>
-        <div className="allocation-filter-actions">
-          <button type="submit" className="primary-button">Filter</button>
-          <button type="button" className="secondary-button" onClick={() => { filterForm.reset(emptyFilterForm()); setFilters({}); }}>Clear filters</button>
-        </div>
-      </form>
-
       <div className="allocation-capacity" aria-labelledby="allocation-capacity-heading">
         <div className="allocation-subheading">
           <div>
-            <h3 id="allocation-capacity-heading">Weekly capacity by date</h3>
+            <h3 id="allocation-capacity-heading" className="ui-inline-btn">
+              <CalendarIcon size={16} />
+              <span>Weekly capacity by date</span>
+            </h3>
             <p>Weekly contracted hours for active allocations overlapping the selected São Paulo date.</p>
           </div>
           <label>
@@ -553,39 +533,122 @@ export function AllocationsWorkspace({ localUserId, personId, role, groupId, onA
           </div>
           {allocations.length > 0 && <span className="allocation-count">{allocations.length} loaded</span>}
         </div>
-        {allocationQuery.isPending && <p className="allocation-loading" role="status">Loading allocations…</p>}
-        {allocationQuery.isError && !allocationQuery.isFetchNextPageError && !accessDenied(allocationQuery.error) && (
-          <div className="form-error" role="alert">
-            <p>{errorText(allocationQuery.error)}</p>
-            <button type="button" className="text-button" onClick={() => void allocationQuery.refetch()} disabled={allocationQuery.isFetching}>Try again</button>
-          </div>
-        )}
-        {allocationQuery.isSuccess && allocations.length === 0 && (
-          <p className="allocation-empty">No allocations match these filters in your authorized scope.</p>
-        )}
-        {allocations.length > 0 && (
-          <ul className="allocation-list">
-            {allocations.map((item) => (
-              <li key={item.id}>
+
+        <div className="collection-surface">
+          <form className="allocation-filters collection-toolbar" onSubmit={filterForm.handleSubmit((values) => setFilters(filtersFromForm(values)))}>
+            <div className="collection-toolbar__bar">
+              <span className="collection-toolbar__title">
+                <SlidersIcon size={15} />
+                <span>Filters</span>
+                {Object.keys(filters).length > 0 && (
+                  <span className="collection-filter-badge" aria-label={`${Object.keys(filters).length} active filters`}>
+                    {Object.keys(filters).length}
+                  </span>
+                )}
+              </span>
+              <div className="collection-toolbar__actions">
+                {Object.keys(filters).length > 0 && (
+                  <button
+                    type="button"
+                    className="collection-toolbar__clear"
+                    onClick={() => { filterForm.reset(emptyFilterForm()); setFilters({}); }}
+                  >
+                    <XIcon size={13} />
+                    <span>Clear filters</span>
+                  </button>
+                )}
                 <button
                   type="button"
-                  className={`allocation-list-item${selectedAllocationId === item.id ? ' allocation-list-item-selected' : ''}`}
-                  aria-pressed={selectedAllocationId === item.id}
-                  aria-label={`View allocation ${allocationTitle(item)} for ${item.person.displayName}`}
-                  onClick={() => selectAllocation(item.id)}
+                  className="collection-toolbar__toggle"
+                  aria-expanded={filtersOpen}
+                  aria-controls="allocation-filter-controls"
+                  onClick={() => setFiltersOpen((open) => !open)}
                 >
-                  <span className="allocation-list-main">
-                    <strong>{allocationTitle(item)}</strong>
-                    <small>{item.person.displayName} · {item.group.name} · {profileText(item)} · {allocationOrigin(item)}</small>
-                  </span>
-                  <span className="allocation-list-period">{formatDateRange(item.startDate, item.endDate)}</span>
-                  <span className={`allocation-state allocation-state-${item.state.toLowerCase().replaceAll('_', '-')}`}>{stateLabel(item.state)}</span>
-                  <span>{formatHours(item.weeklyHours)}</span>
+                  <span>{filtersOpen ? 'Hide filters' : 'Show filters'}</span>
+                  <ChevronDownIcon size={14} />
                 </button>
-              </li>
-            ))}
-          </ul>
-        )}
+              </div>
+            </div>
+            <div id="allocation-filter-controls" className="collection-toolbar__controls" hidden={!filtersOpen}>
+              <label className="collection-filter-field">
+                <span>Initiative ID</span>
+                <input {...filterForm.register('initiativeId')} placeholder="Optional" />
+              </label>
+              <label className="collection-filter-field">
+                <span>Person ID</span>
+                <input {...filterForm.register('personId')} placeholder="Optional" />
+              </label>
+              <label className="collection-filter-field">
+                <span>Group ID</span>
+                <input {...filterForm.register('groupId')} placeholder="Optional" />
+              </label>
+              <label className="collection-filter-field">
+                <span>Resource profile ID</span>
+                <input {...filterForm.register('resourceProfileId')} placeholder="Optional" />
+              </label>
+              <label className="collection-filter-field">
+                <span>Operational state</span>
+                <select {...filterForm.register('operationalState')}>
+                  <option value="">All states</option>
+                  {allocationStates.map((state) => <option key={state.value} value={state.value}>{state.label}</option>)}
+                </select>
+              </label>
+              <label className="collection-filter-field collection-filter-field--date">
+                <span>Effective period from</span>
+                <input type="date" {...filterForm.register('periodStart')} />
+              </label>
+              <label className="collection-filter-field collection-filter-field--date">
+                <span>Effective period to</span>
+                <input type="date" {...filterForm.register('periodEnd')} />
+              </label>
+              <div className="collection-filter-actions">
+                <button type="submit" className="primary-button">Filter</button>
+              </div>
+            </div>
+          </form>
+
+          {allocationQuery.isPending && <p className="collection-surface__body-note" role="status">Loading allocations…</p>}
+          {allocationQuery.isError && !allocationQuery.isFetchNextPageError && !accessDenied(allocationQuery.error) && (
+            <div className="form-error collection-surface__error" role="alert">
+              <p>{errorText(allocationQuery.error)}</p>
+              <button type="button" className="text-button" onClick={() => void allocationQuery.refetch()} disabled={allocationQuery.isFetching}>Try again</button>
+            </div>
+          )}
+          {allocationQuery.isSuccess && allocations.length === 0 && (
+            <p className="collection-surface__empty">No allocations match these filters in your authorized scope.</p>
+          )}
+          {allocations.length > 0 && (
+            <>
+              <div className="collection-list-header allocation-list-header" aria-hidden="true">
+                <span>Initiative / Resource</span>
+                <span>Period</span>
+                <span>State</span>
+                <span>Weekly hours</span>
+              </div>
+              <ul className="allocation-list allocation-list--flush">
+                {allocations.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      className={`allocation-list-item${selectedAllocationId === item.id ? ' allocation-list-item-selected' : ''}`}
+                      aria-pressed={selectedAllocationId === item.id}
+                      aria-label={`View allocation ${allocationTitle(item)} for ${item.person.displayName}`}
+                      onClick={() => selectAllocation(item.id)}
+                    >
+                      <span className="allocation-list-main">
+                        <strong>{allocationTitle(item)}</strong>
+                        <small>{item.person.displayName} · {item.group.name} · {profileText(item)} · {allocationOrigin(item)}</small>
+                      </span>
+                      <span className="allocation-list-period tabular-cell">{formatDateRange(item.startDate, item.endDate)}</span>
+                      <span className={`allocation-state allocation-state-${item.state.toLowerCase().replaceAll('_', '-')}`}>{stateLabel(item.state)}</span>
+                      <span className="tabular-cell">{formatHours(item.weeklyHours)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
         {allocationQuery.isFetchNextPageError && (
           <div className="form-error allocation-page-error" role="alert">
             <p>More allocations could not be loaded. The allocations already shown are still available.</p>

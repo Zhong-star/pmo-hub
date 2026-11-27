@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { BellIcon } from '../../shared-ui/src/Icons';
 import {
   getNotifications,
   markNotificationAsRead,
@@ -207,11 +208,12 @@ export function NotificationsMenu({
         type="button"
         className="notifications-menu__trigger"
         aria-label={triggerLabel}
+        title={triggerLabel}
         aria-expanded={isOpen}
         aria-controls="lessons-notifications-menu"
         onClick={toggleMenu}
       >
-        <span>Notifications</span>
+        <BellIcon size={18} />
         {unreadCount > 0 && (
           <span className="notifications-menu__badge" aria-hidden="true">
             {unreadCount}

@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
+import {
+  ChevronDownIcon,
+  PlusIcon,
+  SlidersIcon,
+  XIcon,
+} from '../../shared-ui/src/Icons';
 import { businessDate, formatBusinessTimestamp, formatCalendarDate } from './timeAndHours';
 import { useNavigationFormProtection, useNavigationProtection } from './NavigationProtection';
 import {
@@ -98,6 +104,7 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
   const queryClient = useQueryClient();
   const { guardNavigation } = useNavigationProtection();
   const [filters, setFilters] = useState<CapacityFilters>({});
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const [editor, setEditor] = useState<EditorState>(null);
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
@@ -339,53 +346,92 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
     maxLength: { value: 2000, message: 'Reason must be 2,000 characters or fewer.' },
   });
 
+  const activeFilterCount = [filters.groupId, filters.resourceProfileId, filters.classification].filter(Boolean).length;
+
   return (
     <section className="capacity-workspace" aria-labelledby="capacity-title">
       <div className="capacity-heading">
         <div>
-          <p className="eyebrow">Team planning</p>
           <h2 id="capacity-title">Capacity</h2>
           <p className="capacity-intro">Compare weekly planned work with capacity, and maintain internal and third-party FTE capacity by group, resource profile, and effective date.</p>
         </div>
-        {editor === null && <button className="primary-button" type="button" onClick={openCreate}>Add capacity</button>}
+        {editor === null && (
+          <button className="primary-button ui-inline-btn" type="button" onClick={openCreate}>
+            <PlusIcon size={16} />
+            <span>Add capacity</span>
+          </button>
+        )}
       </div>
 
       {notice && <p className="inline-success" role="status">{notice}</p>}
 
-      <section className="capacity-filters" aria-label="Filter capacity entries">
-        <label>
-          <span>Group</span>
-          <select
-            value={filters.groupId ?? ''}
-            onChange={(event) => setFilters((current) => ({ ...current, groupId: event.target.value || undefined }))}
-          >
-            <option value="">All authorized groups</option>
-            {(optionsQuery.data?.groups ?? []).map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Resource profile</span>
-          <select
-            value={filters.resourceProfileId ?? ''}
-            onChange={(event) => setFilters((current) => ({ ...current, resourceProfileId: event.target.value || undefined }))}
-          >
-            <option value="">All profiles</option>
-            {profileFilterOptions
-              .filter((profile) => !filters.groupId || profile.groupId === filters.groupId)
-              .map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.groupName}{profile.active ? '' : ' (inactive)'}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Classification</span>
-          <select
-            value={filters.classification ?? ''}
-            onChange={(event) => setFilters((current) => ({ ...current, classification: (event.target.value || undefined) as CapacityFilters['classification'] }))}
-          >
-            <option value="">Internal and third-party</option>
-            <option value="INTERNAL">Internal</option>
-            <option value="THIRD_PARTY">Third-party</option>
-          </select>
-        </label>
+      <section className="capacity-filters collection-surface" aria-label="Filter capacity entries">
+        <div className="collection-toolbar">
+          <div className="collection-toolbar__bar">
+            <span className="collection-toolbar__title">
+              <SlidersIcon size={15} />
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="collection-filter-badge" aria-label={`${activeFilterCount} active filters`}>
+                  {activeFilterCount}
+                </span>
+              )}
+            </span>
+            <div className="collection-toolbar__actions">
+              {activeFilterCount > 0 && (
+                <button type="button" className="collection-toolbar__clear" onClick={() => setFilters({})}>
+                  <XIcon size={13} />
+                  <span>Clear filters</span>
+                </button>
+              )}
+              <button
+                type="button"
+                className="collection-toolbar__toggle"
+                aria-expanded={filtersOpen}
+                aria-controls="capacity-filter-controls"
+                onClick={() => setFiltersOpen((open) => !open)}
+              >
+                <span>{filtersOpen ? 'Hide filters' : 'Show filters'}</span>
+                <ChevronDownIcon size={14} />
+              </button>
+            </div>
+          </div>
+          <div id="capacity-filter-controls" className="collection-toolbar__controls" hidden={!filtersOpen}>
+            <label className="collection-filter-field">
+              <span>Group</span>
+              <select
+                value={filters.groupId ?? ''}
+                onChange={(event) => setFilters((current) => ({ ...current, groupId: event.target.value || undefined }))}
+              >
+                <option value="">All authorized groups</option>
+                {(optionsQuery.data?.groups ?? []).map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+              </select>
+            </label>
+            <label className="collection-filter-field">
+              <span>Resource profile</span>
+              <select
+                value={filters.resourceProfileId ?? ''}
+                onChange={(event) => setFilters((current) => ({ ...current, resourceProfileId: event.target.value || undefined }))}
+              >
+                <option value="">All profiles</option>
+                {profileFilterOptions
+                  .filter((profile) => !filters.groupId || profile.groupId === filters.groupId)
+                  .map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.groupName}{profile.active ? '' : ' (inactive)'}</option>)}
+              </select>
+            </label>
+            <label className="collection-filter-field">
+              <span>Classification</span>
+              <select
+                value={filters.classification ?? ''}
+                onChange={(event) => setFilters((current) => ({ ...current, classification: (event.target.value || undefined) as CapacityFilters['classification'] }))}
+              >
+                <option value="">Internal and third-party</option>
+                <option value="INTERNAL">Internal</option>
+                <option value="THIRD_PARTY">Third-party</option>
+              </select>
+            </label>
+          </div>
+        </div>
       </section>
 
       <CapacityComparison localUserId={localUserId} filters={filters} onAccessDenied={onAccessDenied} />
@@ -394,7 +440,7 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
         <section className="capacity-editor" aria-labelledby="capacity-editor-title">
           <div className="capacity-editor-heading">
             <div>
-              <p className="eyebrow">{isCreating ? 'New capacity entry' : isRemoving ? 'Remove capacity entry' : 'Edit capacity entry'}</p>
+              <p className="capacity-editor-context">{isCreating ? 'New capacity entry' : isRemoving ? 'Remove capacity entry' : 'Edit capacity entry'}</p>
               <h3 id="capacity-editor-title">{isCreating ? 'Add FTE capacity' : `${editingCapacity?.resourceProfile.name ?? 'Capacity'} · ${editingCapacity?.classification === 'INTERNAL' ? 'Internal' : 'Third-party'}`}</h3>
             </div>
             <button className="text-button" type="button" onClick={closeEditor} disabled={formBusy}>Cancel</button>
@@ -506,7 +552,6 @@ export function CapacityWorkspace({ localUserId, canCorrectPast, onAccessDenied 
             <h3 id="capacity-list-title">Effective capacity entries</h3>
             <p>Each value applies from its effective date until the next entry for the same group, profile, and classification.</p>
           </div>
-          {editor === null && <button className="secondary-button" type="button" onClick={openCreate}>Add capacity</button>}
         </div>
 
         {capacitiesQuery.isPending && <p className="capacity-empty-state" role="status">Loading capacity entries…</p>}
@@ -586,7 +631,6 @@ function CapacityHistoryPanel({
     <section className="capacity-history-panel" aria-labelledby="capacity-history-title">
       <div className="capacity-list-heading">
         <div>
-          <p className="eyebrow">Audit history</p>
           <h3 id="capacity-history-title">Capacity changes</h3>
           <p>Entry reference {capacityId}</p>
         </div>

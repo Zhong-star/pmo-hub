@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
+import {
+  BriefcaseIcon,
+  EditIcon,
+  LayersIcon,
+  PlusIcon,
+  TargetIcon,
+  UsersIcon,
+  XIcon,
+} from '../../shared-ui/src/Icons';
 import { useNavigationFormProtection, useNavigationProtection } from './NavigationProtection';
 import { handleTabListKeyDown } from './tabNavigation';
 import { ALLOCATIONS_QUERY_ROOT } from './allocationApi';
@@ -88,6 +97,13 @@ const collectionDescriptions: Record<AdminCollection, string> = {
 };
 
 const collectionOrder: AdminCollection[] = ['people', 'groups', 'resource-profiles', 'initiatives'];
+
+function collectionIcon(collection: AdminCollection) {
+  if (collection === 'people') return <UsersIcon size={15} />;
+  if (collection === 'groups') return <LayersIcon size={15} />;
+  if (collection === 'resource-profiles') return <BriefcaseIcon size={15} />;
+  return <TargetIcon size={15} />;
+}
 
 function getRows<T>(data: { pages: Array<{ items: T[] }> } | undefined): T[] {
   return data?.pages.flatMap((page) => page.items) ?? [];
@@ -306,7 +322,8 @@ function Administration({ localUserId, onAccessDenied }: AdministrationProps) {
             onClick={() => openCollection(collection)}
             onKeyDown={handleTabListKeyDown}
           >
-            {collectionLabels[collection]}
+            {collectionIcon(collection)}
+            <span>{collectionLabels[collection]}</span>
           </button>
         ))}
       </div>
@@ -319,11 +336,12 @@ function Administration({ localUserId, onAccessDenied }: AdministrationProps) {
             <p>{collectionDescriptions[selectedCollection]}</p>
           </div>
           <button
-            className="primary-button"
+            className="primary-button ui-inline-btn"
             type="button"
             onClick={() => openEditor({ collection: selectedCollection, mode: 'create' })}
           >
-            Add {collectionSingularLabels[selectedCollection]}
+            <PlusIcon size={15} />
+            <span>Add {collectionSingularLabels[selectedCollection]}</span>
           </button>
         </div>
 
@@ -441,14 +459,16 @@ function RecordTable({
 
   function editButton(record: AdminRecord & { id: string }) {
     return (
-      <button className="text-button" type="button" aria-label={`Edit ${collectionSingularLabels[collection]} ${recordLabel(collection, record)}`} onClick={() => onEdit(record)}>
-        Edit
+      <button className="text-button ui-inline-btn" type="button" aria-label={`Edit ${collectionSingularLabels[collection]} ${recordLabel(collection, record)}`} onClick={() => onEdit(record)}>
+        <EditIcon size={14} />
+        <span>Edit</span>
       </button>
     );
   }
 
   return (
-    <div className="table-scroll">
+    <div className="collection-surface">
+    <div className="table-scroll table-scroll--flush">
       <table className="admin-table">
         <caption className="sr-only">{collectionLabels[collection]}</caption>
         <thead><tr>{headings[collection].map((heading) => <th key={heading} scope="col">{heading}</th>)}</tr></thead>
@@ -513,6 +533,7 @@ function RecordTable({
           })}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }
@@ -695,7 +716,10 @@ function RecordEditor({
           <h4 id="editor-title">{heading}</h4>
           <p>Fields marked with an asterisk are required.</p>
         </div>
-        <button className="icon-button" type="button" aria-label="Close form" onClick={requestEditorClose}>Close</button>
+        <button className="icon-button ui-inline-btn" type="button" aria-label="Close form" onClick={requestEditorClose}>
+          <XIcon size={15} />
+          <span>Close</span>
+        </button>
       </div>
 
       {submissionError && <p className="form-error" role="alert">{submissionError}</p>}

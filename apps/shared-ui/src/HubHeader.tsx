@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react';
+import { ChevronDownIcon, HubMarkIcon, SwitchUserIcon, UserIcon } from './Icons';
 import type { Theme } from './theme';
 import { ThemeToggle } from './ThemeToggle';
 import './HubHeader.css';
@@ -19,7 +20,9 @@ export function HubHeader({ profileName, onChangeProfile, theme, onThemeChange, 
   return (
     <header className="hub-header">
       <a className="hub-header__brand" href="/" aria-label="PMO Hub">
-        <span className="hub-header__mark" aria-hidden="true">P</span>
+        <span className="hub-header__mark" aria-hidden="true">
+          <HubMarkIcon size={16} />
+        </span>
         <span>PMO Hub</span>
       </a>
 
@@ -45,8 +48,9 @@ export function HubHeader({ profileName, onChangeProfile, theme, onThemeChange, 
               aria-controls="hub-profile-menu"
               onClick={() => setIsProfileMenuOpen((isOpen) => !isOpen)}
             >
-              <span>{profileName}</span>
-              <span className="hub-header__chevron" aria-hidden="true">⌄</span>
+              <UserIcon size={16} className="ui-icon hub-header__profile-icon" />
+              <span className="hub-header__profile-name">{profileName}</span>
+              <ChevronDownIcon size={15} className="ui-icon hub-header__chevron" />
             </button>
             <div
               className="hub-header__profile-menu"
@@ -60,7 +64,8 @@ export function HubHeader({ profileName, onChangeProfile, theme, onThemeChange, 
                   if (onChangeProfile() !== false) setIsProfileMenuOpen(false);
                 }}
               >
-                Change profile
+                <SwitchUserIcon size={15} />
+                <span>Change profile</span>
               </button>
             </div>
           </div>
