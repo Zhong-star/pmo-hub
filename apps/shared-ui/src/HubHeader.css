@@ -76,7 +76,7 @@
   color: var(--header-muted);
   background: transparent;
   cursor: pointer;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
+  transition: background-color var(--transition-fast);
 }
 
 .hub-header__theme-toggle:hover {
@@ -102,7 +102,6 @@
   font-size: 13.5px;
   font-weight: 550;
   cursor: pointer;
-  transition: background-color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .hub-header__profile-trigger:hover,
@@ -206,7 +205,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hub-header__theme-toggle,
-  .hub-header__profile-trigger,
   .hub-header__chevron,
   .hub-header__profile-menu button {
     transition: none;

@@ -907,7 +907,7 @@ h1 + .api-status {
   color: var(--muted);
   background: transparent;
   cursor: pointer;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
+  transition: background-color var(--transition-fast);
 }
 
 .notifications-menu__trigger:hover,
