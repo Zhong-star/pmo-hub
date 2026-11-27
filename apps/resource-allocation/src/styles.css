@@ -471,7 +471,7 @@ h1 {
 .submission-list { display: grid; gap: 8px; }
 .submission-list-item { display: grid; grid-template-columns: minmax(180px, 1.3fr) minmax(145px, 1fr) minmax(145px, 1fr) minmax(90px, .65fr); align-items: center; gap: 12px; width: 100%; min-height: 66px; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--control-radius); background: var(--surface); color: var(--text-body); text-align: left; cursor: pointer; }
 .submission-list-item:hover { border-color: var(--border-accent); background: var(--surface-subtle); }
-.submission-list-item-selected { border-color: var(--link); box-shadow: inset 3px 0 var(--link); background: var(--surface-selected); }
+.submission-list-item-selected { border-color: var(--link); background: var(--surface-selected); }
 .submission-list-item > span { color: var(--muted); font-size: 13px; }
 .submission-list-title { display: grid; gap: 4px; min-width: 0; }
 .submission-list-title strong { color: var(--text-heading); font-size: 14px; }
@@ -512,7 +512,7 @@ h1 {
 .request-list--flush .request-list-item { border: 0; border-bottom: 1px solid var(--rule); border-radius: 0; }
 .request-list--flush .request-list-item:last-child { border-bottom: 0; }
 .request-list-item:hover { background: var(--surface-subtle); }
-.request-list-item-selected { box-shadow: inset 3px 0 var(--link); background: var(--surface-selected); }
+.request-list-item-selected { background: var(--surface-selected); }
 .request-list-item > span { color: var(--muted); font-size: 13px; }
 .request-list-heading { display: grid; gap: 3px; min-width: 0; }
 .request-list-heading strong { color: var(--text-heading); font-size: 14px; font-weight: 650; }
@@ -664,7 +664,7 @@ h1 {
 .request-queue-details div { min-width: 0; }
 .request-queue-details dt { color: var(--muted); font-size: 12px; font-weight: 500; }
 .request-queue-details dd { margin: 5px 0 0; color: var(--text-body); font-size: 14px; overflow-wrap: anywhere; }
-.request-queue-comment { margin: 18px 0 0; padding: 12px 14px; border-left: 3px solid var(--border-accent); background: var(--surface); color: var(--text-body); line-height: 1.5; white-space: pre-wrap; }
+.request-queue-comment { margin: 18px 0 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--control-radius); background: var(--surface); color: var(--text-body); line-height: 1.5; white-space: pre-wrap; }
 .request-queue-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .request-queue-action-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; margin-top: 20px; padding: clamp(16px, 3vw, 24px); border: 1px solid var(--border-strong); border-radius: var(--control-radius); background: var(--surface); }
 .request-queue-action-form h4, .request-queue-action-form > p { grid-column: 1 / -1; margin: 0; }
@@ -774,7 +774,7 @@ h1 {
 }
 .allocation-list-item:hover { background: var(--surface-subtle); }
 .allocation-list-item:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
-.allocation-list-item-selected { box-shadow: inset 3px 0 var(--link); background: var(--surface-selected); }
+.allocation-list-item-selected { background: var(--surface-selected); }
 .allocation-list-main { display: grid; gap: 4px; min-width: 0; }
 .allocation-list-main strong { color: var(--text-heading); font-size: 14px; font-weight: 650; }
 .allocation-list-main small { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }

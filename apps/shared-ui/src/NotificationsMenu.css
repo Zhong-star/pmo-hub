@@ -150,7 +150,7 @@
 }
 
 .notifications-menu__item.is-unread {
-  border-left: 3px solid var(--primary-background);
+  background: var(--surface-highlight);
 }
 
 .notifications-menu__item-meta {
