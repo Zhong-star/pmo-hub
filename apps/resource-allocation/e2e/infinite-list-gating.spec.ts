@@ -299,25 +299,24 @@ test('keeps loaded notifications visible and gates pagination retry while anothe
     await route.fulfill({ json: { items: [notification], page: { nextCursor: 'notification-page-2', limit: 50 } } });
   });
 
-  await page.goto('/resource-allocation/?page=notifications');
+  await page.goto('/resource-allocation/');
+  await page.getByRole('button', { name: 'Notifications (1 unread)' }).click();
   const inbox = page.getByRole('region', { name: 'Notifications' });
-  const loadMore = inbox.locator('.notification-load-more').getByRole('button').first();
-  await expect(inbox.getByRole('heading', { name: 'Current inbox item' })).toBeVisible();
+  const loadMore = inbox.locator('.notifications-menu__load-more');
+  await expect(inbox.getByText('Current inbox item')).toBeVisible();
 
   await loadMore.click();
   await expect(inbox.getByText('More notifications could not be loaded.')).toBeVisible();
-  await expect(inbox.getByRole('heading', { name: 'Current inbox item' })).toBeVisible();
-  await expect(inbox.getByText('Updates could not be checked. Your current inbox stays visible until you retry.')).toHaveCount(0);
+  await expect(inbox.getByText('Current inbox item')).toBeVisible();
+  await expect(inbox.getByText('Updates could not be checked. Your current notifications stay visible until you retry.')).toHaveCount(0);
 
-  const retry = inbox.getByRole('button', { name: 'Retry loading more' });
-  await expect(retry).toBeEnabled();
+  await expect(loadMore).toBeEnabled();
   failPage2 = false;
   page2Gate = new Promise<void>((resolve) => { unblockPage2 = resolve; });
-  await retry.click();
+  await loadMore.click();
   await expect.poll(() => page2RequestCount).toBe(2);
   await expect(loadMore).toBeDisabled();
-  await expect(retry).toBeDisabled();
   unblockPage2?.();
 
-  await expect(inbox.getByRole('heading', { name: 'Next inbox item' })).toBeVisible();
+  await expect(inbox.getByText('Next inbox item')).toBeVisible();
 });

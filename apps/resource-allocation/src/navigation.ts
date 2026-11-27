@@ -4,7 +4,6 @@ export const RESOURCE_ALLOCATION_PAGES = [
   'request-queues',
   'allocations',
   'capacity',
-  'notifications',
   'administration',
 ] as const;
 

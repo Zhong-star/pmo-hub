@@ -33,6 +33,9 @@ async function openWithProfile(page: Page, profileId: string) {
       coveredGroupIds: [],
     } } });
   });
+  await page.route('**/api/resource-allocation/v1/notifications**', async (route) => route.fulfill({
+    json: { items: [], page: pageInfo },
+  }));
   await page.addInitScript(({ key, value }) => {
     window.localStorage.setItem(key, value);
   }, { key: selectedProfileKey, value: profileId });

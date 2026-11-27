@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { BellIcon } from '../../shared-ui/src/Icons';
+import '../../shared-ui/src/NotificationsMenu.css';
 import {
   getNotifications,
   markNotificationAsRead,

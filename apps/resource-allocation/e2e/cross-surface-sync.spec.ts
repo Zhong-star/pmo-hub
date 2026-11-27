@@ -8,7 +8,6 @@ const areaLabels = {
   'new-request': 'New request',
   'request-queues': 'Request queues',
   allocations: 'Allocations and capacity',
-  notifications: 'Notifications',
   administration: 'Administration',
 } as const;
 
@@ -16,6 +15,23 @@ async function navigateToArea(page: Page, area: keyof typeof areaLabels) {
   const navigation = page.getByRole('navigation', { name: 'Tech Resource Allocation' });
   await navigation.getByRole('link', { name: areaLabels[area], exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`[?&]page=${area}(?:&|$)`));
+}
+
+async function openNotificationsMenu(page: Page) {
+  const trigger = page.getByRole('button', { name: /^Notifications/ });
+  if ((await trigger.getAttribute('aria-expanded')) !== 'true') {
+    await trigger.click();
+  }
+  const region = page.getByRole('region', { name: 'Notifications' });
+  await expect(region).toBeVisible();
+  return region;
+}
+
+async function closeNotificationsMenu(page: Page) {
+  const trigger = page.getByRole('button', { name: /^Notifications/ });
+  if ((await trigger.getAttribute('aria-expanded')) === 'true') {
+    await trigger.click();
+  }
 }
 
 const adminPerson = {
@@ -415,11 +431,11 @@ test('updates Allocations, capacity load, Requests, and Notifications immediatel
 
   await page.goto('/resource-allocation/?page=allocations');
   const allocationsRegion = page.getByRole('region', { name: 'Allocations and capacity' });
-  const notificationsRegion = page.getByRole('region', { name: 'Notifications' });
 
   await expect(allocationsRegion.getByText('No allocations match these filters in your authorized scope.')).toBeVisible();
-  await navigateToArea(page, 'notifications');
-  await expect(notificationsRegion.getByText('No notifications match this filter.')).toBeVisible();
+  const notificationsRegion = await openNotificationsMenu(page);
+  await expect(notificationsRegion.getByText('No notifications yet.')).toBeVisible();
+  await closeNotificationsMenu(page);
   expect(state.accessCount).toBe(1);
 
   // 1) Approve from Presentation queue -> updates Allocations, Capacity load, Requests, and Notifications without reload
@@ -433,8 +449,9 @@ test('updates Allocations, capacity load, Requests, and Notifications immediatel
   await navigateToArea(page, 'allocations');
   await expect(allocationsRegion.getByRole('button', { name: /View allocation ITDM-10/ })).toBeVisible();
   await expect(allocationsRegion.getByRole('row', { name: /Alex Engineer/ })).toContainText('20 hours/week');
-  await navigateToArea(page, 'notifications');
-  await expect(notificationsRegion.getByRole('heading', { name: 'Request approved from presentation' })).toBeVisible();
+  await openNotificationsMenu(page);
+  await expect(notificationsRegion.getByText('Request approved from presentation')).toBeVisible();
+  await closeNotificationsMenu(page);
   expect(state.accessCount).toBe(1);
 
   // 2) Resolve exception in Admin exceptions queue -> updates Allocations, Capacity load, Requests, and Notifications without reload
@@ -451,8 +468,9 @@ test('updates Allocations, capacity load, Requests, and Notifications immediatel
   await navigateToArea(page, 'allocations');
   await expect(allocationsRegion.getByRole('button', { name: /View allocation ITDM-10/ })).toHaveCount(2);
   await expect(allocationsRegion.getByRole('row', { name: /Morgan Admin/ })).toContainText('16 hours/week');
-  await navigateToArea(page, 'notifications');
-  await expect(notificationsRegion.getByRole('heading', { name: 'Exception resolved with allocation' })).toBeVisible();
+  await openNotificationsMenu(page);
+  await expect(notificationsRegion.getByText('Exception resolved with allocation')).toBeVisible();
+  await closeNotificationsMenu(page);
   await navigateToArea(page, 'requests');
   await expect(page.getByRole('region', { name: 'My requests' }).getByRole('button', { name: /ITDM-10.*Approved/ })).toHaveCount(2);
   expect(state.accessCount).toBe(1);
@@ -588,7 +606,6 @@ test('updates Allocations, capacity load, Request queues, and Notifications imme
   await page.getByRole('button', { name: new RegExp(requestId) }).click();
   const detail = page.getByRole('region', { name: 'ITDM-10' });
   const allocationsRegion = page.getByRole('region', { name: 'Allocations and capacity' });
-  const notificationsRegion = page.getByRole('region', { name: 'Notifications' });
 
   await expect(detail.getByRole('button', { name: 'Accept proposed conditions' })).toBeVisible();
   await detail.getByRole('button', { name: 'Accept proposed conditions' }).click();
@@ -599,8 +616,8 @@ test('updates Allocations, capacity load, Request queues, and Notifications imme
   await navigateToArea(page, 'allocations');
   await expect(allocationsRegion.getByRole('button', { name: /View allocation ITDM-10/ })).toBeVisible();
   await expect(allocationsRegion.getByRole('row', { name: /Alex Engineer/ })).toContainText('15 hours/week');
-  await navigateToArea(page, 'notifications');
-  await expect(notificationsRegion.getByRole('heading', { name: 'Changed proposal accepted' })).toBeVisible();
+  const notificationsRegion = await openNotificationsMenu(page);
+  await expect(notificationsRegion.getByText('Changed proposal accepted')).toBeVisible();
   expect(state.accessCount).toBe(1);
 });
 
@@ -925,7 +942,6 @@ test('updates Exceptions, Revalidation queues, Submissions, and Notifications im
   await page.goto('/resource-allocation/?page=requests');
   const queuesRegion = page.getByRole('region', { name: 'Request queues' });
   const requestsRegion = page.getByRole('region', { name: 'My requests' });
-  const notificationsRegion = page.getByRole('region', { name: 'Notifications' });
   const submissionsPanel = page.getByRole('region', { name: 'My submissions' });
 
   // 1) Contest denial -> appears immediately in Admin exceptions queue + Notifications + Submissions
@@ -937,8 +953,9 @@ test('updates Exceptions, Revalidation queues, Submissions, and Notifications im
   await navigateToArea(page, 'request-queues');
   await queuesRegion.getByRole('tab', { name: 'Admin exceptions' }).click();
   await expect(queuesRegion.getByRole('article', { name: /ITDM-10/ })).toContainText('Pre N3');
-  await navigateToArea(page, 'notifications');
-  await expect(notificationsRegion.getByRole('heading', { name: 'Denial contested into Pre N3' })).toBeVisible();
+  const notificationsRegion = await openNotificationsMenu(page);
+  await expect(notificationsRegion.getByText('Denial contested into Pre N3')).toBeVisible();
+  await closeNotificationsMenu(page);
   await navigateToArea(page, 'new-request');
   await expect(submissionsPanel).toContainText('Current outcome: PRE_N3');
   expect(state.accessCount).toBe(1);
@@ -953,8 +970,8 @@ test('updates Exceptions, Revalidation queues, Submissions, and Notifications im
   await navigateToArea(page, 'request-queues');
   await queuesRegion.getByRole('tab', { name: 'Revalidation queue' }).click();
   await expect(queuesRegion.getByText('There are no requests in this queue.')).toBeVisible();
-  await navigateToArea(page, 'notifications');
-  await expect(notificationsRegion.getByRole('heading', { name: 'Revalidation request cancelled' })).toBeVisible();
+  await openNotificationsMenu(page);
+  await expect(notificationsRegion.getByText('Revalidation request cancelled')).toBeVisible();
   expect(state.accessCount).toBe(1);
 });
 
@@ -1070,7 +1087,6 @@ test('updates Requests and Notifications immediately without reload when an allo
   await page.goto(`/resource-allocation/?page=requests&requestId=${requestId}`);
   const requestDetail = page.getByRole('region', { name: 'ITDM-10' });
   const allocationsRegion = page.getByRole('region', { name: 'Allocations and capacity' });
-  const notificationsRegion = page.getByRole('region', { name: 'Notifications' });
 
   await expect(requestDetail.getByRole('region', { name: 'Approved allocation' })).toContainText('In progress');
   await navigateToArea(page, 'allocations');
@@ -1086,8 +1102,8 @@ test('updates Requests and Notifications immediately without reload when an allo
   await navigateToArea(page, 'requests');
   await page.getByRole('button', { name: new RegExp(requestId) }).click();
   await expect(requestDetail.getByRole('region', { name: 'Approved allocation' })).toContainText('Suspended');
-  await navigateToArea(page, 'notifications');
-  await expect(notificationsRegion.getByRole('heading', { name: 'Allocation suspended' })).toBeVisible();
+  const notificationsRegion = await openNotificationsMenu(page);
+  await expect(notificationsRegion.locator('.notifications-menu__lesson-ref', { hasText: 'Allocation suspended' })).toBeVisible();
   expect(state.accessCount).toBe(1);
 });
 
@@ -1235,7 +1251,6 @@ test('updates selections, Requests, Request queues, Allocations, capacity load, 
   const queuesRegion = page.getByRole('region', { name: 'Request queues' });
   const requestsRegion = page.getByRole('region', { name: 'My requests' });
   const allocationsRegion = page.getByRole('region', { name: 'Allocations and capacity' });
-  const notificationsRegion = page.getByRole('region', { name: 'Notifications' });
 
   await queuesRegion.getByRole('tab', { name: 'Revalidation queue' }).click();
   await expect(queuesRegion.getByText('There are no requests in this queue.')).toBeVisible();
@@ -1274,8 +1289,8 @@ test('updates selections, Requests, Request queues, Allocations, capacity load, 
   await navigateToArea(page, 'allocations');
   await expect(allocationsRegion.getByRole('button', { name: /View allocation ITDM-10/ })).toContainText('Core API Engineering');
   await expect(allocationsRegion.getByRole('row', { name: /Alex Engineer/ })).toContainText('24 hours/week');
-  await navigateToArea(page, 'notifications');
-  await expect(notificationsRegion.getByRole('heading', { name: 'Profile update triggered revalidation' })).toBeVisible();
+  const notificationsRegion = await openNotificationsMenu(page);
+  await expect(notificationsRegion.getByText('Profile update triggered revalidation')).toBeVisible();
   expect(state.accessCount).toBe(1);
 });
 
@@ -1392,7 +1407,6 @@ test('updates Requests, Request queues, and Notifications immediately without re
   await page.goto('/resource-allocation/?page=request-queues');
   const queuesRegion = page.getByRole('region', { name: 'Request queues' });
   const requestsRegion = page.getByRole('region', { name: 'My requests' });
-  const notificationsRegion = page.getByRole('region', { name: 'Notifications' });
 
   await expect(queuesRegion.getByText('There are no requests in this queue.')).toBeVisible();
   await navigateToArea(page, 'requests');
@@ -1414,7 +1428,7 @@ test('updates Requests, Request queues, and Notifications immediately without re
   await expect(queuesRegion.getByRole('article', { name: /ITDM-10/ })).toBeVisible();
   await navigateToArea(page, 'requests');
   await expect(requestsRegion.getByRole('button', { name: /ITDM-10/ })).toBeVisible();
-  await navigateToArea(page, 'notifications');
-  await expect(notificationsRegion.getByRole('heading', { name: 'New presentation request arrived' })).toBeVisible();
+  const notificationsRegion = await openNotificationsMenu(page);
+  await expect(notificationsRegion.getByText('New presentation request arrived')).toBeVisible();
   expect(state.accessCount).toBe(1);
 });

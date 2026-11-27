@@ -99,8 +99,9 @@ test('opens an authorized allocation detail from a notification', async ({ page 
     return route.fulfill({ json: { items: [], page: emptyPage } });
   });
 
-  await page.goto('/resource-allocation/?page=notifications');
-  await page.getByRole('link', { name: 'Open related allocation' }).click();
+  await page.goto('/resource-allocation/');
+  await page.getByRole('button', { name: 'Notifications (1 unread)' }).click();
+  await page.getByRole('link', { name: /Open related allocation: Allocation started/ }).click();
   await expect(page).toHaveURL(new RegExp(`allocationId=${allocationId}`));
   const detail = page.getByRole('region', { name: 'Allocation details' });
   await expect(detail.getByRole('heading', { name: 'ITDM-69 · Capacity planning' })).toBeVisible();

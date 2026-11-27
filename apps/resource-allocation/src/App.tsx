@@ -11,7 +11,7 @@ import { ProfileAdministration } from './ProfileAdministration';
 import { AllocationsWorkspace } from './AllocationsWorkspace';
 import { CapacityWorkspace } from './CapacityWorkspace';
 import { CAPACITY_QUERY_ROOT } from './capacityApi';
-import { NotificationsInbox } from './NotificationsInbox';
+import { NotificationsMenu } from './NotificationsMenu';
 import { RequestQueues } from './RequestQueues';
 import { SubmissionWorkspace } from './SubmissionWorkspace';
 import { RequestWorkspace } from './RequestWorkspace';
@@ -19,7 +19,6 @@ import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { WorkspaceSidebar } from '../../shared-ui/src/WorkspaceSidebar';
 import {
   BarChartIcon,
-  BellIcon,
   BriefcaseIcon,
   FileTextIcon,
   InboxIcon,
@@ -57,7 +56,6 @@ const navigationItems: Array<{ page: ResourceAllocationPage; label: string }> = 
   { page: 'request-queues', label: 'Request queues' },
   { page: 'allocations', label: 'Allocations and capacity' },
   { page: 'capacity', label: 'Capacity' },
-  { page: 'notifications', label: 'Notifications' },
   { page: 'administration', label: 'Administration' },
 ];
 
@@ -73,8 +71,6 @@ function navigationIcon(page: ResourceAllocationPage, isDelegatedProfileAdminist
       return <BriefcaseIcon size={17} />;
     case 'capacity':
       return <BarChartIcon size={17} />;
-    case 'notifications':
-      return <BellIcon size={17} />;
     case 'administration':
       return isDelegatedProfileAdministrator ? <LayersIcon size={17} /> : <SettingsIcon size={17} />;
   }
@@ -382,6 +378,13 @@ function ResourceAllocationApp() {
         onChangeProfile={profileId ? changeProfile : undefined}
         theme={theme}
         onThemeChange={selectTheme}
+        actions={canDisplayWorkspace && canUseModuleData && profileId ? (
+          <NotificationsMenu
+            localUserId={profileId}
+            navigationKey={activePage}
+            onAccessDenied={handleModuleDataAccessDenied}
+          />
+        ) : undefined}
       />
 
       {canDisplayWorkspace ? (
@@ -461,7 +464,6 @@ function ResourceAllocationApp() {
                   />
                 )}
                 {activePage === 'capacity' && <CapacityWorkspace localUserId={profileId} canCorrectPast={role === 'ALLOCATION_ADMIN'} onAccessDenied={handleCapacityAccessDenied} />}
-                {activePage === 'notifications' && <NotificationsInbox localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />}
                 {activePage === 'administration' && profileAdministrationAccessBlocked && isDelegatedProfileAdministrator && (
                   <div className="form-error admin-access-revoked" role="alert">
                     <p>Your current profile-management scope could not be confirmed. Protected profile records have been cleared.</p>
