@@ -502,7 +502,13 @@ h1 {
 .request-panel-heading p:last-child { max-width: 72ch; margin: 6px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .request-scope-control { flex: 0 0 auto; min-width: 190px; gap: 4px; }
 .request-scope-control > span:first-child { color: var(--muted); font-size: 12px; font-weight: 600; }
-.request-scope-control select { min-height: 38px; height: 38px; padding: 0 10px; border: 1px solid var(--control-border); border-radius: var(--control-radius); background: var(--surface); color: var(--text); font: inherit; font-size: 13.5px; font-weight: 550; }
+.request-scope-control select { min-height: 38px; height: 38px; padding: 0 10px; border: 1px solid var(--control-border); border-radius: var(--control-radius); background: var(--surface); color: var(--text); font: inherit; font-size: 13.5px; font-weight: 550; transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast); }
+.request-scope-control select:is(:focus, :focus-visible) {
+  border-color: var(--focus);
+  outline: 2px solid transparent;
+  outline-offset: 0;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
 .request-edit-form select, .request-edit-form input, .request-edit-form textarea, .request-modal textarea { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--control-border); border-radius: var(--control-radius); background: var(--surface); color: var(--text); font: inherit; font-weight: 450; }
 .request-edit-form textarea, .request-modal textarea { min-height: 96px; resize: vertical; }
 .request-list-header { grid-template-columns: minmax(190px, 1.4fr) minmax(160px, 1fr) minmax(175px, 1fr) 190px; gap: 12px; }
@@ -727,6 +733,15 @@ h1 {
   font: inherit;
   font-weight: 450;
 }
+.allocation-capacity input {
+  transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.allocation-capacity input:is(:focus, :focus-visible) {
+  border-color: var(--focus);
+  outline: 2px solid transparent;
+  outline-offset: 0;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
 .form-field input::placeholder, .form-field textarea::placeholder { color: var(--muted); opacity: 1; }
 .allocation-capacity, .allocation-list-area, .allocation-detail { display: grid; gap: 14px; }
 .allocation-capacity { padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--card-radius); background: var(--surface); }
@@ -934,7 +949,9 @@ h1 {
   .admin-table tbody tr,
   .request-list-item,
   .request-queue-tabs button,
-  .allocation-list-item {
+  .allocation-list-item,
+  .request-scope-control select,
+  .allocation-capacity input {
     transition: none;
   }
 }

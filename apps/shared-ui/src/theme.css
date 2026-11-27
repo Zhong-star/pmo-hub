@@ -20,6 +20,7 @@
   --rule: #eceef1;
   --border-subtle: var(--rule);
   --focus: #1868db;
+  --focus-ring: rgb(24 104 219 / 18%);
   --link: #1868db;
   --link-hover: #0c55c7;
   --primary-background: #1868db;
@@ -50,6 +51,7 @@
   --border: #383e47;
   --rule: #2a2e35;
   --focus: #8ab8ff;
+  --focus-ring: rgb(138 184 255 / 22%);
   --link: #8ab8ff;
   --link-hover: #bdd7ff;
   --primary-background: #1868db;

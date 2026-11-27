@@ -192,6 +192,13 @@
   font: inherit;
   font-size: 13px;
   font-weight: 450;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.capacity-compare-controls :is(input, select):is(:focus, :focus-visible) {
+  border-color: var(--focus);
+  outline: 2px solid transparent;
+  outline-offset: 0;
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 .capacity-compare-nav { display: flex; flex-wrap: wrap; gap: 8px; }
 .capacity-compare-week { display: grid; gap: 10px; min-width: 0; }
@@ -211,4 +218,11 @@
 @media (max-width: 560px) {
   .capacity-compare-controls label, .capacity-compare-nav { width: 100%; }
   .capacity-compare-nav button { flex: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capacity-compare-controls input,
+  .capacity-compare-controls select {
+    transition: none;
+  }
 }

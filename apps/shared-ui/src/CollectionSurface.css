@@ -148,12 +148,20 @@
   font: inherit;
   font-size: 13px;
   font-weight: 450;
-  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+  transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .collection-filter-field input::placeholder {
   color: var(--muted);
   opacity: 1;
+}
+
+.workspace-panel .collection-filter-field :is(input, select):is(:focus, :focus-visible),
+.collection-filter-field :is(input, select):is(:focus, :focus-visible) {
+  border-color: var(--focus);
+  outline: 2px solid transparent;
+  outline-offset: 0;
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .search-field-wrap {
