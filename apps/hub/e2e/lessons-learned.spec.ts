@@ -318,7 +318,8 @@ test('catalog link opens in the same tab and reload, back, and module return pre
   await expect(page).toHaveURL(/\/lessons-learned\/?$/);
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.getByText('Welcome, Local Developer')).toBeVisible();
-  await expect(page.getByText('Contributor', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Returned for changes' })).toBeVisible();
+  await expect(page.getByText(/Active role/i)).toHaveCount(0);
 
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
@@ -350,7 +351,8 @@ test('PMO can enter the module catalog and open Lessons Learned with the PMO rol
   await expect(page.getByRole('banner')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Local PMO' })).toBeVisible();
   await expect(page.getByText('Welcome, Local PMO')).toBeVisible();
-  await expect(page.getByText('PMO', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Pending PMO evaluation' })).toBeVisible();
+  await expect(page.getByText(/Active role/i)).toHaveCount(0);
 });
 
 test('PMO Drafts lists, edits, and cancels Contributor lessons with their history', async ({ page }) => {
@@ -1157,7 +1159,7 @@ test('catalog entry checks the Contributor identity before rendering Home', asyn
 
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.getByText('Welcome, Local Contributor')).toBeVisible();
-  await expect(page.getByText('Contributor', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Returned for changes' })).toBeVisible();
   await expect(page.getByRole('complementary', { name: 'Lessons Learned navigation' })).toBeVisible();
 });
 
@@ -1178,7 +1180,8 @@ test('direct URL checks the PMO identity before rendering its Home', async ({ pa
 
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.getByText('Welcome, Local PMO')).toBeVisible();
-  await expect(page.getByText('PMO', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Pending PMO evaluation' })).toBeVisible();
+  await expect(page.getByText(/Active role/i)).toHaveCount(0);
 });
 
 test('a profile without module access sees Access denied', async ({ page }) => {
