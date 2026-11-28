@@ -4,10 +4,12 @@ import type { HomeResponse } from '../src/api';
 export const emptyHomeSections: Omit<HomeResponse, 'profile' | 'navigation'> = {
   notifications: { unreadCount: 0, items: [] },
   recentWork: [],
+  recentlyApprovedLessons: [],
   highlights: {
     returnedCount: 0,
     returnedLessons: [],
     openDraftCount: 0,
+    openDraftLessons: [],
     pendingEvaluationCount: 0,
     pendingEvaluationLessons: [],
   },

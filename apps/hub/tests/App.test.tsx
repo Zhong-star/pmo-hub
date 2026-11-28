@@ -68,15 +68,16 @@ describe('Hub entry', () => {
 
     renderApp();
 
-    expect(await screen.findByText('Hub available')).toBeInTheDocument();
+    const profileSelect = await screen.findByRole('combobox', { name: 'Local profile' });
+    expect(screen.queryByText('Hub available')).not.toBeInTheDocument();
     expect(Number.isFinite(HUB_API_TIMEOUT_MS)).toBe(true);
     expect(HUB_API_TIMEOUT_MS).toBeGreaterThan(0);
     expect(mockedGet).toHaveBeenCalledWith('/api/hub/v1/status', { timeout: HUB_API_TIMEOUT_MS });
-    const profileSelect = await screen.findByRole('combobox', { name: 'Local profile' });
     await userEvent.selectOptions(profileSelect, 'dev-1');
     await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(await screen.findByRole('heading', { name: 'Welcome, Avery Chen' })).toBeInTheDocument();
+    expect(screen.queryByText('Hub available')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Module catalog' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Lessons Learned' })).toBeInTheDocument();
     expect(screen.getByText('Capture, review, and reuse lessons from project experience.')).toBeInTheDocument();

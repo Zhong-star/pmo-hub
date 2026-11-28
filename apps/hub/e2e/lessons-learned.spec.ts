@@ -318,7 +318,8 @@ test('catalog link opens in the same tab and reload, back, and module return pre
   await expect(page).toHaveURL(/\/lessons-learned\/?$/);
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.getByText('Welcome, Local Developer')).toBeVisible();
-  await expect(page.getByText('Contributor', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Returned for changes' })).toBeVisible();
+  await expect(page.getByText(/Active role/i)).toHaveCount(0);
 
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
@@ -350,7 +351,8 @@ test('PMO can enter the module catalog and open Lessons Learned with the PMO rol
   await expect(page.getByRole('banner')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Local PMO' })).toBeVisible();
   await expect(page.getByText('Welcome, Local PMO')).toBeVisible();
-  await expect(page.getByText('PMO', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Pending PMO evaluation' })).toBeVisible();
+  await expect(page.getByText(/Active role/i)).toHaveCount(0);
 });
 
 test('PMO Drafts lists, edits, and cancels Contributor lessons with their history', async ({ page }) => {
@@ -514,7 +516,7 @@ test('FT-009, FT-011–013, FT-016, FT-020–025, FT-028, FT-030: submits, retur
   await expect(page.getByRole('button', { name: `View ${title}` })).toHaveCount(0);
 
   await enterModule('local-developer', 'Local PMO');
-  await expect(page.getByRole('region', { name: 'Returned lessons' })).toContainText(title);
+  await expect(page.getByRole('region', { name: 'Returned for changes' })).toContainText(title);
   await expect(page.getByRole('button', { name: /^Notifications/ })).toBeVisible();
   await activateWithKeyboard(page, page.getByRole('link', { name: 'My Submissions' }));
   await expect(page.getByText(guidance, { exact: true })).toBeVisible();
@@ -582,8 +584,7 @@ test('FT-009, FT-011–013, FT-016, FT-020–025, FT-028, FT-030: submits, retur
   await expect(page.getByText(title, { exact: true })).toBeVisible();
 
   await enterModule('local-developer', 'Local Contributor');
-  const summary = page.getByRole('region', { name: 'Unread notifications summary' });
-  await expect(summary).toContainText(title);
+  await expect(page.getByRole('region', { name: 'Latest approved by PMO' })).toContainText(title);
   await activateWithKeyboard(page, page.getByRole('button', { name: /^Notifications/ }));
   const alerts = page.getByRole('region', { name: 'Notifications', exact: true });
   const commentNotification = alerts.getByRole('listitem').filter({ hasText: 'New comment' }).filter({ hasText: title });
@@ -1158,7 +1159,7 @@ test('catalog entry checks the Contributor identity before rendering Home', asyn
 
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.getByText('Welcome, Local Contributor')).toBeVisible();
-  await expect(page.getByText('Contributor', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Returned for changes' })).toBeVisible();
   await expect(page.getByRole('complementary', { name: 'Lessons Learned navigation' })).toBeVisible();
 });
 
@@ -1179,7 +1180,8 @@ test('direct URL checks the PMO identity before rendering its Home', async ({ pa
 
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.getByText('Welcome, Local PMO')).toBeVisible();
-  await expect(page.getByText('PMO', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Pending PMO evaluation' })).toBeVisible();
+  await expect(page.getByText(/Active role/i)).toHaveCount(0);
 });
 
 test('a profile without module access sees Access denied', async ({ page }) => {

@@ -170,20 +170,11 @@ export function App() {
           <section className={`welcome-card${activeUser ? ' catalog-page' : ''}`} aria-labelledby="page-title">
             <h1 id="page-title" className={activeUser ? 'sr-only' : undefined}>Welcome to PMO Hub</h1>
 
-            {activeUser ? (
+            {activeUser && (
               <div className="hub-workspace-header">
                 <div className="profile-bar" aria-live="polite">
                   <h2>Welcome, {activeUser.displayName}</h2>
                 </div>
-                <div className="service-status" role="status" aria-live="polite">
-                  <span className={`status-dot ${statusQuery.isSuccess ? 'is-available' : ''}`} aria-hidden="true" />
-                  <span>{statusQuery.isSuccess && resumeError !== 'unavailable' ? 'Hub available' : statusQuery.isError || resumeError === 'unavailable' ? 'Hub unavailable' : 'Checking Hub availability…'}</span>
-                </div>
-              </div>
-            ) : (
-              <div className="service-status" role="status" aria-live="polite">
-                <span className={`status-dot ${statusQuery.isSuccess ? 'is-available' : ''}`} aria-hidden="true" />
-                <span>{statusQuery.isSuccess && resumeError !== 'unavailable' ? 'Hub available' : statusQuery.isError || resumeError === 'unavailable' ? 'Hub unavailable' : 'Checking Hub availability…'}</span>
               </div>
             )}
 

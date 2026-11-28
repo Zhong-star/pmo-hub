@@ -640,6 +640,7 @@ export interface components {
             returnedLessons: components["schemas"]["HomeLessonSummary"][];
             /** @example 1 */
             openDraftCount: number;
+            openDraftLessons: components["schemas"]["HomeLessonSummary"][];
             /** @example 0 */
             pendingEvaluationCount: number;
             pendingEvaluationLessons: components["schemas"]["HomeLessonSummary"][];
@@ -683,6 +684,7 @@ export interface components {
             navigation: components["schemas"]["LessonsLearnedNavigationItem"][];
             notifications: components["schemas"]["HomeNotificationsSummary"];
             recentWork: components["schemas"]["HomeLessonSummary"][];
+            recentlyApprovedLessons: components["schemas"]["HomeLessonSummary"][];
             highlights: components["schemas"]["HomeHighlights"];
             primaryAction: components["schemas"]["HomePrimaryAction"];
             shortcuts: components["schemas"]["HomeShortcut"][];

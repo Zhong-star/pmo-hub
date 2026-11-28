@@ -1,12 +1,11 @@
+import type { ReactNode } from 'react';
 import {
   AlertTriangleIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
-  BellIcon,
-  ClockIcon,
-  CompassIcon,
+  FileTextIcon,
   InboxIcon,
-  UserIcon,
+  PlusIcon,
 } from '../../shared-ui/src/Icons';
 import type { HomeLessonSummary, HomeResponse, HomeTargetPage } from './api';
 
@@ -18,14 +17,6 @@ interface HomeViewProps {
   onNavigate: (targetPage: HomeTargetPage) => void;
 }
 
-const STATUS_LABELS: Record<HomeLessonSummary['status'], string> = {
-  Open: 'Open',
-  PMOEvaluation: 'PMO Evaluation',
-  Approved: 'Approved',
-  Closed: 'Closed',
-  Archived: 'Archived',
-};
-
 function formatTimestamp(timestamp: string): string {
   return `${new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
@@ -34,191 +25,288 @@ function formatTimestamp(timestamp: string): string {
   }).format(new Date(timestamp))} UTC`;
 }
 
-function getRoleLabel(role: HomeResponse['profile']['role']): string {
-  return role === 'LESSONS_MODERATOR' ? 'PMO' : 'Contributor';
+function formatFeedDate(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '';
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const dateUtc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const diffDays = Math.round((todayUtc - dateUtc) / 86_400_000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays > 1 && diffDays <= 14) return `${diffDays} days ago`;
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(date);
 }
 
-function LessonButton({ lesson, onOpenLesson }: { lesson: HomeLessonSummary; onOpenLesson: (lessonId: number) => void }) {
+interface PendingSectionProps {
+  headingId: string;
+  title: string;
+  count: number;
+  viewAllTarget: HomeTargetPage;
+  emptyMessage: string;
+  lessons: HomeLessonSummary[];
+  statusLabel: string;
+  statusTone: 'evaluation' | 'returned' | 'draft';
+  showAuthor?: boolean;
+  icon: ReactNode;
+  onOpenLesson: (lessonId: number) => void;
+  onNavigate: (targetPage: HomeTargetPage) => void;
+}
+
+function PendingActivitySection({
+  headingId,
+  title,
+  count,
+  viewAllTarget,
+  emptyMessage,
+  lessons,
+  statusLabel,
+  statusTone,
+  showAuthor = false,
+  icon,
+  onOpenLesson,
+  onNavigate,
+}: PendingSectionProps) {
   return (
-    <button
-      className="submission-title-link"
-      type="button"
-      data-lesson-view-id={lesson.id}
-      onClick={() => onOpenLesson(lesson.id)}
-    >
-      #{lesson.id} · {lesson.title}
-    </button>
+    <section className="home-section" aria-labelledby={headingId}>
+      <div className="home-section__header">
+        <div className="home-section__title-group">
+          <h2 id={headingId}>{title}</h2>
+          <span className="home-section__count" aria-label={`${count} items`}>{count}</span>
+        </div>
+        <button
+          className="home-section__view-all"
+          type="button"
+          onClick={() => onNavigate(viewAllTarget)}
+        >
+          View all
+        </button>
+      </div>
+
+      <div className="home-activity-box">
+        {lessons.length === 0 ? (
+          <p className="home-activity-empty">{emptyMessage}</p>
+        ) : (
+          <ul className="home-activity-list">
+            {lessons.map((lesson) => {
+              const metaParts = [
+                `#${lesson.id}`,
+                showAuthor ? (lesson.authorName ?? lesson.authorId) : null,
+                lesson.projectName,
+                `Updated ${formatTimestamp(lesson.updatedAt)}`,
+              ].filter(Boolean);
+
+              return (
+                <li key={lesson.id} className="home-activity-item">
+                  <span className={`home-activity-item__icon home-activity-item__icon--${statusTone}`} aria-hidden="true">
+                    {icon}
+                  </span>
+                  <div className="home-activity-item__body">
+                    <div className="home-activity-item__title-row">
+                      <button
+                        className="submission-title-link"
+                        type="button"
+                        data-lesson-view-id={lesson.id}
+                        onClick={() => onOpenLesson(lesson.id)}
+                      >
+                        #{lesson.id} · {lesson.title}
+                      </button>
+                      <span className={`lesson-status-pill lesson-status-pill--${statusTone === 'draft' ? 'open' : statusTone}`}>
+                        {statusLabel}
+                      </span>
+                    </div>
+                    {statusTone === 'returned' && lesson.latestReviewGuidance && (
+                      <p className="home-activity-item__guidance">{lesson.latestReviewGuidance}</p>
+                    )}
+                    <p className="home-activity-item__meta">{metaParts.join(' · ')}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }
 
 export function HomeView({ home, showOverview, onOpenLesson, onNavigate }: HomeViewProps) {
-  return (
-    <div className="home-view">
-      <div className="home-header">
-        <div>
-          <h1 id="page-title" tabIndex={-1}>Home</h1>
-          <div className="home-welcome-meta">
-            <p className="intro">Welcome, {home.profile.displayName}</p>
-            <p className="active-role">
-              <UserIcon size={14} />
-              <span>Active role: <strong>{getRoleLabel(home.profile.role)}</strong></span>
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {showOverview && <HomeOverview home={home} onOpenLesson={onOpenLesson} onNavigate={onNavigate} />}
-
-      <a className="primary-link home-back-link ui-inline-btn" href="/">
-        <ArrowLeftIcon size={15} />
-        <span>Back to PMO Hub</span>
-      </a>
-    </div>
-  );
-}
-
-function HomeOverview({ home, onOpenLesson, onNavigate }: Pick<HomeViewProps, 'home' | 'onOpenLesson' | 'onNavigate'>) {
   const isPmo = home.profile.role === 'LESSONS_MODERATOR';
-  const { primaryAction, highlights, notifications, recentWork, shortcuts } = home;
-
-  function runPrimaryAction() {
-    if (primaryAction.lessonId !== null) onOpenLesson(primaryAction.lessonId);
-    else onNavigate(primaryAction.targetPage);
-  }
+  const highlights = home.highlights;
+  const openDraftOnlyCount = highlights
+    ? Math.max(0, highlights.openDraftCount - highlights.returnedCount)
+    : 0;
+  const openDraftLessons = highlights?.openDraftLessons ?? [];
+  const recentlyApprovedLessons = home.recentlyApprovedLessons ?? [];
 
   return (
-    <>
-      <section className="home-primary-action" aria-labelledby="home-primary-action-title">
-        <div className="home-primary-action__copy">
-          <h2 id="home-primary-action-title" className="home-section-heading">
-            <CompassIcon size={18} />
-            <span>Recommended next action</span>
-          </h2>
-          <p>{primaryAction.description}</p>
+    <div className={showOverview ? 'home-view home-layout' : 'home-view'}>
+      <div className="home-main">
+        <div className="home-header">
+          <div>
+            <h1 id="page-title" tabIndex={-1}>Home</h1>
+            <p className="intro">Welcome, {home.profile.displayName}</p>
+          </div>
+          {showOverview && (
+            <button
+              className="draft-action home-primary-button ui-inline-btn"
+              type="button"
+              onClick={() => onNavigate('create-lesson')}
+            >
+              <PlusIcon size={15} />
+              <span>Create lesson</span>
+            </button>
+          )}
         </div>
-        <button className="draft-action home-primary-button ui-inline-btn" type="button" onClick={runPrimaryAction}>
-          <span>{primaryAction.label}</span>
-          <ArrowRightIcon size={15} />
-        </button>
-      </section>
 
-      <div className="home-grid">
-        {isPmo ? (
-          <section className="home-card" aria-labelledby="home-pending-title">
-            <h2 id="home-pending-title" className="home-card__heading">
-              <InboxIcon size={16} />
-              <span>Pending PMO evaluation</span>
-            </h2>
-            <p className="home-card-count">
-              {highlights.pendingEvaluationCount === 1
-                ? '1 lesson awaiting evaluation'
-                : `${highlights.pendingEvaluationCount} lessons awaiting evaluation`}
-            </p>
-            {highlights.pendingEvaluationLessons.length === 0 ? (
-              <p className="draft-empty">No lessons are awaiting evaluation.</p>
+        {showOverview && highlights && (
+          <div className="home-activities">
+            {isPmo ? (
+              <>
+                <PendingActivitySection
+                  headingId="home-pending-title"
+                  title="Pending PMO evaluation"
+                  count={highlights.pendingEvaluationCount}
+                  viewAllTarget="evaluation-queue"
+                  emptyMessage="No lessons are awaiting PMO evaluation."
+                  lessons={highlights.pendingEvaluationLessons}
+                  statusLabel="PMO Evaluation"
+                  statusTone="evaluation"
+                  showAuthor
+                  icon={<InboxIcon size={16} />}
+                  onOpenLesson={onOpenLesson}
+                  onNavigate={onNavigate}
+                />
+                {highlights.returnedCount > 0 && (
+                  <PendingActivitySection
+                    headingId="home-returned-title"
+                    title="Returned for changes"
+                    count={highlights.returnedCount}
+                    viewAllTarget="my-submissions"
+                    emptyMessage="No lessons are waiting for your updates."
+                    lessons={highlights.returnedLessons}
+                    statusLabel="Returned"
+                    statusTone="returned"
+                    icon={<AlertTriangleIcon size={16} />}
+                    onOpenLesson={onOpenLesson}
+                    onNavigate={onNavigate}
+                  />
+                )}
+                <PendingActivitySection
+                  headingId="home-drafts-title"
+                  title="Open drafts"
+                  count={openDraftOnlyCount}
+                  viewAllTarget="pmo-drafts"
+                  emptyMessage="No open drafts."
+                  lessons={openDraftLessons}
+                  statusLabel="Draft"
+                  statusTone="draft"
+                  icon={<FileTextIcon size={16} />}
+                  onOpenLesson={onOpenLesson}
+                  onNavigate={onNavigate}
+                />
+              </>
             ) : (
-              <ul className="home-list">
-                {highlights.pendingEvaluationLessons.map((lesson) => (
-                  <li key={lesson.id}>
-                    <LessonButton lesson={lesson} onOpenLesson={onOpenLesson} />
-                    <span className="library-description">
-                      {lesson.authorName ?? lesson.authorId}
-                      {lesson.projectName ? ` · ${lesson.projectName}` : ''}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <PendingActivitySection
+                  headingId="home-returned-title"
+                  title="Returned for changes"
+                  count={highlights.returnedCount}
+                  viewAllTarget="my-submissions"
+                  emptyMessage="No lessons are waiting for your updates."
+                  lessons={highlights.returnedLessons}
+                  statusLabel="Returned"
+                  statusTone="returned"
+                  icon={<AlertTriangleIcon size={16} />}
+                  onOpenLesson={onOpenLesson}
+                  onNavigate={onNavigate}
+                />
+                <PendingActivitySection
+                  headingId="home-drafts-title"
+                  title="Open drafts"
+                  count={openDraftOnlyCount}
+                  viewAllTarget="my-submissions"
+                  emptyMessage="No open drafts."
+                  lessons={openDraftLessons}
+                  statusLabel="Draft"
+                  statusTone="draft"
+                  icon={<FileTextIcon size={16} />}
+                  onOpenLesson={onOpenLesson}
+                  onNavigate={onNavigate}
+                />
+              </>
             )}
-          </section>
-        ) : (
-          <section className="home-card" aria-labelledby="home-returned-title">
-            <h2 id="home-returned-title" className="home-card__heading">
-              <AlertTriangleIcon size={16} />
-              <span>Returned lessons</span>
-            </h2>
-            <p className="home-card-count">
-              {highlights.returnedCount === 1
-                ? '1 lesson returned for changes'
-                : `${highlights.returnedCount} lessons returned for changes`}
-            </p>
-            {highlights.returnedLessons.length === 0 ? (
-              <p className="draft-empty">No lessons are waiting for your updates.</p>
-            ) : (
-              <ul className="home-list">
-                {highlights.returnedLessons.map((lesson) => (
-                  <li key={lesson.id}>
-                    <LessonButton lesson={lesson} onOpenLesson={onOpenLesson} />
-                    {lesson.latestReviewGuidance && (
-                      <span className="library-description">{lesson.latestReviewGuidance}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          </div>
         )}
 
-        <section className="home-card" aria-labelledby="home-notifications-title">
-          <h2 id="home-notifications-title" className="home-card__heading">
-            <BellIcon size={16} />
-            <span>Unread notifications summary</span>
-          </h2>
-          <p className="home-card-count">{notifications.unreadCount} unread</p>
-          {notifications.items.length === 0 ? (
-            <p className="draft-empty">You are all caught up.</p>
-          ) : (
-            <ul className="home-list">
-              {notifications.items.map((item) => (
-                <li key={item.id}>
-                  <button className="submission-title-link" type="button" onClick={() => onOpenLesson(item.lessonId)}>
-                    #{item.lessonId} · {item.lessonTitle}
-                  </button>
-                  <span className="library-description">{item.summary}</span>
-                  <span className="library-description">{formatTimestamp(item.createdAt)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="home-card" aria-labelledby="home-recent-title">
-          <h2 id="home-recent-title" className="home-card__heading">
-            <ClockIcon size={16} />
-            <span>Recent work</span>
-          </h2>
-          {recentWork.length === 0 ? (
-            <p className="draft-empty">No recent work yet.</p>
-          ) : (
-            <ul className="home-list">
-              {recentWork.map((lesson) => (
-                <li key={lesson.id}>
-                  <LessonButton lesson={lesson} onOpenLesson={onOpenLesson} />
-                  <span className="library-description">
-                    {lesson.isReturned ? 'Returned' : STATUS_LABELS[lesson.status]} · Updated {formatTimestamp(lesson.updatedAt)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <a className="primary-link home-back-link ui-inline-btn" href="/">
+          <ArrowLeftIcon size={15} />
+          <span>Back to PMO Hub</span>
+        </a>
       </div>
 
-      <section className="home-card" aria-labelledby="home-shortcuts-title">
-        <h2 id="home-shortcuts-title">Quick shortcuts</h2>
-        <ul className="home-shortcuts">
-          {shortcuts.map((shortcut) => (
-            <li key={shortcut.id}>
-              <button className="home-shortcut" type="button" onClick={() => onNavigate(shortcut.targetPage)}>
-                <span className="home-shortcut__top">
-                  <strong>{shortcut.label}</strong>
-                  <ArrowRightIcon size={14} className="ui-icon home-shortcut__arrow" />
-                </span>
-                <span className="library-description">{shortcut.description}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-    </>
+      {showOverview && (
+        <aside className="home-feed-sidebar">
+          <section className="home-feed-card" aria-labelledby="home-approved-feed-title">
+            <h2 id="home-approved-feed-title" className="home-feed-card__title">
+              Latest approved by PMO
+            </h2>
+
+            {recentlyApprovedLessons.length === 0 ? (
+              <p className="home-feed-empty">No lessons have been approved by the PMO yet.</p>
+            ) : (
+              <ol className="home-feed-timeline">
+                {recentlyApprovedLessons.map((lesson) => {
+                  const approvedTimestamp = lesson.approvedAt ?? lesson.updatedAt;
+                  const metaParts = [
+                    lesson.projectName,
+                    lesson.authorName ?? lesson.authorId,
+                    lesson.lessonType,
+                  ].filter(Boolean);
+
+                  return (
+                    <li key={lesson.id} className="home-feed-item">
+                      <span className="home-feed-item__dot" aria-hidden="true" />
+                      <time
+                        className="home-feed-item__time"
+                        dateTime={approvedTimestamp}
+                        title={formatTimestamp(approvedTimestamp)}
+                      >
+                        {formatFeedDate(approvedTimestamp)}
+                      </time>
+                      <button
+                        className="home-feed-item__title submission-title-link"
+                        type="button"
+                        data-lesson-view-id={lesson.id}
+                        onClick={() => onOpenLesson(lesson.id)}
+                      >
+                        #{lesson.id} · {lesson.title}
+                      </button>
+                      {metaParts.length > 0 && (
+                        <span className="home-feed-item__meta">{metaParts.join(' · ')}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+
+            <button
+              className="home-feed-card__footer-link ui-inline-btn"
+              type="button"
+              onClick={() => onNavigate('library')}
+            >
+              <span>View Lessons Library</span>
+              <ArrowRightIcon size={14} />
+            </button>
+          </section>
+        </aside>
+      )}
+    </div>
   );
 }

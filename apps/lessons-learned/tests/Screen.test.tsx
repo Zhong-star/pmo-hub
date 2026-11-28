@@ -1798,7 +1798,8 @@ describe('Lessons Learned access check', () => {
 
     expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
     expect(screen.getByText('Welcome, Local Contributor')).toBeInTheDocument();
-    expect(screen.getByText('Contributor', { selector: 'strong' })).toBeInTheDocument();
+    expect(screen.queryByText(/Active role/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Returned for changes' })).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'Lessons Learned navigation' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Lessons Learned' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
@@ -1865,13 +1866,14 @@ describe('Lessons Learned access check', () => {
     expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('shows the PMO role returned by the API', async () => {
+  it('shows the PMO role surface returned by the API without the Active role badge', async () => {
     vi.mocked(getHome).mockResolvedValue(pmo);
 
     renderScreen('local-pmo');
 
     expect(await screen.findByText('Welcome, Local PMO')).toBeInTheDocument();
-    expect(screen.getByText('PMO', { selector: 'strong' })).toBeInTheDocument();
+    expect(screen.queryByText(/Active role/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Pending PMO evaluation' })).toBeInTheDocument();
   });
 
   it('denies a profile without access and recommends contacting the PMO', async () => {

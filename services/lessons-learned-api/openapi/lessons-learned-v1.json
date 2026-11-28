@@ -6972,6 +6972,12 @@
             "minimum": 0,
             "example": 1
           },
+          "openDraftLessons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeLessonSummary"
+            }
+          },
           "pendingEvaluationCount": {
             "type": "number",
             "minimum": 0,
@@ -6988,6 +6994,7 @@
           "returnedCount",
           "returnedLessons",
           "openDraftCount",
+          "openDraftLessons",
           "pendingEvaluationCount",
           "pendingEvaluationLessons"
         ]
@@ -7110,6 +7117,12 @@
               "$ref": "#/components/schemas/HomeLessonSummary"
             }
           },
+          "recentlyApprovedLessons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeLessonSummary"
+            }
+          },
           "highlights": {
             "$ref": "#/components/schemas/HomeHighlights"
           },
@@ -7128,6 +7141,7 @@
           "navigation",
           "notifications",
           "recentWork",
+          "recentlyApprovedLessons",
           "highlights",
           "primaryAction",
           "shortcuts"
