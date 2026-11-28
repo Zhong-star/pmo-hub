@@ -98,6 +98,9 @@ export class HomeHighlights {
   @ApiProperty({ type: Number, minimum: 0, example: 1 })
   openDraftCount!: number;
 
+  @ApiProperty({ type: () => [HomeLessonSummary] })
+  openDraftLessons!: HomeLessonSummary[];
+
   @ApiProperty({ type: Number, minimum: 0, example: 0 })
   pendingEvaluationCount!: number;
 
@@ -148,6 +151,9 @@ export class LessonsLearnedHomeResponse {
 
   @ApiProperty({ type: () => [HomeLessonSummary] })
   recentWork!: HomeLessonSummary[];
+
+  @ApiProperty({ type: () => [HomeLessonSummary] })
+  recentlyApprovedLessons!: HomeLessonSummary[];
 
   @ApiProperty({ type: () => HomeHighlights })
   highlights!: HomeHighlights;

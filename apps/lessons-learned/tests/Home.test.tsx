@@ -12,6 +12,7 @@ import {
   getLibraryProjectSnapshots,
   getMySubmissions,
   getPmoDashboard,
+  getPmoDrafts,
   getPmoEvaluationQueue,
   getEvaluationProjectSnapshots,
   recordLibraryView,
@@ -102,6 +103,21 @@ const contributorHome: HomeResponse = {
       isReturned: false,
     },
   ],
+  recentlyApprovedLessons: [
+    {
+      id: 15,
+      title: 'Published release retrospective',
+      status: 'Approved',
+      authorId: 'local-contributor',
+      authorName: 'Local Contributor',
+      projectName: 'Core Platform',
+      lessonType: 'Success to Repeat',
+      updatedAt: '2026-11-17T09:00:00.000Z',
+      approvedAt: '2026-11-17T09:00:00.000Z',
+      latestReviewGuidance: null,
+      isReturned: false,
+    },
+  ],
   highlights: {
     returnedCount: 1,
     returnedLessons: [
@@ -119,7 +135,22 @@ const contributorHome: HomeResponse = {
         isReturned: true,
       },
     ],
-    openDraftCount: 1,
+    openDraftCount: 2,
+    openDraftLessons: [
+      {
+        id: 18,
+        title: 'Staging cutover dry run',
+        status: 'Open',
+        authorId: 'local-contributor',
+        authorName: 'Local Contributor',
+        projectName: 'Core Platform',
+        lessonType: 'Communication',
+        updatedAt: '2026-11-18T11:00:00.000Z',
+        approvedAt: null,
+        latestReviewGuidance: null,
+        isReturned: false,
+      },
+    ],
     pendingEvaluationCount: 0,
     pendingEvaluationLessons: [],
   },
@@ -157,10 +188,40 @@ const pmoHome: HomeResponse = {
       isReturned: false,
     },
   ],
+  recentlyApprovedLessons: [
+    {
+      id: 30,
+      title: 'Incident handover automation',
+      status: 'Approved',
+      authorId: 'local-contributor',
+      authorName: 'Local Contributor',
+      projectName: 'Cloud Ops',
+      lessonType: 'Success to Repeat',
+      updatedAt: '2026-11-18T11:00:00.000Z',
+      approvedAt: '2026-11-18T11:00:00.000Z',
+      latestReviewGuidance: null,
+      isReturned: false,
+    },
+  ],
   highlights: {
     returnedCount: 0,
     returnedLessons: [],
-    openDraftCount: 0,
+    openDraftCount: 1,
+    openDraftLessons: [
+      {
+        id: 25,
+        title: 'Quarterly governance review draft',
+        status: 'Open',
+        authorId: 'local-pmo',
+        authorName: 'Local PMO',
+        projectName: null,
+        lessonType: 'Future Prevention',
+        updatedAt: '2026-11-18T09:00:00.000Z',
+        approvedAt: null,
+        latestReviewGuidance: null,
+        isReturned: false,
+      },
+    ],
     pendingEvaluationCount: 2,
     pendingEvaluationLessons: [
       {
@@ -243,6 +304,7 @@ describe('Role-aware Home screen integration (#52)', () => {
     vi.mocked(getLibraryProjectSnapshots).mockResolvedValue([]);
     vi.mocked(getEvaluationProjectSnapshots).mockResolvedValue([]);
     vi.mocked(getLibrary).mockResolvedValue({ items: [], page: { limit: 50, nextCursor: null } });
+    vi.mocked(getPmoDrafts).mockResolvedValue([]);
     vi.mocked(getPmoEvaluationQueue).mockResolvedValue({ items: [], page: { limit: 50, nextCursor: null } });
     vi.mocked(getPmoDashboard).mockResolvedValue({
       windowDays: 30,
@@ -270,13 +332,14 @@ describe('Role-aware Home screen integration (#52)', () => {
 
     expect(await screen.findByRole('heading', { name: 'Home' })).toBeVisible();
     expect(screen.getByText('Welcome, Local Contributor')).toBeVisible();
+    expect(screen.queryByText(/Active role/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Notifications/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Profiles' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Lessons Library' }));
     expect(await screen.findByRole('heading', { name: 'Lessons Library' })).toBeVisible();
   });
 
-  it('renders Contributor Home with primary CTA, returned highlights, unread notifications, recent work, theme toggle, and role shortcuts without incrementing views on open (D7)', async () => {
+  it('renders Contributor Home without Active role badge, shows pending activities and PMO-approved feed, and opens approved lessons without incrementing views (D7)', async () => {
     window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
     vi.mocked(getHome).mockResolvedValue(contributorHome);
     vi.mocked(getLessonDetails).mockResolvedValue(makeDetails(15, 'Published release retrospective', 'Approved'));
@@ -284,56 +347,52 @@ describe('Role-aware Home screen integration (#52)', () => {
     renderScreen();
 
     expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
+    expect(screen.queryByText(/Active role/i)).not.toBeInTheDocument();
 
-    const primaryRegion = screen.getByRole('region', { name: 'Recommended next action' });
-    expect(within(primaryRegion).getByRole('button', { name: 'Review returned lesson' })).toBeInTheDocument();
-    expect(within(primaryRegion).getByText('1 lesson was returned by the PMO and needs updates.')).toBeInTheDocument();
-
-    const returnedRegion = screen.getByRole('region', { name: 'Returned lessons' });
+    const returnedRegion = screen.getByRole('region', { name: 'Returned for changes' });
+    expect(within(returnedRegion).getByText('#12 · Deployment checklist gap')).toBeInTheDocument();
     expect(within(returnedRegion).getByText('Add rollback steps.')).toBeInTheDocument();
 
-    const notificationsRegion = screen.getByRole('region', { name: 'Unread notifications summary' });
-    expect(within(notificationsRegion).getByText('1 unread')).toBeInTheDocument();
-    expect(within(notificationsRegion).getByText(/Local PMO returned your lesson for changes/i)).toBeInTheDocument();
+    const draftsRegion = screen.getByRole('region', { name: 'Open drafts' });
+    expect(within(draftsRegion).getByText('#18 · Staging cutover dry run')).toBeInTheDocument();
 
-    const shortcutsRegion = screen.getByRole('region', { name: 'Quick shortcuts' });
-    expect(within(shortcutsRegion).getByRole('button', { name: /Lessons Library/i })).toBeInTheDocument();
-    expect(within(shortcutsRegion).getByRole('button', { name: /Profiles/i })).toBeInTheDocument();
-    expect(within(shortcutsRegion).queryByRole('button', { name: /PMO Dashboard/i })).not.toBeInTheDocument();
-    expect(within(shortcutsRegion).queryByRole('button', { name: /PMO Review Queue/i })).not.toBeInTheDocument();
+    const feedRegion = screen.getByRole('region', { name: 'Latest approved by PMO' });
+    expect(within(feedRegion).getByRole('button', { name: /#15 · Published release retrospective/i })).toBeInTheDocument();
 
     // Theme toggle accessible from Home through the shared header icon button
     const user = userEvent.setup();
-    expect(screen.queryByRole('group', { name: 'Home theme preference' })).not.toBeInTheDocument();
     await user.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Dark theme' }));
     expect(document.documentElement.dataset.theme).toBe('dark');
 
-    // D7: Opening a published lesson from Recent Work opens Lesson Detail via getLessonDetails and NEVER calls recordLibraryView
-    const recentRegion = screen.getByRole('region', { name: 'Recent work' });
-    await user.click(within(recentRegion).getByRole('button', { name: /#15 · Published release retrospective/i }));
+    // D7: Opening a published lesson from Latest approved by PMO feed opens Lesson Detail via getLessonDetails and NEVER calls recordLibraryView
+    await user.click(within(feedRegion).getByRole('button', { name: /#15 · Published release retrospective/i }));
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(getLessonDetails).toHaveBeenCalledWith('local-contributor', 15);
     expect(recordLibraryView).not.toHaveBeenCalled();
+
+    await user.keyboard('{Escape}');
+    await user.click(within(feedRegion).getByRole('button', { name: 'View Lessons Library' }));
+    expect(await screen.findByRole('heading', { name: 'Lessons Library' })).toBeInTheDocument();
   });
 
-  it('opens the Create lesson editor on My Submissions from the Home shortcut', async () => {
+  it('opens the Create lesson editor on My Submissions from the Home Create lesson button', async () => {
     window.localStorage.setItem('pmo-hub.local-user-id', 'local-contributor');
     vi.mocked(getHome).mockResolvedValue(contributorHome);
     vi.mocked(getMySubmissions).mockResolvedValue([]);
 
     renderScreen();
 
-    const shortcutsRegion = await screen.findByRole('region', { name: 'Quick shortcuts' });
+    expect(await screen.findByText('Welcome, Local Contributor')).toBeInTheDocument();
     const user = userEvent.setup();
-    await user.click(within(shortcutsRegion).getByRole('button', { name: /Create lesson/i }));
+    await user.click(screen.getByRole('button', { name: 'Create lesson' }));
 
     expect(await screen.findByRole('heading', { name: 'My Submissions' })).toBeInTheDocument();
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(window.location.search).toBe('?page=my-submissions');
   });
 
-  it('renders PMO Home with pending evaluation highlights, FIFO primary action, and shortcuts to PMO Review Queue and PMO Dashboard', async () => {
+  it('renders PMO Home with pending PMO evaluation, open drafts, approved feed, and View all navigation', async () => {
     window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
     vi.mocked(getHome).mockResolvedValue(pmoHome);
     vi.mocked(getLessonDetails).mockResolvedValue(makeDetails(21, 'API rate limit lessons', 'PMOEvaluation'));
@@ -341,30 +400,25 @@ describe('Role-aware Home screen integration (#52)', () => {
     renderScreen();
 
     expect(await screen.findByText('Welcome, Local PMO')).toBeInTheDocument();
-
-    const primaryRegion = screen.getByRole('region', { name: 'Recommended next action' });
-    expect(within(primaryRegion).getByRole('button', { name: 'Evaluate next lesson' })).toBeInTheDocument();
+    expect(screen.queryByText(/Active role/i)).not.toBeInTheDocument();
 
     const pendingRegion = screen.getByRole('region', { name: 'Pending PMO evaluation' });
-    expect(within(pendingRegion).getByText(/API rate limit lessons/i)).toBeInTheDocument();
+    expect(within(pendingRegion).getByText('#21 · API rate limit lessons')).toBeInTheDocument();
 
-    const shortcutsRegion = screen.getByRole('region', { name: 'Quick shortcuts' });
-    expect(within(shortcutsRegion).getByRole('button', { name: /PMO Review Queue/i })).toBeInTheDocument();
-    expect(within(shortcutsRegion).getByRole('button', { name: /PMO Dashboard/i })).toBeInTheDocument();
-    expect(within(shortcutsRegion).getByRole('button', { name: /Lessons Library/i })).toBeInTheDocument();
-    expect(within(shortcutsRegion).getByRole('button', { name: /Create lesson/i })).toBeInTheDocument();
+    const draftsRegion = screen.getByRole('region', { name: 'Open drafts' });
+    expect(within(draftsRegion).getByText('#25 · Quarterly governance review draft')).toBeInTheDocument();
 
-    // Primary CTA opens pending lesson detail without incrementing views (D7)
+    const feedRegion = screen.getByRole('region', { name: 'Latest approved by PMO' });
+    expect(within(feedRegion).getByText('#30 · Incident handover automation')).toBeInTheDocument();
+
     const user = userEvent.setup();
-    await user.click(within(primaryRegion).getByRole('button', { name: 'Evaluate next lesson' }));
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(getLessonDetails).toHaveBeenCalledWith('local-pmo', 21);
-    expect(recordLibraryView).not.toHaveBeenCalled();
+    await user.click(within(pendingRegion).getByRole('button', { name: 'View all' }));
+    expect(getPmoEvaluationQueue).toHaveBeenCalled();
 
-    // Close modal and navigate via PMO Dashboard shortcut
-    await user.keyboard('{Escape}');
-    await user.click(within(shortcutsRegion).getByRole('button', { name: /PMO Dashboard/i }));
-    expect(getPmoDashboard).toHaveBeenCalled();
+    await user.click(within(screen.getByRole('navigation', { name: 'Lessons Learned' })).getByRole('link', { name: 'Home' }));
+    const draftsAfterReturn = await screen.findByRole('region', { name: 'Open drafts' });
+    await user.click(within(draftsAfterReturn).getByRole('button', { name: 'View all' }));
+    expect(getPmoDrafts).toHaveBeenCalled();
   });
 
   it('opens the Create lesson editor from the sidebar Create lesson link', async () => {
@@ -383,11 +437,27 @@ describe('Role-aware Home screen integration (#52)', () => {
     expect(window.location.search).toBe('?page=my-submissions');
   });
 
-  it('refreshes Home after mutating a lesson opened from Home', async () => {
+  it('refreshes Home after mutating a lesson opened from Pending PMO evaluation', async () => {
     window.localStorage.setItem('pmo-hub.local-user-id', 'local-pmo');
     const updatedHome: HomeResponse = {
       ...pmoHome,
       highlights: { ...pmoHome.highlights, pendingEvaluationCount: 0, pendingEvaluationLessons: [] },
+      recentlyApprovedLessons: [
+        {
+          id: 21,
+          title: 'API rate limit lessons',
+          status: 'Approved',
+          authorId: 'local-contributor',
+          authorName: 'Local Contributor',
+          projectName: 'Core Platform',
+          lessonType: 'Risk Avoided',
+          updatedAt: '2026-11-18T12:00:00.000Z',
+          approvedAt: '2026-11-18T12:00:00.000Z',
+          latestReviewGuidance: null,
+          isReturned: false,
+        },
+        ...pmoHome.recentlyApprovedLessons,
+      ],
       primaryAction: {
         kind: 'explore-library',
         label: 'Explore Lessons Library',
@@ -403,9 +473,9 @@ describe('Role-aware Home screen integration (#52)', () => {
 
     renderScreen();
 
-    const primaryRegion = await screen.findByRole('region', { name: 'Recommended next action' });
+    const pendingRegion = await screen.findByRole('region', { name: 'Pending PMO evaluation' });
     const user = userEvent.setup();
-    await user.click(within(primaryRegion).getByRole('button', { name: 'Evaluate next lesson' }));
+    await user.click(within(pendingRegion).getByRole('button', { name: /#21 · API rate limit lessons/i }));
 
     const details = await screen.findByRole('dialog', { name: 'Lesson details' });
     await user.click(within(details).getByRole('button', { name: 'Approve and publish' }));
@@ -413,7 +483,9 @@ describe('Role-aware Home screen integration (#52)', () => {
     await user.click(within(confirm).getByRole('button', { name: 'Confirm approval' }));
 
     await waitFor(() => expect(approveLesson).toHaveBeenCalledWith('local-pmo', 21, { version: 2 }));
-    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Recommended next action' }))
-      .getByRole('button', { name: 'Explore Lessons Library' })).toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Pending PMO evaluation' }))
+      .getByText('No lessons are awaiting PMO evaluation.')).toBeInTheDocument());
+    expect(within(screen.getByRole('region', { name: 'Latest approved by PMO' }))
+      .getByText('#21 · API rate limit lessons')).toBeInTheDocument();
   });
 });

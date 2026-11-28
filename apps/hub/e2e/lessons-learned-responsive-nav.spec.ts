@@ -70,7 +70,7 @@ test('Lessons Learned navigation stays beside Home at 1280 × 720 and after desk
   expect(sidebarBounds!.y + sidebarBounds!.height).toBe(720);
   expect(panelBounds!.x + panelBounds!.width).toBe(1280);
   expect(panelBounds!.y + panelBounds!.height).toBe(720);
-  const primary = page.getByRole('region', { name: 'Recommended next action' }).getByRole('button');
+  const primary = page.getByRole('button', { name: 'Create lesson' });
   expect((await primary.boundingBox())?.height).toBeGreaterThanOrEqual(44);
   await page.setViewportSize({ width: 1600, height: 900 });
   await expect(navigation).toBeVisible();

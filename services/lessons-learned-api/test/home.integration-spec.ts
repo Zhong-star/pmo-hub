@@ -115,10 +115,12 @@ describe('Lessons Learned role-aware Home API (#52)', () => {
       items: [],
     });
     expect(response.body.recentWork).toEqual([]);
+    expect(response.body.recentlyApprovedLessons).toEqual([]);
     expect(response.body.highlights).toEqual({
       returnedCount: 0,
       returnedLessons: [],
       openDraftCount: 0,
+      openDraftLessons: [],
       pendingEvaluationCount: 0,
       pendingEvaluationLessons: [],
     });
@@ -151,6 +153,13 @@ describe('Lessons Learned role-aware Home API (#52)', () => {
       lessonId: draft.id,
     });
     expect(withDraft.body.highlights.openDraftCount).toBe(1);
+    expect(withDraft.body.highlights.openDraftLessons).toHaveLength(1);
+    expect(withDraft.body.highlights.openDraftLessons[0]).toMatchObject({
+      id: draft.id,
+      title: 'My open draft',
+      status: 'Open',
+      isReturned: false,
+    });
     expect(withDraft.body.recentWork).toHaveLength(1);
     expect(withDraft.body.recentWork[0]).toMatchObject({
       id: draft.id,
@@ -180,6 +189,7 @@ describe('Lessons Learned role-aware Home API (#52)', () => {
     });
     expect(withReturned.body.highlights.returnedCount).toBe(1);
     expect(withReturned.body.highlights.returnedLessons).toHaveLength(1);
+    expect(withReturned.body.highlights.openDraftLessons.map((l: { id: number }) => l.id)).toEqual([draft.id]);
     expect(withReturned.body.highlights.returnedLessons[0]).toMatchObject({
       id: submitted.id,
       title: 'Needs more root cause detail',
@@ -223,6 +233,13 @@ describe('Lessons Learned role-aware Home API (#52)', () => {
       lessonId: null,
     });
     expect(withPublishedOnly.body.highlights.returnedCount).toBe(0);
+    expect(withPublishedOnly.body.highlights.openDraftLessons).toEqual([]);
+    expect(withPublishedOnly.body.recentlyApprovedLessons).toHaveLength(1);
+    expect(withPublishedOnly.body.recentlyApprovedLessons[0]).toMatchObject({
+      id: resubmitted.id,
+      title: 'Needs more root cause detail',
+      status: 'Approved',
+    });
     expect(withPublishedOnly.body.notifications.unreadCount).toBe(2);
 
     // D7: opening the approved lesson from Home via GET /lessons/:id does not increment viewCount
@@ -244,6 +261,23 @@ describe('Lessons Learned role-aware Home API (#52)', () => {
     await submitDraft('local-author', first.id, first.version, first.title);
     const second = await createDraft('local-other', 'Second pending submission');
     await submitDraft('local-other', second.id, second.version, second.title);
+    const privateDraft = await createDraft('local-other', 'Private contributor draft');
+
+    const approvedFirst = await createDraft('local-author', 'Earlier approved lesson');
+    const approvedFirstSub = await submitDraft('local-author', approvedFirst.id, approvedFirst.version, approvedFirst.title);
+    await request(app!.getHttpServer())
+      .post(`/api/lessons-learned/v1/lessons/${approvedFirstSub.id}/approve`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: approvedFirstSub.version })
+      .expect(200);
+
+    const approvedSecond = await createDraft('local-other', 'Newest approved lesson');
+    const approvedSecondSub = await submitDraft('local-other', approvedSecond.id, approvedSecond.version, approvedSecond.title);
+    await request(app!.getHttpServer())
+      .post(`/api/lessons-learned/v1/lessons/${approvedSecondSub.id}/approve`)
+      .set('X-PMO-Local-User-ID', 'local-pmo')
+      .send({ version: approvedSecondSub.version })
+      .expect(200);
 
     const response = await request(app!.getHttpServer())
       .get('/api/lessons-learned/v1/home')
@@ -260,6 +294,12 @@ describe('Lessons Learned role-aware Home API (#52)', () => {
       first.id,
       second.id,
     ]);
+    expect(response.body.recentlyApprovedLessons.map((l: { id: number }) => l.id)).toEqual([
+      approvedSecond.id,
+      approvedFirst.id,
+    ]);
+    expect(JSON.stringify(response.body.recentlyApprovedLessons)).not.toContain(privateDraft.title);
+    expect(JSON.stringify(response.body.recentlyApprovedLessons)).not.toContain(first.title);
     expect(response.body.primaryAction).toMatchObject({
       kind: 'evaluate-pending',
       targetPage: 'evaluation-queue',

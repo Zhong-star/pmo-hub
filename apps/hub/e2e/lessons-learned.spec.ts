@@ -514,7 +514,7 @@ test('FT-009, FT-011–013, FT-016, FT-020–025, FT-028, FT-030: submits, retur
   await expect(page.getByRole('button', { name: `View ${title}` })).toHaveCount(0);
 
   await enterModule('local-developer', 'Local PMO');
-  await expect(page.getByRole('region', { name: 'Returned lessons' })).toContainText(title);
+  await expect(page.getByRole('region', { name: 'Returned for changes' })).toContainText(title);
   await expect(page.getByRole('button', { name: /^Notifications/ })).toBeVisible();
   await activateWithKeyboard(page, page.getByRole('link', { name: 'My Submissions' }));
   await expect(page.getByText(guidance, { exact: true })).toBeVisible();
@@ -582,8 +582,7 @@ test('FT-009, FT-011–013, FT-016, FT-020–025, FT-028, FT-030: submits, retur
   await expect(page.getByText(title, { exact: true })).toBeVisible();
 
   await enterModule('local-developer', 'Local Contributor');
-  const summary = page.getByRole('region', { name: 'Unread notifications summary' });
-  await expect(summary).toContainText(title);
+  await expect(page.getByRole('region', { name: 'Latest approved by PMO' })).toContainText(title);
   await activateWithKeyboard(page, page.getByRole('button', { name: /^Notifications/ }));
   const alerts = page.getByRole('region', { name: 'Notifications', exact: true });
   const commentNotification = alerts.getByRole('listitem').filter({ hasText: 'New comment' }).filter({ hasText: title });

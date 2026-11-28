@@ -213,10 +213,12 @@ export class HomeService {
         navigation: [{ id: 'home', label: 'Home', current: true }],
         notifications: { unreadCount: 0, items: [] },
         recentWork: [],
+        recentlyApprovedLessons: [],
         highlights: {
           returnedCount: 0,
           returnedLessons: [],
           openDraftCount: 0,
+          openDraftLessons: [],
           pendingEvaluationCount: 0,
           pendingEvaluationLessons: [],
         },
@@ -237,7 +239,7 @@ export class HomeService {
     const displayNames = this.localAccess.getDisplayNames();
     const isPmo = profile.role === 'LESSONS_MODERATOR';
 
-    const { notifications, recentWork, highlights, primaryAction } = await this.dataSource.transaction(
+    const { notifications, recentWork, recentlyApprovedLessons, highlights, primaryAction } = await this.dataSource.transaction(
       'REPEATABLE READ',
       async (manager) => {
         // 1. Unread notifications strictly scoped to caller
@@ -309,9 +311,19 @@ export class HomeService {
               'ASC',
             )
             .addOrderBy('lesson.id', 'ASC')
-            .limit(3)
+            .limit(5)
             .getMany();
         }
+
+        // 5. Latest lessons approved by PMO (published Approved/Closed lessons across the organization)
+        const recentlyApprovedEntities = await lessonRepo
+          .createQueryBuilder('lesson')
+          .where('lesson.status IN (:...publishedStatuses)', { publishedStatuses: ['Approved', 'Closed'] })
+          .andWhere('lesson.approved_at IS NOT NULL')
+          .orderBy('lesson.approved_at', 'DESC')
+          .addOrderBy('lesson.id', 'DESC')
+          .limit(6)
+          .getMany();
 
         // Collect all Open lesson IDs across recentWork + myOpenEntities to resolve returned status & guidance
         const openLessonIds = Array.from(new Set(
@@ -353,16 +365,19 @@ export class HomeService {
         };
 
         const recentSummaries = recentEntities.map(toSummary);
+        const recentlyApprovedSummaries = recentlyApprovedEntities.map(toSummary);
         const myOpenSummaries = myOpenEntities.map(toSummary);
         const allReturned = myOpenSummaries.filter((lesson) => lesson.isReturned);
         const nonReturnedOpenDrafts = myOpenSummaries.filter((lesson) => !lesson.isReturned);
-        const returnedLessons = allReturned.slice(0, 3);
+        const returnedLessons = allReturned.slice(0, 5);
+        const openDraftLessons = nonReturnedOpenDrafts.slice(0, 5);
         const pendingEvaluationLessons = pendingEntities.map(toSummary);
 
         const computedHighlights: HomeHighlights = {
           returnedCount: allReturned.length,
           returnedLessons,
           openDraftCount: myOpenSummaries.length,
+          openDraftLessons,
           pendingEvaluationCount,
           pendingEvaluationLessons,
         };
@@ -381,6 +396,7 @@ export class HomeService {
         return {
           notifications: notificationsSummary,
           recentWork: recentSummaries,
+          recentlyApprovedLessons: recentlyApprovedSummaries,
           highlights: computedHighlights,
           primaryAction: computedPrimaryAction,
         };
@@ -396,6 +412,7 @@ export class HomeService {
       navigation: [{ id: 'home', label: 'Home', current: true }],
       notifications,
       recentWork,
+      recentlyApprovedLessons,
       highlights,
       primaryAction,
       shortcuts,

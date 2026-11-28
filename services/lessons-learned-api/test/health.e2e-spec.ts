@@ -216,6 +216,8 @@ describe('Lessons Learned health API', () => {
         expect(body.navigation).toEqual([{ id: 'home', label: 'Home', current: true }]);
         expect(body.notifications).toEqual({ unreadCount: 0, items: [] });
         expect(body.recentWork).toEqual([]);
+        expect(body.recentlyApprovedLessons).toEqual([]);
+        expect(body.highlights.openDraftLessons).toEqual([]);
         expect(body.primaryAction).toMatchObject({ kind: 'create-lesson', targetPage: 'create-lesson', lessonId: null });
         expect((body.shortcuts as { id: string }[]).map((s) => s.id)).toEqual([
           'create-lesson',

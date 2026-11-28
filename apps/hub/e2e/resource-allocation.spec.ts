@@ -22,7 +22,6 @@ test('opens Resource Allocation from the Hub, survives refresh, returns, and fol
   });
 
   await page.goto('/');
-  await expect(page.getByText('Hub available')).toBeVisible();
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
   await page.getByRole('button', { name: 'Continue' }).click();
 

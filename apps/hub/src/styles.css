@@ -71,25 +71,6 @@ h2 {
   letter-spacing: -0.01em;
 }
 
-.service-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: fit-content;
-  margin-top: 14px;
-  padding: 6px 11px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--muted);
-  background: var(--surface-subtle);
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #fca700; }
-.status-dot.is-available { background: #22a06b; box-shadow: 0 0 0 3px #dcfff1; }
-:root[data-theme='dark'] .status-dot.is-available { background: #55d6a0; box-shadow: 0 0 0 3px #174c38; }
-
 .entry-panel {
   margin-top: 26px;
   padding-top: 24px;
@@ -165,10 +146,6 @@ select:focus-visible, button:focus-visible, a:focus-visible {
   gap: 12px 20px;
   padding-bottom: 18px;
   border-bottom: 1px solid var(--rule);
-}
-
-.hub-workspace-header .service-status {
-  margin-top: 0;
 }
 
 .profile-bar { display: flex; align-items: center; gap: 16px; margin: 0; padding: 0; }

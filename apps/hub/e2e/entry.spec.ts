@@ -23,7 +23,6 @@ test('selecting a configured local profile opens the module catalog', async ({ p
   await expect(page.getByRole('link', { name: 'PMO Hub' })).toHaveAttribute('href', '/');
   const interFontLoaded = await page.evaluate(async () => (await document.fonts.load('400 16px Inter', 'PMO Hub')).length > 0);
   expect(interFontLoaded).toBe(true);
-  await expect(page.getByText('Hub available')).toBeVisible();
   await page.getByRole('combobox', { name: 'Local profile' }).selectOption('local-developer');
   await page.getByRole('button', { name: 'Continue' }).click();
 
@@ -35,7 +34,7 @@ test('selecting a configured local profile opens the module catalog', async ({ p
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.getByText('Request and coordinate technology resources across projects.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open Tech Resource Allocation' })).toHaveAttribute('href', '/resource-allocation');
-  await expect(page.getByText('Hub available')).toBeVisible();
+  await expect(page.getByText('Hub available')).toHaveCount(0);
 
   const navigation = page.getByRole('navigation', { name: 'Available modules' });
   const sidebar = page.getByRole('complementary', { name: 'Hub navigation' });
