@@ -30,13 +30,46 @@ const admin = {
   coveredGroupIds: [],
 };
 
+const editableRequest = {
+  id: 'req-editable-1',
+  requesterSnapshot: { personId: user.id, displayName: user.displayName, role: user.role },
+  requestedConditions: {
+    initiativeId: 'init-1',
+    initiativeCode: 'ITDM-1',
+    initiativeName: 'Platform Alpha',
+    category: 'EXECUTION_PROJECT',
+    groupId: 'group-a',
+    groupName: 'Platform Engineering',
+    resourceProfileId: 'profile-a',
+    resourceProfileName: 'API Engineering',
+    startDate: '2027-01-10',
+    endDate: '2027-01-24',
+    weeklyHours: 16,
+    comment: 'Initial request comment',
+  },
+  decisionState: 'WAITING_FOR_PRESENTATION',
+  receivedAt: '2026-11-20T12:00:00.000Z',
+  stageEnteredAt: '2026-11-20T12:00:00.000Z',
+  expirationDueAt: '2026-12-11T12:00:00.000Z',
+  dueAt: null,
+  availableActions: [],
+  version: 1,
+};
+
 async function openWithProfile(page: Page, person = user, url = '/resource-allocation/') {
   await page.route(`${apiRoot}/access`, async (route) => route.fulfill({ json: { person } }));
   await page.route(`${apiRoot}/groups**`, async (route) => route.fulfill({ json: { items: [], page: { ...emptyPage, limit: 100 } } }));
   await page.route(`${apiRoot}/resource-profiles**`, async (route) => route.fulfill({ json: { items: [], page: { ...emptyPage, limit: 100 } } }));
   await page.route(`${apiRoot}/initiatives**`, async (route) => route.fulfill({ json: { items: [], page: { ...emptyPage, limit: 100 } } }));
   await page.route(`${apiRoot}/submissions**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
-  await page.route(`${apiRoot}/requests**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
+  await page.route(`${apiRoot}/requests**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith(`/requests/${editableRequest.id}`)) {
+      await route.fulfill({ headers: { etag: '"1"' }, json: editableRequest });
+      return;
+    }
+    await route.fulfill({ json: { items: [], page: emptyPage } });
+  });
   await page.route(`${apiRoot}/request-queues/**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/notifications**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
   await page.route(`${apiRoot}/allocations**`, async (route) => route.fulfill({ json: { items: [], page: emptyPage } }));
@@ -49,31 +82,52 @@ async function openWithProfile(page: Page, person = user, url = '/resource-alloc
   await page.goto(url);
 }
 
-test('navigates between one area at a time and follows browser history', async ({ page }) => {
+test('navigates between one area at a time, opens New request in a drawer, and follows browser history', async ({ page }) => {
   await openWithProfile(page);
 
   await expect(page).toHaveURL(/\?page=requests$/);
   const navigation = page.getByRole('navigation', { name: 'Tech Resource Allocation' });
   await expect(navigation.getByRole('link', { name: 'Requests' })).toHaveAttribute('aria-current', 'page');
-  await expect(navigation.getByRole('link', { name: 'New request' })).toHaveAttribute('href', '/resource-allocation/?page=new-request');
+  await expect(navigation.getByRole('link', { name: 'New request' })).toHaveCount(0);
   await expect(navigation.getByRole('link', { name: 'Request queues' })).toHaveCount(0);
   await expect(navigation.getByRole('link', { name: 'Administration' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'New request batch' })).toHaveCount(0);
 
-  await navigation.getByRole('link', { name: 'New request' }).click();
-  await expect(page).toHaveURL(/\?page=new-request$/);
-  await expect(page.getByRole('heading', { name: 'New request batch' })).toBeVisible();
+  const newRequestButton = page.getByRole('button', { name: 'New request' });
+  await expect(newRequestButton).toBeVisible();
+  await newRequestButton.click();
+  await expect(page).toHaveURL(/\?page=requests&newRequest=1$/);
+  await expect(page.getByRole('dialog', { name: 'New request batch' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('dialog', { name: 'New request batch' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Close new request drawer' }).click();
+  await expect(page).toHaveURL(/\?page=requests$/);
+  await expect(page.getByRole('dialog', { name: 'New request batch' })).toHaveCount(0);
+  await expect(newRequestButton).toBeFocused();
+
+  await navigation.getByRole('link', { name: 'Allocations and capacity' }).click();
+  await expect(page).toHaveURL(/\?page=allocations$/);
+  await expect(page.getByRole('heading', { name: 'Allocations and capacity' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'My requests' })).toHaveCount(0);
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'New request batch' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Allocations and capacity' })).toBeVisible();
 
   await page.goBack();
   await expect(page).toHaveURL(/\?page=requests$/);
   await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible();
   await page.goForward();
-  await expect(page).toHaveURL(/\?page=new-request$/);
-  await expect(page.getByRole('heading', { name: 'New request batch' })).toBeVisible();
+  await expect(page).toHaveURL(/\?page=allocations$/);
+  await expect(page.getByRole('heading', { name: 'Allocations and capacity' })).toBeVisible();
+});
+
+test('opens the New request drawer from a legacy ?page=new-request URL', async ({ page }) => {
+  await openWithProfile(page, user, '/resource-allocation/?page=new-request');
+
+  await expect(page).toHaveURL(/\?page=requests&newRequest=1$/);
+  await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'New request batch' })).toBeVisible();
 });
 
 test('shows a queue deep link in Request queues with its requested tab selected', async ({ page }) => {
@@ -91,9 +145,11 @@ test('shows the Admin destinations and group queues allowed by the current profi
   await openWithProfile(page, admin);
 
   const navigation = page.getByRole('navigation', { name: 'Tech Resource Allocation' });
-  for (const label of ['Requests', 'New request', 'Request queues', 'Allocations and capacity', 'Administration']) {
+  for (const label of ['Requests', 'Request queues', 'Allocations and capacity', 'Administration']) {
     await expect(navigation.getByRole('link', { name: label, exact: true })).toBeVisible();
   }
+  await expect(navigation.getByRole('link', { name: 'New request' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'New request' })).toBeVisible();
   await expect(navigation.getByRole('link', { name: 'Notifications' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Notifications/ })).toBeVisible();
 
@@ -128,10 +184,10 @@ test('opens the Requests area for an unknown page and closes the responsive menu
   await expect(menu).toHaveAttribute('aria-expanded', 'false');
   await menu.click();
   await expect(menu).toHaveAttribute('aria-expanded', 'true');
-  await page.getByRole('navigation', { name: 'Tech Resource Allocation' }).getByRole('link', { name: 'New request' }).click();
-  await expect(page).toHaveURL(/\?page=new-request$/);
+  await page.getByRole('navigation', { name: 'Tech Resource Allocation' }).getByRole('link', { name: 'Allocations and capacity' }).click();
+  await expect(page).toHaveURL(/\?page=allocations$/);
   await expect(menu).toHaveAttribute('aria-expanded', 'false');
-  await expect(page.getByRole('heading', { name: 'New request batch' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Allocations and capacity' })).toBeVisible();
 });
 
 test('does not mount Administration for a user who opens its URL directly', async ({ page }) => {
@@ -152,8 +208,9 @@ test('does not mount Administration for a user who opens its URL directly', asyn
   await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible();
 });
 
-test('keeps a dirty request form when area navigation is canceled', async ({ page }) => {
-  await openWithProfile(page, user, '/resource-allocation/?page=new-request');
+test('keeps a dirty request drawer open when close is canceled', async ({ page }) => {
+  await openWithProfile(page, user, '/resource-allocation/?page=requests');
+  await page.getByRole('button', { name: 'New request' }).click();
 
   const weeklyHours = page.getByLabel('Weekly hours for line 1');
   await weeklyHours.fill('4.5');
@@ -163,9 +220,10 @@ test('keeps a dirty request form when area navigation is canceled', async ({ pag
     confirmationMessage = dialog.message();
     await dialog.dismiss();
   });
-  await page.getByRole('navigation', { name: 'Tech Resource Allocation' }).getByRole('link', { name: 'Requests' }).click();
+  await page.getByRole('button', { name: 'Close new request drawer' }).click();
 
-  await expect(page).toHaveURL(/\?page=new-request$/);
+  await expect(page).toHaveURL(/\?page=requests&newRequest=1$/);
+  await expect(page.getByRole('dialog', { name: 'New request batch' })).toBeVisible();
   await expect(weeklyHours).toHaveValue('4.5');
   expect(confirmationMessage).toMatch(/unsaved changes/i);
 
@@ -173,9 +231,10 @@ test('keeps a dirty request form when area navigation is canceled', async ({ pag
   await expect(weeklyHours).toBeFocused();
 });
 
-test('restores the current area and draft when browser back is canceled', async ({ page }) => {
-  await openWithProfile(page);
-  await page.getByRole('navigation', { name: 'Tech Resource Allocation' }).getByRole('link', { name: 'New request' }).click();
+test('restores the current area and drawer draft when browser back is canceled', async ({ page }) => {
+  await openWithProfile(page, user, '/resource-allocation/?page=allocations');
+  await page.getByRole('navigation', { name: 'Tech Resource Allocation' }).getByRole('link', { name: 'Requests' }).click();
+  await page.getByRole('button', { name: 'New request' }).click();
   const weeklyHours = page.getByLabel('Weekly hours for line 1');
   await weeklyHours.fill('6.5');
 
@@ -185,24 +244,24 @@ test('restores the current area and draft when browser back is canceled', async 
   expect(canceledDialog.message()).toMatch(/unsaved changes/i);
   await canceledDialog.dismiss();
 
-  await expect(page).toHaveURL(/\?page=new-request$/);
+  await expect(page).toHaveURL(/\?page=requests&newRequest=1$/);
   await expect(weeklyHours).toHaveValue('6.5');
 
   const confirmedPrompt = page.waitForEvent('dialog');
   await page.evaluate(() => window.history.back());
   const confirmedDialog = await confirmedPrompt;
   await confirmedDialog.accept();
-  await expect(page).toHaveURL(/\?page=requests$/);
-  await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible();
+  await expect(page).toHaveURL(/\?page=allocations$/);
+  await expect(page.getByRole('heading', { name: 'Allocations and capacity' })).toBeVisible();
   await page.goForward();
-  await expect(page).toHaveURL(/\?page=new-request$/);
-  await expect(page.getByRole('heading', { name: 'New request batch' })).toBeVisible();
+  await expect(page).toHaveURL(/\?page=requests&newRequest=1$/);
+  await expect(page.getByRole('dialog', { name: 'New request batch' })).toBeVisible();
 });
 
 test('keeps profile and form focus when profile change is canceled', async ({ page }) => {
-  await openWithProfile(page, user, '/resource-allocation/?page=new-request');
-  const weeklyHours = page.getByLabel('Weekly hours for line 1');
-  await weeklyHours.fill('3.5');
+  await openWithProfile(page, user, `/resource-allocation/?page=requests&requestId=${editableRequest.id}`);
+  const weeklyHours = page.getByRole('region', { name: 'ITDM-1' }).getByLabel('Weekly hours');
+  await weeklyHours.fill('24');
   await page.getByRole('button', { name: 'Taylor User' }).click();
   const changeProfile = page.getByRole('button', { name: 'Change profile' });
 
@@ -213,8 +272,8 @@ test('keeps profile and form focus when profile change is canceled', async ({ pa
   await dialog.dismiss();
   await click;
 
-  await expect(page).toHaveURL(/\?page=new-request$/);
-  await expect(weeklyHours).toHaveValue('3.5');
+  await expect(page).toHaveURL(new RegExp(`requestId=${editableRequest.id}`));
+  await expect(weeklyHours).toHaveValue('24');
   await expect(changeProfile).toBeVisible();
   await expect(changeProfile).toBeFocused();
   expect(await page.evaluate((key) => window.localStorage.getItem(key), profileStorageKey)).toBe(user.localUserId);
@@ -222,7 +281,7 @@ test('keeps profile and form focus when profile change is canceled', async ({ pa
 
 for (const queue of ['Admin exceptions', 'Revalidation queue']) {
   test(`preserves a draft when forward to filtered ${queue} is canceled`, async ({ page }) => {
-    await openWithProfile(page, admin, '/resource-allocation/?page=new-request');
+    await openWithProfile(page, admin, '/resource-allocation/?page=requests');
     await page.route(`${apiRoot}/groups**`, (route) => route.fulfill({
       json: { items: [{ id: 'group-a', name: 'Platform Engineering' }], page: emptyPage },
     }));
@@ -238,14 +297,15 @@ for (const queue of ['Admin exceptions', 'Revalidation queue']) {
     await navigation.getByRole('link', { name: 'Allocations and capacity', exact: true }).click();
     await page.goBack();
     await page.goBack();
-    await expect(page).toHaveURL(/\?page=new-request$/);
+    await expect(page).toHaveURL(/\?page=requests$/);
+    await page.getByRole('button', { name: 'New request' }).click();
     const hours = page.getByLabel('Weekly hours for line 1');
     await hours.fill('6.5');
 
     const canceledPrompt = page.waitForEvent('dialog');
     await page.evaluate(() => window.history.forward());
     await (await canceledPrompt).dismiss();
-    await expect(page).toHaveURL(/\?page=new-request$/);
+    await expect(page).toHaveURL(/\?page=requests&newRequest=1$/);
     await expect(hours).toHaveValue('6.5');
     await hours.focus();
     await expect(hours).toBeFocused();
@@ -262,17 +322,17 @@ for (const queue of ['Admin exceptions', 'Revalidation queue']) {
 }
 
 test('protects the PMO Hub brand link and native reload with the current draft', async ({ page }) => {
-  await openWithProfile(page, user, '/resource-allocation/?page=new-request');
-  const weeklyHours = page.getByLabel('Weekly hours for line 1');
-  await weeklyHours.fill('2.5');
+  await openWithProfile(page, user, `/resource-allocation/?page=requests&requestId=${editableRequest.id}`);
+  const detailWeeklyHours = page.getByRole('region', { name: 'ITDM-1' }).getByLabel('Weekly hours');
+  await detailWeeklyHours.fill('22');
 
   const brandPrompt = page.waitForEvent('dialog');
   const brandClick = page.getByRole('link', { name: 'PMO Hub' }).click();
   const brandDialog = await brandPrompt;
   await brandDialog.dismiss();
   await brandClick;
-  await expect(page).toHaveURL(/\?page=new-request$/);
-  await expect(weeklyHours).toHaveValue('2.5');
+  await expect(page).toHaveURL(new RegExp(`requestId=${editableRequest.id}`));
+  await expect(detailWeeklyHours).toHaveValue('22');
 
   let unloadDialogType = '';
   page.on('dialog', async (dialog) => {
@@ -281,11 +341,12 @@ test('protects the PMO Hub brand link and native reload with the current draft',
   });
   await page.reload({ timeout: 2500 }).catch(() => null);
   expect(unloadDialogType).toBe('beforeunload');
-  await expect(weeklyHours).toHaveValue('2.5');
+  await expect(detailWeeklyHours).toHaveValue('22');
 });
 
-test('clears a dirty form immediately when another tab changes the selected profile', async ({ page }) => {
-  await openWithProfile(page, user, '/resource-allocation/?page=new-request');
+test('clears a dirty drawer form immediately when another tab changes the selected profile', async ({ page }) => {
+  await openWithProfile(page, user, '/resource-allocation/?page=requests');
+  await page.getByRole('button', { name: 'New request' }).click();
   const weeklyHours = page.getByLabel('Weekly hours for line 1');
   await weeklyHours.fill('8');
 
@@ -300,7 +361,7 @@ test('clears a dirty form immediately when another tab changes the selected prof
   }, profileStorageKey);
 
   await expect(page.getByRole('button', { name: 'Taylor User' })).toBeVisible();
-  await expect(weeklyHours).toHaveValue('');
+  await expect(page.getByRole('dialog', { name: 'New request batch' })).toHaveCount(0);
   expect(confirmationCount).toBe(0);
   expect(await page.evaluate((key) => window.localStorage.getItem(key), profileStorageKey)).toBe('profile-from-another-tab');
 });

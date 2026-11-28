@@ -65,7 +65,7 @@ async function measureInterfaceContrast(page: Page) {
     const body = getComputedStyle(document.body);
     const topbar = getComputedStyle(document.querySelector('.hub-header')!);
     const brand = getComputedStyle(document.querySelector('.hub-header__brand')!);
-    const control = getComputedStyle(document.querySelector('#new-request-batch select')!);
+    const control = getComputedStyle(document.querySelector('.request-filters select')!);
     const focus = getComputedStyle(document.querySelector('.skip-link')!);
     return {
       body: ratio(body.color, body.backgroundColor),
@@ -146,7 +146,7 @@ test('can retry after a network failure', async ({ page }) => {
     await route.fulfill({ json: { person: people['profile-user'] } });
   });
 
-  await openWithProfile(page, 'profile-user', '/resource-allocation/?page=new-request');
+  await openWithProfile(page, 'profile-user', '/resource-allocation/?page=requests');
 
   await expect(page.getByRole('heading', { name: 'Could not reach Tech Resource Allocation' })).toBeVisible();
   const attemptsBeforeRetry = requestCount;
@@ -186,13 +186,13 @@ test('uses the shared theme preference already saved in this tab', async ({ page
     await route.fulfill({ json: { person: people['profile-user'] } });
   });
 
-  await openWithProfile(page, 'profile-user', '/resource-allocation/?page=new-request');
+  await openWithProfile(page, 'profile-user', '/resource-allocation/?page=requests');
 
   await expect(page.getByRole('heading', { name: 'Tech Resource Allocation' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(16, 18, 20)');
-  await expect(page.getByLabel('Initiative', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Category', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('ITDM')).toBeVisible();
+  await expect(page.getByLabel('Decision')).toBeVisible();
 
   await page.keyboard.press('Tab');
   const contrast = await measureInterfaceContrast(page);
@@ -205,7 +205,7 @@ test('uses the shared theme preference already saved in this tab', async ({ page
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
-  await expect(page.getByLabel('Initiative', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('ITDM')).toBeVisible();
   await page.keyboard.press('Tab');
   const lightContrast = await measureInterfaceContrast(page);
   expect(lightContrast.body).toBeGreaterThanOrEqual(4.5);
@@ -218,7 +218,7 @@ test('skip link moves keyboard focus to the main content', async ({ page }) => {
   await page.route(accessPath, async (route) => {
     await route.fulfill({ json: { person: people['profile-user'] } });
   });
-  await openWithProfile(page, 'profile-user', '/resource-allocation/?page=new-request');
+  await openWithProfile(page, 'profile-user', '/resource-allocation/?page=requests');
 
   const skipLink = page.getByRole('link', { name: 'Skip to main content' });
   await expect(skipLink).toBeAttached();

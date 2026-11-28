@@ -13,7 +13,6 @@ import { CapacityWorkspace } from './CapacityWorkspace';
 import { CAPACITY_QUERY_ROOT } from './capacityApi';
 import { NotificationsMenu } from './NotificationsMenu';
 import { RequestQueues } from './RequestQueues';
-import { SubmissionWorkspace } from './SubmissionWorkspace';
 import { RequestWorkspace } from './RequestWorkspace';
 import { HubHeader } from '../../shared-ui/src/HubHeader';
 import { WorkspaceSidebar } from '../../shared-ui/src/WorkspaceSidebar';
@@ -23,7 +22,6 @@ import {
   FileTextIcon,
   InboxIcon,
   LayersIcon,
-  PlusCircleIcon,
   SettingsIcon,
 } from '../../shared-ui/src/Icons';
 import { useThemePreference } from '../../shared-ui/src/theme';
@@ -52,7 +50,6 @@ function withHistoryPosition(state: unknown, position: number) {
 
 const navigationItems: Array<{ page: ResourceAllocationPage; label: string }> = [
   { page: 'requests', label: 'Requests' },
-  { page: 'new-request', label: 'New request' },
   { page: 'request-queues', label: 'Request queues' },
   { page: 'allocations', label: 'Allocations and capacity' },
   { page: 'capacity', label: 'Capacity' },
@@ -63,8 +60,6 @@ function navigationIcon(page: ResourceAllocationPage, isDelegatedProfileAdminist
   switch (page) {
     case 'requests':
       return <FileTextIcon size={17} />;
-    case 'new-request':
-      return <PlusCircleIcon size={17} />;
     case 'request-queues':
       return <InboxIcon size={17} />;
     case 'allocations':
@@ -112,6 +107,11 @@ function ResourceAllocationApp() {
     generation: 0,
   }));
   const currentSelection = useRef(selection);
+  const navigationBlockedRef = useRef(isDirty || isPending);
+
+  useEffect(() => {
+    navigationBlockedRef.current = isDirty || isPending;
+  }, [isDirty, isPending]);
   const [activePage, setActivePage] = useState<ResourceAllocationPage>(() => readResourceAllocationPage(window.location.search));
   const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
   const workspacePanel = useRef<HTMLElement>(null);
@@ -138,6 +138,11 @@ function ResourceAllocationApp() {
     setModuleDataAccessBlocked(false);
     setCapacityAccessBlocked(false);
     setIsModuleMenuOpen(false);
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('newRequest')) {
+      url.searchParams.delete('newRequest');
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    }
     const nextSelection = { profileId: nextProfileId, generation: current.generation + 1 };
     currentSelection.current = nextSelection;
     setSelection(nextSelection);
@@ -190,7 +195,7 @@ function ResourceAllocationApp() {
       const delta = destinationPosition === null
         ? -1
         : destinationPosition - currentHistoryPosition.current;
-      if ((isDirty || isPending) && delta !== 0) {
+      if (navigationBlockedRef.current && delta !== 0) {
         event.stopImmediatePropagation();
         pendingHistoryNavigation.current = { delta, hasPosition: destinationPosition !== null };
         isRevertingHistory.current = true;
@@ -204,7 +209,7 @@ function ResourceAllocationApp() {
 
     window.addEventListener('popstate', handleHistoryNavigation, { capture: true });
     return () => window.removeEventListener('popstate', handleHistoryNavigation, { capture: true });
-  }, [allowUnloadOnce, guardNavigation, isDirty, isPending]);
+  }, [allowUnloadOnce, guardNavigation]);
 
   useEffect(() => {
     function handleStorageChange(event: StorageEvent) {
@@ -444,7 +449,6 @@ function ResourceAllocationApp() {
                     onAccessDenied={handleModuleDataAccessDenied}
                   />
                 )}
-                {activePage === 'new-request' && <SubmissionWorkspace localUserId={profileId} onAccessDenied={handleModuleDataAccessDenied} />}
                 {activePage === 'request-queues' && (
                   <RequestQueues
                     localUserId={profileId}

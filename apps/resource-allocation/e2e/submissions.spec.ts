@@ -18,11 +18,14 @@ const profile = { id: 'profile-1', name: 'API Engineering', groupId: group.id };
 
 const emptyPage = { nextCursor: null, limit: 100 };
 
-async function openAsUser(page: Page) {
+async function openAsUser(page: Page, openDrawer = true) {
   await page.addInitScript(({ key }) => window.localStorage.setItem(key, 'profile-user'), {
     key: profileStorageKey,
   });
-  await page.goto('/resource-allocation/?page=new-request');
+  await page.goto('/resource-allocation/?page=requests');
+  if (openDrawer) {
+    await page.getByRole('button', { name: 'New request' }).click();
+  }
 }
 
 async function installSelectionFixtures(page: Page) {
@@ -166,14 +169,17 @@ test('blocks area changes until the submission receipt and does not resend accep
   await postStarted;
   await expect(page.getByRole('heading', { name: 'Receipt not confirmed' })).toBeVisible();
 
-  await page.getByRole('navigation', { name: 'Tech Resource Allocation' }).getByRole('link', { name: 'Requests' }).click();
-  await expect(page).toHaveURL(/\?page=new-request$/);
-  await expect(page.getByText('A save is in progress. Navigation will be available when it finishes.')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\?page=requests&newRequest=1$/);
+  const drawer = page.getByRole('dialog', { name: 'New request batch' });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByText('A save is in progress. Navigation will be available when it finishes.')).toBeVisible();
 
   releasePost();
   await expect(page.getByText(/Submission submission-pending was received/i)).toBeVisible();
-  await page.getByRole('navigation', { name: 'Tech Resource Allocation' }).getByRole('link', { name: 'Requests' }).click();
-  await expect(page).toHaveURL(/\?page=requests$/);
+  await expect(page.getByRole('dialog', { name: 'New request batch' })).toHaveCount(0);
+  await page.getByRole('navigation', { name: 'Tech Resource Allocation' }).getByRole('link', { name: 'Allocations and capacity' }).click();
+  await expect(page).toHaveURL(/\?page=allocations$/);
   releaseRefresh();
   expect(postCount).toBe(1);
 });
@@ -225,7 +231,7 @@ test('recovers a durable submission after reload and offers correction only for 
     await route.fulfill({ json: { items: [], page: emptyPage } });
   });
 
-  await openAsUser(page);
+  await openAsUser(page, false);
   await expect(page.getByRole('heading', { name: 'My submissions' })).toBeVisible();
   await expect(page.getByText('Succeeded', { exact: true })).toBeVisible();
   await expect(page.getByText(/1\.3 hours per week/)).toBeVisible();
@@ -330,7 +336,7 @@ test('recovers a submitted request that later expired and opens its retained aud
     }],
   } }));
 
-  await openAsUser(page);
+  await openAsUser(page, false);
   await expect(page.getByRole('heading', { name: 'My submissions' })).toBeVisible();
   await expect(page.getByText('Request created:', { exact: false })).toContainText(requestId);
   await expect(page.getByText('Current outcome: Removed from operation · expired')).toBeVisible();
@@ -446,7 +452,7 @@ test('displays the real worker failure reason from problem.message, problem.deta
     await route.fallback();
   });
 
-  await openAsUser(page);
+  await openAsUser(page, false);
   await expect(page.getByText('The request dates must start today or later.')).toBeVisible();
   await expect(page.getByText('Weekly hours must round to at least 0.1.')).toBeVisible();
   await expect(page.getByText('Selected profile is inactive.')).toBeVisible();

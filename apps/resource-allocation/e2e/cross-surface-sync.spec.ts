@@ -5,7 +5,6 @@ const profileStorageKey = 'pmo-hub.local-user-id';
 const emptyPage = { nextCursor: null, limit: 50 };
 const areaLabels = {
   requests: 'Requests',
-  'new-request': 'New request',
   'request-queues': 'Request queues',
   allocations: 'Allocations and capacity',
   administration: 'Administration',
@@ -770,21 +769,19 @@ test('updates Presentation queue and Submission results immediately without relo
   const submissionsPanel = page.getByRole('region', { name: 'My submissions' });
   await navigateToArea(page, 'request-queues');
   await expect(queuesRegion.getByRole('article', { name: /ITDM-10/ })).toContainText('12');
-  await navigateToArea(page, 'new-request');
+  await navigateToArea(page, 'requests');
   await expect(submissionsPanel).toContainText('12 hours per week');
 
-  await navigateToArea(page, 'requests');
   await page.getByRole('button', { name: new RegExp(requestId) }).click();
   await detail.getByLabel('Weekly hours').fill('18');
   await detail.getByRole('button', { name: 'Save request changes' }).click();
 
   await navigateToArea(page, 'request-queues');
   await expect(queuesRegion.getByRole('article', { name: /ITDM-10/ })).toContainText('18');
-  await navigateToArea(page, 'new-request');
+  await navigateToArea(page, 'requests');
   await expect(submissionsPanel).toContainText('18 hours per week');
   expect(state.accessCount).toBe(1);
 
-  await navigateToArea(page, 'requests');
   await page.getByRole('button', { name: new RegExp(requestId) }).click();
   await detail.getByRole('button', { name: 'Withdraw request' }).click();
   const dialog = page.getByRole('dialog', { name: 'Withdraw this request?' });
@@ -793,7 +790,7 @@ test('updates Presentation queue and Submission results immediately without relo
 
   await navigateToArea(page, 'request-queues');
   await expect(queuesRegion.getByText('There are no requests in this queue.')).toBeVisible();
-  await navigateToArea(page, 'new-request');
+  await navigateToArea(page, 'requests');
   await expect(submissionsPanel).toContainText('Removed from operation');
   expect(state.accessCount).toBe(1);
 });
@@ -956,12 +953,11 @@ test('updates Exceptions, Revalidation queues, Submissions, and Notifications im
   const notificationsRegion = await openNotificationsMenu(page);
   await expect(notificationsRegion.getByText('Denial contested into Pre N3')).toBeVisible();
   await closeNotificationsMenu(page);
-  await navigateToArea(page, 'new-request');
+  await navigateToArea(page, 'requests');
   await expect(submissionsPanel).toContainText('Current outcome: PRE_N3');
   expect(state.accessCount).toBe(1);
 
   // 2) Cancel revalidation -> disappears immediately from Revalidation queue + updates Notifications
-  await navigateToArea(page, 'requests');
   await requestsRegion.getByRole('button', { name: new RegExp(revalidationId) }).click();
   await requestsRegion.getByRole('button', { name: 'Cancel request' }).click();
   await requestsRegion.getByLabel('Reason for cancellation').fill('Scope dropped.');
@@ -1264,10 +1260,11 @@ test('updates selections, Requests, Request queues, Allocations, capacity load, 
   await adminRegion.getByLabel('Name').fill('Horizon Refresh');
   await adminRegion.getByRole('button', { name: 'Save initiative' }).click();
 
-  await navigateToArea(page, 'new-request');
-  await expect(page.getByRole('combobox', { name: 'Initiative', exact: true })).toContainText('ITDM-99 — Horizon Refresh');
   await navigateToArea(page, 'requests');
   await expect(requestsRegion.getByLabel('ITDM')).toContainText('ITDM-99 · Horizon Refresh');
+  await page.getByRole('button', { name: 'New request' }).click();
+  await expect(page.getByRole('combobox', { name: 'Initiative', exact: true })).toContainText('ITDM-99 — Horizon Refresh');
+  await page.getByRole('button', { name: 'Close new request drawer' }).click();
   await navigateToArea(page, 'request-queues');
   await queuesRegion.getByRole('tab', { name: 'Revalidation queue' }).click();
   await expect(queuesRegion.getByLabel('ITDM')).toContainText('ITDM-99 — Horizon Refresh');
@@ -1412,7 +1409,7 @@ test('updates Requests, Request queues, and Notifications immediately without re
   await navigateToArea(page, 'requests');
   await expect(requestsRegion.getByText('No operational requests match these filters.')).toBeVisible();
 
-  await navigateToArea(page, 'new-request');
+  await page.getByRole('button', { name: 'New request' }).click();
   await page.getByRole('combobox', { name: 'Initiative', exact: true }).selectOption(initiatives[0].id);
   await page.getByLabel('Category').selectOption('EXECUTION_PROJECT');
   await page.getByLabel('Group for line 1').selectOption(groups[0].id);
@@ -1424,10 +1421,9 @@ test('updates Requests, Request queues, and Notifications immediately without re
   await page.getByRole('button', { name: 'Review submission' }).click();
   await page.getByRole('button', { name: 'Send 1 request' }).click();
 
+  await expect(requestsRegion.getByRole('button', { name: /ITDM-10/ })).toBeVisible();
   await navigateToArea(page, 'request-queues');
   await expect(queuesRegion.getByRole('article', { name: /ITDM-10/ })).toBeVisible();
-  await navigateToArea(page, 'requests');
-  await expect(requestsRegion.getByRole('button', { name: /ITDM-10/ })).toBeVisible();
   const notificationsRegion = await openNotificationsMenu(page);
   await expect(notificationsRegion.getByText('New presentation request arrived')).toBeVisible();
   expect(state.accessCount).toBe(1);

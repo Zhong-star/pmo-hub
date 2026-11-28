@@ -227,7 +227,6 @@ test('keeps all workspace areas and notifications menu readable in both themes a
   const navigation = page.getByRole('navigation', { name: 'Tech Resource Allocation' });
   const areas = [
     { page: 'requests', label: 'Requests', heading: 'My requests' },
-    { page: 'new-request', label: 'New request', heading: 'New request batch' },
     { page: 'request-queues', label: 'Request queues', heading: 'Request queues' },
     { page: 'allocations', label: 'Allocations and capacity', heading: 'Allocations and capacity' },
     { page: 'administration', label: 'Administration', heading: 'Administration' },
@@ -281,32 +280,34 @@ test('keeps all workspace areas and notifications menu readable in both themes a
         await expect(requestDetail).toBeVisible();
         await requestDetail.scrollIntoViewIfNeeded();
         await capture(page, `desktop-${theme}-requests-detail`, { resetScroll: false });
-      }
-      if (area.page === 'new-request') {
-        const weeklyHours = page.getByLabel('Weekly hours for line 1');
+
+        await page.getByRole('button', { name: 'New request' }).click();
+        const drawer = page.getByRole('dialog', { name: 'New request batch' });
+        await expect(drawer).toBeVisible();
+        const weeklyHours = drawer.getByLabel('Weekly hours for line 1');
         const placeholderColors = await weeklyHours.evaluate((input) => ({
           foreground: getComputedStyle(input, '::placeholder').color,
           background: getComputedStyle(input).backgroundColor,
         }));
         expect(contrastRatio(placeholderColors.foreground, placeholderColors.background)).toBeGreaterThanOrEqual(4.5);
-        await page.getByRole('combobox', { name: 'Initiative', exact: true }).selectOption(initiative.id);
-        await page.getByLabel('Category').selectOption('EXECUTION_PROJECT');
-        await page.getByLabel('Group for line 1').selectOption(group.id);
-        await page.getByLabel('Resource profile for line 1').selectOption(resourceProfile.id);
-        await page.getByLabel('Start date for line 1').fill('2027-01-11');
-        await page.getByLabel('End date for line 1').fill('2027-01-19');
-        await page.getByLabel('Weekly hours for line 1').fill('8');
-        await page.getByLabel(/Comment for line 1/).fill('Support the platform reliability rollout.');
-        await page.getByRole('button', { name: 'Add request line' }).click();
-        await page.getByRole('button', { name: 'Review submission' }).click();
-        await expect(page.getByRole('heading', { name: 'Review your requests' })).toBeVisible();
-        await capture(page, `desktop-${theme}-new-request-review`);
-        await page.getByRole('button', { name: 'Edit requests' }).click();
-        const editor = page.getByRole('form', { name: 'Request line editor' });
-        const cards = page.getByRole('region', { name: 'Request lines' });
+        await drawer.getByRole('combobox', { name: 'Initiative', exact: true }).selectOption(initiative.id);
+        await drawer.getByLabel('Category').selectOption('EXECUTION_PROJECT');
+        await drawer.getByLabel('Group for line 1').selectOption(group.id);
+        await drawer.getByLabel('Resource profile for line 1').selectOption(resourceProfile.id);
+        await drawer.getByLabel('Start date for line 1').fill('2027-01-11');
+        await drawer.getByLabel('End date for line 1').fill('2027-01-19');
+        await drawer.getByLabel('Weekly hours for line 1').fill('8');
+        await drawer.getByLabel(/Comment for line 1/).fill('Support the platform reliability rollout.');
+        await drawer.getByRole('button', { name: 'Add request line' }).click();
+        await drawer.getByRole('button', { name: 'Review submission' }).click();
+        await expect(drawer.getByRole('heading', { name: 'Review your requests' })).toBeVisible();
+        await capture(page, `desktop-${theme}-new-request-review`, { resetScroll: false });
+        await drawer.getByRole('button', { name: 'Edit requests' }).click();
+        const editor = drawer.getByRole('form', { name: 'Request line editor' });
+        const cards = drawer.getByRole('region', { name: 'Request lines' });
         const desktopViewport = page.viewportSize()!;
         await page.setViewportSize({ ...desktopViewport, height: 1200 });
-        await capture(page, `desktop-${theme}-new-request-filled`);
+        await capture(page, `desktop-${theme}-new-request-filled`, { resetScroll: false });
         const editLine = cards.getByRole('button', { name: 'Edit line 1' });
         await editLine.focus();
         await page.keyboard.press('Enter');
@@ -315,7 +316,7 @@ test('keeps all workspace areas and notifications menu readable in both themes a
         const desktopEditor = (await editor.boundingBox())!;
         const desktopCards = (await cards.boundingBox())!;
         expect(desktopCards.x).toBeGreaterThan(desktopEditor.x + desktopEditor.width);
-        await capture(page, `desktop-${theme}-new-request-editing`);
+        await capture(page, `desktop-${theme}-new-request-editing`, { resetScroll: false });
 
         for (const width of [640, 390]) {
           await page.setViewportSize({ width, height: 900 });
@@ -323,15 +324,17 @@ test('keeps all workspace areas and notifications menu readable in both themes a
           const narrowCards = (await cards.boundingBox())!;
           expect(narrowCards.y).toBeGreaterThan(narrowEditor.y + narrowEditor.height);
           expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-          await capture(page, `narrow-${width}-${theme}-new-request`);
+          await capture(page, `narrow-${width}-${theme}-new-request`, { resetScroll: false });
         }
         await page.setViewportSize(desktopViewport);
 
         const discardPrompt = page.waitForEvent('dialog');
-        const navigationClick = navigation.getByRole('link', { name: 'Request queues', exact: true }).click();
+        const closeDrawer = drawer.getByRole('button', { name: 'Close new request drawer' }).click();
         const discardDialog = await discardPrompt;
         await discardDialog.accept();
-        await navigationClick;
+        await closeDrawer;
+        await expect(drawer).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'New request' })).toBeFocused();
       }
       if (area.page === 'allocations') {
         await page.getByRole('button', { name: 'View allocation ITDM-84' }).click();
@@ -447,7 +450,7 @@ test('shows loading, empty, and retryable error states in the selected area', as
     await pendingNotifications;
     await route.fulfill({ json: { items: [], page: { nextCursor: null, limit: 50 } } });
   });
-  await page.goto('/resource-allocation/?page=new-request');
+  await page.goto('/resource-allocation/?page=allocations');
   await page.getByRole('button', { name: /^Notifications/ }).click();
   const notificationsMenu = page.getByRole('region', { name: 'Notifications' });
   await expect(notificationsMenu.getByRole('status')).toContainText('Loading notifications');
