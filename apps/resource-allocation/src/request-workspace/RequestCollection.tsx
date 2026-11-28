@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type RefObject } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import {
   ChevronDownIcon,
+  PlusIcon,
   SlidersIcon,
   XIcon,
 } from '../../../shared-ui/src/Icons';
@@ -34,6 +35,8 @@ interface RequestCollectionProps {
   role: ResourceAllocationRole;
   selectedRequestId: string | null;
   notice: string;
+  newRequestButtonRef: RefObject<HTMLButtonElement | null>;
+  onOpenNewRequest: () => void;
   onOpenRequest: (item: ResourceRequestCollection['items'][number]) => void;
   onClearSelection: () => void;
   onAccessDenied: () => void;
@@ -45,6 +48,8 @@ export function RequestCollection({
   role,
   selectedRequestId,
   notice,
+  newRequestButtonRef,
+  onOpenNewRequest,
   onOpenRequest,
   onClearSelection,
   onAccessDenied,
@@ -109,18 +114,29 @@ export function RequestCollection({
             : 'Review your requests, update a request that is waiting for presentation, or withdraw it with a reason.'}</p>
         </div>
 
-        {canSwitchRequestScope && (
-          <label className="form-field request-scope-control">
-            <span>Request view</span>
-            <select aria-label="Request view" value={requestScope} onChange={(event) => {
-              setRequestScope(event.target.value as RequestScope);
-              onClearSelection();
-            }}>
-              <option value="mine">My requests</option>
-              <option value="visible">{role === 'ALLOCATION_ADMIN' ? 'All requests' : 'Requests in my scope'}</option>
-            </select>
-          </label>
-        )}
+        <div className="request-panel-heading__actions">
+          {canSwitchRequestScope && (
+            <label className="form-field request-scope-control">
+              <span>Request view</span>
+              <select aria-label="Request view" value={requestScope} onChange={(event) => {
+                setRequestScope(event.target.value as RequestScope);
+                onClearSelection();
+              }}>
+                <option value="mine">My requests</option>
+                <option value="visible">{role === 'ALLOCATION_ADMIN' ? 'All requests' : 'Requests in my scope'}</option>
+              </select>
+            </label>
+          )}
+          <button
+            ref={newRequestButtonRef}
+            type="button"
+            className="primary-button ui-inline-btn request-new-button"
+            onClick={onOpenNewRequest}
+          >
+            <PlusIcon size={15} />
+            <span>New request</span>
+          </button>
+        </div>
       </div>
 
       {notice && <p className="inline-success" role="status">{notice}</p>}
